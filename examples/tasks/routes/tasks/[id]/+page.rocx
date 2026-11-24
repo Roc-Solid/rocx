@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Endpoint
-import pf.Show
 import pf.Router exposing [use_before_leave!]
 import pf.Solid exposing [create_signal!]
 import pf.For
@@ -60,17 +59,20 @@ Editor := [].{
 			<Title>{task.title} · Tasks</Title>
 			<p class="crumb"><a href={Paths.lists_id({ id: list.id })}>← {list.name}</a></p>
 			<h1>Edit task</h1>
-			<Show when!={leaving!()}>
-				{|_leave!|
+			{match leaving!() {
+				Ok(_leave) =>
 					<div class="leaving" role="alertdialog" aria-labelledby="leaving-says">
 						<p id="leaving-says">This task has changes that aren't saved.</p>
 						<button type="button" class="stay" on:click={|| set_leaving!(Err(Staying))}>Keep editing</button>
 						<button type="button" class="discard" on:click={discard!}>Leave without saving</button>
-					</div>}
-			</Show>
-			<Show when!={live.sent!() and !live.all_issues!().is_empty()}>
+					</div>
+				Err(_) => <></>
+			}}
+			{if live.sent!() and !live.all_issues!().is_empty() {
 				<p class="problem" role="alert">That didn't save: fix what's marked below, then save again.</p>
-			</Show>
+			} else {
+				<></>
+			}}
 			<form class="edit" method="post" action={live.url()} novalidate>
 				<TextField live={live} name="title" label="Title" autocomplete="off" />
 				<Field live={live} name="notes" label="Notes">

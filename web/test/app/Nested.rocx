@@ -1,10 +1,9 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
 import pf.For
-import pf.Show
 
-## Control flow inside control flow: a <For> in a <For>'s row, and a <For> in a <Show>'s function
-## child. Their children are effectful, as a component's view! is, so they may hold control flow of
+## Control flow inside control flow: a <For> in a <For>'s row, and a <For> in a match
+## arm. Their children are effectful, as a component's view! is, so they may hold control flow of
 ## their own; the innermost ones here are plain markup, which they may be too.
 Nested := [].{
 	Shelf : { id : U64, name : Str, items : List(Str) }
@@ -31,16 +30,16 @@ Nested := [].{
 					}
 				</For>
 			</ul>
-			<Show when!={shelves!().first()}>
-				{|first!|
+			{match shelves!().first() {
+				Ok(first) =>
 					<p class="first">
-						First: {first!().name}
-						<For each!={first!().items} keyed={Bool.False}>
+						First: {first.name}
+						<For each!={first.items} keyed={Bool.False}>
 							{|item!, _| <span class="item">{item!()}</span>}
 						</For>
 					</p>
-				}
-			</Show>
+				Err(_) => <></>
+			}}
 		</section>
 	}
 }

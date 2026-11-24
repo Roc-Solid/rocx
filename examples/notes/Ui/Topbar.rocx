@@ -10,7 +10,7 @@ Topbar := [].{
 	view : { email : Str, query : Str } -> Html
 	view = |{ email, query }|
 		<header class="topbar">
-			<a class="home" href="/">{=Brand.view({})}</a>
+			<a class="home" href="/">{Brand.view({})}</a>
 			<form class="search" method="get" action="/" role="search">
 				<label for="search" class="visually-hidden">Search your notes</label>
 				<input id="search" name="q" type="search" value={query} placeholder="Search notes, or #tag" autocomplete="off" />

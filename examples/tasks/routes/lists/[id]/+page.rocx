@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!, create_signal!, is_pending!, refresh!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.For
 import pf.Title
 import ../../../Tasks
@@ -126,14 +125,14 @@ Board := [].{
 				</p>
 			</header>
 			<FilterTabs path={path} current={filter} counts!={counts!()} />
-			<Show when!={refused!()}>
-				{|why!|
+			{match refused!() {
+				Ok(refusal) =>
 					<p class="refused" role="alert">
-						<span>That change couldn't be saved, so it was undone: {why!()}</span>
+						<span>That change couldn't be saved, so it was undone: {refusal}</span>
 						<button type="button" on:click={dismiss!}>Dismiss</button>
 					</p>
-				}
-			</Show>
+				Err(_) => <></>
+			}}
 			<ul class="tasks" class:stale={stale!()} aria-label="Tasks">
 				<For each!={shown!()} keyed={|task| task.id} fallback={<li class="empty">{Board.empty(filter, sheet!().me)}</li>}>
 					{|task!, _| <TaskRow task!={task!()} board={board} />}

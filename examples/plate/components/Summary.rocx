@@ -25,9 +25,9 @@ Summary := [].{
 			<div class="detail">
 				<p class="left" class:over={over}>{Plate.left(eaten.kcal, target.kcal)}</p>
 				<ul class="macros" aria-label="Macronutrients">
-					{=Summary.macro("Protein", "protein", eaten.protein, target.protein)}
-					{=Summary.macro("Carbs", "carbs", eaten.carbs, target.carbs)}
-					{=Summary.macro("Fat", "fat", eaten.fat, target.fat)}
+					{Summary.macro("Protein", "protein", eaten.protein, target.protein)}
+					{Summary.macro("Carbs", "carbs", eaten.carbs, target.carbs)}
+					{Summary.macro("Fat", "fat", eaten.fat, target.fat)}
 				</ul>
 			</div>
 		</div>

@@ -106,7 +106,7 @@ view! = |{ params }| {
 					<span class="live" class:on={live!()} role="status">{if (live!()) "Live" else "Connecting…"}</span>
 					<AvatarStack faces!={Shared.others((here.members!)(), board!().me.id)} max={5} />
 					<a class="me" href={"/join?then=/b/${board}"} title="Not you? Pick another name">
-						{=Avatar.view({ person: board!().me, label: "" })}
+						{Avatar.view({ person: board!().me, label: "" })}
 						<span class="name"><span class="hidden">{"You are "}</span>{board!().me.name}</span>
 					</a>
 				</div>
@@ -119,7 +119,7 @@ view! = |{ params }| {
 			</main>
 			<Archive shared={shared} />
 			<p class="news" role="status" aria-live="polite" class:shown={!news!().is_empty()}>{news!()}</p>
-			{=if (open!().is_empty()) <></> else <CardPanel card={open!()} shared={shared} />}
+			{if (open!().is_empty()) <></> else <CardPanel card={open!()} shared={shared} />}
 		</div>
 	</Errored>
 }

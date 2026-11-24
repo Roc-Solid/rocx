@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Show
 import pf.Endpoint
 import pf.Server
 import pf.Solid exposing [create_signal!, create_optimistic!]
@@ -66,10 +65,14 @@ Actions := [].{
 				</head>
 				<body>
 					<Meta name="description" content={description!()} />
-					<Show when!={more!()}>
-						<Link rel="canonical" href="/actions" />
-						<Style>.count { color: rgb(1, 2, 3) }</Style>
-					</Show>
+					{if more!() {
+						<>
+							<Link rel="canonical" href="/actions" />
+							<Style>.count { color: rgb(1, 2, 3) }</Style>
+						</>
+					} else {
+						<></>
+					}}
 					<p class="count">{shown!().to_str()}</p>
 					<p class="other">{Endpoint.get!(others).to_str()}</p>
 					<p class="adds">{Actions.listed(adds.all!())}</p>

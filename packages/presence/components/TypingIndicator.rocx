@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Show
 import presence.Typing
 
 ## Who is typing, as a line under a conversation: three dots that bob, and `Ann is typing…`. It says
@@ -15,10 +14,14 @@ TypingIndicator := [].{
 	view! : Props => Html
 	view! = |{ names!, say }|
 		<p class="typing-indicator" aria-live="polite">
-			<Show when!={!names!().is_empty()}>
-				<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
-				<span class="said">{say(names!())}</span>
-			</Show>
+			{if !names!().is_empty() {
+				<>
+					<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+					<span class="said">{say(names!())}</span>
+				</>
+			} else {
+				<></>
+			}}
 		</p>
 
 	<story name="One">

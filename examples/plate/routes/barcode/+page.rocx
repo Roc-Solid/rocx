@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Router
-import pf.Show
 import forms.LiveForm
 import forms.TextField
 import ../../PlateForm
@@ -34,11 +33,13 @@ view! = |_| {
 			<TextField live={live} name="barcode" label="Barcode" hint="8 to 14 digits, as EAN-13: 5000159484695." autocomplete="off" />
 			<button class="button" type="submit" disabled?={live.pending!()}>{if (live.pending!()) "Looking it up…" else "Look it up"}</button>
 		</form>
-		<Show when!={!live.issues!("barcode").is_empty()}>
+		{if !live.issues!("barcode").is_empty() {
 			<p>
 				<a class="button quiet" href={Query.link(Paths.foods_new, Query.of([("barcode", live.value!("barcode").trim()), ("day", day), ("meal", meal)]))}>Make the food yourself</a>
 			</p>
-		</Show>
+		} else {
+			<></>
+		}}
 	</section>
 }
 

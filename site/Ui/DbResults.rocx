@@ -37,7 +37,7 @@ DbResults := [].{
 				<p>
 					{"First everyday work on ${ExampleApp.count(m.rows)} items, each run deleting the last run's and writing them again: what one caller does, then what eight do at once (eight actors told together, timed from the first told to the last done), then a checkpoint and the reads again."}
 				</p>
-				{=DbResults.series("everyday", m.runs, workloads)}
+				{DbResults.series("everyday", m.runs, workloads)}
 				<p class="small">Where eight write one counter at once, Turso's transactions (MVCC) lose to each other and run again: the runs say how many it took them, where SQLite's take turns and run once each.</p>
 				<p>
 					<strong>Why Turso's MVCC reads slower.</strong>
@@ -52,7 +52,7 @@ DbResults := [].{
 					{" rows). It doesn't close: MVCC checks every row it reads against its store, even a row in the pages, as the million rows below show; and what earlier runs wrote, kept as versions, slows later ones. The recursive query is slow on both of Turso's modes: that is Turso's engine, not its MVCC."}
 				</p>
 				<Heading id="big">A million rows</Heading>
-				{=
+				{
 					if big.is_empty() {
 						<p class="missing">Not measured yet: run <code>just db-bench</code>.</p>
 					} else {
@@ -60,7 +60,7 @@ DbResults := [].{
 							<p>
 								{"${ExampleApp.count(m.orders)} orders of ${ExampleApp.count(m.customers)} customers, a hundred each, spread over the table, with an index on whose they are: loaded by SQL itself from a count (a recursive query, 100,000 rows to a statement, each its own transaction), then checkpointed, so the reads find them in the database's pages, as an app's older data is (Turso's MVCC has checkpointed as it loaded: its log fills many times over). Then orders fetched one at a time and a hundred at a time (by a range of keys, and by the index), joined to their customers, and summed: the ten customers who spent most, and a sum over every order. ${m.big_runs.to_str()} runs in a row, each making its tables afresh and loading them again, on a file of its own apart from the everyday run's: on Turso's MVCC what that run wrote would slow these reads, though it never touched these tables."}
 							</p>
-							{=DbResults.series("big", m.big_runs, big)}
+							{DbResults.series("big", m.big_runs, big)}
 						</>
 					}
 				}
@@ -95,8 +95,8 @@ DbResults := [].{
 				<div class="buttons">{...shown.map(|n| <label class={"l${n.to_str()}"}><input type="radio" class={"pick p${n.to_str()}"} name={"${id}-runs"} checked?={n == last} />{n.to_str()}</label>)}</div>
 				<label class="skip-label"><input type="checkbox" class="skip" /><span class="box" aria-hidden="true"></span>Leave out the first run</label>
 			</div>
-			{...shown.map(|n| <div class={"view n${n.to_str()}"}>{=DbResults.table(workloads, n, Bool.False)}</div>)}
-			{...shown.drop_if(|n| n == 1).map(|n| <div class={"view n${n.to_str()}s"}>{=DbResults.table(workloads, n, Bool.True)}</div>)}
+			{...shown.map(|n| <div class={"view n${n.to_str()}"}>{DbResults.table(workloads, n, Bool.False)}</div>)}
+			{...shown.drop_if(|n| n == 1).map(|n| <div class={"view n${n.to_str()}s"}>{DbResults.table(workloads, n, Bool.True)}</div>)}
 		</div>
 	}
 
@@ -162,7 +162,7 @@ DbResults := [].{
 			<span class="rate">{it.rate}</span>
 			<svg class="bar" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="4" class="track" /><rect width={DbResults.tenths(share)} height="4" class="fill" /></svg>
 			<span class="per">{"${DbResults.duration(it.avg)}${DbResults.reruns(workload, it.runs)}"}</span>
-			{=spread}
+			{spread}
 		</td>
 	}
 

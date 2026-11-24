@@ -8,5 +8,5 @@ import ../../../../Ui/Listings
 view! = |{ params }|
 	<>
 		<Title>{Authors.name_of(params.author)} · Journal</Title>
-		<NoHydration>{=Listings.author(params.lang, params.author)}</NoHydration>
+		<NoHydration>{Listings.author(params.lang, params.author)}</NoHydration>
 	</>

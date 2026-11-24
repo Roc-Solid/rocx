@@ -13,7 +13,7 @@ view! = |{ meta, children, .. }|
 			<head>
 				<meta charset="utf-8" />
 				<title>{meta.title}</title>
-				{=Styles.style}
+				{Styles.style}
 			</head>
 			<body>
 				<nav><a href="/">Home</a> <a href="/posts/hello">A post</a> <Badge text="e2e" /></nav>

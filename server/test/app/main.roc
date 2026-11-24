@@ -35,9 +35,6 @@ import pf.Tcp
 import pf.Time
 import pf.Html
 import pf.Solid
-import pf.Show
-import pf.Switch
-import pf.Match
 import pf.For
 import pf.Errored
 import pf.Loading
@@ -1820,7 +1817,7 @@ members_only = Middleware.make(
 missing : Context({ name : Str })
 missing = Context.required("Probe.missing")
 
-## Signals, memos, an endpoint read, a keyed <For>, a <Show>, an <Errored> that catches, and
+## Signals, memos, an endpoint read, a keyed <For>, an if's part, an <Errored> that catches, and
 ## attributes of each kind.
 probe! : {} => Html
 probe! = |{}| {
@@ -1847,16 +1844,12 @@ probe! = |{}| {
 					}),
 				],
 			),
-			Show.view!({ when!: || count!() > 100, fallback: Html.element("p", [Html.attr("class", "small")], [Html.text("small")]), children: [Html.text("big")] }),
-			# A <Switch>'s first <Match> that holds, and a keyed <Show> (D-053): a <Show>'s part each.
-			Switch.view!({
-				fallback: Html.text("none"),
-				children: [
-					Match.view!({ when!: || count!() > 100, children: [Html.text("big")] }),
-					Match.view_with!({ when!: || if (count!() > 10) Ok(count!()) else Err(None), children: |n!| Html.element("p", [Html.attr("class", "matched")], [Html.text_of(|| n!().to_str())]) }),
-				],
-			}),
-			Show.view_with_keyed!({ when!: || if (count!() > 10) Ok(count!()) else Err(None), children: |n| Html.element("p", [Html.attr("class", "keyed")], [Html.text(n.to_str())]) }),
+			# What a hole's if writes (D-070): the part its branch makes, the else its other branch.
+			Html.branched(|| Ok(if (count!() > 100) "0" else "1"), || if (count!() > 100) Html.text("big") else Html.element("p", [Html.attr("class", "small")], [Html.text("small")])),
+			# An if with an else if, the part of the first branch that holds; and a part keyed by a value
+			# (the case its text): a part each.
+			Html.branched(|| Ok(if (count!() > 100) "0" else if (count!() > 10) "1" else "2"), || if (count!() > 100) Html.text("big") else if (count!() > 10) Html.element("p", [Html.attr("class", "matched")], [Html.text_of(|| count!().to_str())]) else Html.text("none")),
+			Html.switched(|| if (count!() > 10) Ok(Str.inspect(count!())) else Err(None), || Html.element("p", [Html.attr("class", "keyed")], [Html.text(count!().to_str())]), Html.empty({})),
 			# A store's parts (D-053): read once here, where nothing runs again, and holes all the same.
 			{
 				(store, _) = Solid.create_store!({ name: "ada", n: 41.U64 })
@@ -2047,7 +2040,7 @@ rcdata! = |{}| {
 }
 
 ## A page with a `<NoHydration>`, which the browser never hydrates: static markup between its
-## markers, with none inside (a hole, a `<Show>`, a `<For>`, an `<Errored>` that failed, a component,
+## markers, with none inside (a hole, an `if`'s part, a `<For>`, an `<Errored>` that failed, a component,
 ## one inside another); the GET it reads isn't recorded for the page, the same one read outside it
 ## is.
 region! : {} => Html
@@ -2065,7 +2058,7 @@ region! = |{}| {
 					Html.element("p", [Html.attr("class", "count")], [Html.text_of(|| count!().to_str())]),
 					Html.no_hydration([
 						Html.element("p", [], [Html.text_of(|| count!().to_str()), Html.text(" & "), Html.text_of(|| shout!("quiet"))]),
-						Show.view!({ when!: || count!() > 1, fallback: Html.text("few"), children: [Html.text("many")] }),
+						Html.branched(|| Ok(if (count!() > 1) "0" else "1"), || if (count!() > 1) Html.text("many") else Html.text("few")),
 						Html.element(
 							"ul",
 							[],

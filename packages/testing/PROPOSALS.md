@@ -366,7 +366,7 @@ It needs section 1 for a package's test helpers, section 2 for the clock and stu
 ## 9. Rendering a `view!` component in a test
 
 **Problem.** `Html.to_str` renders markup with nothing to run in it, so an `expect` can render a
-pure component (`view`) and query it (Dom.roc, today). A component with signals, a `<Show>`, a
+pure component (`view`) and query it (Dom.roc, today). A component with signals, an `if`'s part, a
 `<For>` or a server function (`view!`) needs the runtime: `Html.to_str` crashes on it, by design.
 
 **Options.**

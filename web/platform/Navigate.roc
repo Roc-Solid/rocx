@@ -8,7 +8,7 @@ import Router
 ## answers with a 303 to `href` instead, as a redirect met while it renders does (D-019). So a page
 ## can decide where the visitor goes as it renders, which a handler's `Router.navigate!` can't:
 ##
-##     <Show when!={signed_in!()} fallback={<Navigate href={Paths.sign_in} />}>…</Show>
+##     {if signed_in!() { … } else { <Navigate href={Paths.sign_in} /> }}
 ##
 ## A guard that must hold is the server's middleware's: `<Navigate>` is for what the page decides.
 ## This is the browser's; the server platform's is its own (`server/platform/Navigate.roc`).

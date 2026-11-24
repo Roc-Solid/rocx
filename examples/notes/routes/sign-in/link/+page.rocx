@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.Router
 import pf.Server
-import pf.Show
 import pf.Router exposing [use_submission!]
 import ../../../Query
 import ../../../Generated/Api
@@ -21,27 +20,27 @@ view! = |_| {
 	using = use_submission!(Api.post_sign_in_link({}))
 	<main id="main" class="link">
 		<div class="card">
-			<p class="brand">{=Brand.view({})}</p>
-			<Show
-				when!={link!(token).is_ok()}
-				fallback={
-					<div role="alert">
-						<h1>This link has expired</h1>
-						<p>A sign-in link works once, for 15 minutes. This one has been used, or its time is up.</p>
-						<p><a class="button primary" href="/sign-in">Get a new link</a></p>
-					</div>
-				}
-			>
+			<p class="brand">{Brand.view({})}</p>
+			{if link!(token).is_ok() {
 				<form method="post" action={Endpoint.url_of(Api.post_sign_in_link({}))}>
 					<h1>Almost there</h1>
 					<p>Sign in as <strong>{link!(token).map_ok(|found| found.email) ?? ""}</strong>?</p>
 					<input type="hidden" name="token" value={token} />
 					<button type="submit" class="primary" disabled?={using.pending!()}>Sign in</button>
-					<Show when!={using.error!()}>
-						{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-					</Show>
+					{match using.error!() {
+						Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+						Err(_) => <></>
+					}}
 				</form>
-			</Show>
+			} else {
+				
+					<div role="alert">
+						<h1>This link has expired</h1>
+						<p>A sign-in link works once, for 15 minutes. This one has been used, or its time is up.</p>
+						<p><a class="button primary" href="/sign-in">Get a new link</a></p>
+					</div>
+				
+			}}
 		</div>
 	</main>
 }

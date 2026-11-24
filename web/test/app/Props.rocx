@@ -1,13 +1,12 @@
 import pf.Html
-import pf.Show
 import pf.For
 import pf.Solid exposing [create_signal!, create_effect!]
 
 ## Props, for the tests (`props_app.roc`): a value prop read from a signal (D-039: a getter), given to
-## an effectful component in a hole, outside one and inside a `<Show>`; the same signal as an accessor
+## an effectful component in a hole, outside one and inside an `if`; the same signal as an accessor
 ## prop; a component that reads its prop in its body, in a pure lambda, in an effect and in a handler;
 ## one that passes the rest of its props on (`{...rest}`, D-052);
-## and a `<For>` whose rows are made once (untracked). Then what a `<Show>` shows, and fallbacks, made
+## and a `<For>` whose rows are made once (untracked). Then what an `if` shows, and fallbacks, made
 ## when they show, with value props in them. And a property of an element's style from data,
 ## computed (`style:color`), and one whose value would load something, dropped.
 Props := [].{
@@ -23,12 +22,14 @@ Props := [].{
 			<button class="again" on:click={|| set_word!("three")}>Again</button>
 			<button class="toggle" on:click={|| set_open!(!open!())}>Toggle</button>
 			<button class="fill" on:click={|| set_entries!(if (entries!().is_empty()) ["an item"] else [])}>Fill</button>
-			<p class="hole">{=<Shows label={word!()} />}</p>
+			<p class="hole">{<Shows label={word!()} />}</p>
 			<p class="once"><Shows label={word!()} /></p>
 			<p class="getter"><Getter label!={word!()} /></p>
-			<Show when!={!word!().is_empty()}>
+			{if !word!().is_empty() {
 				<p class="shown"><Shows label={word!()} /></p>
-			</Show>
+			} else {
+				<></>
+			}}
 			<Detail label={word!()} />
 			<p class="passed"><Passes label={word!()} kind="passing" /></p>
 			<ul class="rows">
@@ -40,9 +41,11 @@ Props := [].{
 				</For>
 			</ul>
 			<p class="toggled">
-				<Show when!={open!()} fallback={<Shows label={"no ${word!()}"} />}>
+				{if open!() {
 					<Shows label={word!()} />
-				</Show>
+				} else {
+					<Shows label={"no ${word!()}"} />
+				}}
 			</p>
 			<p class="painted" style:color={if (word!() == "one") "rgb(200, 0, 0)" else "rgb(0, 0, 200)"} style:background-image={"url(/x.png)"}>Painted</p>
 			<p class="listed">

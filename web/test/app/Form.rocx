@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Show
 import pf.Endpoint
 import pf.Server
 import pf.Router exposing [use_submission!]
@@ -34,8 +33,8 @@ Form := [].{
 						<button type="submit" disabled?={submission.pending!()}>{if (submission.pending!()) "Joining…" else "Join"}</button>
 					</form>
 					<p class="typed">{typed!()}</p>
-					<Show when!={submission.result!()}>{|welcome!| <p class="welcome">{welcome!()}</p>}</Show>
-					<Show when!={submission.error!()}>{|problem!| <p class="problem">{Server.explain(problem!())}</p>}</Show>
+					{match submission.result!() { Ok(welcome) => <p class="welcome">{welcome}</p>, Err(_) => <></> }}
+					{match submission.error!() { Ok(problem) => <p class="problem">{Server.explain(problem)}</p>, Err(_) => <></> }}
 					<button class="clear" on:click={|| submission.clear!()}>Clear</button>
 				</body>
 			</html>

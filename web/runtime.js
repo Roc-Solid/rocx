@@ -166,6 +166,27 @@ class Errored {
 	}
 }
 
+/** Whether a computation is an `if`'s or `match`'s part picking its branch (D-070), or made by
+ * one as it does (a store's selection its condition read): up to the first component, which reads
+ * for itself. */
+function choosing(computation) {
+	for (let at = computation; at; at = at.owner) {
+		if (at.choosing) return true;
+		if (at.kind === "component") return false;
+	}
+	return false;
+}
+
+/** What D-070's hole shows, when it is text alone (one text node's JSON): that text, else null. */
+function loneText(nodes) {
+	return nodes.length === 1 && nodes[0]?.t === "s" ? nodes[0].v : null;
+}
+
+/** A markup hole's answer as nodes: D-070's hole answers a JSON string while it shows text alone. */
+function answered(parsed) {
+	return typeof parsed === "string" ? [{ t: "s", v: parsed }] : Array.isArray(parsed) ? parsed : [parsed];
+}
+
 /** The DOM between two comments: what a markup or list hole, or a boundary, shows. */
 function makeRange(label) {
 	const start = document.createComment(label);
@@ -1312,7 +1333,9 @@ export class Runtime {
 				this.touch(true);
 				const reader = this.current;
 				if (reader?.making && reader.making.untracked === 0) reader.making.sources.add(this.locationSource);
-				if (reader && (reader.kind === "component" || reader.making?.untracked > 0 || reader.untracked)) this.readOnce?.(reader);
+				// An `if`'s or `match`'s part (D-070) reads its condition again as it is made, to pick its
+				// branch: its case computation follows that read, so it isn't one made once.
+				if (reader && !choosing(reader) && (reader.kind === "component" || reader.making?.untracked > 0 || reader.untracked)) this.readOnce?.(reader);
 				return this.give(this.location());
 			},
 			// `Router.app!` (D-040): the build's id, whether it is a dev build, and the route table.
@@ -2924,9 +2947,9 @@ export class Runtime {
 
 	/**
 	 * A read of the location that won't follow it (`js_location`'s): in a component's body, or in a
-	 * part made once (a `<Show>`'s function child, a `<For>`'s row), it runs once. It is noted on the
-	 * level it is in, the keyed part around it (`scope.level`, which a `<Show>`'s part is made with:
-	 * `Root`'s levels are keyed parts, D-053's `Html.switched`), or on the root (the root layout, the
+	 * part made once (an `if`'s part, a `<For>`'s row), it runs once. It is noted on the level it is
+	 * in, the keyed part around it (`scope.level`, which a route's keyed part is made with: `Root`'s
+	 * levels are D-053's `Html.switched`; an `if`'s part, D-070's, isn't one), or on the root (the root layout, the
 	 * document) when there is none. A level that read it so is made anew when the location changes,
 	 * as if the location were part of its key (§4.3), so it never shows what the last page knew. A
 	 * read inside `untrack!` is one meant once, and isn't noted.
@@ -3403,9 +3426,10 @@ export class Runtime {
 			return;
 		}
 		if (target?.document) return this.settleDocument(computation, JSON.parse(out));
+		// D-070's hole while it shows text alone: patched as a text hole's text.
+		if (kind === "html" && computation.text && !computation.peek && this.settleHoleText(computation, JSON.parse(out))) return;
 		if (kind === "html" || kind === "root") {
-			const parsed = JSON.parse(out);
-			const nodes = Array.isArray(parsed) ? parsed : [parsed];
+			const nodes = answered(JSON.parse(out));
 			if (computation.peek) {
 				// Its first run, before its place is known: built (or adopted) by whoever ran it, once it
 				// knows whether the hole is static.
@@ -3427,6 +3451,41 @@ export class Runtime {
 			for (const node of nodes) fragment.append(this.build(node, computation, computation.scope));
 			replaceRange(target, fragment);
 		}
+	}
+
+	/**
+	 * A run of D-070's hole while it shows text alone (`computation.text`): its text node patched
+	 * (bound, hydrating), true. When it shows markup now, its text's place becomes a range, as a
+	 * markup hole's, and false: the run is a markup hole's from here on.
+	 */
+	settleHoleText(computation, parsed) {
+		const nodes = answered(parsed);
+		const text = computation.target;
+		const value = loneText(nodes);
+		if (value !== null) {
+			if (computation.adopting) {
+				computation.adopting = false;
+				if (text.data !== value) {
+					this.stats.patches++;
+					this.notify("patch", { kind: "text", name: null, node: text });
+					text.data = value;
+				}
+				return true;
+			}
+			if (text.data === value) return true;
+			this.stats.patches++;
+			this.notify("patch", { kind: "text", name: null, node: text });
+			text.data = value;
+			return true;
+		}
+		const start = document.createComment("html");
+		const end = document.createComment("/html");
+		text.before(start);
+		text.after(end);
+		computation.target = { start, end };
+		computation.text = false;
+		computation.adopting = false;
+		return false;
 	}
 
 	failed(computation, failure) {
@@ -3809,13 +3868,16 @@ export class Runtime {
 			this.leave(going, outs);
 		} else this.dispose(computation.part);
 		// What it makes is a level (D-040): a read of the location once, in it, makes it anew (`readOnce`).
-		const level = { ...scope, level: computation };
+		// A level of the page (D-040, a route's keyed part); an `if`'s or `match`'s part (D-070, `"b"`)
+		// belongs to the level around it.
+		const level = node.b ? scope : { ...scope, level: computation };
 		if (holds && node.with) {
 			// A function child: made when it shows, by its own computation (it reads the narrowed value).
 			const made = new Computation(this, { kind: "html", runner: this.kept.get(node.with), owner: null, scope: level, target });
 			made.adopting = adopting;
 			// Made once, as a component is: its holes, and the getters it gives its components, follow.
 			made.untracked = true;
+			made.choosing = Boolean(node.b);
 			computation.part = made;
 			this.run(made);
 		} else computation.part = this.part(holds ? node.c : [node.fallback], level, target, adopting);
@@ -4390,6 +4452,59 @@ export class Runtime {
 				}
 				return range.fragment;
 			}
+			case "hx": {
+				// A hole of either kind (D-070): run first; while it shows text alone, a text node it
+				// patches, as a text hole's; markup, a range, as a markup hole's (and text that turns
+				// into markup later turns into one).
+				const computation = new Computation(this, { kind: "html", runner: this.kept.get(node.r), owner, scope, target: null });
+				computation.hole = true;
+				computation.peek = true;
+				const outcome = this.run(computation);
+				computation.peek = false;
+				const nodes = computation.peeked;
+				computation.peeked = null;
+				const value = nodes ? loneText(nodes) : null;
+				if (this.isStatic(computation, outcome)) {
+					if (value !== null) {
+						// Static (D-052) text, as a text hole's: written once (a patch, as its run would), and
+						// its computation let go of.
+						const text = document.createTextNode("");
+						if (value !== "" && !scope.rcdata) {
+							this.stats.patches++;
+							this.notify("patch", { kind: "text", name: null, node: text });
+						}
+						text.data = value;
+						this.forget(computation, owner);
+						return text;
+					}
+					const fragment = document.createDocumentFragment();
+					for (const child of nodes) fragment.append(this.build(child, computation, scope));
+					return fragment;
+				}
+				if (value !== null) {
+					const text = document.createTextNode("");
+					computation.target = text;
+					computation.text = true;
+					// Inside RCDATA, the text the server wrote whole: not a patch.
+					if (value !== "" && !scope.rcdata) {
+						this.stats.patches++;
+						this.notify("patch", { kind: "text", name: null, node: text });
+					}
+					text.data = value;
+					return text;
+				}
+				const range = makeRange("html");
+				computation.target = range;
+				if (nodes) {
+					this.stats.patches++;
+					this.notify("patch", { kind: "html", name: null, node: range.start.parentNode });
+					this.measure();
+					const fragment = document.createDocumentFragment();
+					for (const child of nodes) fragment.append(this.build(child, computation, scope));
+					range.end.before(fragment);
+				}
+				return range.fragment;
+			}
 			case "f": {
 				const fragment = document.createDocumentFragment();
 				for (const child of node.c) fragment.append(this.build(child, owner, scope));
@@ -4642,6 +4757,49 @@ export class Runtime {
 				cursor.node = end.nextSibling;
 				return;
 			}
+			case "hx": {
+				// A hole of either kind (D-070): what the server wrote says which, `<!--x-->` (text alone)
+				// or `<!--html-->` (markup); a static one is what it shows, without comments.
+				const computation = new Computation(this, { kind: "html", runner: this.kept.get(node.r), owner, scope, target: null });
+				computation.hole = true;
+				computation.peek = true;
+				const outcome = this.run(computation);
+				computation.peek = false;
+				const nodes = computation.peeked;
+				computation.peeked = null;
+				if (this.isStatic(computation, outcome)) {
+					for (const child of nodes) this.adopt(child, computation, scope, cursor);
+					return;
+				}
+				if (cursor.node?.nodeType === 8 && cursor.node.data === "x") {
+					cursor.comment("x");
+					let text = cursor.node?.nodeType === 3 ? cursor.take(() => true, "text") : null;
+					const end = cursor.comment("/x");
+					if (!text) end.before((text = document.createTextNode("")));
+					computation.target = text;
+					computation.text = true;
+					// Waiting (an answer the page didn't carry): its next run binds it, as hydrating.
+					computation.adopting = true;
+					if (nodes) this.settleHoleText(computation, nodes);
+					if (!computation.text) {
+						// Markup, though the server wrote text: its range, as built.
+						const fragment = document.createDocumentFragment();
+						for (const child of nodes) fragment.append(this.build(child, computation, scope));
+						replaceRange(computation.target, fragment);
+					}
+					return;
+				}
+				const start = cursor.comment("html");
+				const end = cursor.closing("html");
+				computation.target = { start, end };
+				if (nodes) {
+					const inside = new Cursor(start.nextSibling);
+					for (const child of nodes) this.adopt(child, computation, scope, inside);
+					inside.end(end);
+				} else computation.adopting = true;
+				cursor.node = end.nextSibling;
+				return;
+			}
 			case "f":
 				for (const child of node.c) this.adopt(child, owner, scope, cursor);
 				return;
@@ -4677,6 +4835,26 @@ export class Runtime {
 			}
 			case "show":
 			case "for": {
+				if (node.t === "show" && !(cursor.node?.nodeType === 8 && cursor.node.data === "show")) {
+					// Static (D-052, D-070): its case read nothing that changes, and the server wrote its part
+					// without comments; the part, adopted where it is, owned by what owns it.
+					const holds = JSON.parse(this.once(node.r, owner, scope));
+					if (!holds) return this.adopt(node.fallback, owner, scope, cursor);
+					if (!node.with) {
+						for (const child of node.c) this.adopt(child, owner, scope, cursor);
+						return;
+					}
+					const made = new Computation(this, { kind: "html", runner: this.kept.get(node.with), owner, scope, target: null });
+					made.untracked = true;
+					made.choosing = Boolean(node.b);
+					made.peek = true;
+					this.run(made);
+					made.peek = false;
+					const nodes = made.peeked ?? [];
+					made.peeked = null;
+					for (const child of nodes) this.adopt(child, made, scope, cursor);
+					return;
+				}
 				const start = cursor.comment(node.t);
 				const end = cursor.closing(node.t);
 				const computation = new Computation(this, { kind: node.t, runner: this.kept.get(node.r), owner, scope, target: { start, end } });
@@ -5477,15 +5655,24 @@ export class Runtime {
 				const inner = (Array.isArray(parsed) ? parsed : [parsed]).map((child) => this.html(child, owner, scope)).join("");
 				return inert ? inner : mark(label, inner);
 			}
+			case "hx": {
+				// A hole of either kind (D-070): a text hole's comments while it shows text alone.
+				const { out, inert } = this.onceInert(node.r, owner, scope);
+				const nodes = answered(JSON.parse(out));
+				const inner = nodes.map((child) => this.html(child, owner, scope)).join("");
+				return inert ? inner : mark(loneText(nodes) === null ? "html" : "x", inner);
+			}
 			case "f":
 				return all(node.c);
 			case "loading":
 				// On the server every read is answered as it is made: nothing waits, and what is inside renders.
 				return mark("loading", all(node.c));
 			case "show": {
-				const holds = JSON.parse(this.once(node.r, owner, scope));
+				// One whose case read nothing that changes is static (D-052, D-070): no comments.
+				const { out, inert } = this.onceInert(node.r, owner, scope);
+				const holds = JSON.parse(out);
 				const shown = !holds ? this.html(node.fallback, owner, scope) : node.with ? this.html(JSON.parse(this.once(node.with, owner, scope)), owner, scope) : all(node.c);
-				return mark("show", shown);
+				return inert ? shown : mark("show", shown);
 			}
 			case "for": {
 				const list = this.lists.get(node.id);

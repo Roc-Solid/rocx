@@ -1,11 +1,10 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
 import pf.For
-import pf.Show
 import pf.Transition
 
-## Transitions, for the tests: a list whose rows fade in and out, the same list with none, and a
-## <Show> whose panel flies in and out (slowly or quickly, as a signal says), with a list in it whose
+## Transitions, for the tests: a list whose rows fade in and out, the same list with none, and an
+## if whose panel flies in and out (slowly or quickly, as a signal says), with a list in it whose
 ## rows take two seconds to go, which they do only when they go alone.
 Fades := [].{
 	view! : {} => Html
@@ -33,7 +32,7 @@ Fades := [].{
 					{|item!, _| <li>{item!()}</li>}
 				</For>
 			</ul>
-			<Show when!={open!()} fallback={<p class="closed" transition:in={Transition.fade}>Closed</p>}>
+			{if open!() {
 				<div class="panel" transition:in={Transition.fly({ x: 0.0, y: 8.0 })} transition:out={if (slow!()) Transition.fly({ x: 0.0, y: 8.0 }).ms(300) else Transition.fade.ms(30)}>
 					<ul class="inner">
 						<For each!={items!()} keyed={|item| item}>
@@ -41,7 +40,9 @@ Fades := [].{
 						</For>
 					</ul>
 				</div>
-			</Show>
+			} else {
+				<p class="closed" transition:in={Transition.fade}>Closed</p>
+			}}
 		</section>
 	}
 }

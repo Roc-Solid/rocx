@@ -194,7 +194,7 @@ view! = |_|
 						{...asked!({}).asked.map(|{ method, path, body, status, answer }|
 							<tr>
 								<td><code>{method} {path}</code></td>
-								<td>{=if (body.is_empty()) Html.text("none") else <code>{body}</code>}</td>
+								<td>{if (body.is_empty()) Html.text("none") else <code>{body}</code>}</td>
 								<td class:refused={status != 200}>{status.to_str()}</td>
 								<td><code>{answer}</code></td>
 							</tr>
@@ -331,7 +331,7 @@ view! = |_|
 			</p>
 			<Code
 				title="rocx"
-				source={"import pf.Router exposing [use_submission!]\n\njoin = Api.post_members_join({})\nsubmission = use_submission!(join)\n<form method=\"post\" action={Endpoint.url_of(join)}>\n\t<input name=\"name\" value={submission.field!(\"name\")} />\n\t<button disabled?={submission.pending!()}>Join</button>\n\t<Show when!={submission.error!()}>{|problem!| <p class=\"problem\">{Server.explain(problem!())}</p>}</Show>\n</form>"}
+				source={"import pf.Router exposing [use_submission!]\n\njoin = Api.post_members_join({})\nsubmission = use_submission!(join)\n<form method=\"post\" action={Endpoint.url_of(join)}>\n\t<input name=\"name\" value={submission.field!(\"name\")} />\n\t<button disabled?={submission.pending!()}>Join</button>\n\t{match submission.error!() { Ok(problem) => <p class=\"problem\">{Server.explain(problem)}</p>, Err(_) => <></> }}\n</form>"}
 				numbers={Bool.False}
 			/>
 			<ul>

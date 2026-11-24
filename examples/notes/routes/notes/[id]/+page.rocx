@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.Title
 import pf.Router exposing [use_submission!]
 import ../../../Middlewares
@@ -33,7 +32,7 @@ Shown := [].{
 		action = Endpoint.url_of(Api.post_notes_id({ id: id }))
 		<div>
 			<Title>{"${first.note.title} · Notes"}</Title>
-			{=Topbar.view({ email: first.email, query: "" })}
+			{Topbar.view({ email: first.email, query: "" })}
 			<main id="main" class="page">
 				<a class="back" href={if (first.note.archived) "/?archived=true" else "/"}>← {if (first.note.archived) "Archive" else "All notes"}</a>
 				<article class="note" aria-labelledby="title">
@@ -42,37 +41,42 @@ Shown := [].{
 						<p class="meta">
 							<span>Edited <time datetime={first.note.updated}>{Note.day(first.note.updated)}</time></span>
 							<span>Written <time datetime={first.note.created}>{Note.day(first.note.created)}</time></span>
-							<Show when!={opened!({}).note.pinned}><span class="badge pin">Pinned</span></Show>
-							<Show when!={opened!({}).note.archived}><span class="badge">Archived</span></Show>
+							{if (opened!({}).note.pinned) <span class="badge pin">Pinned</span> else <></>}
+							{if (opened!({}).note.archived) <span class="badge">Archived</span> else <></>}
 						</p>
 						<ul class="tags" aria-label="Tags">
 							{...first.note.tags.map(|tag| <li><a href={"/?tag=${Server.encode_segment(tag)}"}>{"#${tag}"}</a></li>)}
 						</ul>
 						<div class="actions">
 							<a class="button primary" href={"/notes/${id}/edit"}>Edit</a>
-							<Show when!={!opened!({}).note.archived}>
+							{if !opened!({}).note.archived {
 								<form method="post" action={action}>
 									<input type="hidden" name="action" value={if (opened!({}).note.pinned) "unpin" else "pin"} />
 									<button type="submit" disabled?={acting.pending!()}>{if (opened!({}).note.pinned) "Unpin" else "Pin"}</button>
 								</form>
-							</Show>
+							} else {
+								<></>
+							}}
 							<form method="post" action={action}>
 								<input type="hidden" name="action" value={if (opened!({}).note.archived) "restore" else "archive"} />
 								<button type="submit" disabled?={acting.pending!()}>{if (opened!({}).note.archived) "Restore" else "Archive"}</button>
 							</form>
-							<Show when!={opened!({}).note.archived}>
+							{if opened!({}).note.archived {
 								<form method="post" action={action}>
 									<input type="hidden" name="action" value="delete" />
 									<button type="submit" class="danger" disabled?={acting.pending!()}>Delete for good</button>
 								</form>
-							</Show>
+							} else {
+								<></>
+							}}
 						</div>
-						<Show when!={acting.error!()}>
-							{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-						</Show>
+						{match acting.error!() {
+							Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+							Err(_) => <></>
+						}}
 					</header>
 					<NoHydration>
-						{=Prose.view({ source: if (first.note.body.trim().is_empty()) "*Nothing written yet.*" else first.note.body })}
+						{Prose.view({ source: if (first.note.body.trim().is_empty()) "*Nothing written yet.*" else first.note.body })}
 					</NoHydration>
 				</article>
 			</main>

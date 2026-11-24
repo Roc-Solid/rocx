@@ -4,7 +4,6 @@ import pf.Loading
 import pf.Errored
 import pf.Endpoint
 import pf.Browser
-import pf.Show
 import Api
 import Upstream
 
@@ -39,9 +38,11 @@ Pending := [].{
 			<button class="refresh" on:click={|| refresh!(item!)}>Refresh</button>
 			<button class="next" on:click={|| set_page!(page!() + 1)}>Next</button>
 			<button class="upstream-toggle" on:click={|| set_upstream!(!upstream!())}>Upstream</button>
-			<Show when!={upstream!()}>
+			{if upstream!() {
 				<Upstream />
-			</Show>
+			} else {
+				<></>
+			}}
 		</div>
 	}
 }

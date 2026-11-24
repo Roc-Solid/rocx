@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
 import pf.For
-import pf.Show
 import pf.Transition
 import presence.Stack
 
@@ -32,14 +31,16 @@ AvatarStack := [].{
 						style:--avatar-color={Stack.color_of(face!())}
 						transition={Transition.scale(0.5).plus(Transition.fade)}
 					>
-						{=if (face!().image.is_empty()) <span class="initials" aria-hidden="true">{Stack.initials(face!().name)}</span> else <img src={face!().image} alt="" />}
+						{if (face!().image.is_empty()) <span class="initials" aria-hidden="true">{Stack.initials(face!().name)}</span> else <img src={face!().image} alt="" />}
 					</span>}
 			</For>
-			<Show when!={split!().more > 0}>
+			{if split!().more > 0 {
 				<span class="avatar more" role="img" aria-label={"and ${split!().more.to_str()} more"} title={more_names(faces!(), split!().shown.len())}>
 					+{split!().more.to_str()}
 				</span>
-			</Show>
+			} else {
+				<></>
+			}}
 		</div>
 	}
 

@@ -35,7 +35,7 @@ Editor := [].{
 				</div>
 				<section class="pane preview" id="preview" aria-label="Preview">
 					<p class="label" aria-hidden="true">Preview</p>
-					{=Prose.view({ source: if (draft!().trim().is_empty()) "*Nothing to preview yet.*" else draft!() })}
+					{Prose.view({ source: if (draft!().trim().is_empty()) "*Nothing to preview yet.*" else draft!() })}
 				</section>
 			</div>
 		</div>

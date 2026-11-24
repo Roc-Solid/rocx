@@ -39,7 +39,7 @@ SearchBox := [].{
 			<p class="count" role="status">{said!()}</p>
 			<ol class="results">
 				<For each!={found!()} keyed={|post| post.url}>
-					{|post!, _| <li>{=<PostCard post={post!()} lang={lang} marked={query!()} />}</li>}
+					{|post!, _| <li>{<PostCard post={post!()} lang={lang} marked={query!()} />}</li>}
 				</For>
 			</ol>
 		</div>

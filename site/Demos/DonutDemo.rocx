@@ -15,7 +15,7 @@ DonutDemo := [].{
 		(project!, set_project!) = create_signal!(DonutDemo.project(16))
 		(look!, set_look!) = create_signal!(Shuffle.first)
 		<Shuffle roll!={|| set_project!(DonutDemo.project(project!().seed))} look!={look!} set_look!={set_look!}>
-			{=<DonutChart data!={project!().lines} label="A project's lines of code, by language" format={Format.short} total="lines" thickness={Shuffle.pick(look!(), 52.0, 24.0, 150.0)} />}
+			{<DonutChart data!={project!().lines} label="A project's lines of code, by language" format={Format.short} total="lines" thickness={Shuffle.pick(look!(), 52.0, 24.0, 150.0)} />}
 		</Shuffle>
 	}
 

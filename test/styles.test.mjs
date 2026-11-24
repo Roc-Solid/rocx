@@ -110,7 +110,7 @@ test("styles: a component's <style> goes, its lines kept, and each element in it
 	const lines = code.split("\n");
 	assert.equal(lines[5], `\t\tHtml.element("div", [Html.attr("class", "counter ${scope}"), Html.class_of("negative", || start!() < 0),], [`);
 	assert.equal(lines[6], '\t\t\tHtml.component(|| Heading.view!({ text: || "Count", })), Html.text(" "),', "a component it renders has its own file's styles");
-	assert.equal(lines[7], `\t\t\tHtml.element("output", [Html.attr_of("class", || Str.concat(if (start!() > 9) "big" else "", " ${scope}")),], [Html.text_of(|| start!().to_str()),]), Html.text(" "),`);
+	assert.equal(lines[7], `\t\t\tHtml.element("output", [Html.attr_of("class", || Str.concat(if (start!() > 9) "big" else "", " ${scope}")),], [Html.hole_of(|| Html.hole(start!().to_str())),]), Html.text(" "),`);
 	assert.equal(lines[8], '\t\t\tHtml.element("style", [], [Html.source_text("p { color: red }"),]),', "a <style> in markup is as written");
 	assert.deepEqual(lines.slice(11, 15), ["", "", "", "}"], "the <style>'s lines, blank");
 	assert.deepEqual(styles, [{ css: `.counter.${scope} { display: flex }`, line: 12, component: "Counter" }]);
@@ -150,7 +150,7 @@ test("styles: several components in a file, each with its own <style>; a tag cal
 	const lines = code.split("\n");
 	assert.equal(lines[4], '\t\tHtml.element("section", [], [', "a component with no <style> is as it was");
 	assert.equal(lines[5], "\t\t\tHtml.component(|| Stepper.view!({ start: || 1, })), Html.text(\" \"),");
-	assert.equal(lines[11], `\tview! = |{ start: start! }| Html.element("div", [Html.attr("class", "counter ${stepper}"),], [Html.text_of(|| start!().to_str()),])`);
+	assert.equal(lines[11], `\tview! = |{ start: start! }| Html.element("div", [Html.attr("class", "counter ${stepper}"),], [Html.hole_of(|| Html.hole(start!().to_str())),])`);
 	assert.equal(lines[19], `\tview! = |{ start: start! }| Html.element("div", [Html.attr("class", "counter ${slider}"),], [Html.void("input", [Html.attr("type", "range"), Html.attr("class", "${slider}"),]),])`);
 	assert.deepEqual(styles, [
 		{ css: `.counter.${stepper} { display: flex }`, line: 14, component: "Stepper" },

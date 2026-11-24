@@ -6,7 +6,7 @@ import Html
 ## (D-019: the first one the render meets); in the browser it navigates there after the flush that
 ## rendered it, replacing the history entry (`web/platform/Navigate.roc`, the browser's own).
 ##
-##     <Show when!={signed_in!()} fallback={<Navigate href={Paths.sign_in} />}>…</Show>
+##     {if signed_in!() { … } else { <Navigate href={Paths.sign_in} /> }}
 ##
 ## A guard that must hold is the server's middleware's: `<Navigate>` is for what the page decides.
 Navigate := [].{

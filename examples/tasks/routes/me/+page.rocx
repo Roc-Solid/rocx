@@ -4,7 +4,6 @@ import pf.Router exposing [use_submission!]
 import pf.Endpoint
 import pf.Server
 import pf.For
-import pf.Show
 import ../../Tasks
 import ../../Generated/Api
 import ../../components/Avatar
@@ -30,20 +29,23 @@ view! = |_| {
 					{|person!, _|
 						<label class="person">
 							<input type="radio" name="person" value={person!().id} checked?={team!().me == person!().id} required />
-							{=Avatar.view({ name: person!().name })}
+							{Avatar.view({ name: person!().name })}
 							<span>{person!().name}</span>
 						</label>
 					}
 				</For>
 			</fieldset>
-			<Show when!={sent.error!()}>
-				{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-			</Show>
+			{match sent.error!() {
+				Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+				Err(_) => <></>
+			}}
 			<div class="actions">
 				<button type="submit" class="primary">That's me</button>
-				<Show when!={!team!().me.is_empty()}>
+				{if !team!().me.is_empty() {
 					<button type="submit" name="person" value="" formnovalidate>I'd rather not say</button>
-				</Show>
+				} else {
+					<></>
+				}}
 			</div>
 		</form>
 	</section>

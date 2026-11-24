@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, untrack!]
 import pf.For
-import pf.Show
 import charts.Ease
 import charts.Format
 import charts.Path
@@ -95,9 +94,11 @@ LineChart := [].{
 				</For>
 			</div>
 			{# Frames only while something moves: once the line and the axis are where the data says, none. }
-			<Show when!={drawn!() != goal!()}>
+			{if drawn!() != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(LineChart.glide(drawn!(), goal!(), ms))}></span>
-			</Show>
+			} else {
+				<></>
+			}}
 		</figure>
 	}
 

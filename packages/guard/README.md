@@ -237,7 +237,7 @@ flags! = |{}| Endpoint.get!(Api.get_flags({}))
 | `fallback : Html` | what shows when it is off (nothing, unless given) |
 | children | what shows when it is on |
 
-`Flags.enabled(values, name)` reads one where a `<Show>` reads better.
+`Flags.enabled(values, name)` reads one where an `if` reads better (`{if Flags.enabled(flags, "beta") { … } else { … }}`).
 
 ## Other guards
 

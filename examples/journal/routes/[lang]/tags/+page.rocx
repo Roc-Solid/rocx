@@ -7,5 +7,5 @@ import ../../../Ui/Listings
 view! = |{ params }|
 	<>
 		<Title>{I18n.t(params.lang, "tags.title")} · Journal</Title>
-		<NoHydration>{=Listings.tags(params.lang)}</NoHydration>
+		<NoHydration>{Listings.tags(params.lang)}</NoHydration>
 	</>

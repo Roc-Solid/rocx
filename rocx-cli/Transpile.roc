@@ -11,6 +11,7 @@ import Text
 import Value
 import Styles
 import Getters
+import Flow
 
 Transpile := [].{
 
@@ -69,8 +70,6 @@ Transpile := [].{
 		# Where a lambda starts that is known to be an effect's (a handler's, a function child's).
 		effectful_at : List(U64),
 		warnings : List({ reason : Str, at : U64 }),
-		# Whether the markup being read is a `<Switch>`'s child, where a `<Match>` may be (D-053).
-		in_switch : Bool,
 	}
 
 	## A closure being read, for a prop's reads (D-039). An effectful one (a hole's, an attribute's, a
@@ -681,7 +680,7 @@ Transpile := [].{
 
 	## A transpiler at the start of the file.
 	fresh : St
-	fresh = { pos: 0, styles: [], stories: [], preformatted: 0, spans: [], effects: 0, regions: 0, in_region: 0, closed: [], next_block: 0, frames: [], effectful_at: [], warnings: [], in_switch: Bool.False }
+	fresh = { pos: 0, styles: [], stories: [], preformatted: 0, spans: [], effects: 0, regions: 0, in_region: 0, closed: [], next_block: 0, frames: [], effectful_at: [], warnings: [] }
 
 	## Items of a Roc list or record, separated by commas, with newlines where the source had them.
 	render_items : List(Part) -> Str
@@ -721,15 +720,6 @@ Transpile := [].{
 		match part {
 			Fn(_) => Bool.True
 			_ => Bool.False
-		}
-
-	## A `<Switch>`'s child that may be there (D-053): a `<Match>`, a line, or the spaces between two.
-	is_case : Part -> Bool
-	is_case = |part|
-		match part {
-			Item(text) => text.starts_with("Match.view") or text == "Html.text(\" \")"
-			Line(_) => Bool.True
-			Fn(_) => Bool.False
 		}
 
 	is_line : Part -> Bool
@@ -1197,7 +1187,7 @@ Transpile := [].{
 				# that may be pure, which can't call a prop's getter.
 				params_end = if (Text.at(src, pos + 1) == '|') pos + 2 else Getters.top_level(src, pos + 1, src.len(), ['|']) + 1
 				params = Text.slice(src, pos, params_end)
-				match cfg.getters.find_first(|v| v.from <= pos and pos < v.to) {
+				match Transpile.view_at(cfg, pos) {
 					Ok(view) =>
 						match view.props.find_first(|prop| Transpile.binds(params, prop)) {
 							Ok(prop) => return Err(Transpile.fail(cfg, "${prop} is a prop of this component, which rocx reads through its getter (D-039): give this parameter another name", pos))
@@ -1281,7 +1271,7 @@ Transpile := [].{
 					if word == "server!" and Text.at(src, end) == '(' {
 						return Err(Transpile.fail(cfg, "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.get_…(params))", pos))
 					}
-					in_view = cfg.getters.find_first(|v| v.from <= pos and pos < v.to)
+					in_view = Transpile.view_at(cfg, pos)
 					read =
 						match in_view {
 							Ok(view) => Transpile.prop_at(cfg, view, pos, end, word, $last, $open)?
@@ -1788,6 +1778,10 @@ Transpile := [].{
 		# of its own when one is read from what changes; any other, getters, unless it is a function of
 		# this file's that the file also calls (values then, and the call a hole).
 		packaged = component and cfg.packaged.contains(name)
+		# D-070: `<Show>`, `<Switch>` and `<Match>` are gone; a hole's `if` and `match` are what they were.
+		if component and ["Show", "Switch", "Match"].contains(name) and !cfg.modules.contains(name) and !cfg.fns.contains(name) and !cfg.plain_fns.contains(name) {
+			return Err(Transpile.fail(cfg, "<${name}> is gone (D-070): write a hole's if or match, which makes only the branch that holds and keeps it while it does: {if (ready!()) <p>Ready</p> else <p>Waiting</p>}, {match card!() { Ok(card) => <Card card={card} />, Err(_) => <></> }}", start))
+		}
 		provider = component and Transpile.lookup(cfg.contexts, name) != None
 		pure = component and cfg.pure.contains(name)
 		own_fn = component and !cfg.modules.contains(name)
@@ -1814,13 +1808,7 @@ Transpile := [].{
 			return Transpile.read_provider(cfg, st1, name, attrs, start)
 		}
 		if component {
-			# `<Switch>` and `<Match>` (D-053): a `<Match>` is a case of a `<Switch>`, and a `<Switch>` holds
-			# nothing else.
-			controls = packaged and (name == "Show" or name == "Match")
-			if name == "Match" and packaged and !st0.in_switch {
-				return Err(Transpile.fail(cfg, "<Match> is a case of a <Switch>: put it inside one (or write <Show when!={…}>)", start))
-			}
-			# A function child (Solid's `<For>`, `<Show>`): `view_with`, given the function as `children`.
+			# A function child (Solid's `<For>`): `view_with`, given the function as `children`.
 			var $fields = attrs
 			var $suffix = ""
 			var $st = st1
@@ -1828,9 +1816,6 @@ Transpile := [].{
 				inside = Transpile.read_children(cfg, $st, name, start)?
 				$st = inside.st
 				if inside.parts.any(Transpile.is_fn) {
-					if name == "Switch" and packaged {
-						return Err(Transpile.fail(cfg, "<Switch> holds <Match>es only: a function child goes in a <Match>", start))
-					}
 					if inside.parts.drop_if(Transpile.is_line).len() > 1 {
 						return Err(Transpile.fail(cfg, "<${name}>'s function child must be its only child", start))
 					}
@@ -1845,9 +1830,6 @@ Transpile := [].{
 						),
 					)
 				} else if inside.parts.any(|part| !Transpile.is_line(part)) {
-					if name == "Switch" and packaged and !inside.parts.all(Transpile.is_case) {
-						return Err(Transpile.fail(cfg, "<Switch> holds <Match>es only: put what else is here inside a <Match>, or in its fallback={…}", start))
-					}
 					$fields = $fields.append(Item("children: [${Transpile.render_items(inside.parts)}]"))
 				} else {
 					$fields = $fields.concat(inside.parts)
@@ -1871,18 +1853,7 @@ Transpile := [].{
 							_ => ""
 						}
 					without = $fields.take_first(at).concat($fields.drop_first(at + 1))
-					if controls {
-						# `<Show keyed>`, `<Match keyed>` (Solid 2.0's): made anew when the value changes. Roc's
-						# values have no identity: the value itself is the key.
-						if value == "Bool.True" or value == "true" {
-							$suffix = $suffix.concat("_keyed")
-							$fields = without
-						} else if value == "Bool.False" or value == "false" {
-							$fields = without
-						} else {
-							return Err(Transpile.fail(cfg, "<${name}>'s keyed is a flag: write keyed (made anew each time the value changes) or leave it out; the value itself is the key, as Roc's values have no identity", start))
-						}
-					} else if value == "Bool.False" or value == "false" {
+					if value == "Bool.False" or value == "false" {
 						$suffix = $suffix.concat("_unkeyed")
 						$fields = without
 					} else if value == "Bool.True" or value == "true" {
@@ -1940,7 +1911,7 @@ Transpile := [].{
 				}
 			# A component runs where it is rendered, and once, as in Solid, so it sees the contexts
 			# provided above that place: its call is put off (`Html.component`), and its value props are
-			# getters, read where it reads them (D-039). A platform's (`<Show>`, `<For>`…) is markup, made
+			# getters, read where it reads them (D-039). A platform's (`<For>`, `<Loading>`…) is markup, made
 			# now, and so is a pure one's: given a value read from what changes, that call is a hole of
 			# its own, made anew when the value changes. So is a function of this file's that the file
 			# also calls, which keeps values.
@@ -2377,7 +2348,7 @@ Transpile := [].{
 			return Err(Transpile.fail(cfg, "<${tag}> takes its props as they are written: {...${expr}} passes a component's getters on (D-052), to a component written in rocx (view!)", pos))
 		}
 		fields =
-			match cfg.getters.find_first(|v| v.from <= pos and pos < v.to) {
+			match Transpile.view_at(cfg, pos) {
 				Ok(view) if view.record == Some(expr) => view.all
 				_ => []
 			}
@@ -2598,9 +2569,9 @@ Transpile := [].{
 						$parts = flushed(Bool.False)?
 						$has_text = Bool.False
 						$said = []
-						markup = Transpile.read_markup(cfg, { ..$st, in_switch: tag == "Switch" and cfg.packaged.contains("Switch") })?
+						markup = Transpile.read_markup(cfg, $st)?
 						$parts = $parts.append(Item(markup.out))
-						$st = { ..markup.st, in_switch: $st.in_switch }
+						$st = markup.st
 						$text_start = $st.pos
 					} else if c == '{' {
 						$parts = flushed(Bool.False)?
@@ -2702,19 +2673,212 @@ Transpile := [].{
 		if kind.name == "text" and trimmed.starts_with("|") {
 			return Ok({ st: st1, parts: [Fn(expr)] })
 		}
+		# An `if` or a `match` that reads what changes: its branch's part (D-070).
+		if kind.name != "list" and st1.effects > st0.effects {
+			spans = inner.st.spans.keep_if(|span| span.from >= code_at and span.to <= inner.st.pos).map(|span| { from: span.from, to: span.to })
+			flowed = Transpile.read_flow(cfg, Transpile.opened({ ..marked, pos: code_at }, Bool.False), start + 1 + kind.skip, inner.st.pos, spans)?
+			match flowed {
+				Flowed(done) => return Ok({ st: { ..done.st, pos: inner.st.pos + 1, frames: done.st.frames.drop_last(1) }, parts: [Item(done.out)] })
+				Plain => {}
+			}
+		}
 		# A hole that calls something named with `!` is a computation; one that calls nothing so named
-		# can't change after its component ran, as in Solid: static, written once.
+		# can't change after its component ran, as in Solid: static, written once. `{x}` and `{=x}`
+		# are one hole (D-070): text, a number or markup, as the compiler finds `x`'s type
+		# (`Html.hole`); `{...x}` a list of markup.
 		out =
-			if st1.effects > st0.effects {
-				"Html.${kind.name}_of(|| ${expr})"
-			} else if kind.name == "text" {
-				"Html.text(${expr})"
-			} else if kind.name == "list" {
-				"Html.join(${expr})"
+			if kind.name == "list" {
+				if (st1.effects > st0.effects) "Html.list_of(|| ${expr})" else "Html.join(${expr})"
+			} else if st1.effects > st0.effects {
+				"Html.hole_of(|| Html.hole(${expr}))"
 			} else {
-				"(${expr})"
+				"Html.hole(${expr})"
 			}
 		Ok({ st: st1, parts: [Item(out)] })
+	}
+
+	## D-070: a hole whose code is an `if` (its `else if`s too) or a `match`, whose conditions or
+	## value read what changes, is the part its branch makes (`Html.branched`, as Solid's `<Show>` and
+	## `<Switch>`): made when it holds, once, as a component is, and made again only when another
+	## branch does, not each time what the conditions read changes. Each branch is a hole of its own,
+	## so what it reads itself still follows. A `match` arm's names are getters (D-039's, read where
+	## the arm's code reads them), so the arm stays while its value changes. `Plain` for any other
+	## hole, and for one whose conditions read nothing that changes (run once, as before).
+	read_flow : Cfg, St, U64, U64, List(Flow.Piece) -> Try([Flowed({ st : St, out : Str }), Plain], [Rocx(RocxError), Crash(Str)])
+	read_flow = |cfg, st0, from, to, spans|
+		match Flow.chain(cfg.src, from, to, spans) {
+			Ok(chain) => Transpile.read_chain(cfg, st0, from, to, chain, spans)
+			Err(NotFlow) =>
+				match Flow.arms(cfg.src, from, to, spans) {
+					Ok(found) => Transpile.read_arms(cfg, st0, from, to, found, spans)
+					Err(NotFlow) => Ok(Plain)
+				}
+		}
+
+	## The view whose body `pos` is in (D-039): the innermost, a match arm's (D-070) inside its component's.
+	view_at : Cfg, U64 -> Try(Getters.View, [NotFound])
+	view_at = |cfg, pos|
+		cfg.getters.fold(
+			Err(NotFound),
+			|found, view|
+				if view.from <= pos and pos < view.to {
+					match found {
+						Ok(outer) if outer.from > view.from => found
+						_ => Ok(view)
+					}
+				} else {
+					found
+				},
+		)
+
+	## Whether a piece is a string literal and nothing else (`"settled"`, `"${n} left"`).
+	is_text_literal : List(U8), Flow.Piece -> Bool
+	is_text_literal = |src, piece| {
+		at = Text.skip_space(src, piece.from)
+		at < piece.to and Text.at(src, at) == '"' and Text.is_blank(Text.cut(src, Flow.string_end(src, at, piece.to), piece.to))
+	}
+
+	## A piece of a hole's code read on its own: what it is, and whether it reads what changes.
+	read_piece : Cfg, St, Flow.Piece -> Try({ st : St, out : Str, reads : Bool }, [Rocx(RocxError), Crash(Str)])
+	read_piece = |cfg, st, piece| {
+		read = Transpile.read_code({ ..cfg, src: Text.slice(cfg.src, 0, piece.to) }, { ..st, pos: piece.from }, Bool.False)?
+		Ok({ st: { ..read.st, pos: piece.to }, out: read.out, reads: read.st.effects > st.effects })
+	}
+
+	## A branch: a hole of its own (`Html.hole_of`, or `Html.hole` when it reads nothing that
+	## changes), or, when it is an `if` or a `match` of its own that reads, that one's part.
+	read_branch : Cfg, St, Flow.Piece, List(Flow.Piece) -> Try({ st : St, out : Str }, [Rocx(RocxError), Crash(Str)])
+	read_branch = |cfg, st, piece, spans| {
+		read = Transpile.read_piece(cfg, st, piece)?
+		if read.reads {
+			inside = spans.keep_if(|span| span.from >= piece.from and span.to <= piece.to)
+			match Transpile.read_flow(cfg, st, piece.from, piece.to, inside)? {
+				Flowed(done) => return Ok({ st: { ..done.st, pos: piece.to }, out: done.out })
+				Plain => {}
+			}
+		}
+		Ok({ st: read.st, out: if (read.reads) "Html.hole_of(|| Html.hole(${read.out}))" else "Html.hole(${read.out})" })
+	}
+
+	## The source's line ends from `from` up to `to`, as they are, and then the indentation of the
+	## line `to` is on: what keeps a piece's lines, and where they start, when what is between pieces
+	## is written otherwise (a line at a definition's place would read as one).
+	newlines_in : List(U8), U64, U64 -> Str
+	newlines_in = |src, from, to| {
+		count = Text.newlines(src, from, to)
+		if count == 0 {
+			""
+		} else {
+			start = Text.line_start(src, to)
+			"\n".repeat(count).concat(Text.cut(src, start, Text.run_end(src, start, |c| c == ' ' or c == '\t')))
+		}
+	}
+
+	## Code on one line, written again where it isn't (a condition in the part's case): not when it
+	## has a comment, which would hide what follows.
+	one_line : Str -> Try(Str, [HasComment])
+	one_line = |code| if (code.contains("#")) Err(HasComment) else Ok(code.replace_each("\n", " "))
+
+	read_chain : Cfg, St, U64, U64, Flow.Chain, List(Flow.Piece) -> Try([Flowed({ st : St, out : Str }), Plain], [Rocx(RocxError), Crash(Str)])
+	read_chain = |cfg, st0, from, to, chain, spans| {
+		src = cfg.src
+		# Text in each branch (`"refreshing"`, `"settled"`): a text hole, patched, as before.
+		if chain.branches.map(|branch| branch.body).append(chain.otherwise).all(|piece| Transpile.is_text_literal(src, piece)) {
+			return Ok(Plain)
+		}
+		var $st = st0
+		var $reads = Bool.False
+		var $case = ""
+		var $made = ""
+		var $at = from
+		var $index = 0.U64
+		for branch in chain.branches {
+			read = Transpile.read_piece(cfg, $st, branch.condition)?
+			$st = read.st
+			$reads = $reads or read.reads
+			condition = if (branch.parens) read.out else "(${read.out})"
+			$case =
+				match Transpile.one_line(condition) {
+					Ok(line) => $case.concat("if ${line} \"${$index.to_str()}\" else ")
+					Err(_) => return Ok(Plain)
+				}
+			body = Transpile.read_branch(cfg, $st, branch.body, spans)?
+			$st = body.st
+			$made = $made.concat(Transpile.newlines_in(src, $at, branch.condition.from)).concat("if ${condition} ").concat(Transpile.newlines_in(src, branch.condition.to, branch.body.from)).concat(body.out).concat(" else ")
+			$at = branch.body.to
+			$index = $index + 1
+		}
+		if !$reads {
+			return Ok(Plain)
+		}
+		last = Transpile.read_branch(cfg, $st, chain.otherwise, spans)?
+		made = $made.concat(Transpile.newlines_in(src, $at, chain.otherwise.from)).concat(last.out).concat(Transpile.newlines_in(src, chain.otherwise.to, to))
+		case = $case.concat("\"${$index.to_str()}\"")
+		Ok(Flowed({ st: last.st, out: "Html.branched(|| Ok(${case}), || ${made})" }))
+	}
+
+	read_arms : Cfg, St, U64, U64, Flow.Arms, List(Flow.Piece) -> Try([Flowed({ st : St, out : Str }), Plain], [Rocx(RocxError), Crash(Str)])
+	read_arms = |cfg, st0, from, to, found, spans| {
+		src = cfg.src
+		if found.arms.all(|arm| Transpile.is_text_literal(src, arm.body)) {
+			return Ok(Plain)
+		}
+		read = Transpile.read_piece(cfg, st0, found.value)?
+		value =
+			match Transpile.one_line(read.out) {
+				Ok(line) if read.reads => line
+				_ => return Ok(Plain)
+			}
+		var $st = read.st
+		var $cases = []
+		var $made = Transpile.newlines_in(src, from, found.value.from).concat("match ${read.out}")
+		var $at = found.value.to
+		var $index = 0.U64
+		for arm in found.arms {
+			pattern_text = Text.trim(Text.cut(src, arm.pattern.from, arm.pattern.to))
+			names = Flow.bindings(pattern_text).map(|binding| binding.name)
+			(guard, guard_names) =
+				match arm.guard {
+					Guard(piece) => {
+						g = Transpile.read_piece(cfg, $st, piece)?
+						$st = g.st
+						match Transpile.one_line(g.out) {
+							Ok(line) => (" if ${line}", Flow.used_in(Text.cut(src, piece.from, piece.to), names))
+							Err(_) => return Ok(Plain)
+						}
+					}
+					NoGuard => ("", [])
+				}
+			pattern = Transpile.one_line(Flow.keeping(pattern_text, guard_names)) ?? return Ok(Plain)
+			$cases = $cases.append("${pattern}${guard} => \"${$index.to_str()}\"")
+			# The arm's code, its names read through getters, as a component's props are (D-039).
+			# Inside a component, its own props are still read through theirs.
+			view =
+				match Transpile.view_at(cfg, arm.body.from) {
+					Ok(outer) => { ..outer, from: arm.body.from, to: arm.body.to, props: outer.props.keep_if(|prop| !names.contains(prop)).concat(names) }
+					Err(_) => { from: arm.body.from, to: arm.body.to, props: names, record: None, fields: [], all: [] }
+				}
+			body = Transpile.read_branch({ ..cfg, getters: cfg.getters.append(view) }, $st, arm.body, spans)?
+			$st = body.st
+			used = names.keep_if(|name| body.out.contains("${name}!"))
+			irrefutable = Text.trim(Flow.keeping(pattern_text, [])) == "_" and guard == ""
+			getters = used.map(
+				|name| {
+					binding = Transpile.one_line(Flow.keeping(pattern_text, guard_names.append(name))) ?? pattern
+					gone = if (irrefutable) "" else ", _ => Html.unmatched!(\"${name} is read after its match arm stopped matching\")"
+					"|| match ${value} { ${binding}${guard} => ${name}${gone} }"
+				},
+			)
+			code = if (used.is_empty()) body.out else "(|${Str.join_with(used.map(|name| "${name}!"), ", ")}| ${body.out})(${Str.join_with(getters, ", ")})"
+			between = Transpile.newlines_in(src, $at, arm.pattern.from)
+			separator = if ($index > 0 and between == "") ", " else ""
+			$made = $made.concat(if ($index == 0) " {" else "").concat(separator).concat(between).concat("${pattern}${guard} => ").concat(Transpile.newlines_in(src, arm.pattern.from, arm.body.from)).concat(code)
+			$at = arm.body.to
+			$index = $index + 1
+		}
+		made = $made.concat(Transpile.newlines_in(src, $at, to)).concat(" }")
+		case = "match ${value} { ${Str.join_with($cases, ", ")} }"
+		Ok(Flowed({ st: $st, out: "Html.branched(|| Ok(${case}), || ${made})" }))
 	}
 
 	## A <script> or <style> body: static, as written, its lines kept as lines.

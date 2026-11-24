@@ -248,7 +248,7 @@ view! = |_|
 			<p>
 				<code>{"<FlagsContext value={…}>"}</code> provides the flags to every <code>{"<Flagged>"}</code>
 				under it, and needs <code>import pf.Context</code>. Where nothing provides them, every flag is
-				off. <code>Flags.enabled(values, name)</code> reads one flag where a <code>{"<Show>"}</code> reads
+				off. <code>Flags.enabled(values, name)</code> reads one flag where an <code>if</code> reads
 				better.
 			</p>
 

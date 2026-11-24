@@ -17,7 +17,7 @@ NotFound := [].{
 			<p class="code" aria-hidden="true">{status.to_str()}</p>
 			<h1 id="missing-title">{intl.t(if (missing) "notfound.title" else "failed.title", [])}</h1>
 			<p>{intl.t(if (missing) "notfound.text" else "failed.text", [])}</p>
-			{=if (missing or problem.is_empty()) <></> else <p class="problem"><code>{problem}</code></p>}
+			{if (missing or problem.is_empty()) <></> else <p class="problem"><code>{problem}</code></p>}
 			<p><a href={Paths.lang({ lang: lang })}>{intl.t("notfound.home", [])}</a> · <a href={Paths.lang_search({ lang: lang })}>{intl.t("nav.search", [])}</a></p>
 		</section>
 	}

@@ -112,8 +112,8 @@ test("formatting keeps a space on a tag's line, and a line break next to one, as
 	].join("\n");
 	const formatted = format(written);
 	assert.notEqual(formatted, written, "the code around the markup was formatted");
-	const texts = (source) => transpileModule(source, "Page.rocx").code.match(/Html\.text\([^)]*\)/g);
-	assert.deepEqual(texts(formatted), ['Html.text("Note: ")', 'Html.text("a space on the tag\'s line stays.")', 'Html.text(" ")', 'Html.text(" and one after ")', "Html.text(name)", 'Html.text(" too ")']);
+	const texts = (source) => transpileModule(source, "Page.rocx").code.match(/Html\.(?:text|hole)\([^)]*\)/g);
+	assert.deepEqual(texts(formatted), ['Html.text("Note: ")', 'Html.text("a space on the tag\'s line stays.")', 'Html.text(" ")', 'Html.text(" and one after ")', "Html.hole(name)", 'Html.text(" too ")']);
 	assert.deepEqual(texts(formatted), texts(written));
 });
 

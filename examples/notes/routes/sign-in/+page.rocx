@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.Router
 import pf.Server
-import pf.Show
 import pf.Router exposing [use_submission!]
 import ../../Query
 import ../../Generated/Api
@@ -18,10 +17,15 @@ view! = |_| {
 	sending = use_submission!(Api.post_sign_in({}))
 	<main id="main" class="sign-in">
 		<div class="card">
-			<p class="brand">{=Brand.view({})}</p>
-			<Show
-				when!={sending.result!()}
-				fallback={
+			<p class="brand">{Brand.view({})}</p>
+			{match sending.result!() {
+				Ok(sent) =>
+					<div class="sent" role="status">
+						<h1>Check your inbox</h1>
+						<p>We sent a sign-in link to <strong>{sent.sent}</strong>. It works once, for the next 15 minutes.</p>
+						<p class="small">Running the app yourself? With <code>--dev</code> and no mail server, it lands in the dev mailbox: <a href="/__rocx/mail">/__rocx/mail</a>.</p>
+					</div>
+				Err(_) => 
 					<form method="post" action={Endpoint.url_of(Api.post_sign_in({}))}>
 						<h1>Sign in</h1>
 						<p class="lead">Your notes, in Markdown, searchable, and yours alone. We'll email you a link: no password to remember.</p>
@@ -29,20 +33,13 @@ view! = |_| {
 						<label for="email">Email address</label>
 						<input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" value={sending.field!("email")} />
 						<button type="submit" class="primary" disabled?={sending.pending!()}>{if (sending.pending!()) "Sending…" else "Email me a link"}</button>
-						<Show when!={sending.error!()}>
-							{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-						</Show>
+						{match sending.error!() {
+							Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+							Err(_) => <></>
+						}}
 					</form>
-				}
-			>
-				{|sent!|
-					<div class="sent" role="status">
-						<h1>Check your inbox</h1>
-						<p>We sent a sign-in link to <strong>{sent!().sent}</strong>. It works once, for the next 15 minutes.</p>
-						<p class="small">Running the app yourself? With <code>--dev</code> and no mail server, it lands in the dev mailbox: <a href="/__rocx/mail">/__rocx/mail</a>.</p>
-					</div>
-				}
-			</Show>
+				
+			}}
 		</div>
 	</main>
 }

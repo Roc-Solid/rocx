@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!]
 import pf.Router exposing [use_action!, use_submissions!]
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.For
 import ../I18n
 import ../Reaction
@@ -36,8 +35,8 @@ ReactionBar := [].{
 		)
 		# Shown once the server's counts are in: a post that isn't there has none, and nothing shows.
 		# The child gets an accessor of the counts (`tally!`), and holds a <For> of its own.
-		<Show when!={shown!()}>
-			{|tally!|
+		<>{match shown!() {
+			Ok(tally) =>
 				<section class="reactions" aria-labelledby="reactions-title">
 					<h2 class="title" id="reactions-title">{intl.t("react.lead", [])}</h2>
 					<ul class="kinds" aria-label={intl.t("react.label", [])}>
@@ -46,17 +45,17 @@ ReactionBar := [].{
 								<li>
 									<form method="post" action={Endpoint.url_of(sender)}>
 										<input type="hidden" name="kind" value={kind!().id} />
-										<input type="hidden" name="on" value={if (Reaction.given(tally!(), kind!().id)) "false" else "true"} />
+										<input type="hidden" name="on" value={if (Reaction.given(tally, kind!().id)) "false" else "true"} />
 										<button
 											type="submit"
 											class="kind"
-											class:mine={Reaction.given(tally!(), kind!().id)}
-											aria-pressed={if (Reaction.given(tally!(), kind!().id)) "true" else "false"}
-											on:click.prevent={|| toggle!({ kind: kind!().id, on: if (Reaction.given(tally!(), kind!().id)) "false" else "true" })}
+											class:mine={Reaction.given(tally, kind!().id)}
+											aria-pressed={if (Reaction.given(tally, kind!().id)) "true" else "false"}
+											on:click.prevent={|| toggle!({ kind: kind!().id, on: if (Reaction.given(tally, kind!().id)) "false" else "true" })}
 										>
 											<span class="emoji" aria-hidden="true">{kind!().emoji}</span>
 											<span class="label">{intl.t("react.${kind!().id}", [])}</span>
-											<span class="count">{intl.int(Reaction.count_of(tally!(), kind!().id))}</span>
+											<span class="count">{intl.int(Reaction.count_of(tally, kind!().id))}</span>
 										</button>
 									</form>
 								</li>
@@ -72,8 +71,8 @@ ReactionBar := [].{
 						}
 					</For>
 				</section>
-			}
-		</Show>
+			Err(_) => <></>
+		}}</>
 	}
 
 	## Why a toggle was refused, as the page says it.

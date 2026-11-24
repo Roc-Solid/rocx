@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_memo!, is_pending!]
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.Title
 import pf.HttpStatusCode
 import ../../../Plate
@@ -18,9 +17,10 @@ view! = |{ params, .. }| {
 	read = Api.get_days_day({ day: params.day })
 	day! : () => Try(Plate.Day, Server.Problem)
 	day! = create_memo!(|| Endpoint.read!(read))
-	<Show when!={day!()} fallback={<NotADay />}>
-		{|found!| <Diary day!={found!()} stale!={is_pending!(day!)} />}
-	</Show>
+	<>{match day!() {
+		Ok(found) => <Diary day!={found} stale!={is_pending!(day!)} />
+		Err(_) => <NotADay />
+	}}</>
 }
 
 ## An address that isn't a day of the diary: a 404.

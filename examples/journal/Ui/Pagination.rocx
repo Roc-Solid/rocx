@@ -15,11 +15,11 @@ Pagination := [].{
 			<></>
 		} else {
 			<nav class="pagination" aria-label={intl.t("pager.label", [])}>
-				{=if (page > 1) <a class="step" rel="prev" href={url(page - 1)}>← {intl.t("pager.newer", [])}</a> else <span class="step" aria-hidden="true"></span>}
+				{if (page > 1) <a class="step" rel="prev" href={url(page - 1)}>← {intl.t("pager.newer", [])}</a> else <span class="step" aria-hidden="true"></span>}
 				<ol>
 					{...numbers.map(|number| <li><a href={url(number)} aria-current??={if (number == page) "page" else ""} aria-label={intl.t("index.page", [("page", Int(number.to_i64_wrap())), ("pages", Int(pages.to_i64_wrap()))])}>{number.to_str()}</a></li>)}
 				</ol>
-				{=if (page < pages) <a class="step" rel="next" href={url(page + 1)}>{intl.t("pager.older", [])} →</a> else <span class="step" aria-hidden="true"></span>}
+				{if (page < pages) <a class="step" rel="next" href={url(page + 1)}>{intl.t("pager.older", [])} →</a> else <span class="step" aria-hidden="true"></span>}
 			</nav>
 		}
 	}

@@ -2,7 +2,7 @@ import pf.Html
 import pf.Solid exposing [create_signal!, set_interval!]
 
 ## A clock that counts the seconds it has been on the page. It starts an interval and never clears
-## it: the interval is the clock's, so when the clock goes (the <Show> around it hides it), the
+## it: the interval is the clock's, so when the clock goes (the if around it hides it), the
 ## interval stops with it. Each tick it tells whoever shows it too (`tick!`).
 Clock := [].{
 	view! : { tick! : () => {} } => Html

@@ -1,6 +1,5 @@
 import pf.Html
 import pf.For
-import pf.Show
 import forms.IssueSummary
 import forms.LiveForm
 import forms.TextField
@@ -58,9 +57,10 @@ view! = |_| {
 			</form>
 			<aside class="preview" aria-labelledby="preview-title">
 				<h2 id="preview-title">As it will play</h2>
-				<Show when!={read!()} fallback={<p class="empty">The questions show here as you write them.</p>}>
-					{|questions!| <Preview questions!={questions!} />}
-				</Show>
+				{match read!() {
+					Ok(questions) => <Preview questions!={questions} />
+					Err(_) => <p class="empty">The questions show here as you write them.</p>
+				}}
 			</aside>
 		</main>
 	</>

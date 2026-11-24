@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.Router exposing [use_submission!]
 import ../../Middlewares
 import ../../Pages
@@ -20,13 +19,14 @@ blank! = |{}| Endpoint.get!(Api.get_new({}))
 view! = |_| {
 	saving = use_submission!(Api.post_new({}))
 	<div>
-		{=Topbar.view({ email: blank!({}).email, query: "" })}
+		{Topbar.view({ email: blank!({}).email, query: "" })}
 		<main id="main" class="page">
 			<form method="post" action={Endpoint.url_of(Api.post_new({}))} class="sheet">
 				<Editor title={saving.field!("title")} body={saving.field!("body")} tags={saving.field!("tags")} />
-				<Show when!={saving.error!()}>
-					{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-				</Show>
+				{match saving.error!() {
+					Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+					Err(_) => <></>
+				}}
 				<div class="buttons">
 					<button type="submit" class="primary" disabled?={saving.pending!()}>{if (saving.pending!()) "Saving…" else "Save note"}</button>
 					<a class="button quiet" href="/">Cancel</a>

@@ -170,9 +170,9 @@ same components natively; this one hydrates them.
 - **Components run where they are rendered:** rocx writes `<Picks />` as
   `Html.component(|| Picks.view!({}))`, and the runtime runs it as it builds that place, once, its
   reads untracked, so it sees the contexts provided above it. A signal belongs to the run that made
-  it, and is let go of with it: a `<Show>` switching, a row going. A `<For>`'s row and a `<Show>`'s
-  narrowed child are effectful functions run the same way, as their part is made (D-036), so they
-  may hold another `<For>` or `<Show>`, owned by the row or the part; and, as a component, once and
+  it, and is let go of with it: an `if`'s branch switching, a row going. A `<For>`'s row is an
+  effectful function run the same way, as its part is made (D-036), so it may hold another `<For>`
+  or an `if`, owned by the row; and, as a component, once and
   untracked (Solid's `mapArray` and `untrack`, D-039): a change of what one read at its top doesn't
   make it anew (a read that waits runs it again once its value is in). Its holes, and the getters it
   gives its components, follow the item.
@@ -192,26 +192,32 @@ same components natively; this one hydrates them.
   are made and only those that leave it go; the child is given its index, which doesn't change, so a
   kept row has nothing to re-run. It is what a virtual list renders the rows that show with
   (packages/virtual).
-- **Parts are made as they show**, as Solid makes them. What a `<Show>` shows, and a fallback (a
-  `<Show>`'s, a `<For>`'s, a `<Loading>`'s), is serialized as a component node
+- **Parts are made as they show**, as Solid makes them. A fallback (a `<For>`'s, a `<Loading>`'s)
+  is serialized as a component node
   (`{"t":"c"}`, `Html.serialize!`'s `made!`): its box is run where the part is rendered, once, its
   reads untracked, owned by the part, and again each time the part shows again. So the holes inside
-  aren't kept until then. A `<For>`'s row (`"r"`) and a `<Show>`'s function child (`"with"`) are made
+  aren't kept until then. A `<For>`'s row (`"r"`) and an `if`'s or `match`'s part (`"with"`) are made
   as they come too, by computations of their own, run untracked as above (D-039): a value prop read
   there (`<PlannerDay day={day!()} />` in a row) is a getter the component reads, so the row is kept.
-- **Keyed `<Show>`, `<Switch>` and `<Match>`** (D-053, Solid 2.0's). A `<Show>` switches when whether
-  `when!` holds changes; keyed (`<Show when!={card!()} keyed>`), also when the value inside changes,
-  and a function child is given that value itself, not an accessor (`{|card| <Editor card={card} />}`,
-  a new `<Editor>`, its signals new, per card). Roc's values have no identity: two are the same value
-  when `Str.inspect` says the same of them (a function inside prints as `<function>`). A `<Switch>`
-  shows the first of its `<Match>`es whose `when!` holds, reading them in order up to that one, and its
-  fallback while none does; a `<Match>` has `<Show>`'s four forms (a Bool; a Try narrowed to an
-  accessor, the part staying while the value changes; keyed, made anew per value, with plain children
-  or a function given the value). All of them are a `<Show>`'s node (`Html.switched`: `"r"` answers
-  the case's name, `"#…"`, or `false`, and a new name makes the part anew; `"with"` makes it), so the
-  server renders, and hydrating adopts, them as it does a `<Show>`, strictly too. rocx refuses a
-  `<Match>` that isn't a `<Switch>`'s child, anything else in a `<Switch>`, and a key function on
-  either (`keyed` is a flag: the value itself is the key).
+- **A hole's `if` and `match`** (D-070, Solid's `<Show>` and `<Switch>` without the components).
+  A hole is one kind: `{x}` is `Html.hole(x)` (or `Html.hole_of(|| Html.hole(x))` when it reads what
+  changes), text, a number or markup by `x`'s type, through Roc's encoding (`Html.Hole`, the format
+  a `Str` and the numbers encode into, and `Html.encode`, markup as it is); its node is `{"t":"hx"}`,
+  whose run answers a JSON string while it shows text alone (written, adopted and patched as a text
+  hole's, `<!--x-->`) and markup's JSON otherwise (a markup hole's range, `<!--html-->`). A hole whose
+  code is an `if` (with `else if`s) or a `match` that reads what changes is the part its branch makes:
+  rocx writes `Html.branched(case!, made!)`, the case naming the branch that holds
+  (`"0"`, `"1"`…) and `made!` making it, each branch a hole of its own; the runtime makes the part
+  anew only when the name changes, so `{if (count!() > 3) <Timer /> else <></>}` keeps its `<Timer>`
+  as the count goes on. A match arm's names are getters (D-039's): `Ok(card) => <Card card={card} />`
+  keeps the arm while the card changes, and reads the newest (`card!()`, a getter that matches the
+  value again; read after the arm stopped holding, `Html.unmatched!`, a failure). A part whose case
+  read nothing that changes is static: the server writes it without comments, and hydrating adopts
+  it as it is. Text in every branch (`{if (busy!()) "Saving…" else "Save"}`) stays a text hole. A
+  part made anew for each value is a `<For>` over a list of none or one, keyed by the value. The
+  node is `"show"` with `"b"` (`"r"` answers the case's name, `"#…"`, or `false`; `"with"` makes
+  it): the node a level is too (D-040, `Html.switched`), but an `if`'s part is no level, and the run
+  that picks its branch reads the condition again without it counting as a read made once.
 - **Props are getters** (D-039), as Solid's are. rocx writes `<Shows label={word!()} />` as
   `Html.component(|| Shows.view!({ label: || word!() }))`, every value prop a function that computes
   it (a static one too: `size: || 2`), and writes the component, as its author wrote it with
@@ -236,7 +242,7 @@ same components natively; this one hydrates them.
   in rocx alone (a `view!`): the platform's take their own types, and a pure one values. Not getters: a prop
   named as an effect (`label!={word!()}`, an accessor, `|| word!()`, which the child types and calls
   itself), `children` (markup, whose holes are already live), and the props of the platform's own
-  components (`<Show>`, `<For>`…). A pure component's (`view`) props are values, its call made where
+  components (`<For>`, `<Loading>`…). A pure component's (`view`) props are values, its call made where
   it is written; given one read from what changes, the call is a hole of its own
   (`Html.html_of(|| Heading.view({…}))`), made anew when it changes. That is a choice (D-053): patched
   in place, as Solid patches a component, it would take getters read in its holes, which a pure
@@ -392,7 +398,7 @@ same components natively; this one hydrates them.
   whose run computes the children's text (their holes run, so it tracks what they read) and tells
   the runtime (`Host.title!`). In the browser the runtime keeps each `<Title>`'s text by its hole's
   computation, in the order of their first runs (a page's after its layouts'; one shown again by a
-  `<Show>` is new, so last), taken back with that computation's cleanups (running again, or going);
+  an `if`'s part is new, so last), taken back with that computation's cleanups (running again, or going);
   after a flush in which one changed, the highest's text is put in a `<title data-rocx>` first in
   `<head>` (made if the server didn't), which is what `document.title` reads; with none left, that
   element goes and the root layout's own `<title>` stands. Rendering as a server would, the last
@@ -430,7 +436,7 @@ same components natively; this one hydrates them.
 - **On a server**, nothing waits: every hole runs once, no effect or timer runs and no cleanup is
   kept, an endpoint's read (noted under `GET <url>`) is answered from the answers given
   (`renderToString({ answers })`, a page's answers script; one not there fails with 599), and the HTML
-  has comments where computed holes, rows and `<Show>`s are (`<!--x-->…<!--/x-->`), with the answers
+  has comments where computed holes, rows and `if`s' parts are (`<!--x-->…<!--/x-->`), with the answers
   in a script beside it.
 - **Hydrating**, the runtime reads the answers, walks the server's nodes beside the markup Roc made,
   and binds each computation to its own node: nothing is asked again or made again. A read whose
@@ -463,9 +469,9 @@ same components natively; this one hydrates them.
     (D-044). What is left is a placeholder. Hydrating passes over the server's nodes between the markers, and never builds,
     adopts or patches them. A `<body>` rendered again after a mismatch keeps the server's regions,
     in order. One the browser builds where the server rendered none (a
-    `<Show>` switching to a part that has one) is empty, with a warning.
+    an `if` switching to a part that has one) is empty, with a warning.
   - **What may go inside:** anything the server can render. Elements, text, holes (computed ones run
-    once), pure and `view!` components (run once, never hydrated, as Solid's), `<Show>`, `<For>`,
+    once), pure and `view!` components (run once, never hydrated, as Solid's), an `if`'s and a `match`'s parts, `<For>`,
     `<Loading>`, `<Errored>` and endpoint reads all render as they would, once. Nothing
     there changes afterwards, and nothing in it runs in the browser. So rocx refuses a handler
     (`on:…`), a `key` or a transition written inside, at its line, and the server refuses to render
@@ -524,11 +530,11 @@ same components natively; this one hydrates them.
   (`{ url, ms }`; `rocx:navigate` as it started), then the effects. A newer navigation aborts one
   on its way. **Kept levels** (phase 2): `Generated/Root` renders the root layout (the root
   computation, the document) around the levels below it, each layout and the page a keyed part
-  (`Html.switched`, the node a keyed `<Show>` is: `{"t":"show"}`), keyed by its file and its own
+  (`Html.switched`, the node an `if`'s part is too, `{"t":"show"}`, though that one is no level), keyed by its file and its own
   params, on a memo of the location: a navigation makes anew the levels whose key changed and keeps
   the rest, and the root runs again only when the root layout read the location once, or the same
-  page is navigated to again (`remakeRoot`). A part a `<Show>` makes is made with `scope.level`, the
-  `<Show>`'s computation: a read of the location that won't follow it (`readOnce`: in a component's
+  page is navigated to again (`remakeRoot`). A part an `if` or `match` makes is made with `scope.level`, the
+  part's computation: a read of the location that won't follow it (`readOnce`: in a component's
   body, or a part made once; not inside `untrack!`) notes that level, or the root, and a navigation
   makes a noted level anew as if its key had changed (`remakeLevels`, its part made again; a dev
   build says which in the console, and `notify("remade")`). A boundary showing its fallback before
@@ -626,7 +632,7 @@ same components natively; this one hydrates them.
   unless the file has a module of that name, which is then a component. It renders nothing, on the
   server or in the browser, and hydrating takes no node for it; the runtime adds its listeners
   where it is built or adopted (`listenOn`), with the element's handler code (`listener`), and
-  takes them off with its owner's cleanups (it runs again, or goes: a `<Show>` hiding it), as
+  takes them off with its owner's cleanups (it runs again, or goes: an `if` hiding it), as
   solid-primitives' `makeEventListener` does. Svelte's `<svelte:document>` and `<svelte:window>`
   are the same idea.
 - **Drag and drop** (D-029) are events too (`dragAndDrop`): an element with a drop handler is a drop
@@ -675,9 +681,9 @@ same components natively; this one hydrates them.
   the viewport. `on:visibilitychange.visible` (`Html.on_visible`, an `.checked`'s handler) gives
   whether the page shows (`document.visibilityState` isn't `hidden`).
 - **Transitions** (`transition`, `transition:in`, `transition:out`, a `Transition` from
-  `Transition.roc`): a `<For>`'s new row, or a `<Show>`'s new part, plays its own elements'
+  `Transition.roc`): a `<For>`'s new row, or an `if`'s new part, plays its own elements'
   transitions in once the flush that made it is on the page (none the first time a `<For>` or a
-  `<Show>` settles: those come with the page). A row whose key is gone, or a part switched away,
+  `if` settles: those come with the page). A row whose key is gone, or a part switched away,
   stays where it was, inert and `aria-hidden`, its computations disposed at once, while its own
   elements' transitions out play (`element.animate`, backwards, holding the hidden style); then it
   is removed. A `<For>` putting its rows in order passes over the rows leaving; `<For>`s inside a part
@@ -721,8 +727,8 @@ same components natively; this one hydrates them.
 
 The test app (`test/app`, in rocx) is built several ways: the profile (`Profile.rocx`: five
 answers, one spinner, regions that fail on their own, a rename that waits for the server) from the
-dev backend and optimized; the picks (`<For>` by key and by position, `<Show>`); the nested
-(`Nested.rocx`: a `<For>` in a `<For>`'s row and in a `<Show>`'s child); the scroller
+dev backend and optimized; the picks (`<For>` by key and by position, an `if` and a `match`); the nested
+(`Nested.rocx`: a `<For>` in a `<For>`'s row and in a `match` arm); the scroller
 (`Scroller.rocx`: ten thousand rows in a box, `<Repeat>` rendering those `on:viewport` says show,
 rendered on the server, hydrated, then scrolled and made taller, the rows still in range kept); the fades (`Fades.rocx`:
 rows and a part with transitions, a computed one, a list inside the part); the echo (`Echo.rocx`: a
@@ -735,7 +741,7 @@ false on the first load, true while a refresh is on its way, false on the server
 context); the tally with nothing to provide its store (`Alone.rocx`); and a whole document
 (`Document.rocx`; inside an `<Errored>`, `Wrapped.rocx`), rendered in Node as the server platform answers a page and hydrated by
 `start.js`; effects, a cleanup, a timer and a listen (`Effects.rocx`); a form's submission
-(`Form.rocx`); value props, getters (D-039), given in a hole, outside one, in a `<Show>` and in a row, read every way a component may, an accessor, and props passed on (`{...rest}`, D-052) (`Props.rocx`); `<Title>`s
+(`Form.rocx`); value props, getters (D-039), given in a hole, outside one, in an `if` and in a row, read every way a component may, an accessor, and props passed on (`{...rest}`, D-052) (`Props.rocx`); `<Title>`s
 (`Titles.rocx`); D-054's (`Actions.rocx`: `<Meta>`, `<Link>` and `<Style>`, revalidate keys, a
 form's fields given ahead of time, `retry!`, `create_optimistic!`, a form with a file and an action
 given a file's URL); channels (`Channels.rocx`: two feeds on one org's news, a third on another's); a
@@ -746,10 +752,11 @@ that says where the pointer is, a box that scrolls, and whether the page shows);
 body, `latest!`, a component given constants beside one given what changes, and, built with `--dev`
 from a copy, the warning of a read in a body, once for two runs of its place; `RenderEffects.rocx`:
 an effect, a render effect and an effect with an error handler noting their applies, mounted); and
-D-053's (`Control.rocx`: a `<Show>` each way, keyed and not, and a `<Switch>` of a Bool's, a
-narrowed and a keyed `<Match>`, each part with a counter of its own, rendered as the server would
-from four queries and hydrated strictly: an equal value keeps every part, a new one makes the keyed
-parts anew, a `<Switch>` changes part when another `<Match>` holds first); stores (`Stores.rocx`: a filter, a count and a list
+D-070's (`Control.rocx`: an `if` with an `else`, a `match` on a `Try` and one on a mode's kind, and a
+`<For>` of one row keyed by the value, each part with a counter of its own, rendered as the server
+would from four queries and hydrated strictly: an equal value keeps every part, a renamed card keeps
+the `if`'s and the `match`'s parts (the arm's name following) and makes the keyed row anew, a `match`
+changes part when another arm holds); stores (`Stores.rocx`: a filter, a count and a list
 of todos in one store, each part a hole of its own, a `<For compared>` of the list, two writes in one
 handler, a handler reading it, `Store.of` over a memo, and a grid of four hundred selections of one
 store: which holes each write patches, how many selections it runs, and nothing left allocated); and
@@ -762,7 +769,7 @@ host's `data-rocx` elements passed over, `start.js` under `/rocx/` asking for no
 an effect run after hydration and again after its cleanup (none on the server), a timer and a
 listen stopping with their component, a flash hydrated as the server rendered it, a form sent with
 `fetch` (pending, refused, answered, redirected), a component given a value prop (in a
-hole, outside one, in a `<Show>`, in a row) kept, its signals with it, and only what reads the
+hole, outside one, in an `if`, in a row) kept, its signals with it, and only what reads the
 prop patched (in its body, once; in a pure lambda, by its hole; in an effect and a handler, as they
 run), props passed on with `{...rest}` kept live, static holes (a hole whose reads are untracked, a
 component's holes and attribute given constants) written without comments and taken as text,

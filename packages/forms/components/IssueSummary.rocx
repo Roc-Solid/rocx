@@ -1,6 +1,5 @@
 import pf.Html
 import pf.For
-import pf.Show
 import LiveForm
 
 ## Once a `LiveForm` has been sent and has issues, a list of them above it, each a link to its
@@ -17,7 +16,7 @@ IssueSummary := [].{
 
 	view! : IssueSummary.Props => Html
 	view! = |{ live, title, labels }|
-		<Show when!={live.sent!() and !live.all_issues!().is_empty()}>
+		<>{if live.sent!() and !live.all_issues!().is_empty() {
 			<div class="issue-summary" role="alert">
 				<p class="title">{title}</p>
 				<ul>
@@ -29,7 +28,9 @@ IssueSummary := [].{
 					</For>
 				</ul>
 			</div>
-		</Show>
+		} else {
+			<></>
+		}}</>
 
 	## An issue as a link says it: its field's label first, when `labels` has one (a list item's,
 	## `tags[1]`, is its list's).

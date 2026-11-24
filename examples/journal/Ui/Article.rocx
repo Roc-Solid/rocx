@@ -36,9 +36,9 @@ Article := [].{
 					{...translations}
 				</p>
 			</header>
-			{=cover}
+			{cover}
 			<div class="layout" class:with-toc={headings.count_if(|heading| heading.level == 2) >= 2}>
-				{=toc}
+				{toc}
 				<div class="body">
 					<Prose doc={entry.doc} lang={lang} />
 				</div>
@@ -56,8 +56,8 @@ Article := [].{
 				Err(NotFound) => <span class="step"></span>
 			}
 		<nav class="around" aria-label={intl.t("post.around", [])}>
-			{=step(Posts.newer(entry), "prev", "← ${intl.t("post.newer", [])}")}
-			{=step(Posts.older(entry), "next", "${intl.t("post.older", [])} →")}
+			{step(Posts.newer(entry), "prev", "← ${intl.t("post.newer", [])}")}
+			{step(Posts.older(entry), "next", "${intl.t("post.older", [])} →")}
 		</nav>
 	}
 

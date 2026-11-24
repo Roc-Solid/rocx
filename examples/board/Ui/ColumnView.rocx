@@ -63,7 +63,7 @@ ColumnView := [].{
 			<header on:dragenter={at_top!}>
 				<h2 id={"column-${id}"}>{column!().name}</h2>
 				<span class="count" title="Cards">{cards!().len().to_str()}</span>
-				{=ColumnView.rename_form(renames!(), { board, id, column!, name!, typed_name!, renamed! })}
+				{ColumnView.rename_form(renames!(), { board, id, column!, name!, typed_name!, renamed! })}
 			</header>
 			<ol class="cards" aria-labelledby={"column-${id}"}>
 				<For each!={cards!()} keyed={|card| card.id}>

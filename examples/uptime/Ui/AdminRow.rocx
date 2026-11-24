@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.Router exposing [use_submission!]
 import ../Days
 import ../Report
@@ -24,7 +23,7 @@ AdminRow := [].{
 		<tr>
 			<th scope="row"><a href={Paths.monitors_id({ id: id })}>{monitor!().name}</a></th>
 			<td><code>{"${monitor!().method} ${monitor!().url}"}</code> <span class="every">{Words.every(monitor!().interval_s)}</span></td>
-			<td>{=<StatePill state={monitor!().state} label={monitor!().label} />}</td>
+			<td>{<StatePill state={monitor!().state} label={monitor!().label} />}</td>
 			<td>{if (monitor!().last_at.is_empty()) "Never" else Days.moment(monitor!().last_at)}</td>
 			<td>
 				<div class="actions">
@@ -34,8 +33,8 @@ AdminRow := [].{
 				<form method="post" action={Endpoint.url_of(pause)}>
 					<button class="quiet" disabled?={paused.pending!()} aria-label={"${if (monitor!().paused) "Resume" else "Pause"} ${monitor!().name}"}>{if (monitor!().paused) "Resume" else "Pause"}</button>
 				</form>
-				<Show when!={checked.result!()}>{|said!| <span class="said" role="status">{said!()}</span>}</Show>
-				<Show when!={checked.error!()}>{|problem!| <span class="problem" role="alert">{Server.explain(problem!())}</span>}</Show>
+				{match checked.result!() { Ok(said) => <span class="said" role="status">{said}</span>, Err(_) => <></> }}
+				{match checked.error!() { Ok(problem) => <span class="problem" role="alert">{Server.explain(problem)}</span>, Err(_) => <></> }}
 				</div>
 			</td>
 		</tr>

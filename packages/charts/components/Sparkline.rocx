@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, untrack!]
-import pf.Show
 import charts.Ease
 import charts.Format
 import charts.Path
@@ -32,9 +31,11 @@ Sparkline := [].{
 			<path class="line" d={Path.smooth(points!())} />
 			<circle cx={Format.coord(last!().0)} cy={Format.coord(last!().1)} r="2.5" />
 			{# Frames only while the line moves. }
-			<Show when!={drawn!() != data!()}>
+			{if drawn!() != data!() {
 				<g on:frame.ms={|ms| set_drawn!(Sparkline.glide(drawn!(), data!(), ms))}></g>
-			</Show>
+			} else {
+				<></>
+			}}
 		</svg>
 	}
 

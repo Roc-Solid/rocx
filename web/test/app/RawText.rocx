@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Show
 import pf.Solid exposing [create_signal!]
 
 ## A doctype, and a <style> and a <script> in markup, for the tests: the server writes their text as
@@ -17,10 +16,14 @@ RawText := [].{
 				<script>window.ran = (window.ran ?? 0) + 1</script>
 				<p>A {label} hole and a <b>{if (more!()) "computed" else "hidden"}</b> one</p>
 				<button class="more" on:click={|| set_more!(!more!())}>More</button>
-				<Show when!={more!()}>
-					<style>.later { color: blue }</style>
-					<script>window.later = 1</script>
-				</Show>
+				{if more!() {
+					<>
+						<style>.later { color: blue }</style>
+						<script>window.later = 1</script>
+					</>
+				} else {
+					<></>
+				}}
 			</section>
 		</>
 	}

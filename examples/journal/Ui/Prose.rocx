@@ -57,7 +57,7 @@ Prose := [].{
 	image = |found|
 		<span class="figure">
 			<img src={Md.href(found.url)} alt={found.alt} loading="lazy" decoding="async" />
-			{=if (found.title.is_empty()) <></> else <span class="caption">{found.title}</span>}
+			{if (found.title.is_empty()) <></> else <span class="caption">{found.title}</span>}
 		</span>
 
 	<story name="Everything a post may have">

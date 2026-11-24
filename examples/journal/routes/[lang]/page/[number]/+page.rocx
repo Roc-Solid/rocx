@@ -7,5 +7,5 @@ import ../../../../Ui/Listings
 view! = |{ params }|
 	<>
 		<Title>{I18n.intl(params.lang).t("index.numbered", [("page", Text(params.number))])} · Journal</Title>
-		<NoHydration>{=Listings.index(params.lang, params.number)}</NoHydration>
+		<NoHydration>{Listings.index(params.lang, params.number)}</NoHydration>
 	</>

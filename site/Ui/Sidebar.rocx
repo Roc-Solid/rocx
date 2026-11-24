@@ -10,7 +10,7 @@ Sidebar := [].{
 		<nav class="sidebar" aria-label={"${title}: its pages"}>
 			{...groups.map(|group|
 				<div class="group">
-					{=if (group.name == "") <></> else <p class="title">{group.name}</p>}
+					{if (group.name == "") <></> else <p class="title">{group.name}</p>}
 					<ul>
 						{...group.pages.map(|page|
 							<li>

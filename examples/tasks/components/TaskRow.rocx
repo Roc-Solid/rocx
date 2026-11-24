@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Show
 import pf.Transition
 import ../Tasks
 import ../Generated/Paths
@@ -77,21 +76,27 @@ TaskRow := [].{
 				</button>
 			</form>
 			<div class="body">
-				<Show when!={Tasks.is_saving(task!())} fallback={<a id={title_id!()} class="title" href={Paths.tasks_id({ id: id!() })}>{task!().title}</a>}>
+				{if Tasks.is_saving(task!()) {
 					<span id={title_id!()} class="title">{task!().title}</span>
-				</Show>
+				} else {
+					<a id={title_id!()} class="title" href={Paths.tasks_id({ id: id!() })}>{task!().title}</a>
+				}}
 				<div class="meta">
-					{=DueBadge.view({ due: if (task!().done) "" else task!().due, today: today!() })}
-					<Show when!={!task!().notes.is_empty()}>
+					{DueBadge.view({ due: if (task!().done) "" else task!().due, today: today!() })}
+					{if !task!().notes.is_empty() {
 						<span class="notes" title="Has notes">Notes</span>
-					</Show>
-					<Show when!={Tasks.is_saving(task!())}>
+					} else {
+						<></>
+					}}
+					{if Tasks.is_saving(task!()) {
 						<span class="saving-label">Saving…</span>
-					</Show>
+					} else {
+						<></>
+					}}
 				</div>
 			</div>
-			{=Avatar.view({ name: Tasks.name_of(people!(), task!().assignee) })}
-			<Show when!={!Tasks.is_saving(task!())}>
+			{Avatar.view({ name: Tasks.name_of(people!(), task!().assignee) })}
+			{if !Tasks.is_saving(task!()) {
 				<form class="tools" method="post" action={move}>
 					<input type="hidden" name="id" value={id!()} />
 					<button type="submit" name="to" value={(above!() ?? 0).to_str()} disabled?={above!().is_err()} aria-label={"Move up: ${task!().title}"}>
@@ -104,7 +109,9 @@ TaskRow := [].{
 						<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
 					</button>
 				</form>
-			</Show>
+			} else {
+				<></>
+			}}
 		</li>
 	}
 

@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.For
-import pf.Show
 import pf.Title
 import pf.Transition
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!]
@@ -32,7 +31,7 @@ view! = |{ params }| {
 	seat = Endpoint.get!(Api.get_rooms_code({ code: code }))
 	<main class="phone">
 		<Title>{"Room ${code}"}</Title>
-		{=
+		{
 			match (seat.who, seat.view.stage) {
 				(Player(me), _) => <Playing code={code} seat={seat} me={me} />
 				(Host, _) =>
@@ -131,35 +130,41 @@ Playing := [].{
 				<SoundSwitch on!={sound!} toggle!={|| set_sound!(!sound!())} />
 			</header>
 			<div class="stage">
-				<Show when!={Feed.in_lobby(current!())}>
+				{if Feed.in_lobby(current!()) {
 					<section class="phase lobby" transition:in={Transition.fly({ x: 0, y: 24 }).ms(350)} transition:out={Transition.fade.ms(150)}>
 						<Logo size="2.5rem" spinning={Bool.True} />
 						<h1>You're in, {face!().name}!</h1>
 						<p class="hint">Watch the big screen: the host starts when everyone's here.</p>
 						<Lobby players={current!().players} max={8} />
 					</section>
-				</Show>
-				<Show when!={Feed.asking(current!())}>
-					{|asking!| <Choosing asking!={asking!} total={current!().total} clock={clock} mine!={mine!} pick!={pick!} answered!={|| face!().answered} />}
-				</Show>
-				<Show when!={Feed.revealing(current!())}>
-					{|revealing!|
+				} else {
+					<></>
+				}}
+				{match Feed.asking(current!()) {
+					Ok(asking) => <Choosing asking!={asking} total={current!().total} clock={clock} mine!={mine!} pick!={pick!} answered!={|| face!().answered} />
+					Err(_) => <></>
+				}}
+				{match Feed.revealing(current!()) {
+					Ok(revealing) =>
 						<section class="phase revealing" transition:in={Transition.scale(0.9).ms(300)} transition:out={Transition.fade.ms(150)}>
-							{=Playing.verdict(Playing.result(revealing!(), me))}
+							{Playing.verdict(Playing.result(revealing, me))}
 							<p class="answer">
 								The answer:
-								<b>{"${Mark.letter(revealing!().answer)}, ${revealing!().choices.get(revealing!().answer) ?? ""}"}</b>
+								<b>{"${Mark.letter(revealing.answer)}, ${revealing.choices.get(revealing.answer) ?? ""}"}</b>
 							</p>
 							<p class="standing">{Playing.standing(current!(), me)}</p>
-						</section>}
-				</Show>
-				<Show when!={Feed.finished(current!())}>
+						</section>
+					Err(_) => <></>
+				}}
+				{if Feed.finished(current!()) {
 					<section class="phase finished" transition:in={Transition.fade.ms(400)} transition:out={Transition.fade.ms(150)}>
 						<h1>{Playing.finish(current!(), me)}</h1>
 						<Podium players={current!().players} me={me} />
 						<p class="hint">Thanks for playing. The host may start another round.</p>
 					</section>
-				</Show>
+				} else {
+					<></>
+				}}
 			</div>
 		</div>
 	}

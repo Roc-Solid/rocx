@@ -57,13 +57,13 @@ module_view = |entry|
 	<article class="module" id={entry.name}>
 		<h3>
 			{entry.name}
-			{=if (entry.shared) <span class="shared" title="The browser's platform has it too">browser too</span> else <></>}
+			{if (entry.shared) <span class="shared" title="The browser's platform has it too">browser too</span> else <></>}
 		</h3>
 		<p class="file"><code>{entry.file}</code></p>
 		{...doc_view(entry.doc)}
-		{=if (entry.effects.is_empty()) <p class="none">No effects: pure functions alone.</p> else <></>}
+		{if (entry.effects.is_empty()) <p class="none">No effects: pure functions alone.</p> else <></>}
 		{...entry.effects.map(|effect| effect_view(entry.name, effect))}
-		{=if (entry.functions.is_empty()) <></> else functions_view(entry.functions)}
+		{if (entry.functions.is_empty()) <></> else functions_view(entry.functions)}
 	</article>
 
 effect_view = |owner, effect|

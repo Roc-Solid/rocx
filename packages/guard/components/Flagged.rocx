@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Show
 import pf.Context
 import pf.Solid exposing [use_context!]
 import guard.Flags
@@ -26,6 +25,6 @@ Flagged := [].{
 	view! : Props => Html
 	view! = |props| {
 		flags = use_context!(flags_context)
-		<Show when!={Flags.enabled(flags, props.name)} fallback={props.fallback}>{...props.children}</Show>
+		<>{if (Flags.enabled(flags, props.name)) <>{...props.children}</> else props.fallback}</>
 	}
 }

@@ -24,9 +24,9 @@ Listings := [].{
 					<header class="intro">
 						<h1 id="listing-title">{intl.t("index.title", [])}</h1>
 						<p>{intl.t("site.description", [])}</p>
-						{=if (pages > 1) <p class="where">{intl.t("index.page", [("page", Int(page.to_i64_wrap())), ("pages", Int(pages.to_i64_wrap()))])}</p> else <></>}
+						{if (pages > 1) <p class="where">{intl.t("index.page", [("page", Int(page.to_i64_wrap())), ("pages", Int(pages.to_i64_wrap()))])}</p> else <></>}
 					</header>
-					{=Listings.cards(lang, Posts.page(lang, page))}
+					{Listings.cards(lang, Posts.page(lang, page))}
 					<Pagination lang={lang} page={page} pages={pages} />
 				</section>
 			}
@@ -48,7 +48,7 @@ Listings := [].{
 					<h1 id="listing-title">{intl.t("tag.title", [("tag", Text(wanted))])}</h1>
 					<p>{intl.t("posts.count", [("count", Int(posts.len().to_i64_wrap()))])}</p>
 				</header>
-				{=Listings.cards(lang, posts)}
+				{Listings.cards(lang, posts)}
 			</section>
 		}
 	}
@@ -66,7 +66,7 @@ Listings := [].{
 						<p class="bio">{Authors.bio(found, lang)}</p>
 						<p>{intl.t("posts.count", [("count", Int(posts.len().to_i64_wrap()))])}</p>
 					</header>
-					{=Listings.cards(lang, posts)}
+					{Listings.cards(lang, posts)}
 				</section>
 			}
 			_ => Listings.missing(lang)

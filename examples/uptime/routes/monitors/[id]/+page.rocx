@@ -42,7 +42,7 @@ view! = |{ params }| {
 			<p class="crumbs"><a href="/">All services</a> <span aria-hidden="true">/</span> {detail!().group_name}</p>
 			<header>
 				<h1>{detail!().monitor.name}</h1>
-				{=<StatePill state={detail!().monitor.state} label={detail!().monitor.label} />}
+				{<StatePill state={detail!().monitor.state} label={detail!().monitor.label} />}
 			</header>
 			<p class="how">
 				{"Checked ${Words.every(detail!().interval_s)}, up when it answers ${detail!().expected_status.to_str()}. An incident opens after ${detail!().threshold.to_str()} failed checks in a row, and closes on the next that passes."}
@@ -79,7 +79,7 @@ view! = |{ params }| {
 			</section>
 			<section aria-labelledby="days">
 				<h2 id="days">90 days</h2>
-				{=<UptimeStrip days={detail!().monitor.days} />}
+				{<UptimeStrip days={detail!().monitor.days} />}
 			</section>
 			<section aria-labelledby="checks">
 				<h2 id="checks">Last checks</h2>
@@ -114,7 +114,7 @@ view! = |{ params }| {
 				<p class="quiet" hidden?={!detail!().incidents.is_empty()}>None. 🎉</p>
 				<ul class="incidents">
 					<For each!={detail!().incidents} keyed={|incident| incident.id}>
-						{|incident!, _| <li>{=<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
+						{|incident!, _| <li>{<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
 					</For>
 				</ul>
 			</section>

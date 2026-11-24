@@ -4,7 +4,6 @@ import pf.Router exposing [use_submissions!]
 import pf.Endpoint
 import pf.Server
 import pf.For
-import pf.Show
 import pf.Title
 import pf.HttpStatusCode
 import pf.Transition
@@ -29,9 +28,10 @@ view! = |{ params, .. }| {
 	kitchen! : () => Try(Plate.Kitchen, Server.Problem)
 	kitchen! = create_memo!(|| Endpoint.read!(Endpoint.with_query(Api.get_recipes_id({ id: params.id }), Query.of([("q", query!())]))))
 	search = { query!, set_query! }
-	<Show when!={kitchen!()} fallback={<NoRecipe />}>
-		{|found!| <Kitchen id={params.id} kitchen!={found!()} search={search} stale!={is_pending!(kitchen!)} />}
-	</Show>
+	<>{match kitchen!() {
+		Ok(found) => <Kitchen id={params.id} kitchen!={found} search={search} stale!={is_pending!(kitchen!)} />
+		Err(_) => <NoRecipe />
+	}}</>
 }
 
 ## The recipe, once it has been read.
@@ -77,7 +77,7 @@ Kitchen := [].{
 			</section>
 			<section class="card" aria-labelledby="ingredients">
 				<h2 id="ingredients">Ingredients</h2>
-				<Show when!={!ingredients!().is_empty()} fallback={<p class="quiet">Nothing in it yet: search below for what goes in.</p>}>
+				{if !ingredients!().is_empty() {
 					<ul class="rows">
 						<For each!={ingredients!()} keyed={|each| each.id}>
 							{|each!, _|
@@ -95,7 +95,9 @@ Kitchen := [].{
 							}
 						</For>
 					</ul>
-				</Show>
+				} else {
+					<p class="quiet">Nothing in it yet: search below for what goes in.</p>
+				}}
 			</section>
 			<section class="card" aria-labelledby="add-ingredient">
 				<h2 id="add-ingredient">Add an ingredient</h2>

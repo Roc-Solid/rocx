@@ -17,7 +17,7 @@ grammars from `editors/grammars`, into `syntaxes/`) and installs it from there.
 - **Markup**: tags (an element's name, a component's `<StatusPill>` as a type), attributes (`class:`,
   `on:click.prevent`, `style:--size`, `checked?=`, `rel??=`, `text!=`, a bare `required`), strings,
   entities (`&middot;`), `<>…</>`, `<!-- … -->`, `{# … }` and `<!doctype html>`.
-- **Holes**: `{expr}`, `{=expr}` and `{...expr}` are Roc again, markup inside them too
+- **Holes**: `{expr}` and `{...expr}` (and the old `{=expr}`) are Roc again, markup inside them too
   (`{...rows.map(|row| <li>{row.name}</li>)}`). Text between tags stays plain.
 - **CSS** inside `<style>`, by VS Code's CSS grammar; a `<script>`'s text is left as written.
 

@@ -1,6 +1,5 @@
 import pf.Html
 import pf.For
-import pf.Show
 import pf.Transition
 import ../Plate
 import ../Query
@@ -21,15 +20,17 @@ MealPart := [].{
 				<h2 id={"meal-${id}"}>{name}</h2>
 				<span class="kcal">{"${Plate.whole(Plate.total(entries!()).kcal)} kcal"}</span>
 			</header>
-			<Show when!={!entries!().is_empty()}>
+			{if !entries!().is_empty() {
 				<ul class="entries">
 					<For each!={entries!()} keyed={|entry| entry.id}>
 						{|entry!, _|
 							<li class="entry" transition:in={Transition.fade} transition:out={Transition.fade}>
 								<div class="what">
-									<Show when!={!entry!().food.is_empty()} fallback={<span class="name">{entry!().name}</span>}>
+									{if !entry!().food.is_empty() {
 										<a class="name" href={Query.link(Paths.foods_id({ id: entry!().food }), Query.of([("day", day), ("meal", id)]))}>{entry!().name}</a>
-									</Show>
+									} else {
+										<span class="name">{entry!().name}</span>
+									}}
 									<span class="amount">{if (entry!().amount.ends_with(" g")) entry!().amount else "${entry!().amount} · ${Plate.grams_label(entry!().grams)}"}</span>
 								</div>
 								<span class="entry-kcal">{Plate.whole(entry!().kcal)}</span>
@@ -43,7 +44,9 @@ MealPart := [].{
 						}
 					</For>
 				</ul>
-			</Show>
+			} else {
+				<></>
+			}}
 			<a class="add" href={Query.link(Paths.add, Query.of([("day", day), ("meal", id)]))}>
 				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
 				Add to {name}

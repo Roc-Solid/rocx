@@ -9,7 +9,7 @@ Prose := [].{
 	view : { source : Str } -> Html
 	view = |{ source }|
 		<div class="prose">
-			{=Markdown.view({ source: source, link: Prose.link })}
+			{Markdown.view({ source: source, link: Prose.link })}
 		</div>
 
 	## A link: one to another site opens in a new tab, and tells it nothing of where it came from.

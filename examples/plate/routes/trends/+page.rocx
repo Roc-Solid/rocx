@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_memo!, is_pending!]
 import pf.Endpoint
 import pf.Router
-import pf.Show
 import charts.BarChart
 import charts.LineChart
 import charts.Format
@@ -42,7 +41,7 @@ view! = |_| {
 		</section>
 		<section class="card" aria-labelledby="average">
 			<h2 id="average">An average day</h2>
-			<Show when!={logged!() > 0} fallback={<p class="quiet">Nothing logged in this time yet.</p>}>
+			{if logged!() > 0 {
 				<dl class="average">
 					<div>
 						<dt>Energy</dt>
@@ -65,16 +64,22 @@ view! = |_| {
 						<dd class="of">{"of ${Plate.grams_label(trends!().target.fat)}"}</dd>
 					</div>
 				</dl>
-			</Show>
+			} else {
+				<p class="quiet">Nothing logged in this time yet.</p>
+			}}
 		</section>
 		<section class="card" aria-labelledby="weight">
 			<h2 id="weight">Weight</h2>
-			<Show when!={trends!().weights.len() >= 2} fallback={<p class="quiet">Log your weight a few days, and how it goes shows here.</p>}>
-				<p class="quiet">{Ranges.change(trends!().weights)}</p>
-				<div class="chart">
-					<LineChart data!={trends!().weights.map(|weight| weight.kg)} label="Weight on the days it was logged, in kg" format={|kg| "${Format.num(kg, 1)} kg"} smooth={Bool.True} />
-				</div>
-			</Show>
+			{if trends!().weights.len() >= 2 {
+				<>
+					<p class="quiet">{Ranges.change(trends!().weights)}</p>
+					<div class="chart">
+						<LineChart data!={trends!().weights.map(|weight| weight.kg)} label="Weight on the days it was logged, in kg" format={|kg| "${Format.num(kg, 1)} kg"} smooth={Bool.True} />
+					</div>
+				</>
+			} else {
+				<p class="quiet">Log your weight a few days, and how it goes shows here.</p>
+			}}
 			<form class="weigh" method="post" action={weigh.url()} novalidate>
 				<TextField live={weigh} name="kg" label="Weight (kg)" />
 				<TextField live={weigh} name="day" label="Day" type="date" />

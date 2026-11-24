@@ -26,19 +26,19 @@ Demo := [].{
 		<div class="demo" class:inspected={!props.inspect.is_empty()} class:stacked={props.stacked} class:game={props.game}>
 			<div class="live" class:pair={props.pair}>
 				{...props.children}
-				{=if (props.legend)
+				{if (props.legend)
 					<NoHydration>
 						<p class="legend">
 							<span class="patched">text patched</span>
 							<span class="moved">row moved</span>
 							<span class="made">row made</span>
-							<span class="shown">{"<Show> switched"}</span>
+							<span class="shown">part switched</span>
 						</p>
 					</NoHydration>
 				else <></>}
-				{=if (props.meter.is_empty()) <></> else <NoHydration><p class="meter" data-perf={props.meter}>{props.idle}</p></NoHydration>}
+				{if (props.meter.is_empty()) <></> else <NoHydration><p class="meter" data-perf={props.meter}>{props.idle}</p></NoHydration>}
 			</div>
-			{=if (props.inspect.is_empty())
+			{if (props.inspect.is_empty())
 				<></>
 			else
 				<NoHydration>

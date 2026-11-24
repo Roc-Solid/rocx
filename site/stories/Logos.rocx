@@ -170,32 +170,32 @@ Sheet := [].{
 	view = |{ concept }|
 		<div class="page">
 			<div class="head">
-				<div class="hero"><span class="slot">{=concept.mark}</span></div>
+				<div class="hero"><span class="slot">{concept.mark}</span></div>
 				<div class="about">
 					<p class="num">{concept.number} of 10</p>
 					<p class="name">{concept.name}</p>
 					<p class="line">{concept.line}</p>
 					<p class="idea">{concept.idea}</p>
-					<div class="lockup"><span class="slot">{=concept.mark}</span>{=concept.word}</div>
+					<div class="lockup"><span class="slot">{concept.mark}</span>{concept.word}</div>
 				</div>
 			</div>
 			<div class="tiles">
-				<div class="tile paper"><span class="slot">{=concept.mark}</span><span class="cap">On paper</span></div>
-				<div class="tile ink"><span class="slot">{=concept.mark}</span><span class="cap">One ink</span></div>
-				<div class="tile knock"><span class="slot">{=concept.mark}</span><span class="cap">Out of violet</span></div>
+				<div class="tile paper"><span class="slot">{concept.mark}</span><span class="cap">On paper</span></div>
+				<div class="tile ink"><span class="slot">{concept.mark}</span><span class="cap">One ink</span></div>
+				<div class="tile knock"><span class="slot">{concept.mark}</span><span class="cap">Out of violet</span></div>
 				<div class="tile sizes">
 					<div class="row">
-						<span class="slot s48">{=concept.mark}</span>
-						<span class="slot s32">{=concept.mark}</span>
-						<span class="slot s16">{=concept.mark}</span>
+						<span class="slot s48">{concept.mark}</span>
+						<span class="slot s32">{concept.mark}</span>
+						<span class="slot s16">{concept.mark}</span>
 					</div>
-					<div class="tab"><span class="slot s16">{=concept.mark}</span>Roc Solid<span class="x">&times;</span></div>
+					<div class="tab"><span class="slot s16">{concept.mark}</span>Roc Solid<span class="x">&times;</span></div>
 					<span class="cap">48, 32, 16 px</span>
 				</div>
 			</div>
 			<div class="bars">
-				<div class="bar dark"><span class="slot">{=concept.mark}</span>{=concept.word}<span class="links">rocx &middot; Platform &middot; Ecosystem</span></div>
-				<div class="bar light"><span class="slot">{=concept.mark}</span>{=concept.word}<span class="links">rocx &middot; Platform &middot; Ecosystem</span></div>
+				<div class="bar dark"><span class="slot">{concept.mark}</span>{concept.word}<span class="links">rocx &middot; Platform &middot; Ecosystem</span></div>
+				<div class="bar light"><span class="slot">{concept.mark}</span>{concept.word}<span class="links">rocx &middot; Platform &middot; Ecosystem</span></div>
 			</div>
 		</div>
 
@@ -470,11 +470,11 @@ Overview := [].{
 			<div class="grid">
 				{...Concepts.all({}).map(|concept|
 					<div class="card">
-						<div class="art"><span class="slot">{=concept.mark}</span></div>
+						<div class="art"><span class="slot">{concept.mark}</span></div>
 						<p class="num">{concept.number}</p>
 						<p class="name">{concept.name}</p>
 						<p class="line">{concept.line}</p>
-						<div class="mini"><span class="slot">{=concept.mark}</span>{=concept.word}</div>
+						<div class="mini"><span class="slot">{concept.mark}</span>{concept.word}</div>
 					</div>)}
 			</div>
 		</div>

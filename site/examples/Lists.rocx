@@ -12,7 +12,7 @@ Lists := [].{
 				{...posts.map(|post|
 					<li>
 						{post.title}
-						{=match post.status {
+						{match post.status {
 							Draft => <em>draft</em>
 							Published(day) => <time>{day}</time>
 						}}

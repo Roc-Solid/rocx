@@ -7,5 +7,5 @@ import ../../Ui/Listings
 view! = |{ params }|
 	<>
 		<Title>{I18n.t(params.lang, "site.tagline")} · Journal</Title>
-		<NoHydration>{=Listings.index(params.lang, "1")}</NoHydration>
+		<NoHydration>{Listings.index(params.lang, "1")}</NoHydration>
 	</>

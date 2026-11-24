@@ -91,19 +91,21 @@ view! = |_|
 			<Heading id="lists">Lists and branches</Heading>
 			<p>
 				A hole takes any Roc expression, so <code>if</code>, <code>match</code> and <code>.map</code>
-				need no special syntax. What the hole holds is said by how it opens: <code>{"{x}"}</code> is text,
-				<code>{"{=x}"}</code> one <code>Html</code> value, and <code>{"{...x}"}</code> a
-				<code>List(Html)</code>, joined. A branch with nothing to show is the empty fragment:
-				<code>{"{=if (late) <p>Late</p> else <></>}"}</code>. In a component, a list that changes is a <code>{"<For>"}</code>, whose
-				rows move with their keys (see <a href={"${Paths.components}#control"}>Show and For</a>).
+				need no special syntax. <code>{"{x}"}</code> shows what <code>x</code> is: text (escaped), a number,
+				or markup; <code>{"{...x}"}</code> a <code>List(Html)</code>, joined. A branch with nothing to show
+				is the empty fragment: <code>{"{if (late) <p>Late</p> else <></>}"}</code>. In a component, an
+				<code>if</code> or <code>match</code> whose condition changes keeps the part its branch made until
+				another branch holds, and a list that changes is a <code>{"<For>"}</code>, whose rows move with their
+				keys (see <a href={"${Paths.components}#control"}>if, match and For</a>).
 			</p>
 			<Example source={Sources.lists} output={Lists.demo({})} live />
-			<Callout kind="tip" title="Why three kinds of hole">
+			<Callout kind="tip" title="One kind of hole">
 				<p>
-					rocx runs before the compiler, so it can't know whether <code>x</code> is a <code>Str</code>
-					or an <code>Html</code>, and Roc lets neither gain a method that would tell them apart. So the
-					syntax says which, and the compiler checks it: <code>{"{x}"}</code> with an <code>Html</code> in
-					it is a type error at your line.
+					rocx runs before the compiler, so it can't know whether <code>x</code> is a <code>Str</code>, a
+					number or <code>Html</code>; it writes <code>Html.hole(x)</code>, and the compiler picks what to
+					show from the type, through Roc's encoding. A value it can't show, a record or a
+					<code>Bool</code>, is an error at your line. (<code>{"{=x}"}</code>, the old way of saying
+					markup, is the same hole.)
 				</p>
 			</Callout>
 
@@ -162,7 +164,7 @@ view! = |_|
 			<Example source={Sources.scoped} output={Scoped.demo({})} live />
 			<p>
 				<code>rocx build</code> puts every <code>{"<style>"}</code> in one stylesheet, <code>Generated/Styles.roc</code>,
-				and the root layout puts it in its <code>{"<head>"}</code> with <code>{"{=Styles.style}"}</code>: a
+				and the root layout puts it in its <code>{"<head>"}</code> with <code>{"{Styles.style}"}</code>: a
 				<code>{"<link>"}</code> to a file beside start.js, <code>/rocx/styles-<var>hash</var>.css</code>, named by
 				its content, which the browser keeps for every page it opens; a change to any <code>{"<style>"}</code> is a
 				new name.

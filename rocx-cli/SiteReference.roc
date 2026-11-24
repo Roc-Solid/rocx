@@ -18,7 +18,7 @@ SiteReference := [].{
 	## The modules both platforms have: the browser's platform's, copied into the server platform
 	## (server/build.mjs's `SHARED_MODULES`, which the JavaScript tests still use).
 	shared_modules : List(Str)
-	shared_modules = ["Html", "Solid", "Store", "Show", "Switch", "Match", "For", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "A", "Search", "Leave"]
+	shared_modules = ["Html", "Solid", "Store", "For", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "A", "Search", "Leave"]
 
 	## The modules server/platform/main.roc exposes, in its order (`/^\s*exposes\s*\[([^\]]*)\]/m`).
 	exposed : Str -> Try(List(Str), [Problem(Str)])
@@ -239,7 +239,7 @@ SiteReference := [].{
 		{ id: "background", name: "Background", modules: ["Actor", "Live"] },
 		{ id: "crypto", name: "Crypto", modules: ["AesGcm", "Random"] },
 		{ id: "system", name: "System", modules: ["Env", "Time", "Log", "Tcp"] },
-		{ id: "components", name: "Components and reactivity", modules: ["Solid", "Store", "Html", "Show", "Switch", "Match", "For", "Repeat", "Loading", "Errored", "Context", "Transition", "Title", "HttpStatusCode", "Browser"] },
+		{ id: "components", name: "Components and reactivity", modules: ["Solid", "Store", "Html", "For", "Repeat", "Loading", "Errored", "Context", "Transition", "Title", "HttpStatusCode", "Browser"] },
 	]
 
 	## The modules, in their groups (`groups`), in the order each lists them.

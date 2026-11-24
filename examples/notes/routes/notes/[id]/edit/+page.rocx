@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.Title
 import pf.Router exposing [use_submission!]
 import ../../../../Middlewares
@@ -29,13 +28,14 @@ Editing := [].{
 		typed! = |name, saved| if (saving.error!().is_ok()) saving.field!(name) else saved
 		<div>
 			<Title>{"Editing ${opened.note.title} · Notes"}</Title>
-			{=Topbar.view({ email: opened.email, query: "" })}
+			{Topbar.view({ email: opened.email, query: "" })}
 			<main id="main" class="page">
 				<form method="post" action={Endpoint.url_of(Api.post_notes_id_edit({ id: id }))} class="sheet">
 					<Editor title={typed!("title", opened.note.title)} body={typed!("body", opened.note.body)} tags={typed!("tags", Note.tags_text(opened.note.tags))} />
-					<Show when!={saving.error!()}>
-						{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-					</Show>
+					{match saving.error!() {
+						Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+						Err(_) => <></>
+					}}
 					<div class="buttons">
 						<button type="submit" class="primary" disabled?={saving.pending!()}>{if (saving.pending!()) "Saving…" else "Save"}</button>
 						<a class="button quiet" href={"/notes/${id}"}>Cancel</a>

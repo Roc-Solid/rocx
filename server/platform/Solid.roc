@@ -124,7 +124,7 @@ Solid := [].{
 	## runs again when the answer changes. On the server it is false: the server renders final values.
 	##
 	##     <p class:stale={is_pending!(user!)}>{user!().name}</p>
-	##     <Show when!={is_pending!(|| (user!(), posts!()))}><p>Refreshing…</p></Show>
+	##     {if is_pending!(|| (user!(), posts!())) { <p>Refreshing…</p> } else { <></> }}
 	is_pending! : (() => a) => Bool
 	is_pending! = |read!| {
 		probe! = || {
@@ -254,7 +254,7 @@ Solid := [].{
 	## is done): its `clear!`, which stops it. Solid leaves timers to the browser, with
 	## `onCleanup(() => clearInterval(id))` to stop one; here that is built in: an interval stops
 	## with the cleanups of what started it. Started in a component, it stops when the component
-	## goes (the part a <Show> hides); in a computation (an effect's `compute` too), before it runs
+	## goes (the part an `if` hides); in a computation (an effect's `compute` too), before it runs
 	## again; in an effect's `apply`, before the next `apply`; in an event handler, when the element
 	## whose handler started it goes. Only the browser runs one: while the server renders, it never
 	## ticks.

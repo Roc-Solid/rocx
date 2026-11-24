@@ -385,7 +385,11 @@ export fn result_len() u32 {
 }
 
 export fn live_allocations() i64 {
-    return live;
+    // The last run's answer, which the host holds until the next run replaces it, isn't one: what a
+    // run answers is JSON, small or not as what it shows is (an `if`'s part's markup, D-070), and a
+    // count of what is left over shouldn't change with which run came last.
+    const held: i64 = if (has_result and !result.isSmallStr()) 1 else 0;
+    return live - held;
 }
 
 /// How many allocations Roc has made since the module started: the tests' measure of what a change

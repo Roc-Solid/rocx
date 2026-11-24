@@ -16,7 +16,7 @@ StackDemo := [].{
 		(half!, set_half!) = create_signal!(StackDemo.half(3))
 		(look!, set_look!) = create_signal!(Shuffle.first)
 		<Shuffle roll!={|| set_half!(StackDemo.half(half!().seed))} look!={look!} set_look!={set_look!}>
-			{=<StackedBarChart data!={half!().months} series={sources} label="A town's electricity each month, by source, in gigawatt-hours" format={|gwh| Format.num(gwh, 0)} padding={Shuffle.pick(look!(), 0.3, 0.55, 0.12)} />}
+			{<StackedBarChart data!={half!().months} series={sources} label="A town's electricity each month, by source, in gigawatt-hours" format={|gwh| Format.num(gwh, 0)} padding={Shuffle.pick(look!(), 0.3, 0.55, 0.12)} />}
 		</Shuffle>
 	}
 

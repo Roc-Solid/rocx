@@ -10,7 +10,7 @@ grammar, which this extension needs (`roclang.roc`, installed with it). Inside m
 - tags (an element's name, and a component's, `<StatusPill>`, coloured as a type), attributes
   (`class:active`, `on:click.prevent`, `style:--size`, `checked?=`, `rel??=`, `text!=`, a bare
   `required`), strings, entities (`&middot;`), `<>…</>`, `<!-- … -->` and `{# … }`;
-- holes, `{expr}`, `{=expr}` and `{...expr}`, are Roc again, with markup inside them too;
+- holes, `{expr}` and `{...expr}` (and the old `{=expr}`), are Roc again, with markup inside them too;
 - text between tags stays plain;
 - CSS inside `<style>`, by VS Code's own CSS grammar.
 

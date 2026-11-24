@@ -257,8 +257,8 @@ view! = |_|
 			<Heading id="moving">How they move</Heading>
 			<p>
 				A chart keeps what it has drawn in a signal. While that isn't what the data says, a
-				<code>{"<Show>"}</code> holds an <code>on:frame.ms</code> handler, which moves it a share of the way
-				each frame (<code>Ease.toward</code>); when it gets there, the <code>{"<Show>"}</code> closes, and the
+				an <code>if</code>'s part holds an <code>on:frame.ms</code> handler, which moves it a share of the way
+				each frame (<code>Ease.toward</code>); when it gets there, the <code>if</code> switches, and the
 				frames stop. The line under each demo counts them. A bar, a slice or a dot is its label's, so new data
 				moves it rather than making another; what comes or goes as an element plays a
 				<a href={"${Paths.components}#transitions"}>transition</a>, which the browser plays. The heatmap

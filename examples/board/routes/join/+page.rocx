@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.For
 import pf.Server
-import pf.Show
 import pf.Router exposing [use_submission!]
 import pf.Router
 import ../../Board
@@ -25,7 +24,7 @@ view! = |_| {
 	<main class="join">
 		<h1><span class="mark" aria-hidden="true">▲</span> Board</h1>
 		<p class="lead">Who are you? Pick a name and a colour: that's you on every board, for everyone else to see.</p>
-		<Show when!={!people!({}).is_empty()}>
+		{if !people!({}).is_empty() {
 			<section class="quick" aria-labelledby="quick-title">
 				<h2 id="quick-title">Continue as</h2>
 				<ul>
@@ -37,7 +36,7 @@ view! = |_| {
 									<input type="hidden" name="color" value={person!().color} />
 									<input type="hidden" name="then" value={then} />
 									<button type="submit" class="person">
-										{=Avatar.view({ person: person!(), label: "" })}
+										{Avatar.view({ person: person!(), label: "" })}
 										{person!().name}
 									</button>
 								</form>
@@ -46,7 +45,9 @@ view! = |_| {
 					</For>
 				</ul>
 			</section>
-		</Show>
+		} else {
+			<></>
+		}}
 		<form class="new" method="post" action={Endpoint.url_of(Api.post_join({}))}>
 			<h2>Someone new</h2>
 			<input type="hidden" name="then" value={then} />
@@ -57,9 +58,10 @@ view! = |_| {
 				{...Board.colors.map_with_index(|color, index| <label class="swatch" style:--swatch={color}><input type="radio" name="color" value={color} checked?={index == 0} /><span class="hidden">{"Colour ${(index + 1).to_str()}"}</span></label>)}
 			</fieldset>
 			<button type="submit" class="primary" disabled?={joining.pending!()}>Join</button>
-			<Show when!={joining.error!()}>
-				{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-			</Show>
+			{match joining.error!() {
+				Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+				Err(_) => <></>
+			}}
 		</form>
 	</main>
 }

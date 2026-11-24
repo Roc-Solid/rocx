@@ -15,7 +15,7 @@ import Html
 ## changes, and its index, which doesn't.
 ##
 ## The child is effectful (`=>`): it runs when its row is made, and may do what a component does
-## there, hold another `<For>` or a `<Show>`; a child that is plain markup is fine too.
+## there, hold another `<For>` or an `if`; a child that is plain markup is fine too.
 ##
 ## Each time the list is read again, every row is told its item may have changed, and the holes that
 ## read it run again (a value a node has already is no patch). `compared` (D-053) tells a row only

@@ -63,17 +63,18 @@ program = App.program({
 const rocx = (...args) => spawnSync(rocxBinary(), args, { encoding: "utf8", env: { ...process.env, ROC: compiler } });
 
 test("a type error: rocx build writes the app's Roc, and rocx check and buildForTests fail at its .rocx line", { skip }, async () => {
-	const dir = app(PAGE.replace("{visits.to_str()} visits", "{visits} visits"));
+	// A hole shows text, a number or markup (D-070): a Bool is a value it can't show.
+	const dir = app(PAGE.replace("{visits.to_str()} visits", "{visits > 2} visits"));
 	try {
 		const built = rocx("build", dir);
 		assert.equal(built.status, 0, `${built.stdout}${built.stderr}`);
 		const checked = rocx("check", "--", compiler, "check", join(dir, "main.roc"));
 		assert.equal(checked.status, 1, checked.stdout);
 		assert.match(checked.stdout, /routes\/\+page\.rocx:8:\d+/);
-		assert.match(checked.stdout, /<p>\{visits\} visits<\/p>/, "the .rocx line, quoted");
+		assert.match(checked.stdout, /<p>\{visits > 2\} visits<\/p>/, "the .rocx line, quoted");
 		await assert.rejects(buildForTests(dir, { client: false }), (error) => {
 			assert.match(error.message, /failed \(1\)/);
-			assert.match(error.message, /type mismatch/);
+			assert.match(error.message, /missing method/);
 			assert.match(error.message, /routes\/\+page\.rocx:8:\d+/, "said at the .rocx line");
 			return true;
 		});

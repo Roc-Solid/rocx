@@ -10,7 +10,7 @@ import Logo
 Topbar := [].{
 	view = |{ sections, current, landing }|
 		<header class="topbar" class:landing={landing}>
-			{=if (landing) <></> else <a class="brand" href={Paths.root} aria-label="Roc Solid, home"><Logo />Roc Solid</a>}
+			{if (landing) <></> else <a class="brand" href={Paths.root} aria-label="Roc Solid, home"><Logo />Roc Solid</a>}
 			<nav class="sections" aria-label="Parts of the docs">
 				{...sections.map(|section| <a href={section.home} class:current={section.name == current}>{section.name}</a>)}
 			</nav>

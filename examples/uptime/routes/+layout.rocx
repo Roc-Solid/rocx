@@ -17,7 +17,7 @@ view! = |{ children, .. }|
 				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 				<link rel="stylesheet" href="/uptime.css" />
 				<NoHydration>
-					{=Styles.style}
+					{Styles.style}
 				</NoHydration>
 			</head>
 			<body>

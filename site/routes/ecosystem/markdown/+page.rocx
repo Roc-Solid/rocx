@@ -221,7 +221,7 @@ view! = |_|
 			</p>
 			<p>
 				A live preview is the case for that: rendered again whenever what is typed changes, in a hole,
-				<code>{"{=Markdown.view({ source: draft!() })}"}</code>, beside a <code>{"<textarea>"}</code> whose
+				<code>{"{Markdown.view({ source: draft!() })}"}</code>, beside a <code>{"<textarea>"}</code> whose
 				<code>on:input.value</code> sets the <code>draft!</code> signal.
 			</p>
 

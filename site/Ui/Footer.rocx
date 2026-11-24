@@ -14,7 +14,7 @@ Footer := [].{
 				<span class="live" data-stat="ready"></span>
 			</p>
 			<p class="meta">Built {Facts.get(facts, "built")} with Roc {Facts.get(facts, "roc")}.</p>
-			{=if (Facts.get(facts, "dev") == "yes")
+			{if (Facts.get(facts, "dev") == "yes")
 				<p class="meta">
 					A development build: the components run on Roc's dev backend, and the numbers are the ones
 					<code>just site</code> last measured.

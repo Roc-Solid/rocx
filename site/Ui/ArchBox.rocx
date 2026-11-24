@@ -14,8 +14,8 @@ ArchBox := [].{
 	view : Props -> Html
 	view = |props|
 		<div class={"box ${props.kind}"}>
-			{=if (props.label.is_empty()) <></> else <p class="label">{props.label}</p>}
-			{=if (props.name.is_empty()) <></> else <p class="name">{...props.name}</p>}
+			{if (props.label.is_empty()) <></> else <p class="label">{props.label}</p>}
+			{if (props.name.is_empty()) <></> else <p class="name">{...props.name}</p>}
 			{...props.children}
 		</div>
 

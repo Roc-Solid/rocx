@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.Solid exposing [create_signal!, use_context!]
 import pf.Context
 import pf.For
-import pf.Show
 import ../Generated/Api
 
 ## The bag the shelf puts things in, and a component that shows it. The bag is a store: signals in
@@ -36,13 +35,15 @@ Bag := [].{
 		{ things!, set_things! } = use_context!(bag_context)
 		<div class="bag">
 			<p class="bag-title">{reader!({})}'s bag</p>
-			<Show when!={!things!().is_empty()} fallback={<p class="bag-empty">Nothing yet.</p>}>
+			{if !things!().is_empty() {
 				<ul>
 					<For each!={things!()} keyed={|thing| thing.name}>
 						{|thing!, _| <li>{thing!().name}</li>}
 					</For>
 				</ul>
-			</Show>
+			} else {
+				<p class="bag-empty">Nothing yet.</p>
+			}}
 			<p class="bag-total">{total(things!())}</p>
 			<button type="button" on:click={|| set_things!([])} disabled?={things!().is_empty()}>Empty the bag</button>
 		</div>

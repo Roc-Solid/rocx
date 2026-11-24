@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, untrack!]
 import pf.For
-import pf.Show
 import pf.Transition
 import charts.Ease
 import charts.Format
@@ -117,9 +116,11 @@ DonutChart := [].{
 				</For>
 			</ul>
 			{# Frames only while something moves: once the slices are where the data says, none. }
-			<Show when!={drawn!().slices != goal!()}>
+			{if drawn!().slices != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(DonutChart.glide(drawn!(), goal!(), ms))}></span>
-			</Show>
+			} else {
+				<></>
+			}}
 		</figure>
 	}
 

@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.Router exposing [use_submission!]
 import ../Generated/Api
 
@@ -19,8 +18,8 @@ SubscribeForm := [].{
 				<input id="subscribe-email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" value={submission.field!("email")} />
 				<button disabled?={submission.pending!()}>{if (submission.pending!()) "Subscribing…" else "Subscribe"}</button>
 			</div>
-			<Show when!={submission.result!()}>{|said!| <p class="said" role="status">{said!()}</p>}</Show>
-			<Show when!={submission.error!()}>{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}</Show>
+			{match submission.result!() { Ok(said) => <p class="said" role="status">{said}</p>, Err(_) => <></> }}
+			{match submission.error!() { Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>, Err(_) => <></> }}
 		</form>
 	}
 

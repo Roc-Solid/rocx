@@ -4,11 +4,11 @@ import pf.Html
 Pager := [].{
 	view = |{ previous, next }|
 		<nav class="pager" aria-label="Previous and next page">
-			{=match previous {
+			{match previous {
 				Ok(page) => <a class="previous" href={page.path}><span>Previous</span>{page.label}</a>
 				Err(_) => <span></span>
 			}}
-			{=match next {
+			{match next {
 				Ok(page) => <a class="next" href={page.path}><span>Next</span>{page.label}</a>
 				Err(_) => <span></span>
 			}}

@@ -88,7 +88,7 @@ just check   # type-check the site's two programs (reports at .rocx lines) and t
 | `packages/audio` | sound files from a handler, as a plugin (D-051): `Audio.play!` in either half, and `AudioPlayer.plugin({})`, the player, a script every page loads; see its README |
 | `packages/vibrate` | the phone's vibration motor from a handler, as a plugin: `Vibrate.once!(ms)` and `Vibrate.pattern!([on, off, on…])` in either half, and `Vibrator.plugin({})`, the browser's half (`navigator.vibrate`); an Android app on the native host (D-063) buzzes with no script; see its README |
 | `packages/*` | the other packages: `admin` (a Django-style admin for Postgres tables, and the jobs page), `forms`, `guard` (rate limits, feature flags, request guards), `intl`, `markdown`, `mcp`, `otel` (OpenTelemetry metrics and logs), `presence`, `qr` (QR codes in plain Roc, and `<QrCode>`), `testing` and `virtual` (lists of any length that render only the rows that show); each has a README, a PROPOSALS.md of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees (D-033); mcp's and otel's server modules are a package of their own, `server/main.roc` |
-| `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `Show`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
+| `web/` | the browser's platform: the modules components are written with (`Html`, `Solid`, `For`, …) and HTTP's (`Server`, requests and answers; `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server's platform has too; its Zig host, `runtime.js`; see `web/README.md` |
 | `server/` | the server's platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`), rendering pages of components; see `server/README.md` |
 | `site/` | the docs site: pages in `routes/`, the demos on them in `Demos/`, its program in `main.roc`, real examples in `examples/` |
 | `test/`, `web/test/`, `site/test/`, `server/test/`, `packages/testing/test/` | the transpiler and routes; the browser's platform; the site in a browser; the server's platform; the testing package's helpers |
@@ -170,7 +170,7 @@ renders. A page or a layout has no block: its `<style>` goes at the file's top l
 file. `:global(…)`, `.a :global .b` and `:global { … }` are left as written; a component's
 `@keyframes` are its own (`-global-name` for everyone's). `rocx build` puts every `<style>` in one
 stylesheet, `Generated/Styles.roc`, which the root layout puts in its `<head>` with
-`{=Styles.style}`: a `<link rel="stylesheet" href="/rocx/styles-<hash>.css">` to a file the build
+`{Styles.style}`: a `<link rel="stylesheet" href="/rocx/styles-<hash>.css">` to a file the build
 writes beside `start.js` (`--client <out>`: `<out>/static/rocx/`), named by its content's hash, so
 the browser keeps it once for every page and every navigation, and the server says it may keep it
 for good (`cache-control: public, max-age=31536000, immutable`); a change to any `<style>` is a new
@@ -242,8 +242,9 @@ import charts.Format
 | `<span style:--size={str}>` | sets a CSS custom property; joins any static `style`; a value with characters that could end the declaration, or a function that loads something (`url(…)`), is left out |
 | `<h1 style:color={str}>` | sets one property of the style the same way, its name letters and dashes, computed if it reads a signal; in `Html.to_str` too (an email's colours) |
 | `<a href={Paths.lists_id({ id })}>`, `<a href={…} replace noscroll>` | a link to one of the app's pages is rendered in place, without a load (D-040); `replace` replaces the history entry instead of pushing one, `noscroll` keeps the scroll where it is; `rel="external"`, a `target`, `download` or a modifier key leave the link to the browser |
-| `{expr}` among children | text: `expr` is a `Str`, escaped |
-| `{=expr}` | one `Html` value, as it is |
+| `{expr}` among children | a hole: text (a `Str`, escaped), a number (its digits) or markup (`Html`), by `expr`'s type (D-070; `{=expr}`, the old way of saying markup, is the same hole) |
+| `{if (ready!()) <Panel /> else <p>Waiting</p>}`, `{if c { … } else if d { … } else { … }}` | in a component, the part its branch makes: made when the branch holds, kept while it does, made anew only when another branch does (Solid's `<Show>`); each branch reads what it reads itself; text in every branch is a text hole (D-070) |
+| `{match card!() { Ok(card) => <Card card={card} />, Err(_) => <p>None</p> }}` | the part the arm that holds makes, kept while it holds: its names (`card`) read the newest value where the arm reads them (Solid's `<Switch>`/`<Match>`, a `<Show>` narrowing a `Try`); a guard (`Ok(n) if n > 3 =>`) too |
 | `{...expr}` | a `List(Html)`, joined |
 | `{# a comment }`, `<!-- a comment -->` | nothing |
 | `<StatusPill status={s} />` | a component: `StatusPill.view({ status: s })` when the file imports a module `StatusPill`, otherwise the local `status_pill(…)`; in a component's file `StatusPill.view!`, run where it is rendered; children become a `children : List(Html)` prop |
@@ -270,7 +271,7 @@ In a component only:
 | `<button on:click={\|\| set_count!(1)}>` | a handler: an effect, run when the event reaches the element |
 | `<input on:input.value={set_draft!}>` | the handler is given the value (`Str => {}`); `.checked` whether it is ticked, `.key` the key's name, `.keys` the key and the modifier keys held (`Html.Keys`: `key`, `shift`, `ctrl`, `alt`, `meta`, `mod`) |
 | `<div on:keydown.ArrowUp={up!}>` | for that key only (`.Space`, `.w`), with no modifier key held, keeping it from scrolling the page |
-| `<Document on:keydown.Mod+K={open!} />` | handlers on the whole document, written as an element's, while what renders it is there (`<Show>` it to stop them); renders nothing. `<Window on:resize={…} />`, the window's |
+| `<Document on:keydown.Mod+K={open!} />` | handlers on the whole document, written as an element's, while what renders it is there (an `if` around it to stop them); renders nothing. `<Window on:resize={…} />`, the window's |
 | `<input on:keydown.Shift+Enter={send!}>` | for that key with exactly those modifier keys held (`Shift`, `Ctrl`, `Alt`, `Meta`, and `Mod`: ⌘ on macOS, Ctrl elsewhere): `Mod+K`, `Ctrl+Alt+Delete`; Shift+Enter isn't Enter |
 | `<a href="/next" on:click.prevent={go!}>` | the event's default prevented before the handler runs (a link's click taken over) |
 | `navigate!(Paths.tasks_id({ id: task!().id }))` | in a handler: to one of the app's pages, rendered in place, once the handler is done (Solid Router's `useNavigate`); `navigate_with!(to, { replace: Bool.True, scroll: Bool.True })`; another site, or a path no page has, the browser loads (`import pf.Router exposing [navigate!, navigate_with!]`) |
@@ -280,7 +281,7 @@ In a component only:
 | `<li drag:data={[("text/uri-list", url)]} drag:image="ghost">` | what a drag of it carries for other pages and programs, by type, and what it shows (a copy of the element with that id); `on:drop.data` gives a drop every piece by type (`Html.DragItem`), `on:drop.files` its files (`Html.File`: name, type, size and a `blob:` URL; `on:paste.files`, a file field's `on:change.files`) |
 | `<div on:pointermove.point={moved!}>` | where the pointer is over the element, shares of its box (`Html.Point`, 0 to 1), at most once a frame; `<Document on:visibilitychange.visible={shown!} />`, whether the page shows |
 | `<i on:frame.ms={tick!}>` | every animation frame while the element is on the page, given the milliseconds since the last (`F64 => {}`) |
-| `<li transition={Transition.fade}>` | an animation the element plays as its `<For>` row or `<Show>` part comes and goes (`transition:in`, `transition:out`: one way); one that goes stays until it has (`import pf.Transition`: `fade`, `fly`, `scale`, `grow`, `style`) |
+| `<li transition={Transition.fade}>` | an animation the element plays as its `<For>` row or the part an `if` or `match` makes comes and goes (`transition:in`, `transition:out`: one way); one that goes stays until it has (`import pf.Transition`: `fade`, `fly`, `scale`, `grow`, `style`) |
 | `<li key={card!().id} transition:move={Transition.glide}>` | glides to where a change puts it (FLIP), and to its new size; one that leaves a place as one with the same `key` comes in another glides from there |
 | `Audio.play!("/sounds/eat.wav")` | in a handler: plays a sound file, any the browser can, once the handler is done (`Audio.play_with!(url, { volume, rate })`; packages/audio, a plugin: `import audio.Audio`, and `AudioPlayer.plugin({})` in the app's plugins) |
 | `Vibrate.pattern!([300, 150, 300])` | in a handler: buzzes the phone, milliseconds on, off, on…, once the handler is done (`Vibrate.once!(ms)`; packages/vibrate, a plugin: `import vibrate.Vibrate`, and `Vibrator.plugin({})` in the app's plugins); on Android's native host, the phone's own handler |
@@ -292,10 +293,8 @@ In a component only:
 | `view! = \|{ kind, ..rest }\| <Base {...rest} size={3} />` | props passed on (D-052): `..rest` keeps the props the pattern doesn't name (Solid's `omit`), and `{...rest}` gives them to a component as they are, getters still, the last of a name winning (JSX's spread, Solid's `merge`) |
 | `<Title>{post!().title} · Notes</Title>` | the document's title, from anywhere in the page: the last one rendered that is still there, put first in `<head>` by the server, kept by the browser (`import pf.Title`) |
 | `<Meta name="description" content={post!().summary} />`, `<Link rel="canonical" href={…} />`, `<Style>…</Style>` | the head's other elements (@solidjs/meta's), from anywhere in the page: put before `</head>` by the server, kept by the browser, a later `<Meta>` with the same name in an earlier's place; nothing to import |
-| `<Show when!={…} fallback={…}>` | what is inside while the condition holds; with a function child, `when!` is a `Try` it narrows; `keyed`, made anew each time the value changes, a function child given the value itself |
 | `(todos, set_todos!) = create_store!(init)` | a store (Solid 2.0's `createStore`): `todos.get!(\|s\| s.filter)` reads a part, its reader run again only when that part changes (`==`); `set_todos!(\|s\| { ..s, filter: Done })` writes; `<For … compared>` patches one row per changed item |
-| `<Switch fallback={…}><Match when!={…}>…</Match></Switch>` | the first `<Match>` that holds (each takes what `<Show>` takes, keyed or not), or the fallback |
-| `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position. A function child (a row, a `<Show>`'s narrowed child) runs where its part is made, once and untracked (Solid's `mapArray`), so it may hold another `<For>` or `<Show>`, and its holes follow the item |
+| `<For each!={…} keyed={\|row\| row.id}>{\|row!, index!\| …}</For>` | a row per key, kept and moved; `keyed={Bool.False}` a row per position. A function child (a row) runs where its part is made, once and untracked (Solid's `mapArray`), so it may hold another `<For>` or an `if`, and its holes follow the item. A part made anew for each value (Solid's keyed `<Show>`) is a `<For>` over a list of none or one, keyed by the value |
 | `<Loading fallback={…}>`, `<Errored fallback={\|problem, retry\| …}>` | while answers are on their way; when something inside failed |
 | `picks_context = create_context()`, `<PicksContext value={…}>` | Solid's context, named by rocx after its module and definition |
 | `Endpoint.get!(Api.get_api_shelf({}))` | a GET endpoint's answer, as a plain value: the server answers it as it renders the page, and the page carries it to the browser (`Endpoint.read!`: a refusal as a value; `import pf.Endpoint`) |
@@ -304,7 +303,7 @@ In a component only:
 | `(cards!, set_cards!) = create_optimistic!(\|\| Endpoint.get!(board))` | Solid 2.0's optimistic value: the server's until a handler writes it, the write held until the submissions that handler sent are done |
 | `search = use_search_params!({})`, `search.get!("days") ?? "7"`, `search.set!([("days", "30")])` | the page's query (Solid Router's `useSearchParams`, D-040): `get!` and `all!` read it, tracked; `set!` merges into it from a handler (a value of `""` takes a name out) and navigates in place, the page kept, only what read the query reading again (`import pf.Router exposing [use_search_params!]`) |
 | `<A href={Paths.lists_id({ id })} active_class="current">…</A>`, `<A href={Paths.root} end>` | a link with Solid Router's active state: `aria-current="page"` and the class (`active` by default) while the location is at its path (`end`) or under it, following navigations; `replace`, `noscroll`, `preload={Bool.False}` (`import pf.A`). A plain `<a>` navigates in place too |
-| `<Show when!={signed_in!()} fallback={<Navigate href={Paths.sign_in} />}>` | sends the visitor elsewhere as the page renders: the server answers a 303 to `href`, the browser navigates there replacing the entry (`import pf.Navigate`). A handler calls `Router.navigate!` |
+| `{if signed_in!() { … } else { <Navigate href={Paths.sign_in} /> }}` | sends the visitor elsewhere as the page renders: the server answers a 303 to `href`, the browser navigates there replacing the entry (`import pf.Navigate`). A handler calls `Router.navigate!` |
 
 Whitespace in text follows HTML, as Svelte has it, not JSX: each run of spaces, tabs and line breaks
 is one space. Whitespace with a line break next to an element's own opening or closing tag goes, and a
@@ -314,8 +313,11 @@ written. Write a literal `<`, `>`, `{` or `}` in text as an entity or
 lambda's `|…|`, an `if (…)` condition, `else`, `return`, or first on its line) and only when a
 letter or `>` follows; after a value on the same line (`a < b`) it is the comparison.
 
-`{x}` is text and `{=x}` is markup because a hole's type isn't known when the file is turned into
-Roc: the syntax says which, and the compiler checks it. Markup inside a `<NoHydration>` has no
+A hole is one kind for text, numbers and markup: rocx writes `Html.hole(x)`, and the compiler picks
+what to show from `x`'s type through Roc's encoding, so a value it can't show (a record, a `Bool`) is
+an error at its line. An `if` or `match` in a hole is the part its branch makes because rocx reads the
+branches before the compiler does, as Svelte reads `{#if}` (D-070); `<Show>`, `<Switch>` and
+`<Match>` are gone. Markup inside a `<NoHydration>` has no
 handlers, keys or transitions (rocx refuses them at their line: the browser never runs it), and a
 name only it used (a page's `params`, a local) is rewritten in the browser's copy where it is bound
 (`{ params: _ }`, `_lang = …`), so the compiler doesn't warn of it there (D-044); a
@@ -376,7 +378,7 @@ writes more for it:
   as `Routes` does, in a memo (`Root.route`: a tag for each page, with its params), and renders the
   page in its layouts. The root layout is the document (with none, a default one), given the page's `meta`.
   Below it, each other layout above the page, then the page, is a level: a keyed part (`Html.switched`,
-  as a keyed `<Show>` is), keyed by its file and its own params (`routes/lists/[id]/+page.rocx id=7`),
+  as an `if`'s part is), keyed by its file and its own params (`routes/lists/[id]/+page.rocx id=7`),
   so a navigation in place keeps every level whose key is the same, its state with it, and makes the
   others anew (D-040). Inside the root layout, around the levels, an `<Errored>`: a failure nothing
   else catches is the error page with `<HttpStatusCode code={500}/>`, or the status a read was
@@ -736,7 +738,7 @@ routing; `test/e2e.test.mjs` builds an app with routes and checks where a type e
 `roc test site/main.roc` runs every Roc module's `expect`s: `Html`, `Server`, the demos' rules
 (the snake, the flock's physics), the highlighter. `web/test/platform.test.mjs` builds components on
 the browser's platform, renders them as a server would in Node, and hydrates and uses them in
-Chromium (signals, `<For>` and `<Show>`, boundaries, contexts, documents, memory).
+Chromium (signals, `<For>`, `if` and `match` in holes, boundaries, contexts, documents, memory).
 `site/test/site.test.mjs` builds the docs site, starts its server, and hydrates every page strictly
 and uses every demo in Chromium, the game with real keys; it compares every page the server renders
 with the browser's build's own render, byte for byte outside its `<NoHydration>`s, natively and as

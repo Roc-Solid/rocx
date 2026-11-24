@@ -436,11 +436,31 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             }
             Ok(if live { marked(scope, label, &inner) } else { inner })
         }
+        // A hole of either kind (D-070, `Html.hole_of`): written as a text hole while what it shows
+        // is text alone (`<!--x-->`, as the browser patches it), as a markup hole otherwise.
+        "hx" => {
+            let (json, live) = once_live(field("r"), scope, None)?;
+            let parsed = parse(&json)?;
+            // Text alone is answered as a JSON string, as a text hole's run answers.
+            let nodes = match parsed {
+                Value::Array(nodes) => nodes,
+                Value::String(text) => vec![serde_json::json!({ "t": "s", "v": text })],
+                single => vec![single],
+            };
+            let lone = nodes.len() == 1 && nodes[0].get("t").and_then(Value::as_str) == Some("s");
+            let mut inner = String::new();
+            for child in &nodes {
+                inner.push_str(&html(child, scope)?);
+            }
+            Ok(if live { marked(scope, if lone { "x" } else { "html" }, &inner) } else { inner })
+        }
         "f" => children(node, scope),
         // On the server nothing waits: what is inside renders.
         "loading" => Ok(marked(scope, "loading", &children(node, scope)?)),
         "show" => {
-            let holds = truthy(&parse(&once(field("r"), scope, None)?)?);
+            // One whose case read nothing that changes is static (D-052, D-070): no comments.
+            let (case, live) = once_live(field("r"), scope, None)?;
+            let holds = truthy(&parse(&case)?);
             let shown = if !holds {
                 html(field("fallback"), scope)?
             } else if node.get("with").is_some() {
@@ -448,7 +468,7 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             } else {
                 children(node, scope)?
             };
-            Ok(marked(scope, "show", &shown))
+            Ok(if live { marked(scope, "show", &shown) } else { shown })
         }
         "for" => {
             let list = field("id").as_u64().unwrap_or(0);

@@ -15,7 +15,7 @@ PostCard := [].{
 		title = Search.pieces(post.title, marked).map(|piece| if (piece.hit) <mark>{piece.text}</mark> else Html.text(piece.text))
 		cover = if (post.cover.is_empty()) <></> else <img class="cover" src={post.cover} alt="" loading="lazy" decoding="async" width="120" height="90" />
 		<article class="card" class:covered={!post.cover.is_empty()}>
-			{=cover}
+			{cover}
 			<div class="text">
 				<h2 class="title"><a href={post.url}>{...title}</a></h2>
 				<p class="meta"><time datetime={post.date}>{I18n.day(lang, post.date)}</time> · {I18n.reading(lang, post.minutes)} · {post.author_name}</p>

@@ -144,6 +144,8 @@ struct Comp {
     // A markup hole's first run (`peek`), before its place is known.
     peek: bool,
     peeked: Option<Vec<Value>>,
+    // A D-070 hole while it shows text alone: its target a text node, patched as a text hole's.
+    hole_text: bool,
     // An effect's.
     cleanups: Vec<Cleanup>,
     apply: u64,
@@ -188,6 +190,7 @@ impl Comp {
             fallback_range: None,
             settled: false,
             peek: false,
+            hole_text: false,
             peeked: None,
             cleanups: Vec::new(),
             apply: 0,
@@ -953,8 +956,10 @@ fn settle(id: u64, out: String) {
         }
         CompKind::Html | CompKind::Root => {
             let parsed: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+            // D-070's hole answers text alone as a JSON string, as a text hole's run answers.
             let nodes = match parsed {
                 Value::Array(nodes) => nodes,
+                Value::String(text) => vec![serde_json::json!({ "t": "s", "v": text })],
                 other => vec![other],
             };
             let peek = with(|engine| {
@@ -968,6 +973,29 @@ fn settle(id: u64, out: String) {
             if peek != Some(false) {
                 return;
             }
+            // D-070's hole while it shows text alone: its text patched; markup now, its text's place a
+            // range from here on.
+            let target = match target {
+                Target::Node(text) if with(|engine| engine.comps.get(&id).is_some_and(|comp| comp.hole_text)) => {
+                    if let Some(value) = lone_text(&nodes) {
+                        with(|engine| {
+                            if engine.dom.text_of(text) != value {
+                                engine.dom.set_text(text, &value);
+                            }
+                        });
+                        return;
+                    }
+                    with(|engine| {
+                        let range = engine.dom.wrap_in_range(text);
+                        if let Some(made) = engine.comp(id) {
+                            made.target = Target::Range(range);
+                            made.hole_text = false;
+                        }
+                        Target::Range(range)
+                    })
+                }
+                other => other,
+            };
             let Target::Range(range) = target else { return };
             let scope = with(|engine| engine.comps.get(&id).map(|comp| comp.scope.clone()).unwrap_or_default());
             let fragment = with(|engine| engine.dom.fragment());
@@ -978,6 +1006,14 @@ fn settle(id: u64, out: String) {
             with(|engine| engine.dom.replace_range(range, fragment));
         }
         _ => {}
+    }
+}
+
+/// What D-070's hole shows, when it is text alone (one text node's JSON): that text.
+fn lone_text(nodes: &[Value]) -> Option<String> {
+    match nodes {
+        [only] if only.get("t").and_then(Value::as_str) == Some("s") => Some(only.get("v").and_then(Value::as_str).unwrap_or("").to_string()),
+        _ => None,
     }
 }
 
@@ -1806,6 +1842,56 @@ pub fn build(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
                     with(|engine| engine.dom.append(fragment, built));
                 }
                 return fragment;
+            }
+            let (range, fragment) = with(|engine| {
+                let (range, fragment) = engine.dom.make_range();
+                if let Some(made) = engine.comp(comp) {
+                    made.target = Target::Range(range);
+                }
+                (range, fragment)
+            });
+            if let Some(nodes) = nodes {
+                for child in nodes {
+                    let built = build(&child, Some(comp), scope);
+                    with(|engine| engine.dom.insert_before(fragment, built, Some(range.end)));
+                }
+            }
+            fragment
+        }
+        // A hole of either kind (D-070): while it shows text alone, a text node patched as a text
+        // hole's; markup, a range as a markup hole's (text that turns into markup turns into one).
+        "hx" => {
+            let runner = kept_box(reference);
+            let comp = with(|engine| {
+                let comp = engine.new_comp(CompKind::Html, runner, owner, scope.clone(), Target::None, "");
+                if let Some(made) = engine.comp(comp) {
+                    made.peek = true;
+                }
+                comp
+            });
+            let outcome = run(comp);
+            let nodes = with(|engine| {
+                let made = engine.comp(comp)?;
+                made.peek = false;
+                made.peeked.take()
+            });
+            if is_static(comp, outcome) {
+                let fragment = with(|engine| engine.dom.fragment());
+                for child in nodes.unwrap_or_default() {
+                    let built = build(&child, Some(comp), scope);
+                    with(|engine| engine.dom.append(fragment, built));
+                }
+                return fragment;
+            }
+            if let Some(value) = nodes.as_deref().and_then(lone_text) {
+                return with(|engine| {
+                    let text = engine.dom.text(&value);
+                    if let Some(made) = engine.comp(comp) {
+                        made.target = Target::Node(text);
+                        made.hole_text = true;
+                    }
+                    text
+                });
             }
             let (range, fragment) = with(|engine| {
                 let (range, fragment) = engine.dom.make_range();

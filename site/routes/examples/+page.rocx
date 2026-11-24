@@ -118,9 +118,9 @@ Overview := [].{
 	row : ExampleApps.Example -> Html
 	row = |example|
 		<tr>
-			<th scope="row">{=Overview.name(example)}</th>
-			<td class="blurb">{=Overview.blurb(example)}</td>
-			<td class="num">{=Overview.wasm(example)}</td>
+			<th scope="row">{Overview.name(example)}</th>
+			<td class="blurb">{Overview.blurb(example)}</td>
+			<td class="num">{Overview.wasm(example)}</td>
 			<td class="num">{example.pages.to_str()}</td>
 			<td class="num">{ExampleApp.count(example.lines)}</td>
 			<td>{if (example.database.is_empty()) "none" else example.database}</td>

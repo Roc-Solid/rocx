@@ -31,7 +31,7 @@ test("stories: each is a definition in its place, its lines kept: an effect's na
 	assert.equal(lines[7], '\t\tCallout.view({ kind: "tip", children: [Html.element("p", [], [Html.text("Short."),]),], }),', "a pure component, called where it is written");
 	assert.equal(lines[8], "\t])");
 	assert.equal(lines[10], "\tstory_where_it_is! = |{}| Html.join([");
-	assert.match(lines[11], /Html\.text_of\(\|\| Router\.location!\(\{\}\)\.path\)/, "what it needs, it asks for, as a component does");
+	assert.match(lines[11], /Html\.hole_of\(\|\| Html\.hole\(Router\.location!\(\{\}\)\.path\)\)/, "what it needs, it asks for, as a component does");
 	assert.equal(lines[13], "}");
 	assert.deepEqual(stories, [
 		{ component: "Callout", name: "Tip", def: "story_tip!", line: 7 },

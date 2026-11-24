@@ -36,7 +36,7 @@ meta = {
 		{ id: "forms", label: "Forms and submissions" },
 		{ id: "actions", label: "Actions and optimistic values" },
 		{ id: "title", label: "The document's title" },
-		{ id: "control", label: "Show, Switch and For" },
+		{ id: "control", label: "if, match and For" },
 		{ id: "transitions", label: "Transitions" },
 		{ id: "contexts", label: "Contexts" },
 		{ id: "tree", label: "One page, one tree" },
@@ -316,7 +316,7 @@ view! = |_|
 				A handler that listens to the whole document, a ⌘K anywhere or an Escape that closes a panel, goes
 				on <code>{"<Document on:keydown.Mod+K={open!} />"}</code>, written as an element's handlers are. It
 				renders nothing; its handlers are on the document from where it is rendered until that goes, so a
-				<code>{"<Show>"}</code> around it turns them on and off. <code>{"<Window on:resize={…} />"}</code> is
+				an <code>if</code> around it turns them on and off. <code>{"<Window on:resize={…} />"}</code> is
 				the window's.
 				<code>on:click.prevent</code> takes over what the browser would do: a link's click goes where the
 				handler says, not to its <code>href</code>. What a handler writes is applied when it is done, and what
@@ -341,14 +341,14 @@ view! = |_|
 				A handler can run later, too, on the browser's timers: <code>set_interval!(ms, tick!)</code> runs one
 				every <code>ms</code> milliseconds, and <code>set_timeout!(ms, done!)</code> once, <code>ms</code> from
 				now. Each answers its <code>clear!</code>, which stops it. And each belongs to what started it, so it
-				stops by itself when that goes: a component's, with the component (a <code>{"<Show>"}</code> hiding it);
+				stops by itself when that goes: a component's, with the component (an <code>if</code> hiding it);
 				a handler's, with the part its element is in. That is Solid's
 				<code>{"onCleanup(() => clearInterval(id))"}</code>, built in. The server, rendering, starts none. A
 				handler, an effect or a timer reads the clock with <code>{"Time.now_millis!({})"}</code> (and
 				<code>Time.now_nanos!</code>), the server's names, in the browser too; never while rendering, since
 				markup made from the time would differ from the server's. The
 				<a href={"${Paths.showcase}#timers"}>showcase</a> has a stopwatch, a search that waits for a pause in
-				the typing, and a clock that goes with its <code>{"<Show>"}</code>.
+				the typing, and a clock that goes with its <code>if</code>.
 			</p>
 			<Code source={"import pf.Solid exposing [create_signal!, set_interval!]\n\n(seconds!, set_seconds!) = create_signal!(0)\nstop! = set_interval!(1000, || set_seconds!(seconds!() + 1))"} numbers={Bool.False} />
 			<p>
@@ -448,7 +448,7 @@ view! = |_|
 				</li>
 				<li>
 					<strong>An effect belongs to what made it.</strong> One made in a component goes with it (a
-					<code>{"<Show>"}</code> switching, a row going), and its cleanups run then. So do
+					an <code>if</code> switching, a row going), and its cleanups run then. So do
 					<code>on_cleanup!</code>'s, wherever it is called: in a component, when it goes; in a computation,
 					before it runs again; in an effect's <code>apply</code>, before the next one. What a part owns goes
 					first, then its cleanups, the last first.
@@ -601,7 +601,7 @@ view! = |_|
 				A page says the document's title with <code>{"<Title>"}</code> (<code>import pf.Title</code>), as
 				@solidjs/meta's: anywhere in what it renders, its holes computations like any. The last
 				<code>{"<Title>"}</code> rendered that is still there is the title: a page's, rendered after its
-				layouts', over theirs; one in a <code>{"<Show>"}</code>, while it shows. With none, the root layout's
+				layouts', over theirs; one in an <code>if</code>'s part, while it shows. With none, the root layout's
 				own <code>{"<title>"}</code> stands.
 			</p>
 			<Code title={"${Sources.routes_local.file}, in part"} source={Sources.routes_local.rocx} numbers={Bool.False} />
@@ -629,7 +629,7 @@ view! = |_|
 				replaces it. Hydrating keeps the server's elements, so a stylesheet isn't loaded twice.
 			</p>
 
-			<Heading id="control">Show, Switch and For</Heading>
+			<Heading id="control">if, match and For</Heading>
 			<p>
 				Solid 2.0's control flow: a part made once, then switched, moved or dropped, never compared.
 				Below, the same picks twice, a row per id on the left and a row per position on the right. Click,
@@ -646,7 +646,7 @@ view! = |_|
 				<ul class="tries">
 					<li><strong>Reverse</strong> moves the rows by key, the same elements, and patches their indexes; the rows by position stay, and their names are patched.</li>
 					<li><strong>Shout</strong> changes every name and no id: every row stays, and only its name is patched.</li>
-					<li><strong>Add</strong> makes one row in each; the fourth switches the first <code>{"<Show>"}</code>. <strong>Clear</strong> drops them all, and shows the fallback.</li>
+					<li><strong>Add</strong> makes one row in each; the fourth switches the <code>if</code>. <strong>Clear</strong> drops them all, and shows the fallback.</li>
 				</ul>
 				<Code title={"${Sources.signals_picks_control.file}, in part"} source={Sources.signals_picks_control.rocx} numbers={Bool.False} />
 				<ul>
@@ -664,28 +664,24 @@ view! = |_|
 						default, a row per object, has nothing to go by in Roc.
 					</li>
 					<li>
-						<strong><code>{"<Show>"}</code></strong> switches only when whether its condition holds
-						changes. With a function child, <code>when!</code> is a <code>Try</code>, and the child gets an
-						accessor of the value in it.
+						<strong>An <code>if</code> in a hole</strong> (D-070, Solid's <code>{"<Show>"}</code>), whose
+						condition reads what changes, is the part its branch makes: made when the branch holds, and
+						made anew only when another branch does, not each time what the condition read changes, so
+						<code>{"{if (count!() > 3) <Timer /> else <></>}"}</code> keeps its timer, and its signals, as the
+						count goes on. Each branch is a hole of its own, so what it reads itself still follows; text in
+						every branch is a text hole, patched.
 					</li>
 					<li>
-						<strong><code>keyed</code></strong>, Solid 2.0's: <code>{"<Show when!={card!()} keyed>"}</code> makes its
-						part anew each time the value inside changes, not only when it turns <code>Ok</code>, and gives a
-						function child that value itself, <code>{"{|card| <Editor card={card} />}"}</code>: a new editor, its
-						signals new, for each card. Two values are the same one when they read the same: Roc's values
-						have no identity.
+						<strong>A <code>match</code></strong>, Solid's <code>{"<Switch>"}</code> and a
+						<code>{"<Show>"}</code> narrowing a <code>Try</code>: the part of the arm that holds, kept while it
+						does. An arm's names read the newest value where the arm reads them (rocx makes them getters),
+						so <code>{"Ok(card) => <Editor card={card} />"}</code> keeps the editor as the card changes. A part
+						made anew for each value, Solid's keyed <code>{"<Show>"}</code>, is a <code>{"<For>"}</code> over a
+						list of none or one, keyed by the value.
 					</li>
 					<li>
-						<strong><code>{"<Switch>"}</code> and <code>{"<Match>"}</code></strong>, Solid 2.0's: the first
-						<code>{"<Match>"}</code> whose <code>when!</code> holds shows, the <code>{"<Switch>"}</code>'s fallback
-						while none does. A <code>{"<Match>"}</code> takes what a <code>{"<Show>"}</code> takes: a
-						<code>Bool</code>, or a <code>Try</code> to narrow (an accessor: the part stays while the value
-						changes), keyed or not. rocx refuses anything else in a <code>{"<Switch>"}</code>, and a
-						<code>{"<Match>"}</code> outside one.
-					</li>
-					<li>
-						<strong>A part is made when it shows</strong>, as Solid makes it: what a
-						<code>{"<Show>"}</code> shows, its fallback and a <code>{"<For>"}</code>'s, each once, as a
+						<strong>A part is made when it shows</strong>, as Solid makes it: what an
+						<code>if</code> or <code>match</code> shows, and a <code>{"<For>"}</code>'s fallback, each once, as a
 						component is, and again each time it shows again; a row when it comes. So its holes are made
 						then, and a value prop inside, <code>{"<Podium players={game!().players} />"}</code>, a getter, is
 						read where the component reads it, as the part shows and while it does.
@@ -698,14 +694,14 @@ view! = |_|
 						renders a million rows as the twenty that show.
 					</li>
 					<li>
-						<strong>A function child</strong>, a <code>{"<For>"}</code>'s row or a <code>{"<Show>"}</code>'s
-						narrowed child, is effectful, as a component is: it runs where its part is made, so it may hold
-						another <code>{"<For>"}</code> or <code>{"<Show>"}</code>, or be plain markup. Like a component, it
+						<strong>A function child</strong>, a <code>{"<For>"}</code>'s row, is effectful, as a component
+						is: it runs where its part is made, so it may hold another <code>{"<For>"}</code> or an
+						<code>if</code>, or be plain markup. Like a component, it
 						runs once, untracked (Solid's <code>mapArray</code>): what it reads at its top is read once, and its
 						holes, and the props it gives its components, follow the item.
 					</li>
 				</ul>
-				<Code title="rocx" source={"import pf.Switch\nimport pf.Match\n\n<Switch fallback={<p>Nothing to show</p>}>\n\t<Match when!={tab!() == Inbox}><Inbox /></Match>\n\t<Match when!={open_card!()}>{|card!| <CardView title={card!().title} />}</Match>\n\t<Match when!={draft!()} keyed>{|draft| <Editor start={draft} />}</Match>\n</Switch>"} numbers={Bool.False} />
+				<Code title="rocx" source={"{match tab!() {\n\tInbox => <Inbox />\n\tCard(card) => <CardView title={card.title} />\n\tNothing => <p>Nothing to show</p>\n}}"} numbers={Bool.False} />
 				<details>
 					<summary>The whole component: <code>{Sources.signals_picks.file}</code></summary>
 					<Code title={Sources.signals_picks.file} source={Sources.signals_picks.rocx} />
@@ -733,7 +729,7 @@ view! = |_|
 						<code>.plus(…)</code> plays two at once.
 					</li>
 					<li>
-						<strong>They play when a <code>{"<For>"}</code>'s row or a <code>{"<Show>"}</code>'s part comes or
+						<strong>They play when a <code>{"<For>"}</code>'s row or an <code>if</code>'s part comes or
 						goes</strong>, and only that row's or part's own elements play theirs, as Svelte's are local: a
 						list inside a part that goes stays as it is until the part has gone. Nothing plays as the page
 						wakes up.
@@ -818,7 +814,7 @@ view! = |_|
 			<Demo inspect="tally">
 				<div data-demo="tally" data-flash="yes"><Tally /></div>
 				<NoHydration>
-					<Note>A component of its own, reading the same store as the picks in <a href="#control">Show and For</a>.</Note>
+					<Note>A component of its own, reading the same store as the picks in <a href="#control">if, match and For</a>.</Note>
 				</NoHydration>
 			</Demo>
 		</PicksContext>
@@ -1017,9 +1013,9 @@ view! = |_|
 						<tr><td><code>{"const [state, setState] = createStore(init)"}</code></td><td><code>{"(state, set_state!) = create_store!(init)"}</code></td></tr>
 						<tr><td><code>{"state.user.name"}</code></td><td><code>{"state.get!(|s| s.user.name)"}</code></td></tr>
 						<tr><td><code>{"setState((s) => { s.filter = \"done\" })"}</code></td><td><code>{"set_state!(|s| { ..s, filter: Done })"}</code></td></tr>
-						<tr><td><code>{"<Show when={…} fallback={…}>"}</code></td><td><code>{"<Show when!={…} fallback={…}>"}</code></td></tr>
-						<tr><td><code>{"<Show when={…} keyed>{(v) => …}</Show>"}</code></td><td><code>{"<Show when!={…} keyed>{|v| …}</Show>"}</code></td></tr>
-						<tr><td><code>{"<Switch fallback={…}><Match when={…}>…</Match></Switch>"}</code></td><td><code>{"<Switch fallback={…}><Match when!={…}>…</Match></Switch>"}</code></td></tr>
+						<tr><td><code>{"<Show when={…} fallback={…}>"}</code></td><td><code>{"{if … { … } else { … }}"}</code></td></tr>
+						<tr><td><code>{"<Show when={…} keyed>{(v) => …}</Show>"}</code></td><td><code>{"<For>"}</code> over a list of none or one, keyed by the value</td></tr>
+						<tr><td><code>{"<Switch fallback={…}><Match when={…}>…</Match></Switch>"}</code></td><td><code>{"{match … { … => …, _ => … }}"}</code></td></tr>
 						<tr><td><code>{"<For each={…} keyed={(t) => t.id}>"}</code></td><td><code>{"<For each!={…} keyed={|t| t.id}>"}</code></td></tr>
 						<tr><td><code>{"<For each={…} keyed={false}>"}</code></td><td><code>{"<For each!={…} keyed={Bool.False}>"}</code></td></tr>
 						<tr><td><code>{"<TransitionGroup>"}</code>, from <code>solid-transition-group</code></td><td><code>{"transition={Transition.fade}"}</code> on the element, as Svelte writes it</td></tr>
@@ -1054,8 +1050,10 @@ view! = |_|
 					object, needs identity, which Roc's values don't have: <code>keyed</code> is required.
 				</li>
 				<li>
-					<strong><code>{"<Show>"}</code> narrows a <code>Try</code></strong>, Roc's way of saying a value
-					may not be there, where Solid's narrows what isn't null.
+					<strong>A <code>match</code> narrows a <code>Try</code></strong>, Roc's way of saying a value may
+					not be there, where Solid's <code>{"<Show>"}</code> narrows what isn't null; an <code>if</code> and a
+					<code>match</code> are Roc's own, where Solid has components (rocx reads the branches before the
+					compiler does, as Svelte reads <code>{"{#if}"}</code>).
 				</li>
 				<li>
 					<strong>rocx names a context</strong> after its module and definition: there is no identity to
@@ -1131,13 +1129,13 @@ view! = |_|
 						<li>Contexts, and components that run where they are rendered</li>
 						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li>A signal goes with the part that made it</li>
-						<li><code>{"<Show>"}</code>, with a <code>Try</code> to narrow, keyed or not; <code>{"<Switch>"}</code> and <code>{"<Match>"}</code></li>
+						<li>Roc's <code>if</code> and <code>match</code> in a hole, as <code>{"<Show>"}</code> and <code>{"<Switch>"}</code>: the part kept while its branch holds, an arm's names following the value</li>
 						<li>Stores: <code>create_store!</code>, each part tracked by its value; <code>{"<For compared>"}</code></li>
 						<li><code>{"<For>"}</code>, by key and by position; <code>{"<Repeat>"}</code>, by index</li>
 						<li>What of an element shows, as it scrolls and changes size: <code>on:viewport</code>; virtual lists, as a package</li>
 						<li><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code>, trying again</li>
 						<li>Handlers that wait for the server; keys; frames</li>
-						<li>Transitions in and out, on a <code>{"<For>"}</code>'s rows and a <code>{"<Show>"}</code>'s parts</li>
+						<li>Transitions in and out, on a <code>{"<For>"}</code>'s rows and an <code>if</code>'s or <code>match</code>'s parts</li>
 						<li>Timers: <code>set_interval!</code>, <code>set_timeout!</code>, cleared by their <code>clear!</code> or with their part</li>
 						<li>Sound files, from a handler: <code>Audio.play!</code> (packages/audio); and the page's own functions, or a plugin's: <code>Browser.call!</code></li>
 						<li>Effects, split as Solid 2.0's; render effects; an effect's error handler; <code>on_cleanup!</code>, <code>on_settled!</code></li>

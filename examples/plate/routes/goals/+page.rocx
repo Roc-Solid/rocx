@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
 import pf.Endpoint
-import pf.Show
 import forms.LiveForm
 import forms.TextField
 import ../../Plate
@@ -78,11 +77,13 @@ Profile := [].{
 			<p class="quiet small">
 				The energy a day is the Mifflin–St Jeor estimate of the energy you use at rest, times a factor for how active you are, then less or more for your goal; never under 1,200 kcal. Protein, carbs and fat are 25%, 45% and 30% of it. It's an estimate: your weight over a few weeks says how right it is.
 			</p>
-			<Show when!={goals!().locked}>
+			{if goals!().locked {
 				<form method="post" action={Endpoint.url_of(Api.post_sign_out({}))}>
 					<button class="button quiet" type="submit">Sign out</button>
 				</form>
-			</Show>
+			} else {
+				<></>
+			}}
 		</section>
 	}
 }

@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.For
-import pf.Show
 import pf.Title
 import pf.Transition
 import pf.Solid exposing [create_effect!, create_signal!]
@@ -26,7 +25,7 @@ meta = { title: "Host" }
 ## follows the room's channel (`Feed`), and its host runs the game from it (Start, Next, Again:
 ## said on the channel). Anyone else who opens it sees the room without the buttons.
 ##
-## Each phase is a `<Show>` of its own, so a phase stays put while the room changes inside it (an
+## Each phase is an `if`'s part of its own, so a phase stays put while the room changes inside it (an
 ## answer coming in), and the next one flies in as the last fades (`transition:in`, `transition:out`).
 view! = |{ params }| {
 	code = params.code
@@ -62,13 +61,15 @@ view! = |{ params }| {
 			<SoundSwitch on!={sound!} toggle!={|| set_sound!(!sound!())} />
 		</header>
 		<div class="stage">
-			<Show when!={Feed.vacant(current!())}>
+			{if Feed.vacant(current!()) {
 				<section class="phase vacant">
 					<h1>There's no room {code}</h1>
 					<p>It may have been a different code. <a href={Paths.host}>Open a new room</a></p>
 				</section>
-			</Show>
-			<Show when!={Feed.in_lobby(current!())}>
+			} else {
+				<></>
+			}}
+			{if Feed.in_lobby(current!()) {
 				<section class="phase lobby" aria-labelledby="lobby-title" transition:in={Transition.fly({ x: 0, y: 40 }).ms(450)} transition:out={Transition.fade.ms(200)}>
 					<h1 id="lobby-title" class="eyebrow">Join on your phone with</h1>
 					<p class="code" aria-label={"Room code: ${Str.join_with(code.to_utf8().map(|byte| Str.from_utf8_lossy([byte])), " ")}"}>{code}</p>
@@ -78,7 +79,7 @@ view! = |{ params }| {
 						on this site, or type the code on its front page.
 					</p>
 					<Lobby players={current!().players} max={14} />
-					{=
+					{
 						if hosting {
 							<button type="button" class="big go" disabled?={current!().players.is_empty()} on:click={|| (room.say!)(Start)}>
 								{if (current!().players.is_empty()) "Waiting for players…" else "Start the game"}
@@ -88,18 +89,22 @@ view! = |{ params }| {
 						}
 					}
 				</section>
-			</Show>
-			<Show when!={Feed.asking(current!())}>
-				{|asking!| <Asked asking!={asking!} current!={current!} clock={clock} room={room} hosting={hosting} />}
-			</Show>
-			<Show when!={Feed.revealing(current!())}>
-				{|revealing!| <Revealed revealing!={revealing!} current!={current!} room={room} hosting={hosting} />}
-			</Show>
-			<Show when!={Feed.finished(current!())}>
+			} else {
+				<></>
+			}}
+			{match Feed.asking(current!()) {
+				Ok(asking) => <Asked asking!={asking} current!={current!} clock={clock} room={room} hosting={hosting} />
+				Err(_) => <></>
+			}}
+			{match Feed.revealing(current!()) {
+				Ok(revealing) => <Revealed revealing!={revealing} current!={current!} room={room} hosting={hosting} />
+				Err(_) => <></>
+			}}
+			{if Feed.finished(current!()) {
 				<section class="phase finished" aria-labelledby="finished-title" transition:in={Transition.fade.ms(400)} transition:out={Transition.fade.ms(180)}>
 					<h1 id="finished-title">That's the game!</h1>
 					<Podium players={current!().players} me="" />
-					{=
+					{
 						if hosting {
 							<div class="again">
 								<button type="button" class="big go" on:click={|| (room.say!)(Again)}>Play it again</button>
@@ -110,7 +115,9 @@ view! = |{ params }| {
 						}
 					}
 				</section>
-			</Show>
+			} else {
+				<></>
+			}}
 		</div>
 	</main>
 }
@@ -140,7 +147,7 @@ Asked := [].{
 			</ul>
 			<div class="foot">
 				<p class="answered" aria-live="polite">{Asked.answered(asking!().answered, current!().players)}</p>
-				{=if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Close it now</button> else <></>}
+				{if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Close it now</button> else <></>}
 			</div>
 		</section>
 
@@ -180,7 +187,7 @@ Revealed := [].{
 			</div>
 			<div class="foot">
 				<p class="next-up">{if (revealing!().last) "The podium is next" else "The next question is coming"}</p>
-				{=if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Go on now</button> else <></>}
+				{if (hosting) <button type="button" class="next" on:click={|| (room.say!)(Next)}>Go on now</button> else <></>}
 			</div>
 		</section>
 

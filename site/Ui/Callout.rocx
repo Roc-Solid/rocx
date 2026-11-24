@@ -11,7 +11,7 @@ Callout := [].{
 
 	<story name="Tip">
 		<Callout kind="tip" title="Name holes by what they hold">
-			<p>A hole is text, <code>{"{=…}"}</code> is markup, and <code>{"{...}"}</code> is a list of it.</p>
+			<p>A hole shows text, a number or markup, by its type, and <code>{"{...}"}</code> a list of markup.</p>
 		</Callout>
 	</story>
 

@@ -40,21 +40,21 @@ view! = |{ meta, children, .. }| {
 				<meta name="color-scheme" content="dark" />
 				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 				<link rel="stylesheet" href="/site.css" />
-				<NoHydration>{=Styles.style}</NoHydration>
+				<NoHydration>{Styles.style}</NoHydration>
 				<script type="module" src="/site.js"></script>
 			</head>
 			<body>
 				<SkipLink />
-				{=if (story!()) <></> else <Topbar sections={Nav.sections} current={at.get!(Nav.current_of)} landing={landing!()} />}
+				{if (story!()) <></> else <Topbar sections={Nav.sections} current={at.get!(Nav.current_of)} landing={landing!()} />}
 				<Frame landing={landing!()}>
-					{=if (landing!()) <></> else <Sidebar title={at.get!(|path| Nav.section_of(path).name)} groups={at.get!(|path| Nav.section_of(path).groups)} path={at.get!(|path| path)} />}
+					{if (landing!()) <></> else <Sidebar title={at.get!(|path| Nav.section_of(path).name)} groups={at.get!(|path| Nav.section_of(path).groups)} path={at.get!(|path| path)} />}
 					<main id="content">
 						{...children}
-						{=if (story!()) <></> else <Pager previous={at.get!(Nav.neighbours).previous} next={at.get!(Nav.neighbours).next} />}
+						{if (story!()) <></> else <Pager previous={at.get!(Nav.neighbours).previous} next={at.get!(Nav.neighbours).next} />}
 					</main>
-					{=if (landing!() or meta.toc.is_empty()) <></> else <Toc links={meta.toc} />}
+					{if (landing!() or meta.toc.is_empty()) <></> else <Toc links={meta.toc} />}
 				</Frame>
-				{=if (story!()) <></> else <Footer facts={facts} />}
+				{if (story!()) <></> else <Footer facts={facts} />}
 			</body>
 		</html>
 	</>

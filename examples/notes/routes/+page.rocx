@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.For
 import pf.Router
 import pf.Server
-import pf.Show
 import pf.Title
 import ../Middlewares
 import ../Note
@@ -28,7 +27,7 @@ view! = |_| {
 	heading = heading_of(home)
 	<div class="notebook">
 		<Title>{"${heading} · Notes"}</Title>
-		{=Topbar.view({ email: home.email, query: home.query })}
+		{Topbar.view({ email: home.email, query: home.query })}
 		<div class="columns">
 			<nav class="side" aria-label="Notebook">
 				<ul class="views">
@@ -36,7 +35,7 @@ view! = |_| {
 					<li><a href="/?archived=true" aria-current??={if (home.archived) "page" else ""}>Archive</a></li>
 				</ul>
 				<h2 id="tags-title">Tags</h2>
-				<Show when!={!home!({}).tags.is_empty()} fallback={<p class="none">No tags yet. Give a note one in its editor.</p>}>
+				{if !home!({}).tags.is_empty() {
 					<ul class="tags" aria-labelledby="tags-title">
 						<For each!={home!({}).tags} keyed={|tagged| tagged.name}>
 							{|tagged!, _|
@@ -49,29 +48,39 @@ view! = |_| {
 							}
 						</For>
 					</ul>
-				</Show>
+				} else {
+					<p class="none">No tags yet. Give a note one in its editor.</p>
+				}}
 			</nav>
 			<main id="main" class="main">
 				<header class="head">
 					<h1>{heading}</h1>
 					<p class="found" role="status">{found_text(home)}</p>
 				</header>
-				<Show when!={!home!({}).notes.is_empty()} fallback={empty(home)}>
-					<Show when!={home!({}).query.is_empty() and home!({}).notes.any(|note| note.pinned)}>
-						<h2 class="group">Pinned</h2>
-						<ul class="cards" aria-label="Pinned notes">
-							<For each!={home!({}).notes.keep_if(|note| note.pinned)} keyed={|note| note.id}>
-								{|note!, _| <li>{=NoteCard.view({ note: note!() })}</li>}
+				{if !home!({}).notes.is_empty() {
+					<>
+						{if home!({}).query.is_empty() and home!({}).notes.any(|note| note.pinned) {
+							<>
+								<h2 class="group">Pinned</h2>
+								<ul class="cards" aria-label="Pinned notes">
+									<For each!={home!({}).notes.keep_if(|note| note.pinned)} keyed={|note| note.id}>
+										{|note!, _| <li>{NoteCard.view({ note: note!() })}</li>}
+									</For>
+								</ul>
+								<h2 class="group">Others</h2>
+							</>
+						} else {
+							<></>
+						}}
+						<ul class="cards" aria-label="Notes">
+							<For each!={unpinned(home!({}))} keyed={|note| note.id}>
+								{|note!, _| <li>{NoteCard.view({ note: note!() })}</li>}
 							</For>
 						</ul>
-						<h2 class="group">Others</h2>
-					</Show>
-					<ul class="cards" aria-label="Notes">
-						<For each!={unpinned(home!({}))} keyed={|note| note.id}>
-							{|note!, _| <li>{=NoteCard.view({ note: note!() })}</li>}
-						</For>
-					</ul>
-				</Show>
+					</>
+				} else {
+					empty(home)
+				}}
 			</main>
 		</div>
 	</div>

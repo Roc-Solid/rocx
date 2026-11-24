@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
 import pf.For
-import pf.Show
 
 ## A to-do list: a form, rows that come and go (each kept by its id: moved, never rewritten),
 ## checkboxes, a key, and filters. Its state is four signals; each hole reads the ones it needs.
@@ -57,9 +56,11 @@ Todos := [].{
 					<button type="button" class:selected={filter!() == Active} on:click={|| set_filter!(Active)}>Active</button>
 					<button type="button" class:selected={filter!() == Completed} on:click={|| set_filter!(Completed)}>Done</button>
 				</span>
-				<Show when!={items!().any(|item| item.done)}>
+				{if items!().any(|item| item.done) {
 					<button type="button" class="clear" on:click={|| set_items!(items!().drop_if(|item| item.done))}>Clear done</button>
-				</Show>
+				} else {
+					<></>
+				}}
 			</footer>
 		</div>
 	}

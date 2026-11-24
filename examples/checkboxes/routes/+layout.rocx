@@ -15,7 +15,7 @@ view! = |{ meta, children, .. }|
 				<meta name="theme-color" content="#f4f1ea" />
 				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 				<link rel="stylesheet" href="/million.css" />
-				<NoHydration>{=Styles.style}</NoHydration>
+				<NoHydration>{Styles.style}</NoHydration>
 			</head>
 			<body>
 				{...children}

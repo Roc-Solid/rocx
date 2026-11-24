@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, untrack!]
 import pf.For
-import pf.Show
 import pf.Transition
 import charts.Band
 import charts.Ease
@@ -110,9 +109,11 @@ StackedBarChart := [].{
 				<line class="axis" x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(bottom)} y2={Format.coord(bottom)} />
 			</svg>
 			{# Frames only while something moves: once the columns are where the data says, none. }
-			<Show when!={drawn!() != goal!()}>
+			{if drawn!() != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(StackedBarChart.glide(drawn!(), goal!(), ms, parts))}></span>
-			</Show>
+			} else {
+				<></>
+			}}
 		</figure>
 	}
 

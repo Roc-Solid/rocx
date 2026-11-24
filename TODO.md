@@ -55,6 +55,14 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **D-070's leftovers.** `{=x}` is the same hole as `{x}`, kept for old files: `rocx fmt` could drop
+  the `=` and rocx then refuse it. `{...x}` is still a list's own hole: a `List` encodes through a
+  container protocol (`encode_list`) that a hole's format could join, which would make it `{x}` too.
+  An attribute (`value={count}`) still takes a `Str`. A hole's error for a value it can't show names
+  `encode`; `rocx check` could add a hint there, as it does for `{...record}`. A match arm's name
+  getter ends in `_ => Html.unmatched!(…)`, which a one-variant type would call redundant.
+- **The private app on D-070.** The app in its own repository under examples/ writes four `<Show>`s,
+  which rocx refuses now: each an `if` (a function child, a `match`). Its `{=x}` holes still work.
 - **Wasm splitting: parked until after Roc 0.1** (the user, 2026-11-24). A page downloads only its
   own code: route levels as entries, chunks by the set of pages that reach them, at most four files a
   page, the browser's build boxy. Re-measured on a1cd824 (`spike/wasm-split/REPORT.md`, the

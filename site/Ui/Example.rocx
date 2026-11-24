@@ -22,10 +22,10 @@ Example := [].{
 				<Code title={source.file} source={source.rocx} first={source.first} />
 				<Code title="What rocx writes: the same lines, in Roc" source={source.roc} first={source.first} />
 			</div>
-			{=if (renders)
+			{if (renders)
 				<div class="result" class:alone={!live}>
 					<Code title={"${source.call} renders"} source={Html.to_str(output)} markup numbers={Bool.False} />
-					{=if (live) <div class="preview"><p class="label">Live</p>{=output}</div> else <></>}
+					{if (live) <div class="preview"><p class="label">Live</p>{output}</div> else <></>}
 				</div>
 			else <></>}
 		</div>

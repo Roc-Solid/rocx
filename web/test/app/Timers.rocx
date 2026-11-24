@@ -1,11 +1,10 @@
 import pf.Html
 import pf.Solid exposing [create_signal!, set_interval!, set_timeout!, on_settled!]
 import pf.Browser
-import pf.Show
 import pf.Time
 import Ticker
 
-## Timers, for the tests: a ticker in a <Show>, whose interval goes with it; an interval a button
+## Timers, for the tests: a ticker in an if, whose interval goes with it; an interval a button
 ## stops with its `clear!`; one that clears itself on its third tick; and a timeout a button
 ## starts, and another calls off. And calls of the page's own functions (`Browser.call!`): one the
 ## page has, one it hasn't, and one that resolves a URL under the site's base with what every effect
@@ -56,9 +55,11 @@ Timers := [].{
 		}
 		<div class="timers">
 			<button class="toggle" on:click={|| set_shown!(!shown!())}>Toggle</button>
-			<Show when!={shown!()}>
+			{if shown!() {
 				<Ticker tick!={|| set_ticks!(ticks!() + 1)} />
-			</Show>
+			} else {
+				<></>
+			}}
 			<p class="ticks">{ticks!().to_str()}</p>
 			<button class="start" on:click={start!}>Start</button>
 			<button class="stop" on:click={stop!}>Stop</button>

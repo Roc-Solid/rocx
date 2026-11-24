@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!]
 import pf.Endpoint
 import pf.Router
 import pf.Server
-import pf.Show
 import pf.Title
 import pf.HttpStatusCode
 import forms.LiveForm
@@ -26,9 +25,10 @@ view! = |{ params, .. }| {
 	read = Api.get_foods_id({ id: params.id })
 	pick! : () => Try(Plate.Pick, Server.Problem)
 	pick! = create_memo!(|| Endpoint.read!(read))
-	<Show when!={pick!()} fallback={<NoFood />}>
-		{|found!| <FoodPage id={params.id} pick!={found!()} />}
-	</Show>
+	<>{match pick!() {
+		Ok(found) => <FoodPage id={params.id} pick!={found} />
+		Err(_) => <NoFood />
+	}}</>
 }
 
 ## The food, once it has been read.
@@ -54,7 +54,7 @@ FoodPage := [].{
 				<div>
 					<h1>{food!().name}</h1>
 					<p class="quiet">
-						{=HitRow.tag(food!().source)}
+						{HitRow.tag(food!().source)}
 						{" ${Str.join_with([food!().brand, food!().group].keep_if(|word| !word.is_empty()), " · ")}"}
 					</p>
 				</div>
@@ -88,12 +88,14 @@ FoodPage := [].{
 				</button>
 			</form>
 			<section class="card">
-				{=Facts.view({ food: food!(), grams: grams!() })}
+				{Facts.view({ food: food!(), grams: grams!() })}
 			</section>
 			<p class="source quiet">
-				<Show when!={food!().source == "recipe"} fallback={<Credit food!={food!()} />}>
+				{if food!().source == "recipe" {
 					<a href={Paths.recipes_id({ id: food!().recipe })}>Your recipe: see what goes into it</a>
-				</Show>
+				} else {
+					<Credit food!={food!()} />
+				}}
 			</p>
 		</article>
 	}

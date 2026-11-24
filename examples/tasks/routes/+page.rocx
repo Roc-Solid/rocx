@@ -51,7 +51,7 @@ view! = |_| {
 			<h2 id="team-title">The team</h2>
 			<ul>
 				<For each!={team!().people} keyed={|person| person.id}>
-					{|person!, _| <li>{=Avatar.view({ name: person!().name })} {person!().name}</li>}
+					{|person!, _| <li>{Avatar.view({ name: person!().name })} {person!().name}</li>}
 				</For>
 			</ul>
 		</section>

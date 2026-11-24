@@ -16,7 +16,7 @@ MonitorCard := [].{
 		<li class="monitor">
 			<div class="head">
 				<h3><a href={Paths.monitors_id({ id: monitor!().id.to_str() })}>{monitor!().name}</a></h3>
-				{=<StatePill state={monitor!().state} label={monitor!().label} />}
+				{<StatePill state={monitor!().state} label={monitor!().label} />}
 			</div>
 			<dl class="numbers">
 				<div>
@@ -39,7 +39,7 @@ MonitorCard := [].{
 					</dd>
 				</div>
 			</dl>
-			{=<UptimeStrip days={monitor!().days} />}
+			{<UptimeStrip days={monitor!().days} />}
 		</li>
 
 	<style>

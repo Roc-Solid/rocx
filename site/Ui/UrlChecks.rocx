@@ -15,7 +15,7 @@ UrlChecks := [].{
 					<tr>
 						<td><code>{shown}</code></td>
 						<td><code>{rendered}</code></td>
-						<td>{=if (safe) <span class="ok">kept</span> else <span class="no">replaced</span>}</td>
+						<td>{if (safe) <span class="ok">kept</span> else <span class="no">replaced</span>}</td>
 					</tr>
 				})}
 			</tbody>

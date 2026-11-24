@@ -15,7 +15,7 @@ LineDemo := [].{
 		(day!, set_day!) = create_signal!(LineDemo.day(7))
 		(look!, set_look!) = create_signal!(Shuffle.first)
 		<Shuffle roll!={|| set_day!(LineDemo.day(day!().seed))} look!={look!} set_look!={set_look!}>
-			{=<LineChart data!={day!().visits} label="Visits to a site, hour by hour" format={Format.short} smooth={look!() != Blueprint} />}
+			{<LineChart data!={day!().visits} label="Visits to a site, hour by hour" format={Format.short} smooth={look!() != Blueprint} />}
 		</Shuffle>
 	}
 

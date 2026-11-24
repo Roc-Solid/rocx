@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.Title
 import pf.Router exposing [use_submission!]
 import pf.Router
@@ -25,7 +24,7 @@ view! = |_| {
 			<input id="password" name="password" type="password" required autocomplete="current-password" />
 			<input type="hidden" name="next" value={if (next.is_empty()) "/admin" else next} />
 			<button disabled?={submission.pending!()}>{if (submission.pending!()) "Signing in…" else "Sign in"}</button>
-			<Show when!={submission.error!()}>{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}</Show>
+			{match submission.error!() { Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>, Err(_) => <></> }}
 		</form>
 	</section>
 }

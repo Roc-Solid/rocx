@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.For
 import pf.Server
-import pf.Show
 import pf.Router exposing [use_submission!]
 import ../../Middlewares
 import ../../Note
@@ -26,7 +25,7 @@ view! = |_| {
 	revoking = use_submission!(Api.post_settings_revoke({}))
 	first = settings!({})
 	<div>
-		{=Topbar.view({ email: first.email, query: "" })}
+		{Topbar.view({ email: first.email, query: "" })}
 		<main id="main" class="page">
 			<h1>Settings</h1>
 			<p class="who">Signed in as <strong>{first.email}</strong></p>
@@ -35,20 +34,20 @@ view! = |_| {
 				<h2 id="tokens-title">Personal access tokens</h2>
 				<p class="lead">A token lets an AI client (Claude, your editor, the MCP Inspector) or a script use your notes, over MCP at <code>{first.mcp}</code> or the JSON API (<a href="/openapi.html">its reference</a>). Make one for each, so you can revoke one without the others. A read-only token can search and read, never change.</p>
 
-				<Show when!={making.result!()}>
-					{|made!|
+				{match making.result!() {
+					Ok(made) =>
 						<div class="made" role="status">
-							<h3>Copy “{made!().listed.name}” now</h3>
+							<h3>Copy “{made.listed.name}” now</h3>
 							<p>This is the only time it is shown: the app keeps only a hash of it.</p>
 							<label for="new-token" class="visually-hidden">Your new token</label>
-							<input id="new-token" class="token" readonly value={made!().token} />
+							<input id="new-token" class="token" readonly value={made.token} />
 							<p>Connect Claude Code with it:</p>
-							<pre><code>{connect(settings!({}).mcp, made!().token)}</code></pre>
+							<pre><code>{connect(settings!({}).mcp, made.token)}</code></pre>
 						</div>
-					}
-				</Show>
+					Err(_) => <></>
+				}}
 
-				<Show when!={!settings!({}).tokens.is_empty()} fallback={<p class="none">No tokens yet.</p>}>
+				{if !settings!({}).tokens.is_empty() {
 					<div class="table">
 						<table>
 							<thead>
@@ -74,10 +73,13 @@ view! = |_| {
 							</tbody>
 						</table>
 					</div>
-				</Show>
-				<Show when!={revoking.error!()}>
-					{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-				</Show>
+				} else {
+					<p class="none">No tokens yet.</p>
+				}}
+				{match revoking.error!() {
+					Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+					Err(_) => <></>
+				}}
 
 				<form class="make" method="post" action={Endpoint.url_of(Api.post_settings({}))}>
 					<h3>A new token</h3>
@@ -85,9 +87,10 @@ view! = |_| {
 					<input id="token-name" name="name" maxlength="60" required placeholder="Laptop: Claude Code" value={making.field!("name")} />
 					<label class="choice"><input type="checkbox" name="write" /> It may write too (it always searches and reads)</label>
 					<button type="submit" class="primary" disabled?={making.pending!()}>Make a token</button>
-					<Show when!={making.error!()}>
-						{|problem!| <p class="problem" role="alert">{Server.explain(problem!())}</p>}
-					</Show>
+					{match making.error!() {
+						Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+						Err(_) => <></>
+					}}
 				</form>
 			</section>
 

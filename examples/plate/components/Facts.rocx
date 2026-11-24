@@ -24,9 +24,9 @@ Facts := [].{
 					<td>{Plate.whole(food.per100.kcal)} kcal</td>
 					<td>{Plate.whole(got.kcal)} kcal</td>
 				</tr>
-				{=Facts.row("Protein", food.per100.protein, got.protein, "g")}
-				{=Facts.row("Carbohydrate", food.per100.carbs, got.carbs, "g")}
-				{=Facts.row("Fat", food.per100.fat, got.fat, "g")}
+				{Facts.row("Protein", food.per100.protein, got.protein, "g")}
+				{Facts.row("Carbohydrate", food.per100.carbs, got.carbs, "g")}
+				{Facts.row("Fat", food.per100.fat, got.fat, "g")}
 				{...food.extras.map(|extra| Facts.row(extra.name, extra.amount, extra.amount * times, extra.unit))}
 			</tbody>
 		</table>

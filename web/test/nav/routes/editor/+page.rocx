@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Browser
-import pf.Show
 import pf.Router exposing [navigate!, use_before_leave!]
 import pf.Solid exposing [create_signal!]
 import ../../Generated/Paths
@@ -47,16 +46,17 @@ view! = |_| {
 		<button class="save" on:click={|| set_saved!(draft!())}>Save</button>
 		<button class="go" on:click={|| navigate!(Paths.a)}>To A</button>
 		<button class="strict" on:click={|| set_strict!(!strict!())}>Strict</button>
-		<Show when!={strict!()}><Strict /></Show>
-		<Show when!={leaving!()}>
-			{|leave!|
+		{if (strict!()) <Strict /> else <></>}
+		{match leaving!() {
+			Ok(leave) =>
 				<div class="dialog" role="dialog">
-					<p class="leaving">Leave for {leave!().to}?</p>
+					<p class="leaving">Leave for {leave.to}?</p>
 					<button class="discard" on:click={|| retry!(Bool.True)}>Discard</button>
 					<button class="again" on:click={|| retry!(Bool.False)}>Ask again</button>
 					<button class="stay" on:click={|| set_leaving!(Err(Staying))}>Stay</button>
-				</div>}
-		</Show>
+				</div>
+			Err(_) => <></>
+		}}
 	</section>
 }
 

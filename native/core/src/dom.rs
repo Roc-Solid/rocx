@@ -85,6 +85,18 @@ impl Dom {
         }
     }
 
+    /// Puts comments around `node`, where it is: a range that holds it (a D-070 hole whose text
+    /// turned into markup).
+    pub fn wrap_in_range(&mut self, node: NodeId) -> Range {
+        let (start, end) = (self.comment(), self.comment());
+        if let Some(parent) = self.nodes[node].parent {
+            let after = self.next_sibling(node);
+            self.insert_before(parent, start, Some(node));
+            self.insert_before(parent, end, after);
+        }
+        Range { start, end }
+    }
+
     /// Puts `node` in `parent` before `before` (last with none). A fragment moves its children
     /// there, and is left empty.
     pub fn insert_before(&mut self, parent: NodeId, node: NodeId, before: Option<NodeId>) {

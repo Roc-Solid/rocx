@@ -73,7 +73,7 @@ view! = |_|
 					<p>
 						<code>on:frame.ms={"{|ms| send!(Frame(ms))}"}</code> runs its handler every animation frame,
 						given the time since the last, while its element is on the page. The snake keeps it on an
-						element inside a <code>{"<Show>"}</code> that holds only while you play, so a paused game
+						element inside an <code>if</code> that holds only while you play, so a paused game
 						costs nothing; an empty sky has none either.
 					</p>
 				</Feature>
@@ -167,7 +167,7 @@ view! = |_|
 				after the last. And the clock clears nothing. In Solid, a component stops its own timer with
 				<code>{"onCleanup(() => clearInterval(id))"}</code>; here that is built in. A timer belongs to what
 				started it: a component's, to the component; a handler's, to the part its element is in. When that
-				goes, as the clock does when the <code>{"<Show>"}</code> around it hides it, its timers stop, and the
+				goes, as the clock does when the <code>if</code> around it hides it, its timers stop, and the
 				ticks heard stop with them.
 			</p>
 			<Callout kind="note" title="The server starts none">

@@ -1,15 +1,14 @@
 import pf.Html
-import pf.Match
+import pf.For
 import pf.Router
-import pf.Show
 import pf.Solid exposing [create_signal!]
-import pf.Switch
 
-## D-053's control flow, for the tests (`control_app.roc`): `<Show>`, keyed and not, and a `<Switch>`
-## of `<Match>`es (a Bool's, a narrowed one's, a keyed one's, and a fallback). Each part holds a
-## counter of its own, so a part that is kept keeps its count, and one made anew starts at 0 again.
-## The page's query sets where it starts (`?card=2&mode=11`), so the server renders, and the browser
-## hydrates, each case.
+## D-070's control flow, for the tests (`control_app.roc`): a hole's `if` (`else if` too) and
+## `match`, each the part its branch makes, made again only when another branch holds; a match
+## arm's names read through getters, so the arm stays while its value changes; and a part made anew
+## for each value, a `<For>` of one row keyed by it. Each part holds a counter of its own, so a part
+## that is kept keeps its count, and one made anew starts at 0 again. The page's query sets where
+## it starts (`?card=2&mode=11`), so the server renders, and the browser hydrates, each case.
 Control := [].{
 	Card : { id : U64, name : Str }
 
@@ -25,17 +24,41 @@ Control := [].{
 			<button class="clear" on:click={|| set_card!(Err(None))}>Clear</button>
 			<button class="mode" on:click={|| set_mode!(mode!() + 1)}>Mode</button>
 			<button class="jump" on:click={|| set_mode!(Control.jump(mode!()))}>Jump</button>
-			<Show when!={card!().is_ok()} fallback={<p class="none">No card</p>}><Counter part="plain" label="plain" /></Show>
-			<Show when!={card!()}>{|shown!| <Counter part="narrowed" label={shown!().name} />}</Show>
-			<Show when!={card!()} keyed><Counter part="keyed-plain" label="keyed" /></Show>
-			<Show when!={card!()} keyed>{|shown| <Counter part="keyed" label={shown.name} />}</Show>
-			<Switch fallback={<p class="nothing">Nothing</p>}>
-				<Match when!={mode!() == 0}><Counter part="zero" label="zero" /></Match>
-				<Match when!={Control.small(mode!())}>{|small!| <Counter part="small" label={small!()} />}</Match>
-				<Match when!={Control.big(mode!())} keyed>{|n| <Counter part="big" label={n.to_str()} />}</Match>
-			</Switch>
+			{if (card!().is_ok()) <Counter part="plain" label="plain" /> else <p class="none">No card</p>}
+			{match card!() {
+				Ok(shown) => <Counter part="narrowed" label={shown.name} />
+				Err(_) => <></>
+			}}
+			<For each!={Control.listed(card!())} keyed={|shown| Str.inspect(shown)}>{|shown!, _| <Counter part="keyed" label={shown!().name} />}</For>
+			{match Control.kind(mode!()) {
+				Zero => <Counter part="zero" label="zero" />
+				Small(said) => <Counter part="small" label={said} />
+				Big(n) => <Counter part="big" label={n.to_str()} />
+				Nothing => <p class="nothing">Nothing</p>
+			}}
 		</div>
 	}
+
+	## The card as a list of none or one: a `<For>` keyed by its value makes its row anew for each.
+	listed : Try(Control.Card, [None]) -> List(Control.Card)
+	listed = |card|
+		match card {
+			Ok(it) => [it]
+			Err(_) => []
+		}
+
+	## What a mode is: 0, small (1 to 9, named), big (10 to 99), or nothing.
+	kind : U64 -> [Zero, Small(Str), Big(U64), Nothing]
+	kind = |mode|
+		if mode == 0 {
+			Zero
+		} else if mode < 10 {
+			Small("small ${mode.to_str()}")
+		} else if mode < 100 {
+			Big(mode)
+		} else {
+			Nothing
+		}
 
 	## The card the page starts with: `?card=0` none, else that one.
 	start_card : Str -> Try(Control.Card, [None])
@@ -72,14 +95,6 @@ Control := [].{
 			Ok(it) => Ok({ ..it, name: "${it.name}'" })
 			Err(_) => Err(None)
 		}
-
-	## 1 to 9: a small mode, named (narrowed, not keyed: the part stays while it changes).
-	small : U64 -> Try(Str, [None])
-	small = |mode| if (mode >= 1 and mode < 10) Ok("small ${mode.to_str()}") else Err(None)
-
-	## 10 to 99: a big one (keyed: each one its own part).
-	big : U64 -> Try(U64, [None])
-	big = |mode| if (mode >= 10 and mode < 100) Ok(mode) else Err(None)
 
 	## From a small mode to a big one, from a big one to none, from none to 0.
 	jump : U64 -> U64

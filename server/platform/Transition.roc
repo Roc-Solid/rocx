@@ -1,6 +1,6 @@
 ## An animation an element plays as it comes and as it goes, as Svelte's transitions are: written
 ## on the element (`transition={…}` both ways, `transition:in={…}`, `transition:out={…}`), played
-## when a `<For>`'s row or a `<Show>`'s part that has it comes or goes. One that goes stays on the
+## when a `<For>`'s row or an `if`'s or `match`'s part that has it comes or goes. One that goes stays on the
 ## page, its holes no longer run, until its animations are over; then the runtime takes it away.
 ##
 ##     <li transition={Transition.fade}>{todo!().text}</li>

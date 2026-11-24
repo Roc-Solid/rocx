@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Show
 import pf.Transition
 import presence.AvatarStack
 import presence.Stack
@@ -45,16 +44,18 @@ CardTile := [].{
 			</ul>
 			<a class="open" href={"?card=${card!().id}"} draggable="false" noscroll>{card!().title}</a>
 			<div class="meta">
-				{=CardTile.due(card!().due, Board.is_overdue(board!(), card!()))}
-				{=CardTile.progress(Board.progress(card!().checklist))}
-				{=if (card!().description.is_empty()) <></> else <span class="has-notes" title="Has a description" role="img" aria-label="Has a description">≡</span>}
+				{CardTile.due(card!().due, Board.is_overdue(board!(), card!()))}
+				{CardTile.progress(Board.progress(card!().checklist))}
+				{if (card!().description.is_empty()) <></> else <span class="has-notes" title="Has a description" role="img" aria-label="Has a description">≡</span>}
 				<span class="space"></span>
-				<Show when!={!viewers!().is_empty()}>
+				{if !viewers!().is_empty() {
 					<AvatarStack faces!={viewers!} max={3} label={CardTile.viewing(viewers!())} />
-				</Show>
-				{=CardTile.assignee(board!().people, card!().assignee)}
+				} else {
+					<></>
+				}}
+				{CardTile.assignee(board!().people, card!().assignee)}
 			</div>
-			{=CardTile.editing(board!(), card!().id)}
+			{CardTile.editing(board!(), card!().id)}
 		</li>
 	}
 

@@ -4194,3 +4194,75 @@ name, and option 3 would make every actor module `.rocx`. `name` and `initial` t
 a kind's block, so a local of the same name shadows them.
 
 **Reversible:** yes: every kind becomes a value again and every call goes back through `Actor`.
+
+## D-070 One hole, and a hole's own `if` and `match` as control flow
+
+**Status.** Built (2026-11-24).
+
+**Context.** A hole said what it held by how it opened: `{x}` a `Str`, `{=x}` one `Html`, `{...x}`
+a list of it, because rocx runs before the compiler and can't see a type. So a branch of markup was
+`{=if (c) <b /> else <></>}`, and a number `{count.to_str()}`. In a component such a hole is a
+computation: when anything its condition read changed, it ran again and made its whole branch anew,
+so `{=if (count!() > 3) <Timer /> else <></>}` started a new `<Timer>` (its signals, its DOM, a
+field's focus and text) on every click past 3. `<Show>`, `<Switch>` and `<Match>` (D-053, Solid's)
+kept a part while its condition held, as components with props of their own (`when!`, `keyed`,
+`fallback`, a function child narrowing a `Try`). The user asked for one kind of `if`, native rather
+than components, that behaves as `<Show>` does.
+
+**Options.**
+1. Keep both: `{=if}` remakes its branch, `<Show>` keeps it; document when to use which.
+2. Drop `{=if}`, keep `<Show>` as the only conditional markup.
+3. One hole whose kind the compiler finds from the type, and the `if` and `match` in it compiled
+   as `<Show>` and `<Switch>` compile, since rocx sees their branches (Solid can't: a JSX ternary is
+   JavaScript); `<Show>`, `<Switch>` and `<Match>` gone.
+
+**Choice.** 3 (the user's: "native constructs are just nicer"; a match arm's names following its
+value, and numbers shown as they are).
+- **One hole.** `{x}` is `Html.hole(x)`, or `Html.hole_of(|| Html.hole(x))` when it reads what
+  changes: text, a number (its digits) or markup, by `x`'s type, through Roc's encoding:
+  `Str.encode(Html.Hole)` is `Hole.encode_str`, a number's `encode_u64` and the rest, and
+  `Html.encode` the markup itself. Another type (a record, a `Bool`) is a compile error at the
+  hole. `{=x}` is the same hole, kept for old files; `{...x}` is still a list.
+- **What a hole of either kind is.** Its JSON is `{"t":"hx"}`, and its run answers a JSON string
+  while it shows text alone, its markup's JSON otherwise. The runtime, the server's renderer and the
+  native engine write and patch it as a text hole (`<!--x-->`, the text patched) while it shows
+  text, as a markup hole (`<!--html-->`) otherwise; text that turns into markup turns into a range.
+  So a text hole costs what it did, in bytes, nodes and allocations.
+- **`if`.** A hole whose code is an `if` (its `else if`s, in either form: `if (c) a else b`,
+  `if c { a } else { b }`) and whose conditions read what changes is the part its branch makes
+  (`Html.branched`, the machinery `<Switch>` had): the case names the branch that holds, and the
+  part is made again only when another branch does, not when what the condition read changes
+  otherwise. It is no level of the page (D-040: `Html.switched`'s, a route's keyed part, are), and
+  the run that picks its branch reads the condition again without that counting as a read of the
+  location made once (the case follows it). Each branch is a hole of its own, so what it reads itself still follows. A switched part
+  whose case read nothing that changes is static: no comments, adopted as it is (D-052).
+- **`match`.** The same, the case naming the arm. An arm's names are getters (D-039's machinery,
+  the innermost view winning, the component's own props kept): `Ok(card) => <Card card={card} />`
+  keeps the arm while the card changes, and the card the arm reads is the newest. Read once the arm
+  no longer holds (never, as the runtime makes the arm again first), a name is `Html.unmatched!`, a
+  failure. A guard is the case's too.
+- **Text alone stays a text hole.** An `if` or `match` whose every branch is a string literal
+  (`{if (pending!()) "Saving…" else "Save"}`) is a text hole, patched, as before; so is one whose
+  conditions read nothing that changes (run once).
+- **Lines.** The generated code keeps the source's line ends and their indentation.
+- **What a test counts.** The browser host holds the last run's answer until the next; its live
+  count leaves that out, since an `if`'s part answers markup, which needs the heap.
+- **Keyed parts.** `<Show keyed>` made its part anew for each value; a `<For>` over a list of none
+  or one, keyed by the value, does that (`keyed={|card| Str.inspect(card)}`).
+- **`<Show>`, `<Switch>`, `<Match>`.** Gone from both platforms; writing one is an error that says
+  what to write. Every use in the repository moved: a `<Show>` an `if`, its fallback the `else`; one
+  with a function child a `match` (`Ok(v) => …, Err(_) => fallback`), its accessor the arm's name.
+
+**Why.** One way to write a branch, Roc's own, and the one that keeps what it made: the behaviour a
+user expects of an `if` in markup. The compiler, not the syntax, says what a hole holds, as it can
+where rocx can't. Solid needs components for control flow because JSX can't see into an expression;
+rocx reads the `if` before the compiler does, as Svelte reads `{#if}`.
+
+**Costs.** A hole's error for a value it can't show names `encode`, not `Str` ("does not have a
+method named encode"). A condition is read by the case and again by the part (cheap: a signal or a
+memo). A match arm's value is read again by each name's getter. An `if` whose branches are markup
+returned by a function (`panel(data!())`) still makes that branch's hole anew when what it reads
+changes: the part stays, its hole runs.
+
+**Reversible:** partly: the hole and the `if`/`match` compilation can go back to D-053's components;
+the moved files would move back.

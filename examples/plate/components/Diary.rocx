@@ -39,7 +39,7 @@ Diary := [].{
 					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>
 				</a>
 			</nav>
-			{=Summary.view({ eaten: Plate.total(entries!()), target: day!().target })}
+			{Summary.view({ eaten: Plate.total(entries!()), target: day!().target })}
 			<div class="meals">
 				{...Plate.meals.map(|meal| <MealPart meal={meal} entries!={Plate.in_meal(entries!(), meal)} day={day!().day} remove={remove} />)}
 			</div>

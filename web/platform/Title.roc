@@ -5,7 +5,7 @@ import Html
 ##     <Title>{post!().title} · Notes</Title>
 ##
 ## The last `<Title>` rendered that is still there is the title: a page's, rendered after its
-## layouts', over theirs; one inside a `<Show>`, while it shows. Its holes are computations, so
+## layouts', over theirs; one inside an `if`'s part, while it shows. Its holes are computations, so
 ## the title follows what they read. With none, the root layout's own `<title>` stands. The server
 ## puts the title in the page's `<head>`, first (`<title data-rocx>`), and the browser keeps
 ## `document.title` to it, from hydration on; hydrating, nothing in the layout's `<head>` changes.

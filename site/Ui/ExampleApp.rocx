@@ -48,18 +48,18 @@ ExampleApp := [].{
 			<ul class="shows">{...about.shows.map(|item| <li>{item}</li>)}</ul>
 			{...extra}
 
-			{=
+			{
 				if shots.is_empty() {
 					<></>
 				} else {
 					<>
 						<Heading id="screens">Screenshots</Heading>
-						{=ExampleApp.screens(facts.name, shots)}
+						{ExampleApp.screens(facts.name, shots)}
 					</>
 				}
 			}
 
-			{=if (facts.name == "echo") ExampleApp.bench(ExampleApps.bench) else <></>}
+			{if (facts.name == "echo") ExampleApp.bench(ExampleApps.bench) else <></>}
 
 			<Heading id="numbers">What it's made of</Heading>
 			<Stats stats={ExampleApp.stats(facts)} />
@@ -85,7 +85,7 @@ ExampleApp := [].{
 		phones = shots.keep_if(|each| each.phone)
 		<div class="screens">
 			{...wide.map(|each| ExampleApp.shot(name, each))}
-			{=if (phones.is_empty()) <></> else <div class="phones">{...phones.map(|each| ExampleApp.shot(name, each))}</div>}
+			{if (phones.is_empty()) <></> else <div class="phones">{...phones.map(|each| ExampleApp.shot(name, each))}</div>}
 		</div>
 	}
 
@@ -142,7 +142,7 @@ ExampleApp := [].{
 						<a href="https://github.com/codesenberg/bombardier" rel="external">bombardier</a>{", which sends a request on each of its connections, the next as soon as the answer is in, for ${ExampleApp.plural(it.seconds, "second")} at each number of connections, after a warm-up: first to "}<code>POST /echo</code>{", then to "}<code>POST /echo/json</code>{" ("}<code>examples/echo/bench.sh</code>{" runs the same). Every request goes through the host, the generated routes, a middleware that only passes it on, reading the JSON body and writing the JSON answer. What differs is the body: a string, then an order that nests."}
 					</p>
 					{...it.variants.map(|variant| ExampleApp.part(variant, it.variants))}
-					{=if (it.variants.any(|variant| variant.name == "json")) <></> else <><h3 id="bench-json">echo (json)</h3><p class="missing">Not measured yet: run <code>just example-apps --bench</code>.</p></>}
+					{if (it.variants.any(|variant| variant.name == "json")) <></> else <><h3 id="bench-json">echo (json)</h3><p class="missing">Not measured yet: run <code>just example-apps --bench</code>.</p></>}
 					<p>
 						{"Measured on ${it.measured}, at commit "}<code>{it.commit}</code>{", with bombardier on the same machine, competing with the server for its cores: read the numbers as a floor, not a ceiling. The machine's load average went from ${it.load} over the run, the benchmark's own load included."}
 					</p>
@@ -157,7 +157,7 @@ ExampleApp := [].{
 	part = |it, all|
 		<>
 			<h3 id={"bench-${it.name}"}>{"echo (${it.name})"}</h3>
-			{=ExampleApp.sends(it)}
+			{ExampleApp.sends(it)}
 			<TableWrap>
 				<table class="bench">
 					<thead>

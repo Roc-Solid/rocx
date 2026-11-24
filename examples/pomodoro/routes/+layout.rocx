@@ -15,7 +15,7 @@ view! = |{ meta, children, .. }|
 				<title>{meta.title}</title>
 				<meta name="description" content="Pomodoro: a focus timer, 25 minutes on and 5 off, the same page in a browser and on an Android phone." />
 				<meta name="theme-color" content="#fbf6f0" />
-				{=Styles.style}
+				{Styles.style}
 			</head>
 			<body>
 				{...children}

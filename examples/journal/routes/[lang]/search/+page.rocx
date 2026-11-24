@@ -9,7 +9,7 @@ import ../../../Ui/SearchBox
 view! = |{ params }|
 	<>
 		<Title>{I18n.t(params.lang, "search.title")} · Journal</Title>
-		{=if I18n.known(params.lang) {
+		{if I18n.known(params.lang) {
 			<section class="page-search">
 				<h1>{I18n.t(params.lang, "search.title")}</h1>
 				<SearchBox lang={params.lang} />

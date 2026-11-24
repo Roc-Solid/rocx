@@ -11,8 +11,8 @@ TableWrap := [].{
 			<table>
 				<thead><tr><th>Write</th><th>Means</th><th>Where</th></tr></thead>
 				<tbody>
-					<tr><td><code>{"{expr}"}</code></td><td>text, escaped</td><td>pages and components</td></tr>
-					<tr><td><code>{"{=expr}"}</code></td><td>one Html value, as it is</td><td>pages and components</td></tr>
+					<tr><td><code>{"{expr}"}</code></td><td>text, a number or markup, by its type</td><td>pages and components</td></tr>
+					<tr><td><code>{"{if … else …}"}</code></td><td>the branch that holds, kept while it does</td><td>pages and components</td></tr>
 					<tr><td><code>on:click</code></td><td>a handler, an effect</td><td>components</td></tr>
 				</tbody>
 			</table>

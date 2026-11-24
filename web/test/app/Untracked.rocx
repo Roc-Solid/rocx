@@ -32,7 +32,7 @@ Untracked := [].{
 ## they are static: the server writes them as text, and nothing runs them again.
 Badge := [].{
 	view! : { label : Str, tone : Str, strong : Bool } => Html
-	view! = |{ label, tone, strong }| <span class="badge" data-tone={tone}>{label}{=if (strong) <b>!</b> else <i>.</i>}</span>
+	view! = |{ label, tone, strong }| <span class="badge" data-tone={tone}>{label}{if (strong) <b>!</b> else <i>.</i>}</span>
 }
 
 ## A start value read in its body, once: said so with untrack! in `kept`; not in `first`, which a dev

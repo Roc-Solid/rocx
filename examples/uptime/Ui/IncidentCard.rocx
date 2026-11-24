@@ -11,7 +11,7 @@ IncidentCard := [].{
 	view = |{ incident, link }|
 		<article class={if (incident.open) "incident open" else "incident"} aria-label={incident.title}>
 			<header>
-				<h3>{=if (link) <a href={Paths.incidents_id({ id: incident.id.to_str() })}>{incident.title}</a> else <>{incident.title}</>}</h3>
+				<h3>{if (link) <a href={Paths.incidents_id({ id: incident.id.to_str() })}>{incident.title}</a> else <>{incident.title}</>}</h3>
 				<p class="meta">
 					<span class={if (incident.open) "badge open" else "badge"}>{if (incident.open) "Ongoing" else "Resolved"}</span>
 					{if (incident.open) "Since ${Days.moment(incident.opened_at)}, ${incident.duration} so far" else "${Days.moment(incident.opened_at)}, lasted ${incident.duration}"}

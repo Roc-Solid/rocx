@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!]
 import pf.For
-import pf.Show
 
 ## The syntax at a glance, filtered as you type: a <For> whose rows come and go as the query
 ## changes, each kept by what it says.
@@ -12,7 +11,7 @@ Cheatsheet := [].{
 	rows = [
 		{ write: "<tag attr=\"text\" other={expr}>…</tag>", means: "An element; {expr} must be a Str, and is escaped." },
 		{ write: "{expr}", means: "Text among children: a Str, escaped. In a component, it runs again when a signal it read changes, and patches its text." },
-		{ write: "{=expr}", means: "One Html value, as it is: a component's result, say." },
+		{ write: "{expr}", means: "Text, a number or markup, as the expression's type says." },
 		{ write: "{...expr}", means: "A List(Html), joined: what .map makes." },
 		{ write: "checked?={bool}", means: "A boolean attribute, there when true." },
 		{ write: "required", means: "A boolean attribute that is always on." },
@@ -32,7 +31,8 @@ Cheatsheet := [].{
 		{ write: "transition={Transition.fade}", means: "Plays as the element's row or part comes and goes; transition:in and transition:out play one way. A row that goes stays until it has." },
 		{ write: "(count!, set_count!) = create_signal!(0)", means: "A signal: an accessor, which whatever reads it subscribes to, and a setter." },
 		{ write: "total! = create_memo!(|| …)", means: "A value computed from signals once per change, for everything that reads it." },
-		{ write: "<Show when!={…} fallback={…}>", means: "What is inside while the condition holds; the fallback otherwise." },
+		{ write: "{if ready!() { … } else { … }}", means: "The branch that holds, kept while it does; made anew when another one does." },
+		{ write: "{match card!() { Ok(card) => …, Err(_) => … }}", means: "The arm that holds, kept while it does; its names read the newest value." },
 		{ write: "<For each!={…} keyed={|row| row.id}>", means: "A row per key, kept and moved as the list changes; keyed={Bool.False} keeps rows by position." },
 		{ write: "<Loading fallback={…}>", means: "What shows while an answer from the server is on its way." },
 		{ write: "<Errored fallback={|problem, retry| …}>", means: "What shows when something inside failed, and a way to try again." },
@@ -67,7 +67,7 @@ Cheatsheet := [].{
 			</div>
 			<p class="cheatsheet-count">
 				{shown!().len().to_str()} of {rows.len().to_str()}
-				<Show when!={shown!().is_empty()}><b>— nothing matches “{query!()}”</b></Show>
+				{if (shown!().is_empty()) <b>— nothing matches “{query!()}”</b> else <></>}
 			</p>
 		</div>
 	}

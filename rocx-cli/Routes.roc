@@ -2236,7 +2236,7 @@ Routes := [].{
 
 	## `Generated/Root.roc`, for both the server and the browser: the app's page, at the location, as
 	## its route's levels (D-040). The root layout is the document; below it, each other layout above
-	## the page, then the page, is a level: a keyed part (`Html.switched`, as a keyed `<Show>` is,
+	## the page, then the page, is a level: a keyed part (`Html.switched`, a part made anew when its key changes,
 	## D-053), made anew when its key changes (its file, or its own params) and kept while it doesn't.
 	## So a navigation keeps the layouts it can, and the query alone changing keeps the page. A layout
 	## is given its own params (its directory's) and the page's `meta`, as a getter that follows it.

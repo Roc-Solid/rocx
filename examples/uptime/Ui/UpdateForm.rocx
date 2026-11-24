@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Endpoint
 import pf.Server
-import pf.Show
 import pf.Router exposing [use_submission!]
 import ../Incident
 import ../Generated/Api
@@ -25,8 +24,8 @@ UpdateForm := [].{
 			<textarea id={"${field}-body"} name="body" rows="3" required maxlength="2000" placeholder="We have found the cause and are rolling back the change."></textarea>
 			<div class="row">
 				<button disabled?={submission.pending!()}>{if (submission.pending!()) "Posting…" else "Post update"}</button>
-				<Show when!={submission.result!()}>{|said!| <span class="said" role="status">{said!()}</span>}</Show>
-				<Show when!={submission.error!()}>{|problem!| <span class="problem" role="alert">{Server.explain(problem!())}</span>}</Show>
+				{match submission.result!() { Ok(said) => <span class="said" role="status">{said}</span>, Err(_) => <></> }}
+				{match submission.error!() { Ok(problem) => <span class="problem" role="alert">{Server.explain(problem)}</span>, Err(_) => <></> }}
 			</div>
 		</form>
 	}

@@ -544,7 +544,7 @@ test("untrack!, latest! and static holes (D-052): a hole whose reads are untrack
 	const { wasm, html } = await load("untracked");
 	assert.ok(html.includes(`<p class="tracked"><!--x-->1<!--/x--></p> <p class="untracked">1</p> <p class="sum"><!--x-->11<!--/x--></p> <p class="latest"><!--x-->11<!--/x--></p>`), "a hole that reads only inside untrack! is static: no comments");
 	assert.ok(html.includes(`<span class="badge" data-tone="calm">fixed<b>!</b></span>`), "given constants, a component's text and markup holes are static");
-	assert.ok(html.includes(`<span class="badge" data-tone="loud"><!--x-->n1<!--/x--><!--html--><i>.</i><!--/html--></span>`), "given what changes, they are holes");
+	assert.ok(html.includes(`<span class="badge" data-tone="loud"><!--x-->n1<!--/x--><!--show--><i>.</i><!--/show--></span>`), "given what changes, they are holes, and an if the part its branch makes (D-070)");
 	assert.ok(html.includes(`<p class="start">1 <!--x-->1<!--/x--> <!--x-->1<!--/x--></p>`));
 	const dev = await load("untracked-dev");
 	assert.equal(dev.html, html, "a dev build renders the same");
@@ -628,17 +628,18 @@ window.mounted = true;
 	}
 });
 
-test("<Show keyed> and <Switch>/<Match> (D-053): a keyed part is made anew when its value changes and only then (an equal value keeps it), a non-keyed one when it turns Ok; a <Switch> shows its first <Match> that holds, made anew when another one does or a keyed one's value changes, and its fallback while none does; each case rendered as the server would and hydrated strictly", { skip }, async () => {
+test("a hole's if and match (D-070): the part its branch makes, made again only when another branch holds, not each time what the condition reads changes; a match arm stays while its value changes, its names following (getters); a part made anew for each value is a <For> of one row keyed by it; each case rendered as the server would and hydrated strictly", { skip }, async () => {
 	const wasm = readFileSync(join(out, "control.wasm"));
 	const render = async (target) => (await Runtime.load(wasm)).renderToString({ path: target }).html;
 	const first = await render("/");
-	assert.ok(first.includes(`<!--show--><p class="plain"><button>plain</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a <Show>'s part between its comments, as before");
-	assert.ok(first.includes(`<!--show--><p class="keyed"><button>Card 1</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a keyed one's too: the value given as it is, its label static");
-	assert.ok(first.includes(`<!--show--><p class="zero"><button>zero</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a <Switch> is one part: its first <Match> that holds");
-	assert.ok((await render("/?card=0&mode=500")).includes(`<!--show--><p class="none">No card</p><!--/show-->`), "a fallback");
-	assert.ok((await render("/?card=0&mode=500")).includes(`<!--show--><p class="nothing">Nothing</p><!--/show-->`), "a <Switch>'s fallback");
-	assert.ok((await render("/?mode=3")).includes(`<!--show--><p class="small"><button><!--x-->small 3<!--/x--></button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a narrowed <Match>: its accessor followed");
-	assert.ok((await render("/?mode=12")).includes(`<!--show--><p class="big"><button>12</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a keyed <Match>: the value as it is");
+	assert.ok(first.includes(`<!--show--><p class="plain"><button>plain</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "an if's part between its comments, as a <Show>'s was");
+	assert.ok(first.includes(`<!--show--><p class="narrowed"><button><!--x-->Card 1<!--/x--></button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a match arm's: its name read through its getter, a hole");
+	assert.ok(first.includes(`<p class="keyed"><button><!--x-->Card 1<!--/x--></button> <span><!--x-->0<!--/x--></span></p>`), "the keyed row's");
+	assert.ok(first.includes(`<!--show--><p class="zero"><button>zero</button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a match is one part: the arm that holds");
+	assert.ok((await render("/?card=0&mode=500")).includes(`<!--show--><p class="none">No card</p><!--/show-->`), "else");
+	assert.ok((await render("/?card=0&mode=500")).includes(`<!--show--><p class="nothing">Nothing</p><!--/show-->`), "a match's last arm");
+	assert.ok((await render("/?mode=3")).includes(`<!--show--><p class="small"><button><!--x-->small 3<!--/x--></button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "an arm's name, followed");
+	assert.ok((await render("/?mode=12")).includes(`<!--show--><p class="big"><button><!--x-->12<!--/x--></button> <span><!--x-->0<!--/x--></span></p><!--/show-->`), "a number's arm");
 	const dir = mkdtempSync(join(tmpdir(), "rocx-control-"));
 	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
 	writeFileSync(join(dir, "control.wasm"), wasm);
@@ -662,45 +663,45 @@ window.hydrated = true;
 		}
 		assert.equal(await tab.eval("window.runtime.stats.patches"), 0, "nothing patched");
 		// Each part's count, clicked up once, then what each says after a change.
-		const parts = ["plain", "narrowed", "keyed-plain", "keyed", "zero", "small", "big", "none", "nothing"];
+		const parts = ["plain", "narrowed", "keyed", "zero", "small", "big", "none", "nothing"];
 		const shown = () => tab.eval(`Object.fromEntries(${JSON.stringify(parts)}.map((part) => [part, document.querySelector("p." + part)?.textContent ?? null]))`);
 		// Each part that shows, its count clicked up by one.
 		const bump = async () => {
 			const before = await tab.eval(`[...document.querySelectorAll("p span")].map((span) => Number(span.textContent))`);
-			for (const part of ["plain", "narrowed", "keyed-plain", "keyed", "zero", "small", "big"]) {
+			for (const part of ["plain", "narrowed", "keyed", "zero", "small", "big"]) {
 				if (await tab.eval(`!!document.querySelector("p.${part} button")`)) await tab.click(`p.${part} button`);
 			}
 			await tab.wait(`[...document.querySelectorAll("p span")].every((span, index) => Number(span.textContent) === ${JSON.stringify(before)}[index] + 1)`);
 		};
 		await bump();
-		assert.deepEqual(await shown(), { plain: "plain 1", narrowed: "Card 1 1", "keyed-plain": "keyed 1", keyed: "Card 1 1", zero: "zero 1", small: null, big: null, none: null, nothing: null });
+		assert.deepEqual(await shown(), { plain: "plain 1", narrowed: "Card 1 1", keyed: "Card 1 1", zero: "zero 1", small: null, big: null, none: null, nothing: null });
 		await tab.click(".same");
 		await tab.click(".rename");
 		await tab.wait(`document.querySelector("p.narrowed").textContent === "Card 1' 1"`);
-		assert.deepEqual(await shown(), { plain: "plain 1", narrowed: "Card 1' 1", "keyed-plain": "keyed 0", keyed: "Card 1' 0", zero: "zero 1", small: null, big: null, none: null, nothing: null }, "an equal value kept every part; a renamed card: the non-keyed parts kept (the narrowed one's label followed), the keyed ones made anew");
+		assert.deepEqual(await shown(), { plain: "plain 1", narrowed: "Card 1' 1", keyed: "Card 1' 0", zero: "zero 1", small: null, big: null, none: null, nothing: null }, "an equal value kept every part; a renamed card: the if's and the match's parts kept (the arm's name followed), the keyed row made anew");
 		await bump();
 		await tab.click(".same");
 		await tab.click(".mode");
 		await tab.wait(`document.querySelector("p.small")?.textContent === "small 1 0"`);
-		assert.deepEqual(await shown(), { plain: "plain 2", narrowed: "Card 1' 2", "keyed-plain": "keyed 1", keyed: "Card 1' 1", zero: null, small: "small 1 0", big: null, none: null, nothing: null }, "the card set to itself: nothing made anew; the <Switch>'s next <Match> holding first: made");
+		assert.deepEqual(await shown(), { plain: "plain 2", narrowed: "Card 1' 2", keyed: "Card 1' 1", zero: null, small: "small 1 0", big: null, none: null, nothing: null }, "the card set to itself: nothing made anew; the match's next arm holding: made");
 		await tab.click("p.small button");
 		await tab.click(".mode");
 		await tab.wait(`document.querySelector("p.small").textContent === "small 2 1"`);
-		assert.equal(await tab.eval(`document.querySelector("p.small span").textContent`), "1", "a narrowed <Match> stays while its value changes; its accessor follows");
+		assert.equal(await tab.eval(`document.querySelector("p.small span").textContent`), "1", "an arm stays while its value changes; its name follows");
 		await tab.click(".jump");
 		await tab.wait(`document.querySelector("p.big")?.textContent === "10 0"`);
 		await tab.click("p.big button");
 		await tab.wait(`document.querySelector("p.big").textContent === "10 1"`);
 		await tab.click(".mode");
-		await tab.wait(`document.querySelector("p.big").textContent === "11 0"`);
-		assert.equal(await tab.eval(`document.querySelectorAll("p.big").length`), 1, "a keyed <Match>, made anew for each value");
+		await tab.wait(`document.querySelector("p.big").textContent === "11 1"`);
+		assert.equal(await tab.eval(`document.querySelectorAll("p.big").length`), 1, "the big arm kept as its number changes, the number followed");
 		await tab.click(".jump");
 		await tab.wait(`document.querySelector("p.nothing")?.textContent === "Nothing"`);
 		await tab.click(".jump");
 		await tab.wait(`document.querySelector("p.zero")?.textContent === "zero 0"`);
 		await tab.click(".clear");
 		await tab.wait(`document.querySelector("p.none")?.textContent === "No card"`);
-		assert.deepEqual(await shown(), { plain: null, narrowed: null, "keyed-plain": null, keyed: null, zero: "zero 0", small: null, big: null, none: "No card", nothing: null }, "Err: the fallback, and nothing of the parts");
+		assert.deepEqual(await shown(), { plain: null, narrowed: null, keyed: null, zero: "zero 0", small: null, big: null, none: "No card", nothing: null }, "Err: else, and nothing of the parts");
 		await tab.click(".next");
 		await tab.wait(`document.querySelector("p.keyed")?.textContent === "Card 1 0"`);
 		assert.equal(await shown().then((now) => now.plain), "plain 0", "made again as it shows again");

@@ -157,7 +157,7 @@ view! = |_| {
 				<li>
 					<Who kind="js">JavaScript</Who> The runtime walks the server's nodes beside the markup
 					Roc made, from the doctype and <code>{"<html>"}</code> down, and binds each computation to its
-					own node: comments mark where each computed hole, row and <code>{"<Show>"}</code> is
+					own node: comments mark where each computed hole, row and <code>if</code>'s part is
 					(<code>{"<!--x-->…<!--/x-->"}</code>). Nothing is asked again or made again. A read of an
 					endpoint whose answer the page has (under <code>GET</code> and its URL) gets it from there, not
 					over the network.
@@ -245,7 +245,7 @@ view! = |_| {
 			<p>
 				A page keeps its wasm instance, so memory has to come back. The host allocates through Roc's
 				allocator and counts what is live. A box the runtime keeps (a hole's closure, a signal's value) is
-				released when what made it goes: a row dropped, a <code>{"<Show>"}</code> switched, a value
+				released when what made it goes: a row dropped, an <code>if</code> switched, a value
 				replaced. The tests click, type, add and drop rows, and render pages again and again, and check
 				that the count of live allocations doesn't move.
 			</p>

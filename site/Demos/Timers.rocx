@@ -1,13 +1,12 @@
 import pf.Html
 import pf.Solid exposing [create_signal!, set_interval!, set_timeout!]
 import pf.For
-import pf.Show
 import Clock
 
 ## The browser's timers, from Roc. `set_interval!` and `set_timeout!` run a handler later, and
 ## answer its `clear!`. The stopwatch keeps its interval's `clear!` in a signal, and Stop calls it.
 ## The search waits for a pause in the typing: each key clears the last key's timeout, and starts
-## its own. And the clock in the <Show> clears nothing: its interval stops when the clock goes.
+## its own. And the clock in the if clears nothing: its interval stops when the clock goes.
 Timers := [].{
 	Watch : [Stopped, Running(() => {})]
 	Search : [Idle, Waiting(() => {})]
@@ -81,9 +80,11 @@ Timers := [].{
 					<input type="checkbox" checked?={clock!()} on:change.checked={set_clock!} />
 					Show the clock
 				</label>
-				<Show when!={clock!()} fallback={<p class="timer-note">No clock, so no interval: the ticks stop.</p>}>
+				{if clock!() {
 					<Clock tick!={|| set_ticks!(ticks!() + 1)} />
-				</Show>
+				} else {
+					<p class="timer-note">No clock, so no interval: the ticks stop.</p>
+				}}
 				<p class="timer-note">{counted(ticks!(), "tick")} heard</p>
 			</section>
 		</div>

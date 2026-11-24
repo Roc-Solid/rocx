@@ -16,7 +16,7 @@ view! = |{ meta, children, .. }|
 				<meta name="theme-color" content="#fbf5ea" />
 				<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 				<link rel="stylesheet" href="/pinwheel.css" />
-				<NoHydration>{=Styles.style}</NoHydration>
+				<NoHydration>{Styles.style}</NoHydration>
 			</head>
 			<body>
 				{...children}

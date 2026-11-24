@@ -11,7 +11,7 @@ HitRow := [].{
 			<a href={href}>
 				<span class="name">{Plate.full_name(hit.name, hit.brand)}</span>
 				<span class="meta">
-					{=HitRow.tag(hit.source)}
+					{HitRow.tag(hit.source)}
 					<span>{"${Plate.whole(hit.kcal)} kcal / 100 g${if (hit.portion.is_empty()) "" else " · ${hit.portion}"}"}</span>
 				</span>
 			</a>

@@ -16,7 +16,7 @@ BarDemo := [].{
 		(walk!, set_walk!) = create_signal!(BarDemo.walk(2026))
 		(look!, set_look!) = create_signal!(Shuffle.first)
 		<Shuffle roll!={|| set_walk!(BarDemo.walk(walk!().seed))} look!={look!} set_look!={set_look!}>
-			{=<BarChart data!={walk!().birds} label="Birds counted on a morning walk, by kind" format={|count| Format.num(count, 0)} padding={Shuffle.pick(look!(), 0.3, 0.55, 0.12)} />}
+			{<BarChart data!={walk!().birds} label="Birds counted on a morning walk, by kind" format={|count| Format.num(count, 0)} padding={Shuffle.pick(look!(), 0.3, 0.55, 0.12)} />}
 		</Shuffle>
 	}
 

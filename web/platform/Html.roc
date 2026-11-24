@@ -13,14 +13,13 @@ Html :: [
 	Doctype,
 	TextOf(() => Str),
 	HtmlOf(() => Html),
+	HoleOf(() => Html),
 	ListOf(() => List(Html)),
 	Fragment(List(Html)),
 	Loading(Html, List(Html)),
 	Errored((Str, (() => {}) -> Html), List(Html)),
-	Shown(() => Bool, List(Html), Html),
-	ShownWith(() => Bool, () => Html, Html),
 	Switched(() => Try(Str, [None]), () => Html, Html),
-	Matched(() => Try(Str, [None]), () => Html),
+	Branched(() => Try(Str, [None]), () => Html),
 	Each(U64 => List({ key : Str, row : () => Html }), Html),
 	Component(() => Html),
 	Provided(Str, U64, List(Html)),
@@ -105,6 +104,83 @@ Html :: [
 
 	html_of : (() => Html) -> Html
 	html_of = |compute| HtmlOf(compute)
+
+	## What a hole (`{x}`, D-070) shows of its value, by its type: text (escaped), a number's digits
+	## (`{count}`), or markup as it is. rocx writes `Html.hole(x)` for a hole that reads nothing
+	## that changes, and `Html.hole_of(|| Html.hole(x))` for one that does; the compiler picks what to do from
+	## `x`'s type, through Roc's encoding: `Str.encode(Hole)` is `Hole.encode_str`, a number's is
+	## its `encode_*`, and `Html.encode` is the markup itself. A value of another type (a record, a
+	## `Bool`) is a compile error at the hole: it has no `encode`, or `Hole` no `encode_*` for it.
+	hole : a -> Html where [a.encode : a, Html.Hole -> Try(Html, [])]
+	hole = |value|
+		match value.encode(Hole) {
+			Ok(markup) => markup
+		}
+
+	## A hole that reads what changes, run again when it does: rocx writes `Html.hole_of(|| Html.hole(x))`.
+	## While what it shows is text alone, the runtime patches the text, as a text hole's
+	## (`<!--x-->`); when it is markup, it is a markup hole's range (`<!--html-->`).
+	hole_of : (() => Html) -> Html
+	hole_of = |compute| HoleOf(compute)
+
+	## What a name a `match` arm binds reads (D-070: rocx makes it a getter, so the arm stays while
+	## its value changes) once its arm no longer holds: never, as the arm is made again first; if it
+	## ever is, a failure, the nearest `<Errored>`'s.
+	unmatched! : Str => a
+	unmatched! = |why| {
+		Host.fail!(why)
+		crash "unreachable: fail! doesn't return"
+	}
+
+	## Markup in a hole is itself.
+	encode : Html, Html.Hole -> Try(Html, [])
+	encode = |self, _| Ok(self)
+
+	## The format a hole encodes its value in (`Html.hole`): text as a text node, a number as its
+	## digits. Nothing else: a hole showing a `Bool` or a record is a compile error.
+	Hole := [Hole].{
+		encode_str : Html.Hole, Str -> Try(Html, [])
+		encode_str = |_, words| Ok(Text(words))
+
+		encode_u8 : Html.Hole, U8 -> Try(Html, [])
+		encode_u8 = |_, number| Ok(Text(number.to_str()))
+
+		encode_u16 : Html.Hole, U16 -> Try(Html, [])
+		encode_u16 = |_, number| Ok(Text(number.to_str()))
+
+		encode_u32 : Html.Hole, U32 -> Try(Html, [])
+		encode_u32 = |_, number| Ok(Text(number.to_str()))
+
+		encode_u64 : Html.Hole, U64 -> Try(Html, [])
+		encode_u64 = |_, number| Ok(Text(number.to_str()))
+
+		encode_u128 : Html.Hole, U128 -> Try(Html, [])
+		encode_u128 = |_, number| Ok(Text(number.to_str()))
+
+		encode_i8 : Html.Hole, I8 -> Try(Html, [])
+		encode_i8 = |_, number| Ok(Text(number.to_str()))
+
+		encode_i16 : Html.Hole, I16 -> Try(Html, [])
+		encode_i16 = |_, number| Ok(Text(number.to_str()))
+
+		encode_i32 : Html.Hole, I32 -> Try(Html, [])
+		encode_i32 = |_, number| Ok(Text(number.to_str()))
+
+		encode_i64 : Html.Hole, I64 -> Try(Html, [])
+		encode_i64 = |_, number| Ok(Text(number.to_str()))
+
+		encode_i128 : Html.Hole, I128 -> Try(Html, [])
+		encode_i128 = |_, number| Ok(Text(number.to_str()))
+
+		encode_f32 : Html.Hole, F32 -> Try(Html, [])
+		encode_f32 = |_, number| Ok(Text(number.to_str()))
+
+		encode_f64 : Html.Hole, F64 -> Try(Html, [])
+		encode_f64 = |_, number| Ok(Text(number.to_str()))
+
+		encode_dec : Html.Hole, Dec -> Try(Html, [])
+		encode_dec = |_, number| Ok(Text(number.to_str()))
+	}
 
 	list_of : (() => List(Html)) -> Html
 	list_of = |compute| ListOf(compute)
@@ -267,7 +343,7 @@ Html :: [
 	key_of : (() => Str) -> Attr
 	key_of = |compute| KeyOf(compute)
 
-	## An animation the element plays as it comes with a `<For>`'s row or a `<Show>`'s part (`In`,
+	## An animation the element plays as it comes with a `<For>`'s row or the part an `if` or `match` makes (D-070) (`In`,
 	## `transition:in={…}`), as it goes with one (`Out`, `transition:out={…}`), or both (`Both`,
 	## `transition={…}`); or as it moves (`Move`, `transition:move={…}`: only its pace counts). See
 	## `Transition`.
@@ -285,45 +361,18 @@ Html :: [
 	errored : (Str, (() => {}) -> Html), List(Html) -> Html
 	errored = |fallback, children| Errored(fallback, children)
 
-	## What is inside while `holds!` holds, the fallback otherwise (`<Show>`): each made when it shows,
-	## as a component is (once, its reads untracked), and made again each time it shows again.
-	shown : (() => Bool), List(Html), Html -> Html
-	shown = |holds!, children, fallback| Shown(holds!, children, fallback)
-
-	## The same, what is inside made when it shows (`<Show>` with a function child).
-	shown_with : (() => Bool), (() => Html), Html -> Html
-	shown_with = |holds!, child, fallback| ShownWith(holds!, child, fallback)
-
-	## What shows of a `<Switch>`, or of a keyed `<Show>`: `case!` names the part that shows
-	## (`Ok(name)`), or answers that none does (`Err(None)`), and a change of the name makes the part
-	## anew, as a change of whether a `<Show>` holds does; `made!` makes the part that shows, as a
-	## component is made (where it is rendered, once, its reads untracked); the fallback while none
-	## shows.
+	## The part a hole's `if` or `match` makes (D-070), as Solid's `<Show>` and `<Switch>` make
+	## theirs: `case!` names the branch that holds (`Ok(name)`; `Err(None)`: none, the fallback), and a
+	## change of the name makes the part anew; `made!` makes the branch's part, as a component is made
+	## (where it is rendered, once, its reads untracked). A level of the page (D-040) is one too.
 	switched : (() => Try(Str, [None])), (() => Html), Html -> Html
 	switched = |case!, made!, fallback| Switched(case!, made!, fallback)
 
-	## A `<Match>`: `case!` names it while it holds (`Ok(name)`: a change of the name makes it anew),
-	## `made!` makes what it shows. `Html.switch` shows the first of them that holds; one on its own
-	## is a `<Show>` with no fallback.
-	matched : (() => Try(Str, [None])), (() => Html) -> Html
-	matched = |case!, made!| Matched(case!, made!)
-
-	## A `<Switch>`: of its children, the `<Match>`es (`Html.matched`; the rest, a line's spaces, are
-	## passed over), the first that holds shows, made anew when another one does (or, keyed, when its
-	## value changes); the fallback while none holds. Each `<Match>`'s condition is read in order, up
-	## to the first that holds, as Solid reads them.
-	switch : List(Html), Html -> Html
-	switch = |children, fallback| {
-		cases = children.fold(
-			[],
-			|found, child|
-				match child {
-					Matched(case!, made!) => found.append({ case!, made! })
-					_ => found
-				},
-		)
-		Switched(|| first_case!(cases, 0), || first_made!(cases), fallback)
-	}
+	## What rocx writes for a hole's `if` or `match` that reads what changes (D-070): the part the
+	## branch `case!` names makes (`made!`), made anew when the name changes, as `switched`'s is; but
+	## no level of the page (D-040), so a read of where it is in it belongs to the level around it.
+	branched : (() => Try(Str, [None])), (() => Html) -> Html
+	branched = |case!, made!| Branched(case!, made!)
 
 	## Rows, by key (`<For>`): `rows!`, given the list's id, says which rows there are now, and
 	## how to make each; the runtime keeps a row while its key is there, and moves it.
@@ -386,7 +435,7 @@ Html :: [
 
 	## Handlers on the whole document (`<Document on:keydown.Mod+K={open!} />`), written as an
 	## element's are (any but `on:frame.ms`): attached where it is rendered, and taken off when that
-	## goes (a `<Show>` hiding it, a row going), as Solid's `makeEventListener` is. Nothing on the
+	## goes (an `if`'s branch switched, a row going), as Solid's `makeEventListener` is. Nothing on the
 	## page, on the server or in the browser.
 	on_document : List(Attr) -> Html
 	on_document = |handlers| Listen("document", handlers)
@@ -410,7 +459,7 @@ Html :: [
 	no_hydration = |children| NoHydration(children)
 
 	## Markup with nothing to run in it as HTML, as the server renders it: an email's HTML, or what
-	## an `expect` compares. A computation (a hole that reads a signal), a `<Show>`, a `<For>` or a
+	## an `expect` compares. A computation (a hole that reads a signal), an `if`'s part, a `<For>` or a
 	## component needs the runtime: here it is an error.
 	to_str : Html -> Str
 	to_str = |node| static_str(node, Bool.False)
@@ -418,8 +467,8 @@ Html :: [
 	## The markup as JSON for the runtime, each computation, handler and fallback kept by it (its id
 	## in the JSON). Static parts are plain: `{"t":"e","tag":…,"a":[…],"c":[…]}`, `{"t":"s","v":…}`,
 	## `{"t":"raw","v":…}` (a `<script>`'s or `<style>`'s text, as written), `{"t":"doctype"}`;
-	## holes name what they run: `{"t":"x","r":id}` text, `{"t":"h","r":id}` markup, `{"t":"l","r":id}`
-	## a list; boundaries hold their parts, and so does `{"t":"nh","c":[…]}`, a `<NoHydration>`.
+	## holes name what they run: `{"t":"x","r":id}` text, `{"t":"h","r":id}` markup, `{"t":"hx","r":id}`
+	## either (`Html.hole_of`: its run answers a JSON string while it shows text alone, else markup), `{"t":"l","r":id}` a list; boundaries hold their parts, and so does `{"t":"nh","c":[…]}`, a `<NoHydration>`.
 	serialize! : Html => Str
 	serialize! = |node|
 		match node {
@@ -430,6 +479,15 @@ Html :: [
 			Doctype => "{\"t\":\"doctype\"}"
 			TextOf(compute) => "{\"t\":\"x\",\"r\":${keep!(|| json_str(compute()))}}"
 			HtmlOf(compute) => "{\"t\":\"h\",\"r\":${keep!(|| serialize!(compute()))}}"
+			# What it shows: its text alone as a JSON string (as a text hole's, `"…"`), or its markup's JSON.
+			HoleOf(compute) => "{\"t\":\"hx\",\"r\":${
+				keep!(
+					|| match compute() {
+						Text(content) => json_str(content)
+						markup => serialize!(markup)
+					},
+				)
+			}}"
 			ListOf(compute) => "{\"t\":\"l\",\"r\":${keep!(|| "[${nodes!(compute())}]")}}"
 			Fragment(parts) => "{\"t\":\"f\",\"c\":[${nodes!(parts)}]}"
 			Loading(fallback, children) => "{\"t\":\"loading\",\"fallback\":${made!(fallback)},\"c\":[${nodes!(children)}]}"
@@ -440,12 +498,10 @@ Html :: [
 				}
 				"{\"t\":\"errored\",\"r\":${keep!(shown!)},\"c\":[${nodes!(children)}]}"
 			}
-			Shown(holds!, children, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| truth!(holds!))},\"c\":[${made!(Fragment(children))}],\"fallback\":${made!(fallback)}}"
-			ShownWith(holds!, child, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| truth!(holds!))},\"with\":${keep!(|| serialize!(child()))},\"fallback\":${made!(fallback)}}"
-			# A <Switch>'s or a keyed <Show>'s: what `r` answers is the case's name (`"#…"`: never empty,
-			# so truthy), and the runtime makes the part anew when it changes, as when a <Show> switches.
+			# A hole's if or match's part (D-070), a level's: what `r` answers is the case's name (`"#…"`:
+			# never empty, so truthy), and the runtime makes the part anew when it changes.
 			Switched(case!, made, fallback) => "{\"t\":\"show\",\"r\":${keep!(|| case_json!(case!))},\"with\":${keep!(|| serialize!(made()))},\"fallback\":${made!(fallback)}}"
-			Matched(case!, made) => "{\"t\":\"show\",\"r\":${keep!(|| case_json!(case!))},\"with\":${keep!(|| serialize!(made()))},\"fallback\":{\"t\":\"f\",\"c\":[]}}"
+			Branched(case!, made) => "{\"t\":\"show\",\"b\":1,\"r\":${keep!(|| case_json!(case!))},\"with\":${keep!(|| serialize!(made()))},\"fallback\":{\"t\":\"f\",\"c\":[]}}"
 			Each(rows!, fallback) => {
 				id = Host.for_new!({})
 				listed! = || {
@@ -478,6 +534,7 @@ plain! = |parts| {
 				Fragment(children) => plain!(children)
 				NoHydration(children) => plain!(children)
 				HtmlOf(compute) => plain!([compute()])
+				HoleOf(compute) => plain!([compute()])
 				ListOf(compute) => plain!(compute())
 				_ => ""
 			}
@@ -529,6 +586,7 @@ raw_text! = |parts| {
 				TextOf(compute) => compute()
 				Fragment(children) => raw_text!(children)
 				HtmlOf(compute) => raw_text!([compute()])
+				HoleOf(compute) => raw_text!([compute()])
 				ListOf(compute) => raw_text!(compute())
 				_ => ""
 			}
@@ -582,11 +640,11 @@ head_key = |element|
 		_ => ""
 	}
 
-## What a `<Show>` shows, and a fallback (a `<Show>`'s, a `<For>`'s, a `<Loading>`'s), for its JSON:
+## What an `if`'s or `match`'s part shows, and a fallback (a `<For>`'s, a `<Loading>`'s), for its JSON:
 ## made when it shows, as a component is (`{"t":"c"}`): where it is rendered, once, its reads
 ## untracked, owned by its part, and made again each time it shows again. So a value prop in it is
 ## read then, not when the page was. Nothing to make for none (`Html.empty`, a fallback's default).
-## A `<For>`'s rows and a `<Show>`'s function child are made when they come too, by computations
+## A `<For>`'s rows and an `if`'s or `match`'s part are made when they come too, by computations
 ## of their own (`"r"`, `"with"`).
 made! : Html => Str
 made! = |part| {
@@ -597,9 +655,6 @@ made! = |part| {
 	}
 }
 
-truth! : (() => Bool) => Str
-truth! = |holds!| if (holds!()) "true" else "false"
-
 ## A case's name as the runtime compares it (`"#name"`), or `false` when none holds.
 case_json! : (() => Try(Str, [None])) => Str
 case_json! = |case!|
@@ -607,38 +662,6 @@ case_json! = |case!|
 		Ok(name) => json_str("#${name}")
 		Err(_) => "false"
 	}
-
-## Of a `<Switch>`'s `<Match>`es, from `index` on, the first that holds: its index and its name.
-first_case! : List({ case! : () => Try(Str, [None]), made! : () => Html }), U64 => Try(Str, [None])
-first_case! = |cases, index|
-	match cases.get(index) {
-		Ok(next) =>
-			match (next.case!)() {
-				Ok(name) => Ok("${index.to_str()}:${name}")
-				Err(_) => first_case!(cases, index + 1)
-			}
-		Err(_) => Err(None)
-	}
-
-## What the first `<Match>` that holds shows, made; nothing if none does (it held when the case was
-## read, in this same flush).
-first_made! : List({ case! : () => Try(Str, [None]), made! : () => Html }) => Html
-first_made! = |cases| {
-	var $shown = Html.empty({})
-	var $found = Bool.False
-	for next in cases {
-		if !$found {
-			match (next.case!)() {
-				Ok(_) => {
-					$shown = (next.made!)()
-					$found = Bool.True
-				}
-				Err(_) => {}
-			}
-		}
-	}
-	$shown
-}
 
 ## Runs a handler; a handler answers nothing.
 handled! : (() => {}) => Str
@@ -765,7 +788,7 @@ static_str = |node, quiet|
 		NoHydration(children) => marked("nohydration", static_nodes(children, Bool.True), quiet)
 		# Handlers on the document or the window: nothing on the page.
 		Listen(_, _) => ""
-		_ => crash "Html.to_str renders markup with nothing to run in it: a computation, a <Show>, a <For> or a component needs the runtime"
+		_ => crash "Html.to_str renders markup with nothing to run in it: a computation, an if's part, a <For> or a component needs the runtime"
 	}
 
 ## `inner` between a part's comments (`<!--label-->…<!--/label-->`), or as it is when `quiet`.

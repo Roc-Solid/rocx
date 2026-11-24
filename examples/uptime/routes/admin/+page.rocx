@@ -75,7 +75,7 @@ view! = |_| {
 				<For each!={admin!().incidents} keyed={|incident| incident.id}>
 					{|incident!, _|
 						<li>
-							{=<IncidentCard incident={incident!()} link={Bool.True} />}
+							{<IncidentCard incident={incident!()} link={Bool.True} />}
 							<UpdateForm incident={incident!().id} />
 						</li>}
 				</For>

@@ -2,7 +2,6 @@ import pf.Html
 import pf.Channel
 import pf.Endpoint
 import pf.For
-import pf.Show
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
 import ../Days
 import ../Report
@@ -47,7 +46,7 @@ view! = |_| {
 		}
 	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
 	<div class="status" class:stale={is_pending!(overview!)}>
-		{=<Banner banner={overview!().banner} />}
+		{<Banner banner={overview!().banner} />}
 		<p class="live">
 			<span class="signal" class:on={live!()} aria-hidden="true"></span>
 			<span>{if (live!()) "Live" else "Connecting…"}</span>
@@ -55,16 +54,18 @@ view! = |_| {
 			<span>Updated {Days.clock(overview!().now)} UTC</span>
 			<span class="visually-hidden" aria-live="polite">{said!()}</span>
 		</p>
-		<Show when!={overview!().incidents.any(|incident| incident.open)}>
+		{if overview!().incidents.any(|incident| incident.open) {
 			<section class="now" aria-labelledby="now">
 				<h2 id="now">Happening now</h2>
 				<ul class="incidents">
 					<For each!={overview!().incidents.keep_if(|incident| incident.open)} keyed={|incident| incident.id}>
-						{|incident!, _| <li>{=<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
+						{|incident!, _| <li>{<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
 					</For>
 				</ul>
 			</section>
-		</Show>
+		} else {
+			<></>
+		}}
 		<div class="groups">
 			<For each!={overview!().groups} keyed={|group| group.name}>
 				{|group!, _| <GroupSection group!={group!()} />}
@@ -75,7 +76,7 @@ view! = |_| {
 			<p class="quiet" hidden?={overview!().incidents.any(|incident| !incident.open)}>No incidents in the last 14 days.</p>
 			<ul class="incidents">
 				<For each!={overview!().incidents.keep_if(|incident| !incident.open)} keyed={|incident| incident.id}>
-					{|incident!, _| <li>{=<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
+					{|incident!, _| <li>{<IncidentCard incident={incident!()} link={Bool.True} />}</li>}
 				</For>
 			</ul>
 		</section>

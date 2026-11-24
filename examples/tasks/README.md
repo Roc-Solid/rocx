@@ -54,7 +54,7 @@ each piece is where it is.
 | Effectful components (`view!`) | [`components/TaskRow.rocx`](components/TaskRow.rocx), [`components/AddTask.rocx`](components/AddTask.rocx), the pages' `Board`, `Editor`, `Field` |
 | A `<story>` of a pure component | [`components/DueBadge.rocx`](components/DueBadge.rocx) (four: `rocx build --dev`, then `/__rocx/stories`) |
 | Scoped `<style>`s, tokens on `:root` (light and dark), a narrow layout | every component; the tokens in [`routes/+layout.rocx`](routes/+layout.rocx) |
-| `<For>` keyed rows that glide when they move (`transition:move`), `<Show>`, `<Title>`, `<HttpStatusCode>` | [`components/TaskRow.rocx`](components/TaskRow.rocx), [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx) |
+| `<For>` keyed rows that glide when they move (`transition:move`), `if` and `match` in holes, `<Title>`, `<HttpStatusCode>` | [`components/TaskRow.rocx`](components/TaskRow.rocx), [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx) |
 | Tests: expects, HTTP, the database, a real browser | [`test/tasks.test.mjs`](test/tasks.test.mjs), and the expects in each module |
 
 ## Build and run it

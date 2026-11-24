@@ -2,10 +2,9 @@ import pf.Html
 import pf.Solid exposing [create_signal!, use_context!]
 import pf.Context
 import pf.For
-import pf.Show
 
 ## Picks you can reverse, add to, shout and clear: Solid's <For>, by key and
-## by position, and <Show>. The picks are a store: what is under a
+## by position, and an if and a match. The picks are a store: what is under a
 ## <PicksContext> reads and writes the same ones (the docs' tally does).
 Picks := [].{
 	Pick : { id : U64, name : Str }
@@ -68,15 +67,15 @@ Picks := [].{
 				</ol>
 			</div>
 			<div class="picks-shows">
-				<Show
-					when!={picks!().len() > 3}
-					fallback={<p class="few">Three or fewer</p>}
-				>
+				{if picks!().len() > 3 {
 					<p class="many">More than three</p>
-				</Show>
-				<Show when!={picks!().first()}>
-					{|first!| <p class="first">First: {first!().name}</p>}
-				</Show>
+				} else {
+					<p class="few">Three or fewer</p>
+				}}
+				{match picks!().first() {
+					Ok(first) => <p class="first">First: {first.name}</p>
+					Err(_) => <></>
+				}}
 			</div>
 		</section>
 	}
