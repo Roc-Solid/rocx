@@ -2853,16 +2853,20 @@ test("channels: two components on one channel share one stream with a third's; e
 		await sleep(100);
 		assert.doesNotMatch(await tab.eval("document.querySelector('.feed.first').textContent"), /news 4/);
 		// Cut off: the hub opens it again, a little later each time it drops at once, and every
-		// subscriber hears resync each time.
-		await tab.eval("window.ready.runtime.hub.first = 80");
+		// subscriber hears resync each time. Each gap is the wait and a reconnect's own cost; on a
+		// slower machine (ROCX_TIME_SCALE) that cost is bigger (CI's runner: 44 to 255 ms), so the
+		// first wait is as many times longer, for the doubling to show.
+		const scale = Number(process.env.ROCX_TIME_SCALE) || 1;
+		const first = 80 * scale;
+		await tab.eval(`window.ready.runtime.hub.first = ${first}`);
 		live.dropping = true;
 		const cut = performance.now();
 		live.streams[0].response.end();
-		await until(() => live.connects.length >= 5, 5000, "four reconnects");
+		await until(() => live.connects.length >= 5, 5000 * scale, "four reconnects");
 		live.dropping = false;
-		await until(() => live.connects.length >= 6, 5000, "a stream that stays");
+		await until(() => live.connects.length >= 6, 5000 * scale, "a stream that stays");
 		const gaps = live.connects.slice(1, 6).map((connect, i) => connect.at - (i ? live.connects[i].at : cut));
-		assert.ok(gaps[0] >= 75 && gaps[0] < 400, `the first after ~80 ms: ${gaps.map(Math.round)}`);
+		assert.ok(gaps[0] >= first - 5 && gaps[0] < 400 * scale, `the first after ~${first} ms: ${gaps.map(Math.round)}`);
 		for (let i = 1; i < gaps.length; i++) assert.ok(gaps[i] > gaps[i - 1] * 1.4, `each wait about twice the last: ${gaps.map(Math.round)}`);
 		assert.ok(live.connects.every((connect) => connect.tab === id), "one tab throughout");
 		await tab.wait("document.querySelector('.feed.first').textContent.split('resync zeta').length === 7", 3000);
@@ -2872,7 +2876,7 @@ test("channels: two components on one channel share one stream with a third's; e
 		// own, keeps it, and connects again with it.
 		const connects = live.connects.length;
 		live.streams[0].response.end("event: replaced\ndata: \n\n");
-		await until(() => live.connects.length > connects, 5000, "a reconnect");
+		await until(() => live.connects.length > connects, 5000 * scale, "a reconnect");
 		const fresh = live.connects.at(-1).tab;
 		assert.match(fresh, /^[0-9a-f]{24}$/);
 		assert.notEqual(fresh, id, "an id of its own");
