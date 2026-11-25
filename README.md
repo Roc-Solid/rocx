@@ -817,6 +817,12 @@ rocx build <dir>…        # each .rocx file under the directories becomes the .
                          # Generated/Content/<Name>.roc (its Markdown files: packages/markdown's README)
   --client <out>         # and the browser's copy of the app in <out> (main.roc, static/rocx/)
   --dev                  # and the stories, served at /__rocx/stories
+rocx build <dir> --release <out>  # the app built to deploy: <out>/server (optimized for speed) and
+                         # <out>/static (the app's static/ and the browser's files, its wasm
+                         # optimized for size); run <out>/server --static <out>/static behind a proxy
+                         # that speaks TLS
+  --target arm64musl     # for another machine (arm64mac, x64mac, arm64musl, x64musl: a musl one is
+                         # a static Linux executable); this one's by default
 rocx check [dir]         # the app (here, or in dir) checked from its sources: rocx build as rocx dev
                          # runs it, then the compiler on the server's program and the browser's, each
                          # problem at its .rocx line; exit 1 on an error, 2 on warnings alone
@@ -831,12 +837,24 @@ rocx check --sql [dir]   # the app's SQL checked by its own database engine, and
   --verbose              # also list the calls it can't check (interpolated SQL, SQL in a variable,
                          # Db.unchecked)
   -- <server options>    # given to the app's server (--database-url, or --sql-database for Postgres)
+rocx test [dir]          # rocx build as rocx check runs it, then the app's expects (roc test main.roc,
+                         # with the compiler rocx has), each failure at its .rocx line
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
 rocx routes <dir>        # list an app's routes: method, path, file, middleware
 rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc files with roc fmt
   --check                # only say which files aren't formatted
 rocx qr <text>           # the text as a QR code in the terminal (--pbm: as a PBM image)
+rocx upgrade [<version>] # install a version of rocx (the latest by default) and make it the default;
+                         # in an app, move the app onto it (.rocx-version, .rocx)
+rocx --version           # which rocx this is (an installed version's VERSION; a clone's commit)
 ```
+
+An app outside this repository names the version of rocx it is built with in `.rocx-version`
+(committed), and reaches the platform and the packages through `.rocx`, a link to that version
+(gitignored): its header says `pf: platform "./.rocx/server/platform/main.roc"`. Every command on an
+app (`dev`, `build`, `check`, `test`, `routes`, `lint`) makes the link (and mends it), and when the
+app wants another version than the one running, that version runs the command instead, installed
+first if it isn't (into `ROCX_HOME`, `~/.rocx` by default). rocx from a clone links apps to the clone.
 
 `rocx` is `bin/rocx`, a native executable built from its Roc (`rocx-cli/`). `just setup` builds it,
 and any script in this repository builds it again when `rocx-cli/` has changed. From another
@@ -849,7 +867,8 @@ missing or stale.
 - Because the lines match, the compiler's reports are already at the right line. `check` rewrites
   `Page.roc:22:48` to the `.rocx` file and column, quotes the `.rocx` line, and moves the caret onto
   the same code there.
-- `fmt` runs `roc fmt` (`$ROC`, or the `roc` on the PATH: set `ROC=<repo>/.tools/roc-active`) on
+- `fmt` runs `roc fmt` (the compiler rocx builds with: an installed version's, a clone's
+  `.tools/roc-active`, else `$ROC` or the `roc` on the PATH) on
   each `.rocx` file under the paths and each `.roc` file rocx didn't write. Markup, and the Roc in its
   holes, are left as written: markup moves only with the code around it, and the text of a `<pre>`
   or `<textarea>` never moves. `just fmt` formats this repository, and `just check` fails on a file

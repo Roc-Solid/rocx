@@ -22,44 +22,62 @@ import Site
 import Hosts
 import SiteDev
 import Static
+import Release
+import Versions
 import qr.Qr
 
 main! = |args| {
 	words = args
+	home = Hosts.home!({})
+	# An app's command runs on the version of rocx the app names (`.rocx-version`), through its
+	# `.rocx` link: another version runs it in this one's place.
+	if Versions.app_commands.contains(words.first() ?? "") {
+		Versions.dispatch!(home, Fs.resolve(Fs.cwd!(), [Versions.app_dir(words.drop_first(1))]), words)?
+	}
 	match words.first() {
 		Ok("internal") => internal!({})
-		Ok("check") if words.get(1) == Ok("--sql") => CheckSql.run!(words.drop_first(2), rocx_home!({}))
+		Ok("--version") => {
+			Stdout.line!(Versions.line!(home))?
+			Ok({})
+		}
+		Ok("upgrade") => Versions.upgrade!(words.drop_first(1), home)
+		Ok("check") if words.get(1) == Ok("--sql") => CheckSql.run!(words.drop_first(2), home)
 		# `rocx check [dir]`: an app, checked from its sources; `rocx check -- <command>`, a command's
 		# reports pointed into .rocx files.
-		Ok("check") if words.len() == 1 or (words.len() == 2 and words.get(1) != Ok("--")) => Dev.check_app!(words.drop_first(1), rocx_home!({}))
+		Ok("check") if words.len() == 1 or (words.len() == 2 and words.get(1) != Ok("--")) => Dev.check_app!(words.drop_first(1), home)
 		Ok("check") => {
 			given = words.drop_first(1)
 			exit_with(Commands.check!(if (given.first() == Ok("--")) given.drop_first(1) else given))
 		}
+		Ok("test") => Dev.test_app!(words.drop_first(1), home)
 		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
 		Ok("routes") if words.len() == 2 => routes!(words.get(1) ?? ".")
-		Ok("build") if words.contains("--static") => Static.run!(words.drop_first(1), rocx_home!({}))
-		Ok("build") => build!(words.drop_first(1))
-		Ok("dev") => Dev.app!(words.drop_first(1), rocx_home!({}))
-		Ok("site") if words.get(1) == Ok("prepare") => site_prepare!(words.drop_first(2))
-		Ok("site") if words.get(1) == Ok("dev") => SiteDev.run!(words.drop_first(2), rocx_home!({}))
-		Ok("self-build") => self_build!({})
+		Ok("build") if words.contains("--release") => Release.run!(words.drop_first(1), home)
+		Ok("build") if words.contains("--static") => Static.run!(words.drop_first(1), home)
+		Ok("build") => build!(words.drop_first(1), home)
+		Ok("dev") => Dev.app!(words.drop_first(1), home)
+		Ok("site") if !Hosts.is_clone!(home) => clone_only!("rocx site", home)
+		Ok("site") if words.get(1) == Ok("prepare") => site_prepare!(words.drop_first(2), home)
+		Ok("site") if words.get(1) == Ok("dev") => SiteDev.run!(words.drop_first(2), home)
+		Ok("self-build") if !Hosts.is_clone!(home) => clone_only!("rocx self-build", home)
+		Ok("self-build") => self_build!(home)
 		Ok("qr") if words.len() >= 2 => qr!(words.drop_first(1))
-		Ok("fmt") if words.drop_first(1).any(|arg| arg != "--check") => fmt!(words.drop_first(1))
+		Ok("fmt") if words.drop_first(1).any(|arg| arg != "--check") => fmt!(words.drop_first(1), home)
 		_ => usage!({})
 	}
 }
 
 usage! = |{}| {
-	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text>")?
+	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…] | rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx test [dir] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text> | rocx upgrade [<version>] | rocx --version")?
 	Err(Exit(2))
 }
 
-## Where rocx is: the repo bin/rocx was built in (web/platform, web/start.js and web/runtime.js are there).
-rocx_home! : {} => Str
-rocx_home! = |{}| {
-	path = Env.exe_path!({})
-	if (path.is_empty()) Fs.cwd!() else Fs.dirname(Fs.dirname(Fs.real!(path)))
+## A command for working on rocx itself (`what`), which an installed version (`home`) doesn't have:
+## it needs a clone of the repo.
+clone_only! : Str, Str => Try({}, [Exit(I32)])
+clone_only! = |what, home| {
+	_ = Stderr.line!("${what} works on rocx itself, in a clone of its repo; this rocx is installed (${home})")
+	Err(Exit(2))
 }
 
 ## `rocx qr [--pbm] <text>`: `text` as a QR code in the terminal (what `rocx dev --android --lan`
@@ -83,8 +101,7 @@ qr! = |args| {
 ## CLI platform's modules or its host changed, or it was built with another optimization
 ## (`ROCX_OPT`), as server/build.mjs's rocxBinary does; then its path. The rocx running this is the
 ## one before.
-self_build! = |{}| {
-	home = rocx_home!({})
+self_build! = |home| {
 	match Hosts.rocx_binary!(home, Hosts.native_target!({})) {
 		Ok(_) => {
 			Stdout.line!(Fs.join([home, "bin", "rocx"]))?
@@ -97,8 +114,8 @@ self_build! = |{}| {
 	}
 }
 
-## `rocx build <dir>… [--client <out>] [--dev]`.
-build! = |rest| {
+## `rocx build <dir>… [--client <out>] [--dev]`, with the root of the first app (`Hosts.root_of!`).
+build! = |rest, home| {
 	dev = rest.contains("--dev")
 	client_at = rest.find_first_index(|arg| arg == "--client")
 	client =
@@ -132,7 +149,9 @@ build! = |rest| {
 				Given(out) => Some(out)
 				_ => None
 			}
-			match Build.build!(dirs, { client: given, cwd: Fs.cwd!(), dev, rocx: rocx_home!({}) }) {
+			cwd = Fs.cwd!()
+			root = Hosts.root_of!(Fs.resolve(cwd, [dirs.first() ?? "."]), home)
+			match Build.build!(dirs, { client: given, cwd, dev, rocx: root }) {
 				Ok(built) => {
 					for message in built.said {
 						Stderr.line!(message)?
@@ -151,9 +170,9 @@ build! = |rest| {
 ## `rocx site prepare [--dev] [--no-lock]`: the docs site's generated modules and its rocx build, in
 ## the clone rocx is in (Site.roc), before its wasm and server are built; for `just dev`, and
 ## site/build.mjs (which holds site/build's lock already: `--no-lock`).
-site_prepare! = |flags| {
+site_prepare! = |flags, home| {
 	exe = Env.exe_path!({})
-	match Site.prepare!(rocx_home!({}), if (exe.is_empty()) "rocx" else exe, flags) {
+	match Site.prepare!(home, if (exe.is_empty()) "rocx" else exe, flags) {
 		Ok({}) => Ok({})
 		Err(Problem(message)) => {
 			Stderr.line!("rocx site: ${message}")?
@@ -164,10 +183,11 @@ site_prepare! = |flags| {
 
 ## `rocx fmt [--check] <path>…`: each .rocx file, and each .roc file but rocx's (generated, or
 ## under build/, dist/ or Generated/), under the directories or named, through `roc fmt`; a .rocx
-## file's markup as written. Its `roc` is $ROC, else the `roc` on PATH.
-fmt! = |args| {
+## file's markup as written. Its `roc` is the compiler of the root of the app here
+## (`Hosts.root_of!`, `Hosts.roc!`: an installed version's, a clone's, $ROC), else the `roc` on PATH.
+fmt! = |args, home| {
 	check = args.contains("--check")
-	roc = Env.var!("ROC") ?? "roc"
+	roc = Hosts.roc!(Hosts.root_of!(Fs.cwd!(), home)) ?? "roc"
 	skip = |path| {
 		last = Fs.basename(path)
 		last == "build" or last == "dist" or last == "Generated"
@@ -289,7 +309,7 @@ call! = |name, args| {
 	if known(checked) {
 		return checked
 	}
-	site = Site.rpc!(rocx_home!({}), name, args)
+	site = Site.rpc!(Hosts.home!({}), name, args)
 	if known(site) {
 		return site
 	}
@@ -305,13 +325,15 @@ call! = |name, args| {
 	if name == "build" {
 		arg = |i| args.get(i) ?? Null
 		options = arg(1)
+		dirs = Value.items(arg(0)).map(Value.str)
+		cwd = Value.str_or(Value.field(options, "cwd"), Fs.cwd!())
 		built = Build.build!(
-			Value.items(arg(0)).map(Value.str),
+			dirs,
 			{
 				client: Value.maybe_str(Value.field(options, "client")),
-				cwd: Value.str_or(Value.field(options, "cwd"), Fs.cwd!()),
+				cwd,
 				dev: Value.bool_or(Value.field(options, "dev"), Bool.False),
-				rocx: rocx_home!({}),
+				rocx: Hosts.root_of!(Fs.resolve(cwd, [dirs.first() ?? "."]), Hosts.home!({})),
 			},
 		)
 		return

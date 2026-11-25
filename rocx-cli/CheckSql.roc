@@ -34,9 +34,9 @@ CheckSql := [].{
 	left_out : List(Str)
 	left_out = ["build", "dist", "data", "test", "node_modules", ".git"]
 
-	## `rocx check --sql …` (the words after `--sql`), with the builds of the clone rocx is in
-	## (`rocx`): what the check found on stdout, a line each; exit 1 when something is wrong, 2 for
-	## arguments it can't take.
+	## `rocx check --sql …` (the words after `--sql`), with the builds of the app's root
+	## (`Hosts.root_of!`: its `.rocx`, else `rocx`, this rocx's home): what the check found on
+	## stdout, a line each; exit 1 when something is wrong, 2 for arguments it can't take.
 	run! : List(Str), Str => Try({}, [Exit(I32)])
 	run! = |args, rocx| {
 		var $own = []
@@ -93,7 +93,7 @@ CheckSql := [].{
 			return Err(Exit(2))
 		}
 		dir_path = Fs.real!(given)
-		options = { engine: $engine, verbose: $verbose, built: $built, quiet: $quiet, flags: $flags, cwd, rocx }
+		options = { engine: $engine, verbose: $verbose, built: $built, quiet: $quiet, flags: $flags, cwd, rocx: Hosts.root_of!(dir_path, rocx) }
 		match CheckSql.checked!(dir_path, options) {
 			Ok(Quiet) => Ok({})
 			Ok(Said(said)) => {

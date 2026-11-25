@@ -163,7 +163,8 @@ Dev := [].{
 	# ---- An app ----
 
 	## `rocx dev [dir] [--port 8080] [--android [--lan]] [-- server options…]`: the app in `dir` (or here), a directory
-	## with routes/ in it, built with the clone rocx is in (`rocx`): rocx build, the server's host
+	## with routes/ in it, built with its root (`Hosts.root_of!`: its `.rocx`, else the home of this
+	## rocx, `rocx`): rocx build, the server's host
 	## when it changed, the server and the browser's wasm (when the app has pages), all from Roc's
 	## dev backend; served at http://localhost:8080 under --dev, with what follows `--` (and the
 	## environment: DATABASE_URL, PORT). An app without a main.roc gets one, the smallest program,
@@ -226,11 +227,12 @@ Dev := [].{
 		if !File.is_dir!(Fs.join([dir, "routes"])) {
 			return Dev.fail!("rocx dev: ${shown} has no routes/: make routes/+page.rocx (the page at /) or routes/hello/+server.roc (an endpoint at /hello)")
 		}
+		root = Hosts.root_of!(dir, rocx)
 		main = Fs.join([dir, "main.roc"])
 		if !File.exists!(main) {
-			Dev.write_main!(dir, main, rocx)
+			Dev.write_main!(dir, main, root)
 		}
-		tools = match Dev.tools!(rocx) {
+		tools = match Dev.tools!(root) {
 			Ok(found) => found
 			Err(Failed(message)) => return Dev.fail!(message)
 		}
@@ -239,7 +241,7 @@ Dev := [].{
 		app_static = Fs.join([dir, "static"])
 		phone =
 			if $android {
-				match Dev.phone!(dir, rocx, tools) {
+				match Dev.phone!(dir, root, tools) {
 					Ok(found) => On(found)
 					Err(Failed(message)) => return Dev.fail!(message)
 				}
@@ -282,52 +284,14 @@ Dev := [].{
 	## on an error (rocx build's or the compiler's), 2 on warnings alone, 0 when all is well.
 	check_app! : List(Str), Str => Try({}, [Exit(I32)])
 	check_app! = |args, rocx| {
-		given = args.first() ?? "."
-		dir =
-			match File.real_path!(given) {
-				Ok(real) => real
-				Err(_) => return Dev.fail!("rocx check: no directory ${given}")
-			}
-		shown = {
-			way = Fs.relative(Fs.cwd!(), dir)
-			if (way.is_empty()) "." else way
-		}
-		if !File.is_dir!(Fs.join([dir, "routes"])) {
-			return Dev.fail!("rocx check: ${shown} has no routes/: an app is a directory with routes/ in it (rocx check -- <command> checks with a command of your own)")
-		}
-		main = Fs.join([dir, "main.roc"])
-		if !File.exists!(main) {
-			return Dev.fail!("rocx check: ${shown} has no main.roc (rocx dev writes the smallest one)")
-		}
-		tools =
-			match Dev.tools!(rocx) {
-				Ok(found) => found
-				Err(Failed(message)) => return Dev.fail!(message)
-			}
-		client = Fs.join([dir, "build", "client"])
-		built =
-			match Build.build!([dir], { client: Some(client), cwd: Fs.cwd!(), dev: Bool.True, rocx: tools.rocx }) {
-				Ok(done) => done
-				Err(Problem(message)) => {
-					_ = Stdout.line!("Error: ${message}")
-					return Err(Exit(1))
-				}
-			}
-		said = built.said.keep_if(|line| !Dev.files_written(line))
-		if !said.is_empty() {
-			_ = Stdout.line!(Str.join_with(said, "\n"))
-		}
-		if !built.ok {
-			_ = Stderr.line!("rocx check: ${shown}: rocx build failed")
-			return Err(Exit(1))
-		}
-		client_main = Fs.join([client, "main.roc"])
-		programs = [main].concat(if (File.exists!(client_main)) [client_main] else [])
+		ready = Dev.from_sources!(args, rocx, "rocx check")?
+		client_main = Fs.join([ready.client, "main.roc"])
+		programs = [ready.main].concat(if (File.exists!(client_main)) [client_main] else [])
 		# rocx build's own warnings (`⚠ file:line:col: …`, D-070's arm values read once) count as the
 		# compiler's do: 2.
-		var $code = if (said.any(|line| line.starts_with("⚠"))) 2 else 0
+		var $code = if (ready.warned) 2 else 0
 		for program in programs {
-			match Commands.checked!(tools.roc, ["check", program]) {
+			match Commands.checked!(ready.tools.roc, ["check", program]) {
 				Ok(ran) => {
 					text = Text.trim_end(ran.said)
 					if !text.is_empty() {
@@ -352,6 +316,75 @@ Dev := [].{
 		}
 	}
 
+	## `rocx test [dir]`: the app in `dir` (or here) built from its sources as `rocx check` builds it,
+	## then its expects run by the compiler its root has (`roc test main.roc`), what that says pointed
+	## into the .rocx files: an app needs no `roc` of its own to test. Exit 1 when the build fails,
+	## else roc test's own code (1 when an expect failed).
+	test_app! : List(Str), Str => Try({}, [Exit(I32)])
+	test_app! = |args, rocx| {
+		ready = Dev.from_sources!(args, rocx, "rocx test")?
+		match Commands.checked!(ready.tools.roc, ["test", ready.main]) {
+			Ok(ran) => {
+				text = Text.trim_end(ran.said)
+				if !text.is_empty() {
+					_ = Stdout.line!(text)
+				}
+				if (ran.code == 0) Ok({}) else Err(Exit(ran.code))
+			}
+			Err(CantStart(why)) => Dev.fail!("rocx test: ${why}")
+		}
+	}
+
+	## For `rocx check` and `rocx test` (`label`): the app in the one directory `args` may name (else
+	## here), a directory with routes/ and a main.roc, built from its sources as `rocx dev` builds it,
+	## with its root's tools; what rocx build said is printed. `warned`: it warned (`⚠`).
+	from_sources! : List(Str), Str, Str => Try({ main : Str, client : Str, tools : Tools, warned : Bool }, [Exit(I32)])
+	from_sources! = |args, rocx, label| {
+		given = args.first() ?? "."
+		if args.len() > 1 or given.starts_with("-") {
+			return Dev.fail!("usage: ${label} [dir]")
+		}
+		dir =
+			match File.real_path!(given) {
+				Ok(real) => real
+				Err(_) => return Dev.fail!("${label}: no directory ${given}")
+			}
+		shown = {
+			way = Fs.relative(Fs.cwd!(), dir)
+			if (way.is_empty()) "." else way
+		}
+		if !File.is_dir!(Fs.join([dir, "routes"])) {
+			return Dev.fail!("${label}: ${shown} has no routes/: an app is a directory with routes/ in it (rocx check -- <command> checks with a command of your own)")
+		}
+		main = Fs.join([dir, "main.roc"])
+		if !File.exists!(main) {
+			return Dev.fail!("${label}: ${shown} has no main.roc (rocx dev writes the smallest one)")
+		}
+		tools =
+			match Dev.tools!(Hosts.root_of!(dir, rocx)) {
+				Ok(found) => found
+				Err(Failed(message)) => return Dev.fail!(message)
+			}
+		client = Fs.join([dir, "build", "client"])
+		built =
+			match Build.build!([dir], { client: Some(client), cwd: Fs.cwd!(), dev: Bool.True, rocx: tools.rocx }) {
+				Ok(done) => done
+				Err(Problem(message)) => {
+					_ = Stdout.line!("Error: ${message}")
+					return Err(Exit(1))
+				}
+			}
+		said = built.said.keep_if(|line| !Dev.files_written(line))
+		if !said.is_empty() {
+			_ = Stdout.line!(Str.join_with(said, "\n"))
+		}
+		if !built.ok {
+			_ = Stderr.line!("${label}: ${shown}: rocx build failed")
+			return Err(Exit(1))
+		}
+		Ok({ main, client, tools, warned: said.any(|line| line.starts_with("⚠")) })
+	}
+
 	fail! : Str => Try(a, [Exit(I32)])
 	fail! = |message| {
 		_ = Stderr.line!(message)
@@ -360,10 +393,11 @@ Dev := [].{
 
 	## The smallest program, for an app that has none: what every request's middleware starts from
 	## (nothing), and a middleware that passes each request on to the routes. The platform is the
-	## clone's, by a path from the app, as Roc wants it.
+	## root's (`Hosts.root_of!`), by a path from the app, as Roc wants it: `./.rocx/…` through an app's
+	## link, `../../server/…` in the repo.
 	write_main! : Str, Str, Str => {}
 	write_main! = |dir, main, rocx| {
-		pf_path = Fs.relative(dir, Fs.join([rocx, "server", "platform", "main.roc"]))
+		pf_path = Fs.dotted(Fs.relative(dir, Fs.join([rocx, "server", "platform", "main.roc"])))
 		text = [
 			"## The app's program, written by `rocx dev` because there was none: it is yours to change.",
 			"## `context` is what each request's middleware is given, and `middleware` runs around every",
@@ -384,12 +418,14 @@ Dev := [].{
 		{}
 	}
 
-	## A path that changed and matters: not a backup or swap file, nor a .roc file rocx wrote (beside
-	## its .rocx, or ending with rocx's marker). The platform leaves out hidden entries and the
-	## output directories.
+	## A path that changed and matters: not a backup or swap file, nor a SQLite database's file (the
+	## server writes its own, `data/app.db` and the WAL beside it, under the app when it runs there:
+	## a change to one would restart it, again and again), nor a .roc file rocx wrote (beside its
+	## .rocx, or ending with rocx's marker). The platform leaves out hidden entries and the output
+	## directories.
 	app_edit! : Str => Bool
 	app_edit! = |path| {
-		if [".swp", ".tmp", ".building", "~"].any(|suffix| path.ends_with(suffix)) {
+		if [".swp", ".tmp", ".building", "~", ".db", ".db-shm", ".db-wal", ".db-journal"].any(|suffix| path.ends_with(suffix)) {
 			return Bool.False
 		}
 		!(path.ends_with(".roc") and Dev.rocx_wrote!(path))
@@ -767,8 +803,8 @@ Dev := [].{
 
 	# ---- Building ----
 
-	## The tools a build uses, found once: rocx's clone, Roc (the fork rocx builds with), Zig, and
-	## this machine's target (Hosts).
+	## The tools a build uses, found once: the app's root (`Hosts.root_of!`: an installed version, or
+	## rocx's clone), Roc (the fork rocx builds with), Zig, and this machine's target (Hosts).
 	Tools : { rocx : Str, roc : Str, zig : Str, target : Str }
 
 	tools! : Str => Try(Tools, [Failed(Str)])

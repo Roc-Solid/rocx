@@ -683,7 +683,7 @@ Sql := [].{
 				Ok(text) => Text.trim(text).drop_suffix(",")
 				Err(NotFound) => return { text: "", entries: [] }
 			}
-		shown = if (dbcheck.starts_with(".")) dbcheck else "./${dbcheck}"
+		shown = Fs.dotted(dbcheck)
 		header = Build.move_header("app [program] { ${deps}, dbcheck: ${Text.roc_string(shown)} }", main_path, check_path)
 		engine = Value.str(Value.field(described, "engine"))
 		answers = Value.items(Value.field(described, "statements"))

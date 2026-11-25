@@ -53,6 +53,11 @@ Fs := [].{
 				},
 		)
 
+	## A relative path as a Roc header names a file: from `./`, unless it goes up first (`../`).
+	## `.rocx/server/platform/main.roc` (inside an app's `.rocx`) is `./.rocx/server/platform/main.roc`.
+	dotted : Str -> Str
+	dotted = |path| if (path.starts_with("./") or path.starts_with("../")) path else "./${path}"
+
 	## Node's `path.resolve(cwd, …paths)`: from the right, until a path is absolute, else from `cwd`;
 	## normalized, with no trailing `/` but the root's.
 	resolve : Str, List(Str) -> Str
@@ -232,3 +237,7 @@ Fs := [].{
 		$found
 	}
 }
+
+expect Fs.dotted(".rocx/server/platform/main.roc") == "./.rocx/server/platform/main.roc"
+expect Fs.dotted("../../server/platform/main.roc") == "../../server/platform/main.roc"
+expect Fs.dotted("./main.roc") == "./main.roc"

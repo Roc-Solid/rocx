@@ -98,8 +98,9 @@ Static := [].{
 		Ok({ dir: Fs.resolve(cwd, [$dirs.first() ?? "."]), out: Fs.resolve(cwd, [$out]), base: $base, routes: $routes, built: $built, flags: $flags })
 	}
 
-	## `rocx build <dir> --static <out> …` (the words after `build`), with the clone rocx is in
-	## (`rocx`): exit 2 for arguments it can't take, 1 when the build or a page fails.
+	## `rocx build <dir> --static <out> …` (the words after `build`), with the home of this rocx
+	## (`rocx`; the app's root, `Hosts.root_of!`, builds it): exit 2 for arguments it can't take, 1
+	## when the build or a page fails.
 	run! : List(Str), Str => Try({}, [Exit(I32)])
 	run! = |args, rocx| {
 		cwd = Fs.cwd!()
@@ -150,7 +151,7 @@ Static := [].{
 			Some(given) => given
 			None => {
 				at = Fs.join([dir, "build", "static"])
-				Static.build!(dir, at, rocx)?
+				Static.build!(dir, at, Hosts.root_of!(dir, rocx))?
 				at
 			}
 		}
@@ -221,7 +222,8 @@ Static := [].{
 	## The app at `dir` built into `build`, as for production: rocx build (the browser's copy in
 	## `build/client`, no stories), the server's host when it changed, the server from Roc's dev
 	## backend (it only renders the pages, here; its build takes a fraction of LLVM's), and the
-	## browser's wasm optimized for size, lambda sets specialized (as the docs site's is).
+	## browser's wasm optimized for size, lambda sets specialized (as the docs site's is). `rocx` is the
+	## app's root (`Hosts.root_of!`).
 	build! : Str, Str, Str => Try({}, [Failed(Str)])
 	build! = |dir, into, rocx| {
 		client = Fs.join([into, "client"])

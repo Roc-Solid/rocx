@@ -17,17 +17,45 @@ Hosts := [].{
 	shared_modules : List(Str)
 	shared_modules = ["Html", "Solid", "Store", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "A", "Search", "Leave"]
 
-	## The Roc compiler: the one `just setup` links in .tools (the fork rocx builds with), as the file
-	## it links to; else $ROC; never the `roc` on PATH, which may lack the fork's fixes.
+	## Where rocx is: the folder above the one its binary is in (`bin/rocx`), its links followed. A
+	## clone of the repo, or an installed version (`~/.rocx/versions/<v>`, with `VERSION` in it).
+	home! : {} => Str
+	home! = |{}| {
+		path = Env.exe_path!({})
+		if (path.is_empty()) Fs.cwd!() else Fs.dirname(Fs.dirname(Fs.real!(path)))
+	}
+
+	## The root an app at `dir` is built with: its `.rocx` (a link to an installed version, or to a
+	## clone), when it has one; else `rocx`, the home of the rocx running (so an app inside the repo,
+	## whose headers reach the platform by `../`, needs none). Not resolved: its paths go through the
+	## link, as the app's headers do (`./.rocx/server/platform/main.roc`), so the compiler sees one
+	## platform where the app and its packages name it.
+	root_of! : Str, Str => Str
+	root_of! = |dir, rocx| {
+		linked = Fs.join([dir, ".rocx"])
+		if (File.is_dir!(linked)) linked else rocx
+	}
+
+	## Whether `rocx` (a home) is a clone of the repo, which rocx can build itself in and has the
+	## site in: its own sources are there. An installed version has its builds alone.
+	is_clone! : Str => Bool
+	is_clone! = |rocx| File.exists!(Fs.join([rocx, "rocx-cli", "main.roc"]))
+
+	## The Roc compiler, as the file it links to: the root's own (`bin/roc`, in an installed
+	## version), else the one `just setup` links in .tools (the fork rocx builds with; the root's, then
+	## the clone's this rocx was built in), else $ROC; never the `roc` on PATH, which may lack the
+	## fork's fixes.
 	roc! : Str => Try(Str, [Failed(Str)])
-	roc! = |rocx| {
-		active = Fs.join([rocx, ".tools", "roc-active"])
-		if File.exists!(active) {
-			return Ok(Fs.real!(active))
+	roc! = |root| {
+		home = Hosts.home!({})
+		for found in [Fs.join([root, "bin", "roc"]), Fs.join([root, ".tools", "roc-active"]), Fs.join([home, ".tools", "roc-active"])] {
+			if File.exists!(found) {
+				return Ok(Fs.real!(found))
+			}
 		}
 		match Env.var!("ROC") {
 			Ok(given) => Ok(given)
-			Err(NotFound) => Err(Failed("no Roc compiler: run `just setup` (or set ROC)"))
+			Err(NotFound) => Err(Failed("no Roc compiler: none in ${root}/bin, and no .tools/roc-active: run `just setup` in a clone (or set ROC)"))
 		}
 	}
 
@@ -140,12 +168,23 @@ Hosts := [].{
 	## The server platform's host for `target`, built (cargo does nothing when nothing changed) and
 	## put where Roc links it (server/platform/targets/<target>/libhost.a); a musl target's C
 	## runtime beside it, from Rust's own musl target, its C compiled by Zig.
+	##
+	## An installed version has no host's Rust (`server/host`), only the libraries built for it: those
+	## are linked as they are, and a target it has none for is an error.
 	server_host! : Str, Str => Try({}, [Failed(Str)])
 	server_host! = |rocx, target| {
+		host_dir = Fs.join([rocx, "server", "host"])
+		if !File.is_dir!(host_dir) {
+			library = Fs.join([rocx, "server", "platform", "targets", target, "libhost.a"])
+			if File.exists!(library) {
+				return Ok({})
+			}
+			built = Fs.entries!(Fs.join([rocx, "server", "platform", "targets"]))
+			return Err(Failed("no server host for ${target} in ${rocx}: this version of rocx has ${if (built.is_empty()) "none" else Str.join_with(built, ", ")}"))
+		}
 		Hosts.sync_shared!(rocx)
 		triple = Hosts.rust_target(target)
 		musl = target.ends_with("musl")
-		host_dir = Fs.join([rocx, "server", "host"])
 		var $cargo = Hosts.rust_env!(Cmd.new("cargo").args(["build", "--release", "--target", triple]).cwd(host_dir), rocx, musl)
 		if musl {
 			zig = Hosts.zig!(rocx)

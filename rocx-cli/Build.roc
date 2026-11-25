@@ -865,7 +865,7 @@ Build := [].{
 				relative_path = inside.starts_with("./") or inside.starts_with("../")
 				if relative_path and close < header.len() {
 					moved = Fs.relative(Fs.dirname(to), Fs.resolve(Fs.dirname(from), [inside]))
-					moved_shown = if (moved.starts_with(".")) moved else "./${moved}"
+					moved_shown = Fs.dotted(moved)
 					$out = $out.concat(Text.json_string(moved_shown).to_utf8())
 					$i = close + 1
 				} else if close < header.len() {
@@ -1023,8 +1023,7 @@ Build := [].{
 	## The web platform's main.roc, as the browser's app at `out` names it.
 	web_platform! : Str, Str => Str
 	web_platform! = |out, rocx| {
-		path = Fs.relative(Build.real!(out), Build.real!(Fs.join([rocx, "web", "platform", "main.roc"])))
-		if (path.starts_with(".")) path else "./${path}"
+		Fs.dotted(Fs.relative(Build.real!(out), Build.real!(Fs.join([rocx, "web", "platform", "main.roc"]))))
 	}
 
 	## The `{ … }` of the first `app [program] { … }` header in `code` (`program` only, or any `[…]`).
@@ -1154,7 +1153,7 @@ Build := [].{
 								match seen {
 									Some(path) => {
 										moved = Fs.relative(Build.real!(out), Build.real!(path))
-										$lines = $lines.append("${each.name}: ${Text.json_string(if (moved.starts_with(".")) moved else "./${moved}")}")
+										$lines = $lines.append("${each.name}: ${Text.json_string(Fs.dotted(moved))}")
 									}
 									None => {}
 								}
@@ -1236,7 +1235,9 @@ Build := [].{
 			}
 		}
 		for named in $dirs {
-			outside = (Fs.relative(dir, named).split_on("/").first() ?? "") == ".."
+			# Outside the app, or through its link to rocx (`./.rocx/packages/auth/main.roc`).
+			first = Fs.relative(dir, named).split_on("/").first() ?? ""
+			outside = first == ".." or first == ".rocx"
 			if named != dir and outside and Fs.exists!(named) {
 				for path in Fs.files!(named, ".roc", skip) {
 					$codes = $codes.append(Fs.read_or_empty!(path))
