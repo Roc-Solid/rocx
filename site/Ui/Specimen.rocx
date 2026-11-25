@@ -30,9 +30,9 @@ Specimen := [].{
 	</story>
 
 	<style>
+		/* The column's width, as everything on the front page is. */
 		.specimen {
-			max-width: 40rem;
-			margin: var(--space-8) auto;
+			margin: var(--space-8) 0;
 			overflow: hidden;
 			border-radius: var(--radius-lg);
 			background: var(--bg-raised);

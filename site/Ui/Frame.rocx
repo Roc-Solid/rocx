@@ -1,7 +1,8 @@
 import pf.Html
 
 ## A page's columns under the bar: its part's pages, the page, what is on it. `landing` for the
-## front page (and a story), which is in no part: one column, narrower, nothing beside it.
+## front page (and a story), which is in no part: one column, narrower, nothing beside it, and
+## everything in it as wide as it.
 Frame := [].{
 	view! : { landing : Bool, children : List(Html) } => Html
 	view! = |{ landing, children }| <div class="frame" class:landing={landing}>{...children}</div>
@@ -30,10 +31,13 @@ Frame := [].{
 			padding: 0 var(--space-6);
 		}
 
-		/* Two classes, so the narrower screens' `.frame` doesn't undo it. */
+		/* Two classes, so the narrower screens' `.frame` doesn't undo it. The column is 64rem, its
+		   padding outside it, and its prose as wide as it: the front page's blocks fill the column,
+		   and prose held to the measure stopped short of their right edge. */
 		.frame.landing {
+			--measure: none;
 			grid-template-columns: minmax(0, 1fr);
-			max-width: 64rem;
+			max-width: calc(64rem + 2 * var(--space-6));
 		}
 
 		/* The page: the layout's <main>, global here. */
