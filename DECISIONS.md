@@ -4909,6 +4909,85 @@ until a browser's first notification.
 failing every delivery with a reason.
 
 
+## D-082 Payments and subscriptions through Stripe: packages/stripe
+
+**Status.** Built (2026-11-25), the user's ask: Stripe's hosted Checkout for one-time payments and
+subscriptions, its hosted Customer Portal, webhooks kept in step in the app's database, and a typed
+way to ask what someone has paid for; no card forms of our own, no Elements, no Connect, no
+invoicing beyond what Checkout and the portal give; named `stripe`, not a payments abstraction.
+
+**Context.** A small SaaS wants to charge from its first day, and every Stripe integration writes
+the same parts, each easy to get wrong: a webhook that checks the signature of the very bytes it was
+sent and their age, an event handled once though Stripe sends it until it is answered, events that
+come in any order, one customer per user, idempotency keys, and the page Checkout goes back to,
+which comes before the events do. Stripe's objects also differ by API version (since
+2025-03-31.basil a subscription's period end is its items', an invoice's subscription its
+`parent`'s), and the webhook's events come in the endpoint's version, not the one the requests ask
+for.
+
+**Decision.**
+
+- **A plugin, `Stripe.plugin({ webhook_at ?? "/stripe/webhook", on_event! })`**: one route (`POST
+  /stripe/webhook`), one migration (`stripe/0001_stripe`: `stripe_customers`, `stripe_checkouts`,
+  `stripe_subscriptions`, `stripe_events`, the same SQL on SQLite and Postgres, times in
+  milliseconds given by the package), a check of the keys once started (`stripe.keys`: test or live
+  mode, live keys under `--dev` a warning), and its needs: a database, `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`. `STRIPE_API_URL` points it at a stand-in.
+- **Checkout**: `checkout!({ user, email, mode, prices, success_url, cancel_url, trial_days,
+  promotion_codes, metadata })` finds the user's customer or makes one (the app's id as metadata
+  `app_user_id`; its idempotency key the SHA-256 of the user and the address, so two checkouts at
+  once make one), makes the session (the user as `client_reference_id` and in the metadata of the
+  session and of its subscription or payment), keeps it with its prices, and gives its URL. A path
+  is put after the public URL; the success URL gets `session_id={CHECKOUT_SESSION_ID}`. A customer
+  Stripe no longer has is forgotten and made again.
+- **The portal**: `portal!(user, return_url)`, `NoCustomer` for someone who never checked out.
+- **The page Checkout goes back to**: `checkout_session!(user, id)` asks Stripe for the session with
+  its subscription expanded, refuses another user's (`NotYours`), and keeps both, so the page and
+  `subscribed!` are right before the events come. What it keeps counts as older than any event (its
+  row's version is left as it was, 0 when new). The app's `on_event!` runs for events alone.
+- **The webhook**: `Stripe-Signature`'s `t` and every `v1`, HMAC-SHA256 under the secret of `<t>.`
+  and the request's body as it came (`Server.Request.body`: bytes), compared in constant time, at
+  most 300 s old; anything else a 400. Then one transaction: the event's id inserted into
+  `stripe_events` (none inserted: it came before, answered 200), the package's rows kept, and the
+  app's `on_event!(Stripe.Event)` called; its `Err` or a database error rolls it all back and
+  answers 500, so Stripe sends it again. `Stripe.Event` carries the type, the app's user it is about
+  (the session's reference, or the user of the customer it names), `About` read (`Session`,
+  `Subscription`, `Invoice`, `Other`) and the raw `data.object`.
+- **Order**: a subscription's row keeps `version`, the event's time in seconds × 4 plus its kind
+  (created 0, any other 1, deleted 2); an event writes only at a version as high or higher, and a
+  `canceled` or `incomplete_expired` subscription stays so. Two changes in one second stand level:
+  the package asks Stripe for the subscription once and keeps that. A checkout's status only leaves
+  `open`, and its payment stays `paid`.
+- **Who has paid**, from the tables only: `subscribed!`, `paid_for!(user, price or product)`,
+  `subscription!`, `subscriptions!`, `payments!`, `customer!`. `Stripe.Status` is a tag union;
+  `paying` is active, trialing or past due (the user may want otherwise: PROPOSALS.md asks). Both
+  Bool checks are a no, and an error on the log, when the database can't be read.
+- **Stripe's API**: form-encoded, `Authorization: Bearer`, `Stripe-Version: 2025-03-31.basil`, an
+  `Idempotency-Key` on every POST, three tries for a network error, a 409, a 429 or a 5xx unless
+  `Stripe-Should-Retry` says no; `post!` and `get!` for anything else.
+- **Reading Stripe's JSON**: a small scanner in `StripeRules` reads a field by its path from the raw
+  JSON (`text`, `int`, `id_at` for an id or an expanded object's id, `elements`), since `Json.parse`
+  into a record fails on a field that is missing, and Stripe's objects lack or move fields by
+  version and by `expand`. Both versions' places are read.
+- **packages/stripe/example** sells a subscription and an e-book (packages/auth's dev sign-in for
+  its users), its gates middleware on `Auth.required_with`; its tests (7 each on SQLite and
+  Postgres, in `just test-server`) run against a Node stand-in for Stripe's API
+  (`example/test/stand-in.mjs`), with events signed as Stripe signs them. The docs site's
+  `/ecosystem/stripe` shows the example's files.
+
+**Why.** The app layer first: `Http`, `Env`, `Db` transactions (nested ones are savepoints, D-076)
+and crypto's `Hmac` are enough, and the request's body already reaches a route as bytes. Keeping
+Stripe's state in the app's tables makes the checks cheap and keeps the browser out of who has paid.
+
+**Costs.** A read of `stripe_subscriptions` per gated request. A tie between two changes in one
+second costs the webhook a request to Stripe. Times compare Stripe's clock with the server's for a
+signature's age. On Turso a transaction that loses to another's write runs again, `on_event!` with
+it. Not tried against Stripe itself (the rule: no external calls): the stand-in follows Stripe's
+reference, and TODO.md asks for one run in test mode.
+
+**Reversible:** yes: a new package; no app depends on it.
+
+
 ## D-083 `create_selector!`
 
 **Status.** Built (2026-11-25), the user's go, the first of the steps that close js-framework-benchmark's

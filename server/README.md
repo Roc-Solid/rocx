@@ -1546,7 +1546,7 @@ This is the host's own `--help` (`USAGE` in `http.rs`). Some details:
 ## Tests
 
 `just test-server` runs this platform's tests, then packages/testing's, packages/posthog's and the
-guard and push examples' (each against an app it builds). Run one file with
+guard, push, auth and stripe examples' (each against an app it builds). Run one file with
 `node --test server/test/server.test.mjs`. They skip what they can't run:
 
 - without Roc or Rust (`just setup`), everything;

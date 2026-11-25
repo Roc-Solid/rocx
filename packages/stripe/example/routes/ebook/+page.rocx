@@ -1,0 +1,23 @@
+import pf.Html
+import pf.Endpoint
+import ../../Generated/Api
+
+## The e-book: for those who bought it, as its `+server.roc`'s middleware (`Middlewares.readers`)
+## says. Anyone else goes to the pricing page.
+meta = { title: "The e-book" }
+
+## The book (`GET /ebook`).
+book! : {} => { title : Str, chapters : List(Str) }
+book! = |{}| Endpoint.get!(Api.get_ebook({}))
+
+view! = |_| {
+	book = book!({})
+	<main>
+		<h1>{book.title}</h1>
+		<ol>
+			{...book.chapters.map(|chapter|
+				<li key={chapter}>{chapter}</li>
+			)}
+		</ol>
+	</main>
+}

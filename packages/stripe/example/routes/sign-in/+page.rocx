@@ -1,0 +1,26 @@
+import pf.Html
+import pf.Router
+import auth.SignInError
+
+## Signing in, through packages/auth's dev sign-in: under `rocx dev` (the server's `--dev`), any
+## address at once. A real app's sign-in page mails a link too, or offers Google and GitHub
+## (packages/auth/example).
+meta = { title: "Sign in" }
+
+view! = |_| {
+	query = Router.location!({}).query
+	then = SignInError.field(query, "then")
+	problem = SignInError.message(query)
+	<main>
+		<h1>Sign in</h1>
+		{if !problem.is_empty() {
+			<p role="alert">{problem}</p>
+		}}
+		<form method="post" action="/auth/dev">
+			<input type="hidden" name="then" value={then} />
+			<label for="email">Any address (under rocx dev)</label>
+			<input id="email" name="email" type="email" required />
+			<button type="submit">Sign in</button>
+		</form>
+	</main>
+}

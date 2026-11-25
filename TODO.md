@@ -41,6 +41,12 @@ When an item lands, delete its line here in the same commit.
   script) and a way to tell the app the file landed. Left out of D-055 for one way per job; worth it
   once an app keeps files too big for a request's body.
 - **packages/jobs:** a job's log in the jobs page, parked with its options in its `PROPOSALS.md`.
+- **packages/stripe (D-082):** the questions at the end of its `PROPOSALS.md` (whether `past_due`
+  counts as paying; `rocx new` offering it), and one run of its example against Stripe's own test
+  mode (test keys, `stripe listen`, the prices its README names): its tests met only a stand-in
+  written from Stripe's reference, so an object Stripe writes otherwise would show there first. Its
+  proposals (fulfilling from the page Checkout goes back to, Stripe Tax, metered billing, plan
+  changes from the app, Connect, embedded Checkout) wait for an app that needs them.
 - **The other packages' `PROPOSALS.md`** (admin, forms, intl, mcp, otel, push, testing) have more
   ideas and questions waiting.
 - **The examples' and tests' wasm, specialized?** It is built `--opt=size` alone (packages/testing's

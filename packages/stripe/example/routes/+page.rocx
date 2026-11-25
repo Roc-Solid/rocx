@@ -1,0 +1,50 @@
+import pf.Html
+import pf.Endpoint
+import pf.Router
+import ../Generated/Api
+
+## The pricing page: what there is to buy, each with a button that posts its price to
+## /billing/checkout, which sends the browser to Stripe's Checkout. Plain forms, so they work before
+## the page's JavaScript has loaded. Signed out, a link to sign in first.
+meta = { title: "Pricing" }
+
+## What the page shows (`GET /`).
+offer! : {} => { email : Str, plans : List({ name : Str, price : Str, subscription : Bool, cost : Str, blurb : Str }), current : Str }
+offer! = |{}| Endpoint.get!(Api.get_root({}))
+
+## A plan's button.
+label : Bool -> Str
+label = |subscription| if (subscription) "Subscribe" else "Buy"
+
+view! = |_| {
+	offer = offer!({})
+	asked = Router.location!({}).query.contains("subscribe=1")
+	<main>
+		<h1>Pricing</h1>
+		{if asked {
+			<p role="status">The pro pages are for subscribers.</p>
+		}}
+		{if offer.email.is_empty() {
+			<p><a href="/sign-in?then=%2F">Sign in</a> to buy.</p>
+		} else {
+			<p>Signed in as <strong>{offer.email}</strong>. <a href="/account">Your account</a></p>
+		}}
+		{if !offer.current.is_empty() {
+			<p>You're subscribed to {offer.current}: <a href="/pro">the pro pages</a>.</p>
+		}}
+		<ul>
+			{...offer.plans.map(|plan|
+				<li key={plan.price}>
+					<h2>{plan.name}</h2>
+					<p>{plan.blurb} {plan.cost}</p>
+					{if !offer.email.is_empty() {
+						<form method="post" action="/billing/checkout">
+							<input type="hidden" name="price" value={plan.price} />
+							<button type="submit">{label(plan.subscription)}</button>
+						</form>
+					}}
+				</li>
+			)}
+		</ul>
+	</main>
+}

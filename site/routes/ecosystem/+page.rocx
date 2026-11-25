@@ -14,7 +14,7 @@ import ../../Ui/PageHero
 ## and the packages there are, as cards in the sidebar's groups.
 meta = {
 	title: "The ecosystem",
-	description: "Packages for Roc Solid apps: Roc modules and components you add to an app with one line in its header, and plugins that add routes, tables, jobs and scripts to the server. Twenty so far, among them charts, forms, intl, Markdown, jobs and cron, email, an admin, guards, storage, Web Push and OpenTelemetry.",
+	description: "Packages for Roc Solid apps: Roc modules and components you add to an app with one line in its header, and plugins that add routes, tables, jobs and scripts to the server. Twenty-two so far, among them sign-in, Stripe payments, charts, forms, intl, Markdown, jobs and cron, email, an admin, guards, storage, Web Push and OpenTelemetry.",
 	toc: [
 		{ id: "packages", label: "The packages" },
 		{ id: "halves", label: "What is in a package" },
@@ -36,8 +36,8 @@ view! = |_|
 				A package is a directory of Roc modules and, often, components, which you add to an app with one
 				line in its header. Reach for one when your app needs something the platforms leave out: charts,
 				form checks, translations, a job queue, email, an admin for your tables. Some packages are also
-				plugins, which add routes, tables, background work or scripts to the server. There are twenty so
-				far, each with a page here.
+				plugins, which add routes, tables, background work or scripts to the server. There are twenty-two
+				so far, each with a page here.
 			</PageHero>
 
 			<Heading id="packages">The packages</Heading>
@@ -137,6 +137,7 @@ view! = |_|
 			<p>The packages that are plugins, and what each one adds:</p>
 			<ul>
 				<li><a href={Paths.ecosystem_auth}>Auth</a>: <code>{"Auth.plugin({ admit! })"}</code> adds the endpoints a mailed link and a provider come back to, signing out, and the sessions' tables. Its middleware hands the signed-in user on.</li>
+				<li><a href={Paths.ecosystem_stripe}>Stripe</a>: <code>{"Stripe.plugin({ on_event! })"}</code> adds the webhook Stripe sends its events to, and the tables of customers, checkouts and subscriptions it keeps in step. Its functions send people to Checkout and the Customer Portal, and say who has paid.</li>
 				<li><a href={Paths.ecosystem_jobs}>Jobs and cron</a>: <code>{"Job.plugin({ jobs: App.jobs, crons })"}</code> adds the queue's table, its workers and the schedules' loop.</li>
 				<li><a href={Paths.ecosystem_admin}>Admin</a>: <code>{"JobsPage.plugin({ guard })"}</code> adds the jobs page, which shows and manages the jobs plugin's queue. The tables admin is no plugin: you mount it on a route of your own.</li>
 				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code> adds the dev mailbox under <code>--dev</code>, and once the server has started, logs whether the SMTP server answers.</li>

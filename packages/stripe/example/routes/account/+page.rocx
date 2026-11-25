@@ -1,0 +1,45 @@
+import pf.Html
+import pf.Endpoint
+import ../../Generated/Api
+
+## The account: the subscription and what it costs to change it (Stripe's Customer Portal, from a
+## button), the e-books bought, and signing out. Signed in only: the page runs behind its
+## `+server.roc`'s middleware.
+meta = { title: "Your account" }
+
+## The account, as `GET /account` says.
+account! : {} => { email : Str, plan : Str, status : Str, until : Str, ending : Bool, customer : Bool, orders : List({ id : Str, what : Str, day : Str }) }
+account! = |{}| Endpoint.get!(Api.get_account({}))
+
+## What the page says of a subscription's period.
+period : Bool -> Str
+period = |ending| if (ending) "It ends on" else "It renews on"
+
+view! = |_| {
+	me = account!({})
+	<main>
+		<h1>Your account</h1>
+		<p>Signed in as <strong>{me.email}</strong>.</p>
+		<h2>Subscription</h2>
+		{if me.plan.is_empty() {
+			<p>None yet. <a href="/">See the plans</a>.</p>
+		} else {
+			<p><strong>{me.plan}</strong>, <span class="status">{me.status}</span>. {period(me.ending)} {me.until}.</p>
+		}}
+		{if me.customer {
+			<form method="post" action="/billing/portal">
+				<button type="submit">Manage billing</button>
+			</form>
+		}}
+		<h2>Orders</h2>
+		<ul class="orders">
+			{...me.orders.map(|order|
+				<li key={order.id}>{order.what}, {order.day}: <a href="/ebook">read it</a></li>
+			)}
+		</ul>
+		<form method="post" action="/auth/sign-out">
+			<input type="hidden" name="then" value="/" />
+			<button type="submit">Sign out</button>
+		</form>
+	</main>
+}
