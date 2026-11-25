@@ -74,7 +74,7 @@ platform ""
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [A, Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, Html, Http, HttpResponse, HttpStatusCode, Kv, Leave, Live, Loading, Log, Middleware, Navigate, OpenApi, Plugin, Random, Repeat, Router, Search, Server, Solid, Store, Submission, Submissions, Tcp, Time, Title, Transition]
+	exposes [A, Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, Html, Http, HttpResponse, HttpStatusCode, Kv, Leave, Live, Loading, Log, Middleware, Navigate, OpenApi, P256, Plugin, Random, Repeat, Router, Search, Server, Solid, Store, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -116,6 +116,7 @@ platform ""
 		"roc_host_actor_tell": Host.actor_tell!,
 		"roc_host_aes_gcm_open": Host.aes_gcm_open!,
 		"roc_host_aes_gcm_seal": Host.aes_gcm_seal!,
+		"roc_host_aes_gcm_seal_with_nonce": Host.aes_gcm_seal_with_nonce!,
 		"roc_host_blob_check": Host.blob_check!,
 		"roc_host_blob_compose": Host.blob_compose!,
 		"roc_host_blob_delete": Host.blob_delete!,
@@ -159,6 +160,8 @@ platform ""
 		"roc_host_log_format": Host.log_format!,
 		"roc_host_now_millis": Host.now_millis!,
 		"roc_host_now_nanos": Host.now_nanos!,
+		"roc_host_p256_ecdh": Host.p256_ecdh!,
+		"roc_host_p256_sign": Host.p256_sign!,
 		"roc_host_page_scripts": Host.page_scripts!,
 		"roc_host_plugin_file": Host.plugin_file!,
 		"roc_host_random_bytes": Host.random_bytes!,
@@ -258,6 +261,7 @@ import Log
 import Middleware
 import Migrations
 import OpenApi
+import P256
 import Plugin
 import Plugins
 import Random

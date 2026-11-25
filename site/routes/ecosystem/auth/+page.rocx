@@ -262,7 +262,8 @@ view! = |_|
 			<p>
 				Links, the link page, Google, GitHub, OpenID Connect, the dev sign-in, sessions, the middleware and
 				impersonation are built and tested. Passwords come next: they need a slow hash (Argon2) that the server's host
-				will compute. Passkeys come later, as they need P-256 in the host too. The package's
+				will compute. Passkeys come later: they need the host to verify a P-256 signature, which it can
+				make but not yet check. The package's
 				<code>PROPOSALS.md</code> has both.
 			</p>
 		</NoHydration>

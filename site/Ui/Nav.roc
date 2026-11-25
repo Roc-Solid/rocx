@@ -63,7 +63,7 @@ Nav := [].{
 				name: "Other",
 				pages: [
 					{ path: Paths.platform_settings, label: "Settings", blurb: "Env, and what only a dev server does" },
-					{ path: Paths.platform_crypto, label: "Crypto", blurb: "Random bytes, AES-GCM, signed links, sealed secrets" },
+					{ path: Paths.platform_crypto, label: "Crypto", blurb: "Random bytes, AES-GCM, P-256, signed links, sealed secrets" },
 					{ path: Paths.platform_browser, label: "The browser", blurb: "Wasm, a Zig host, a runtime" },
 					{ path: Paths.platform_reference, label: "Reference", blurb: "Every module and effect, from the source" },
 				],

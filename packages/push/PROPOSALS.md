@@ -1,11 +1,11 @@
 # push: proposals
 
-What packages/push needs from outside its folder. Sections 2 and 3 are done (push is a plugin,
-D-051, on plugins' files and scripts, D-050); the rest isn't implemented. Each section says what the
-package does meanwhile.
+What packages/push needs from outside its folder. Sections 1, 2 and 3 are done (the host's P-256
+and AES-128-GCM, D-080; push is a plugin, D-051, on plugins' files and scripts, D-050); the rest
+isn't implemented. Each section says what the package does meanwhile.
 
 1. [P-256 and AES-128-GCM in the host](#1-p-256-and-aes-128-gcm-in-the-host): the crypto Web Push
-   can't send without.
+   can't send without. Done: `P256` and `AesGcm.seal_with_nonce!` (D-080).
 2. [Server-only modules in packages](#2-server-only-modules-in-packages): the glue and its
    migration. Done: `Push.plugin` (D-033, D-051).
 3. [Static files in packages](#3-static-files-in-packages): the service worker, served at the
@@ -20,6 +20,12 @@ package does meanwhile.
 ---
 
 ## 1. P-256 and AES-128-GCM in the host
+
+**Status (2026-11-25).** Done, leaner than proposed (D-080): `P256.ecdh!` (this section's
+`ecdh_ephemeral!`), `P256.sign!` and `AesGcm.seal_with_nonce!` (`seal_with!`), on `ring`; the rest
+(`generate!`, `verify!`, `open_with!`) waits for something that needs it. `Push.send!` calls them
+itself, so `Primitives` and `Push.host` are gone; the plugin's start signs once to check the VAPID
+pair, and `subscribe!` refuses a key that isn't on the curve. What follows is the problem as it was.
 
 **Problem.** A Web Push message needs three things the server's host doesn't do:
 
@@ -419,5 +425,5 @@ arrives only because `push.js` listens for `rocx:ready` itself: an effect can't 
    the apps you have in mind?
 5. **`<PushButton>`** is the package's opinion of the UI (its words, its states). Keep it, or
    leave the UI to each app and ship only `push.js` and `PushState`?
-6. **`ring` or `p256`** for section 1: `ring` adds nothing to the build, but its ECDH can't replay
-   RFC 8291's fixed keys (it is tested by a round trip instead).
+6. ~~**`ring` or `p256`** for section 1~~: `ring` (D-080), which adds nothing to the build; its
+   ECDH is tested by agreeing with Node's, and its AES against RFC 8291's appendix.

@@ -3,17 +3,16 @@
 Web Push notifications for Roc Solid apps, as a plugin. A page asks the user's permission and
 subscribes; the server keeps the subscription; later the server sends a notification, and the
 browser shows it even with every tab of the site closed. Subscriptions are kept in the app's
-database, Postgres or SQLite.
-
-**Sending doesn't work yet**: the server's host has no P-256 or AES-128-GCM, which Web Push needs,
-so every delivery fails and says so ([Status](#status)). Everything else works and is tested.
+database, Postgres or SQLite. Each message is encrypted for its browser (RFC 8291) and signed for
+its push service (VAPID, RFC 8292), with the server platform's `P256` and `AesGcm` (D-080).
 
 The user guide is the docs site's [Push page](https://roc-solid.github.io/ecosystem/push); this file
 is the reference.
 
 ## Installing it
 
-1. **Keys.** `node packages/push/vapid-keys.mjs` prints a VAPID key pair. Give the server
+1. **Keys.** `node packages/push/vapid-keys.mjs` (in a clone of Roc Solid) or `npx web-push
+   generate-vapid-keys` prints a VAPID key pair. Give the server
    `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (secret) and `VAPID_SUBJECT` (`mailto:` and an address,
    or an `https:` URL) in its environment. A browser that subscribed with one public key can only be
    sent to with that pair. The plugin needs all three: if one is missing, or the keys don't belong
@@ -146,7 +145,7 @@ id for a user, as text, or `""` for a visitor.
 
 | Module | What it has |
 |---|---|
-| `Push` | `plugin(setup)`, the plugin ([options](#plugin-options)). `subscribe!(body, owner)`: saves a subscription the page posted, if its endpoint is at a browser's push service (`Invalid(why)` if not). `unsubscribe!(endpoint, owner)`. `notify!(owner, notification, options)` and `broadcast!(notification, options)`: queue a `deliver` job per subscription, and answer how many. `public_key!` and `keys!` (from the environment). `deliver`: the job (`push.deliver`, 5 attempts, a minute each). `send!`: one attempt, given the host's primitives (`Primitives`; `host` is the host's, which for now say they are missing) |
+| `Push` | `plugin(setup)`, the plugin ([options](#plugin-options)). `subscribe!(body, owner)`: saves a subscription the page posted, if its endpoint is at a browser's push service (`Invalid(why)` if not). `unsubscribe!(endpoint, owner)`. `notify!(owner, notification, options)` and `broadcast!(notification, options)`: queue a `deliver` job per subscription, and answer how many. `public_key!` and `keys!` (from the environment). `deliver`: the job (`push.deliver`, 5 attempts, a minute each). `send!(keys, subscription, data, options)`: one attempt, encrypted (`P256.ecdh!`, `AesGcm.seal_with_nonce!`) and signed (`P256.sign!`), and what the push service's answer means |
 | `PushStore` | The `push_subscriptions` table: `save!` (one row per endpoint; subscribing again updates it), `remove!`, `remove_id!`, `find!`, `of_owner!`, `everyone!`, `delivered!`, `refused!`. Each statement runs on Postgres and SQLite; `delivered!` asks `Db.backend!` which to run |
 
 The table's migration is `migrations/0001_push_subscriptions.sql` on Postgres and
@@ -178,7 +177,10 @@ the table only if it isn't there, so a table an app made by hand is kept.
 - The server sends a request to whatever URL a subscription names, so `Push.subscribe!` takes only
   endpoints at the browsers' push services (`Subscription.services`), over `https:`. When the server
   runs with `--dev`, it also takes an `http:` one on this machine (`localhost`, `127.0.0.1`), for a
-  stand-in push service.
+  stand-in push service. It refuses a key that isn't a point on P-256 (an ECDH with it is tried), so
+  a subscription it keeps can be sent to.
+- A new ECDH key pair and a new salt for each message, as RFC 8291 asks; the pair's private key is
+  the host's for that one call, and never reaches Roc.
 - The private key never leaves the server; the page gets only the public key.
 - A click on a notification opens only this site's pages.
 - Messages are encrypted for the browser: the push service sees only bytes.
@@ -191,22 +193,28 @@ What works today:
   keys, the VAPID token's header, claims and signing input (RFC 8292), the content coding's header,
   records, padding, keys and nonces (RFC 8188), the message's key derivation (RFC 8291, appendix A,
   reproduced up to the AES), the request's headers (RFC 8030), reading a `PushSubscription`'s
-  JSON, and what each answer from a push service means.
+  JSON, and what each answer from a push service means. The server platform's tests check the rest
+  (server/test/server.test.mjs): `AesGcm.seal_with_nonce!` gives RFC 8291's and RFC 8188's
+  ciphertexts, `P256.ecdh!` agrees with Node's ECDH, and Node verifies `P256.sign!`'s signatures.
 - The plugin, in `example/test/push.test.mjs`, which builds the example on SQLite (always) and on
   Postgres (when `DATABASE_URL` is set) and asks it over HTTP: the key, subscribing (and a
-  subscription at an unknown service refused), each of `PushStore`'s statements, a broadcast's
-  jobs (each reads its row, then fails for want of the host's P-256), and unsubscribing. In
+  subscription at an unknown service, or with a key off the curve, refused), each of `PushStore`'s
+  statements, and unsubscribing. Sending: a broadcast is delivered to a push service the test runs
+  (`--dev` lets a subscription's endpoint be on this machine), which plays the browsers too: it
+  makes each subscription's keys with Node's crypto, checks each request's VAPID token (its claims,
+  and its ES256 signature against `VAPID_PUBLIC_KEY`), decrypts each message as RFC 8291 says, and
+  checks the notification inside. It answers 201, 410 (the subscription is deleted) or 403 (noted
+  on its row). The server's HTTPS proxy is that push service, which refuses every connection, so
+  nothing reaches a real one. VAPID keys that aren't a pair stop the server as it starts. In
   Chromium (when there is one), behind a guard that refuses every script the app would serve, the
   plugin's script and service worker come through, the worker registers at the root with the whole
   site as its scope, and the button subscribes (the browser's push service stood in for, as headless
   Chromium has none). Run it with `node --test 'packages/push/example/test/*.test.mjs'`.
 
+No test sends to a real push service (Google's, Mozilla's, Apple's or Microsoft's).
+
 What waits on a proposal (`PROPOSALS.md`):
 
-- **Sending.** The server's host has no P-256 (the ECDH that encrypts a message, the ECDSA that
-  signs the VAPID token), and only AES-256-GCM with random nonces, where Web Push needs AES-128-GCM
-  with a derived nonce. Until the host has them, every delivery fails, saying so. The host functions
-  are sketched on `ring`, which the host links already, and pass the RFC vectors.
 - **Jobs that give up, or come back at a set time.** Today a refused message ends its job as done,
   and a `Retry-After` queues a copy of the job for then.
 - **`Browser.call!` with an answer**, so `<PushButton>` could hear how a click went without the

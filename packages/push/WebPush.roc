@@ -10,13 +10,13 @@ import Ece
 ## coding of RFC 8188 (`Ece`) derives the AES-128-GCM key and nonce. The message is one record:
 ## the data, a delimiter and padding, sealed, after a header that carries the salt and `as_public`.
 ##
-## The ECDH and the AES are the host's (PROPOSALS.md); `prepare` is everything before them and
-## `body` everything after, so a sender is:
+## The ECDH and the AES are the server platform's (`P256.ecdh!`, `AesGcm.seal_with_nonce!`: D-080);
+## `prepare` is everything before them and `body` everything after, so a sender (`Push.send!`) is:
 ##
 ## ```roc
-## { public_key, shared } = P256.ecdh_ephemeral!(subscription.p256dh)?     # the host's (proposed)
-## sealing = WebPush.prepare({ ua_public: subscription.p256dh, auth_secret: subscription.auth, as_public: public_key, ecdh_secret: shared, salt: Random.bytes!(16), data, padding: 0 })?
-## body = WebPush.body(sealing, AesGcm.seal_with!(sealing.key, sealing.nonce, sealing.record)?)
+## { public_key, secret } = P256.ecdh!(subscription.p256dh)?                # a new key pair each time
+## sealing = WebPush.prepare({ ua_public: subscription.p256dh, auth_secret: subscription.auth, as_public: public_key, ecdh_secret: secret, salt: Random.bytes!(16), data, padding: 0 })?
+## body = WebPush.body(sealing, AesGcm.seal_with_nonce!(sealing.key, sealing.nonce, sealing.record)?)
 ## ```
 WebPush := [].{
 
@@ -123,7 +123,8 @@ expect
 	}
 
 # The appendix's message is the header and the record sealed under that key and nonce (the 58 bytes
-# here are AES-128-GCM's, from Node: the host's to make).
+# here are AES-128-GCM's, from Node; the server platform's tests check that
+# `AesGcm.seal_with_nonce!` makes the same).
 expect
 	match WebPush.prepare(example) {
 		Ok(sealing) =>

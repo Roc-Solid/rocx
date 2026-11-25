@@ -1,7 +1,7 @@
 ## What the Rust host does for Roc (`server/host/src/hosted.rs`): general effects, which the
 ## platform's modules build on (`Db`, `Live`, `Log`, `Time`, `Tcp`, `Http`, `Random`, `AesGcm`,
-## `Env`, `Plugin`; and, in Roc, `Actor`, the migrations; and the packages' plugins: jobs and cron,
-## email). An error here is the host's message.
+## `P256`, `Env`, `Plugin`; and, in Roc, `Actor`, the migrations; and the packages' plugins: jobs
+## and cron, email). An error here is the host's message.
 Host := [].{
 
 	## An event on the server's log (stderr, `Log`): its level (0 debug, 1 info, 2 warn, 3 error),
@@ -125,6 +125,20 @@ Host := [].{
 	## What `aes_gcm_seal!` sealed; "bad key", or "forged" when it wasn't sealed under this key or
 	## was changed.
 	aes_gcm_open! : List(U8), List(U8) => Try(List(U8), Str)
+
+	## AES-GCM with the caller's 12-byte nonce (`AesGcm.seal_with_nonce!`): AES-128 under a 16-byte
+	## key, AES-256 under a 32-byte one; the ciphertext, then the tag; or "bad key", "bad nonce".
+	aes_gcm_seal_with_nonce! : List(U8), List(U8), List(U8) => Try(List(U8), Str)
+
+	## ECDH on P-256 with a key pair made for this call alone (`P256.ecdh!`): its public key (65
+	## bytes, uncompressed), then the 32-byte secret it shares with the peer's; or "bad key" when
+	## the peer's isn't an uncompressed point on the curve.
+	p256_ecdh! : List(U8) => Try(List(U8), Str)
+
+	## ES256 (`P256.sign!`): the signature of the message (the third) by the private key (the first,
+	## 32 bytes) whose public key is the second (65 bytes), 64 bytes, `r` then `s`; or "bad key"
+	## when the keys aren't a pair.
+	p256_sign! : List(U8), List(U8), List(U8) => Try(List(U8), Str)
 
 	## The process's environment variable `name` (an `Err` when it has none).
 	env_var! : Str => Try(Str, Str)

@@ -14,8 +14,10 @@ is known or not, and the guard's rate limit named in the README.
 
 ## 2. Passkeys (WebAuthn)
 
-Not built. A passkey's signature is ECDSA on P-256, which the host doesn't have yet (packages/push
-waits on the same: PROPOSALS.md there). With it: a registration ceremony and a sign-in ceremony,
+Not built. A passkey's signature is ECDSA on P-256. The server platform has P-256 since D-080
+(`P256`, for packages/push), but only signing and ECDH: a passkey needs a signature verified, the
+next primitive (`P256.verify!`, on ring's `ECDSA_P256_SHA256_ASN1`, since WebAuthn writes its
+signatures in DER, not JWS's `r` and `s`). With it: a registration ceremony and a sign-in ceremony,
 each a challenge kept for a few minutes and a script the page loads (as push's is).
 
 ## 3. A provider's endpoints from its issuer

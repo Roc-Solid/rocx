@@ -1,6 +1,8 @@
+import pf.AesGcm
 import pf.Env
 import pf.Http
 import pf.Log
+import pf.P256
 import pf.Plugin
 import pf.Random
 import pf.Server
@@ -35,8 +37,8 @@ import "static/push.js" as script : List(U8)
 ## `node packages/push/vapid-keys.mjs` prints them) and `VAPID_SUBJECT` (`mailto:` or `https:`):
 ## the plugin needs all three, and a pair that isn't one stops the server at start, saying why.
 ##
-## The P-256 and AES-128-GCM it needs are the host's to do, and the host has none yet
-## (PROPOSALS.md): until it does, `host` says so, and every delivery fails with that reason.
+## The elliptic curves are the server platform's (`P256`: the ECDH that encrypts, the ES256
+## signature VAPID wants), and so is the AES (`AesGcm.seal_with_nonce!`, AES-128-GCM): D-080.
 Push := [].{
 
 	## Where the plugin's endpoints are (`at`: `GET <at>/key`, `POST <at>/subscribe`, `POST
@@ -74,23 +76,6 @@ Push := [].{
 		}
 	}
 
-	## What the host does for Web Push: an ECDH with a new key pair each time (its public key and
-	## the shared secret), AES-128-GCM with a given key and nonce (the ciphertext and the tag), and
-	## an ES256 signature (64 bytes, `r` then `s`) by a private key (with its public key).
-	Primitives : {
-		ecdh! : List(U8) => Try({ as_public : List(U8), ecdh_secret : List(U8) }, Str),
-		seal! : List(U8), List(U8), List(U8) => Try(List(U8), Str),
-		sign! : List(U8), List(U8), List(U8) => Try(List(U8), Str),
-	}
-
-	## The host's, once it has them; for now, each says it is missing.
-	host : Primitives
-	host = {
-		ecdh!: |_| missing!({}),
-		seal!: |_, _, _| missing!({}),
-		sign!: |_, _, _| missing!({}),
-	}
-
 	## The server's VAPID keys, from its environment; or what is wrong with them.
 	keys! : {} => Try(Vapid.Keys, Str)
 	keys! = |{}| {
@@ -114,16 +99,18 @@ Push := [].{
 
 	## Saves the subscription a page posted (an endpoint's body), for `owner` (the app's id for a
 	## user, or "" for a visitor). It must be at a browser's push service
-	## (`Subscription.known_service`), or, under `--dev`, at one on this machine; `Invalid` says
-	## why not.
+	## (`Subscription.known_service`), or, under `--dev`, at one on this machine, and its key a
+	## point on P-256 (an ECDH with it is tried); `Invalid` says why not.
 	subscribe! : Subscription.Body, Str => Try({}, [Invalid(Str), DbErr(Str)])
 	subscribe! = |body, owner|
 		match Subscription.from_body(body) {
 			Ok(subscription) =>
-				if subscription.known_service() or (Env.dev!({}) and !subscription.endpoint.starts_with("https://")) {
-					PushStore.save!(subscription, owner)
-				} else {
+				if !(subscription.known_service() or (Env.dev!({}) and !subscription.endpoint.starts_with("https://"))) {
 					Err(Invalid("the endpoint isn't at a browser's push service"))
+				} else if P256.ecdh!(subscription.p256dh).is_err() {
+					Err(Invalid("keys.p256dh isn't a point on P-256"))
+				} else {
+					PushStore.save!(subscription, owner)
 				}
 			Err(BadEndpoint) => Err(Invalid("the endpoint isn't an https: URL"))
 			Err(BadP256dh) => Err(Invalid("keys.p256dh isn't a P-256 public key in base64url"))
@@ -165,13 +152,15 @@ Push := [].{
 	## gone is deleted; a refusal (a bad VAPID key, a message too large) is logged and noted on the
 	## subscription, not tried again.
 	deliver : Job.Kind(_, Input)
-	deliver = Job.define_with("push.deliver", { attempts: 5, timeout_ms: 60_000 }, |_context, input| deliver!(Push.host, input))
+	deliver = Job.define_with("push.deliver", { attempts: 5, timeout_ms: 60_000 }, |_context, input| deliver!(input))
 
 	## One attempt at sending `data` (empty: a push with no data, which the service worker shows as
 	## a notification with no text) to `subscription`, with `options`: what the push service's
-	## answer means, or why no request was sent.
-	send! : Primitives, Vapid.Keys, Subscription, List(U8), Options => Try(Delivery.Outcome, Str)
-	send! = |primitives, keys, subscription, data, options| {
+	## answer means, or why no request was sent. The data is encrypted for the subscription's
+	## browser (RFC 8291: a new ECDH key pair and a new salt each time, one record of `aes128gcm`),
+	## and the request carries a VAPID token for the endpoint's origin, signed with `keys` (RFC 8292).
+	send! : Vapid.Keys, Subscription, List(U8), Options => Try(Delivery.Outcome, Str)
+	send! = |keys, subscription, data, options| {
 		now = Time.now_millis!({})
 		claims =
 			match Vapid.claims(keys, subscription.endpoint, now) {
@@ -179,12 +168,17 @@ Push := [].{
 				Err(BadEndpoint) => return Err("the subscription's endpoint isn't a URL: ${subscription.endpoint}")
 			}
 		input = Vapid.signing_input(claims)
+		signature =
+			match P256.sign!(keys.private_key, keys.public_key, input.to_utf8()) {
+				Ok(signed) => signed
+				Err(BadKey) => return Err(not_a_pair)
+			}
 		jwt =
-			match Vapid.token(input, (primitives.sign!)(keys.private_key, keys.public_key, input.to_utf8())?) {
+			match Vapid.token(input, signature) {
 				Ok(made) => made
 				Err(BadSignature) => return Err("the host's ES256 signature isn't 64 bytes")
 			}
-		body = if (data.is_empty()) [] else encrypted!(primitives, subscription, data)?
+		body = if (data.is_empty()) [] else encrypted!(subscription, data)?
 		request = Delivery.request({ endpoint: subscription.endpoint, authorization: Vapid.authorization(jwt, keys.public_key), body, options })
 		match Http.fetch!(request.url, { method: Post, headers: request.headers, body: Http.bytes(request.body), timeout_ms: 30_000, max_bytes: 65_536, redirect: Manual }) {
 			Ok(res) => Ok(Delivery.outcome({ status: res.status, headers: res.headers, body: res.body }, Time.now_millis!({})))
@@ -199,12 +193,15 @@ Push := [].{
 anyone : ctx -> Str
 anyone = |_| ""
 
-## The plugin's start: the keys checked (a pair that isn't one stops the server, saying why), and
-## the jobs plugin told of `push.deliver`.
+## The plugin's start: the keys checked (keys that aren't a pair stop the server, saying why: a
+## signature by them is tried), and the jobs plugin told of `push.deliver`.
 started! : {} => Try({}, Str)
 started! = |{}| {
-	_ = Push.keys!({})?
-	Job.adopt!(Push.deliver)
+	keys = Push.keys!({})?
+	match P256.sign!(keys.private_key, keys.public_key, []) {
+		Ok(_) => Job.adopt!(Push.deliver)
+		Err(BadKey) => Err(not_a_pair)
+	}
 }
 
 ## `GET <at>/key`: the public key, as JSON, for the page to subscribe with.
@@ -251,21 +248,28 @@ json = |text| Server.response(200, [{ name: "content-type", value: "application/
 refused : U16, Str -> Server.Response
 refused = |status, why| Server.response(status, [{ name: "content-type", value: "text/plain; charset=utf-8" }], why)
 
-missing! : {} => Try(a, Str)
-missing! = |{}| Err("the server's host has no P-256 or AES-128-GCM yet, which Web Push needs (packages/push/PROPOSALS.md)")
+## What a VAPID pair that isn't one is said to be.
+not_a_pair : Str
+not_a_pair = "VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY aren't a pair: `node packages/push/vapid-keys.mjs` makes one"
 
-## `data` encrypted for `subscription`: a new key pair, a new salt, one record.
-encrypted! : Push.Primitives, Subscription, List(U8) => Try(List(U8), Str)
-encrypted! = |primitives, subscription, data| {
-	{ as_public, ecdh_secret } = (primitives.ecdh!)(subscription.p256dh)?
+## `data` encrypted for `subscription` (RFC 8291): a new key pair, a new salt, one record.
+encrypted! : Subscription, List(U8) => Try(List(U8), Str)
+encrypted! = |subscription, data| {
+	{ as_public, ecdh_secret } =
+		match P256.ecdh!(subscription.p256dh) {
+			Ok({ public_key, secret }) => { as_public: public_key, ecdh_secret: secret }
+			Err(BadKey) => return Err("the subscription's p256dh isn't a point on P-256")
+		}
 	sealing =
 		match WebPush.prepare({ ua_public: subscription.p256dh, auth_secret: subscription.auth, as_public, ecdh_secret, salt: Random.bytes!(16), data, padding: 0 }) {
 			Ok(ready) => ready
 			Err(BadKeys) => return Err("the subscription's keys, or the host's ECDH, aren't P-256's")
 			Err(TooLarge) => return Err("the message is ${data.len().to_str()} bytes: a push message holds ${WebPush.max_data.to_str()} at most")
 		}
-	sealed = (primitives.seal!)(sealing.key, sealing.nonce, sealing.record)?
-	Ok(WebPush.body(sealing, sealed))
+	match AesGcm.seal_with_nonce!(sealing.key, sealing.nonce, sealing.record) {
+		Ok(sealed) => Ok(WebPush.body(sealing, sealed))
+		Err(_) => Err("AES-128-GCM refused the content key or the nonce: they aren't 16 and 12 bytes")
+	}
 }
 
 queue_each! : List(I64), Str, Options => Try(U64, Str)
@@ -310,8 +314,8 @@ urgency_of = |text|
 	}
 
 ## An attempt of the `deliver` job.
-deliver! : Push.Primitives, Push.Input => Try({}, Str)
-deliver! = |primitives, input| {
+deliver! : Push.Input => Try({}, Str)
+deliver! = |input| {
 	row =
 		match PushStore.find!(input.subscription) {
 			Ok(Found(found)) => found
@@ -337,7 +341,7 @@ deliver! = |primitives, input| {
 			}
 		}
 	keys = Push.keys!({})?
-	match Push.send!(primitives, keys, subscription, input.data.to_utf8(), options)? {
+	match Push.send!(keys, subscription, input.data.to_utf8(), options)? {
 		Delivered => PushStore.delivered!(row.id).map_ok(|_| {}).map_err(|DbErr(why)| why)
 		Gone => {
 			Log.info!("push: a subscription is gone, so it is deleted", { subscription: row.id, owner: row.owner })

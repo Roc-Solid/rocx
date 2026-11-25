@@ -14,7 +14,9 @@
 // take tells and timers, log what they do not take, and keep their state across a restart (and an
 // idle spell); `Http` asks servers this file runs (redirects, a timeout,
 // a body too large, TLS that fails); `Env` reads the environment from a request and a job; AES-GCM
-// seals as Node's does, and packages/crypto's SHA-256, HMAC, HKDF and Base64 agree with Node's;
+// seals as Node's does (with the caller's nonce, as RFC 8291's and RFC 8188's examples), P-256's
+// ECDH and ES256 agree with Node's, and packages/crypto's SHA-256, HMAC, HKDF and Base64 agree with
+// Node's;
 // packages/storage keeps objects in memory, in a directory and in S3, whole and in parts, serves
 // them without passing them through Roc, and signs URLs Node's fetch uses;
 // cookies are set as their options say; a stop lets the request being answered finish.
@@ -30,7 +32,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createECDH, createHash, createHmac, createPublicKey, hkdfSync, randomBytes, verify as cryptoVerify } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -2342,6 +2344,106 @@ test("aes-gcm: what Roc seals Node opens, and back; a wrong key, a change or a k
 	assert.equal(await short.text(), "BadKey");
 });
 
+test("aes-gcm with the caller's nonce: RFC 8291's and RFC 8188's records sealed as the RFCs give them, AES-256 as Node's, a key or a nonce of another size refused", { skip }, async () => {
+	const list = (bytes) => [...bytes].join(",");
+	const b64 = (text) => Buffer.from(text, "base64url");
+	const seal = async (key, nonce, plaintext) => {
+		const response = await get(`/aes/seal-with-nonce?key=${list(key)}&nonce=${list(nonce)}`, { method: "POST", body: plaintext });
+		const said = await response.text();
+		return response.status === 200 ? Buffer.from(said === "" ? [] : said.split(",").map(Number)) : `${response.status} ${said}`;
+	};
+	// RFC 8291, appendix A: the content key and nonce its keys derive, the record (the message and
+	// the delimiter 2), and the ciphertext and tag of its message (after the 86-byte header).
+	const watermelon = Buffer.concat([Buffer.from("When I grow up, I want to be a watermelon"), Buffer.from([2])]);
+	const message = b64("DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN");
+	assert.deepEqual(await seal(b64("oIhVW04MRdy2XN9CiKLxTg"), b64("4h_95klXJ5E_qnoN"), watermelon), message.subarray(86), "RFC 8291's message");
+	// RFC 8188, section 3.1: "I am the walrus", one record, after its 21-byte header.
+	const walrus = b64("I1BsxtFttlv3u_Oo94xnmwAAEAAA-NAVub2qFgBEuQKRapoZu-IxkIva3MEB1PD-ly8Thjg");
+	assert.deepEqual(await seal(b64("_wniytB-ofscZDh4tbSjHw"), b64("Bcs8gkIRKLI8GeI8"), Buffer.from("I am the walrus\u0002")), walrus.subarray(21), "RFC 8188's record");
+	// A 32-byte key is AES-256: Node opens it with the same nonce.
+	const key = randomBytes(32);
+	const nonce = randomBytes(12);
+	const sealed = await seal(key, nonce, "sealed by Roc ✓");
+	const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+	decipher.setAuthTag(sealed.subarray(-16));
+	assert.equal(Buffer.concat([decipher.update(sealed.subarray(0, -16)), decipher.final()]).toString(), "sealed by Roc ✓", "the ciphertext, then the tag, nothing in front");
+	assert.deepEqual(await seal(key, nonce, "sealed by Roc ✓"), sealed, "the same nonce, the same bytes: the caller's to never repeat");
+	assert.equal((await seal(key, nonce, "")).length, 16, "nothing sealed is a tag");
+	assert.equal(await seal(randomBytes(15), nonce, "x"), "400 BadKey");
+	assert.equal(await seal(randomBytes(24), nonce, "x"), "400 BadKey", "AES-192 isn't offered");
+	assert.equal(await seal(key, randomBytes(11), "x"), "400 BadNonce");
+	assert.equal(await seal(key, randomBytes(16), "x"), "400 BadNonce");
+});
+
+test("p256: ECDH with a key pair of the host's own agrees with Node's on the secret, a new pair each time; a key off the curve refused", { skip }, async () => {
+	const list = (bytes) => [...bytes].join(",");
+	const ecdh = async (peer) => {
+		const response = await get("/p256/ecdh", { method: "POST", body: list(peer) });
+		const said = await response.text();
+		if (response.status !== 200) return `${response.status} ${said}`;
+		const [publicKey, secret] = said.split("\n").map((line) => Buffer.from(line.split(",").map(Number)));
+		return { publicKey, secret };
+	};
+	const browser = createECDH("prime256v1");
+	browser.generateKeys();
+	const first = await ecdh(browser.getPublicKey());
+	assert.equal(first.publicKey.length, 65);
+	assert.equal(first.publicKey[0], 4, "uncompressed");
+	assert.equal(first.secret.length, 32);
+	assert.deepEqual(browser.computeSecret(first.publicKey), first.secret, "the secret the browser computes from the host's public key");
+	const second = await ecdh(browser.getPublicKey());
+	assert.notDeepEqual(second.publicKey, first.publicKey, "a key pair for each call");
+	assert.notDeepEqual(second.secret, first.secret);
+	assert.deepEqual(browser.computeSecret(second.publicKey), second.secret);
+	// RFC 8291's user agent's public key is a point on the curve too.
+	assert.equal((await ecdh(Buffer.from("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4", "base64url"))).secret.length, 32);
+
+	const point = browser.getPublicKey();
+	const offCurve = Buffer.from(point);
+	offCurve[64] ^= 1;
+	assert.equal(await ecdh(offCurve), "400 BadKey", "a point not on the curve");
+	assert.equal(await ecdh(point.subarray(0, 64)), "400 BadKey", "64 bytes");
+	assert.equal(await ecdh(browser.getPublicKey(null, "compressed")), "400 BadKey", "compressed");
+	assert.equal(await ecdh(Buffer.concat([Buffer.from([4]), Buffer.alloc(64)])), "400 BadKey", "the point at zero");
+	assert.equal(await ecdh([]), "400 BadKey");
+});
+
+test("p256: ES256 signatures, 64 bytes r and s, that Node verifies; a new one each time; keys that aren't a pair refused", { skip }, async () => {
+	const list = (bytes) => [...bytes].join(",");
+	const b64 = (text) => Buffer.from(text, "base64url");
+	const sign = async (privateKey, publicKey, message) => {
+		const response = await get(`/p256/sign?private=${list(privateKey)}&public=${list(publicKey)}`, { method: "POST", body: message });
+		const said = await response.text();
+		return response.status === 200 ? Buffer.from(said.split(",").map(Number)) : `${response.status} ${said}`;
+	};
+	/** Whether `signature` (r and s, 64 bytes) is ES256's of `message` by `publicKey`'s private key. */
+	const verified = (publicKey, message, signature) => {
+		const key = createPublicKey({ key: { kty: "EC", crv: "P-256", x: publicKey.subarray(1, 33).toString("base64url"), y: publicKey.subarray(33).toString("base64url") }, format: "jwk" });
+		return cryptoVerify("sha256", Buffer.from(message), { key, dsaEncoding: "ieee-p1363" }, signature);
+	};
+	// RFC 8291's application server's pair, as a VAPID pair, and a JWT's signing input.
+	const privateKey = b64("yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw");
+	const publicKey = b64("BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8");
+	const input = "eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJhdWQiOiJodHRwczovL3B1c2guZXhhbXBsZS5uZXQiLCJleHAiOjE0NTM1MjM3NjgsInN1YiI6Im1haWx0bzpwdXNoQGV4YW1wbGUuY29tIn0";
+	const signature = await sign(privateKey, publicKey, input);
+	assert.equal(signature.length, 64, "r then s, as JWS writes them");
+	assert.ok(verified(publicKey, input, signature), "Node verifies it");
+	assert.ok(!verified(publicKey, `${input}x`, signature), "and not for another message");
+	const again = await sign(privateKey, publicKey, input);
+	assert.notDeepEqual(again, signature, "ECDSA's random k: a new signature each time");
+	assert.ok(verified(publicKey, input, again));
+	// A pair Node made, and nothing signed.
+	const node = createECDH("prime256v1");
+	node.generateKeys();
+	const scalar = Buffer.from(node.getPrivateKey("hex").padStart(64, "0"), "hex");
+	assert.ok(verified(node.getPublicKey(), "", await sign(scalar, node.getPublicKey(), "")));
+
+	assert.equal(await sign(privateKey, node.getPublicKey(), input), "400 BadKey", "another key's public key");
+	assert.equal(await sign(privateKey.subarray(1), publicKey, input), "400 BadKey", "31 bytes");
+	assert.equal(await sign(Buffer.alloc(32), publicKey, input), "400 BadKey", "zero");
+	assert.equal(await sign(privateKey, publicKey.subarray(0, 64), input), "400 BadKey", "a public key cut short");
+});
+
 test("random: so many bytes from the operating system, different each time", { skip }, async () => {
 	const bytes = async (count) => {
 		const said = await text(`/random?count=${count}`);
@@ -2410,6 +2512,17 @@ test("samples: what the docs show (Samples.roc) runs as they say: settings, cryp
 	assert.notEqual(await post("/samples/seal", "an API token"), kept, "a fresh nonce each time");
 	assert.equal(await post("/samples/unseal", kept), "an API token");
 	assert.equal(await post("/samples/unseal", kept.replace(/.$/, (last) => (last === "0" ? "1" : "0"))), "Forged");
+	const pair = createECDH("prime256v1");
+	pair.generateKeys();
+	const [privateKey, publicKey] = [Buffer.from(pair.getPrivateKey("hex").padStart(64, "0"), "hex"), pair.getPublicKey()];
+	const claims = JSON.stringify({ aud: "https://push.example.net", exp: 1_900_000_000, sub: "mailto:ops@example.com" });
+	const jwt = await post(`/samples/es256?private=${privateKey.toString("base64url")}&public=${publicKey.toString("base64url")}`, claims);
+	const [header, body, signature] = jwt.split(".");
+	assert.deepEqual(JSON.parse(Buffer.from(header, "base64url")), { typ: "JWT", alg: "ES256" });
+	assert.equal(Buffer.from(body, "base64url").toString(), claims);
+	const key = createPublicKey({ key: { kty: "EC", crv: "P-256", x: publicKey.subarray(1, 33).toString("base64url"), y: publicKey.subarray(33).toString("base64url") }, format: "jwk" });
+	assert.ok(cryptoVerify("sha256", Buffer.from(`${header}.${body}`), { key, dsaEncoding: "ieee-p1363" }, Buffer.from(signature, "base64url")), "an ES256 JWT Node verifies");
+	assert.equal(await post(`/samples/es256?private=${privateKey.toString("base64url")}&public=${randomBytes(65).toString("base64url")}`, claims), "BadKey");
 	const cookies = (await get("/samples/cookies")).headers.getSetCookie();
 	assert.deepEqual(cookies, [
 		"__Host-session=token; Path=/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax",

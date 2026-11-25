@@ -4773,6 +4773,66 @@ be made on each machine (rocx does it). A release needs both a Mac (its host) an
 
 **Reversible:** yes: a clone still works as before; the install is files under `~/.rocx`.
 
+## D-080 P-256 and AES-128-GCM in the server's host, so Web Push sends
+
+**Status.** Built (2026-11-25): packages/push's proposal 1 (PROPOSALS.md there), leaner.
+
+**Context.** packages/push did everything Web Push needs but the crypto: its `Push.host` answered
+"missing" for the ECDH that encrypts a message (RFC 8291), the AES-128-GCM with a derived nonce
+that seals it (RFC 8188), and the ES256 signature on the VAPID token (RFC 8292), so every delivery
+job failed, saying so. Elliptic curves in Roc were ruled out (slow, not constant-time, unreviewed).
+`ring`, which the host links already, has all three.
+
+**Decision.**
+
+- **`P256`, a new server platform module, two effects.** `P256.ecdh!(peer)`: ECDH with a key pair
+  the host makes for this call and forgets (ring's `EphemeralPrivateKey`, `agree_ephemeral`),
+  answering `{ public_key, secret }` (65 and 32 bytes), `BadKey` unless `peer` is an uncompressed
+  point on the curve. `P256.sign!(private_key, public_key, message)`: ES256 (ring's
+  `ECDSA_P256_SHA256_FIXED_SIGNING`), 64 bytes `r` then `s` as JWS writes them, `BadKey` unless the
+  32-byte scalar and the 65-byte point are a pair (ring checks). Keys are raw bytes, as browsers,
+  Web Crypto and `web-push` write them.
+- **`AesGcm.seal_with_nonce!(key, nonce, plaintext)`**, beside `seal!`: AES-GCM with the caller's
+  12-byte nonce, AES-128 under a 16-byte key, AES-256 under a 32-byte one; the ciphertext then the
+  tag (`BadKey`, `BadNonce`). Its doc says a nonce must never repeat under a key, and to use
+  `seal!` otherwise.
+- **Three hosted functions** (`p256_ecdh!`, `p256_sign!`, `aes_gcm_seal_with_nonce!`), each
+  `Try(List(U8), Str)`, so the glue only adds their declarations (ECDH's two parts come back as one
+  list, split by `P256.ecdh!`). Each starts `let _host = preempt::host();`.
+- **packages/push calls them itself.** `Push.Primitives` and `Push.host` are gone (they were the
+  seam for the missing host); `Push.send!(keys, subscription, data, options)`. The plugin's start
+  signs once with the VAPID keys, so a pair that isn't one stops the server (the docs said so
+  already; only the keys' shapes were checked). `Push.subscribe!` tries an ECDH with the
+  subscription's key and refuses one off the curve, so a kept subscription can be sent to.
+- **Not built, for want of a user:** ECDH with a given private key (RFC 8291's appendix replayed; it
+  is checked by agreeing with Node instead), `P256.generate!` (VAPID keys still come from
+  `vapid-keys.mjs` or `web-push`; TODO has the release gap), `open_with_nonce!`, and verifying. The
+  natural next primitive is `P256.verify!(public_key, message, signature)` for passkeys
+  (packages/auth's PROPOSALS.md §2), on ring's `ECDSA_P256_SHA256_ASN1`: WebAuthn's signatures are
+  DER, not JWS's `r` and `s`.
+- **Tests.** server/test: `seal_with_nonce!` gives RFC 8291 appendix A's and RFC 8188 §3.1's
+  ciphertexts byte for byte, and AES-256 that Node opens; `ecdh!` agrees with Node's ECDH, a new pair
+  each call, and refuses points off the curve, compressed or cut short; Node verifies `sign!`'s
+  signatures (RFC 8291's application server pair, and Node's), and keys that aren't a pair are
+  refused; the docs' ES256 JWT sample (`Samples.es256_token!`) verifies in Node. packages/push's
+  example, on SQLite and Postgres, under `--dev`: a broadcast delivered to a push service of the
+  test's own that plays the browsers (Node's P-256 keys and auth secrets), checks each VAPID token's
+  claims and ES256 signature against `VAPID_PUBLIC_KEY`, decrypts each message per RFC 8291 and
+  checks the notification inside, and answers 201, 410 (deleted) or 403 (noted); a pair that isn't
+  one stops the server. That push service is also the server's `HTTPS_PROXY`, refusing every
+  CONNECT, so no test reaches a real push service.
+
+**Why.** Sending was the package's one missing piece, and only the host can do it safely; ring adds
+nothing to the build. Three effects are what sending needs, and nothing more.
+
+**Costs.** One platform module and one `AesGcm` effect to keep. A nonce the caller gives can be
+misused; the doc warns, and `seal!` stays the default. A real push service hasn't received a
+message from these tests (by rule): the RFCs' vectors and a stand-in that decrypts are the checks
+until a browser's first notification.
+
+**Reversible:** yes: new functions nothing else calls; without them packages/push goes back to
+failing every delivery with a reason.
+
 
 ## D-083 `create_selector!`
 

@@ -51,6 +51,11 @@ When an item lands, delete its line here in the same commit.
 - **echo's benchmark again:** the examples page's numbers (8f7abc5) are of its server built
   specialized; since D-064 it ships boxy, so `just example-apps --bench` (a run on the user's go, on
   a quiet machine) would measure what ships.
+- **VAPID keys without Node** (found landing D-080, 2026-11-25): packages/push's setup makes its
+  key pair with `node packages/push/vapid-keys.mjs`, which a release leaves out (`release/pack.sh`
+  drops every `*.mjs`), so an installed rocx has only `npx web-push generate-vapid-keys`. Ship the
+  script, or add `P256.generate!` (one hosted function) and have the push plugin print a fresh pair
+  when the keys are missing under `--dev`?
 - **Found by the docs pass (2026-11-24), each a choice for the user:**
   - **Names in hand-written Roc markup aren't checked.** `Html.element`, `Html.void` and
     `Html.attr` take any `Str` as a tag or attribute name, and the server's renderer writes names
@@ -59,8 +64,6 @@ When an item lands, delete its line here in the same commit.
     the file). Refuse or escape names that aren't plain tag and attribute names?
   - **`Email.send!` with no `SMTP_URL` answers `Ok`, in production too,** and only keeps the
     message (the docs now warn). Fail without `SMTP_URL` outside `--dev`?
-  - **Push can't send yet:** the host's Web Push functions answer "missing" (no P-256), so every
-    delivery job fails, saying so (`packages/push/Push.roc:87-92`; the docs say so).
 
 ## Framework work, decided but not built
 

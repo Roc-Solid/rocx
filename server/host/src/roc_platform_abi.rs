@@ -3392,6 +3392,17 @@ pub struct HostAesGcmSealArgs {
     pub arg1: RocListWith<u8, false>,
 }
 
+/// Arguments for Host.aes_gcm_seal_with_nonce!
+/// Roc signature: List(U8), List(U8), List(U8) => Try(List(U8), Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostAesGcmSealWithNonceArgs {
+    pub arg0: RocListWith<u8, false>,
+    pub arg1: RocListWith<u8, false>,
+    pub arg2: RocListWith<u8, false>,
+}
+
 /// Arguments for Host.blob_check!
 /// Roc signature: Str => Try({}, Str)
 /// Refcounted fields are owned by the hosted function.
@@ -3761,6 +3772,26 @@ pub struct HostLogArgs {
 #[derive(Clone, Copy)]
 pub struct HostLogFormatArgs {
     pub arg0: u8,
+}
+
+/// Arguments for Host.p256_ecdh!
+/// Roc signature: List(U8) => Try(List(U8), Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostP256EcdhArgs {
+    pub arg0: RocListWith<u8, false>,
+}
+
+/// Arguments for Host.p256_sign!
+/// Roc signature: List(U8), List(U8), List(U8) => Try(List(U8), Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostP256SignArgs {
+    pub arg0: RocListWith<u8, false>,
+    pub arg1: RocListWith<u8, false>,
+    pub arg2: RocListWith<u8, false>,
 }
 
 /// Arguments for Host.page_scripts!
@@ -4307,6 +4338,9 @@ pub struct HostUntrackArgs {
 pub type HostAesGcmSealResult = HostAesGcmOpenResult;
 pub type HostAesGcmSealResultPayload = HostAesGcmOpenResultPayload;
 pub type HostAesGcmSealResultTag = HostAesGcmOpenResultTag;
+pub type HostAesGcmSealWithNonceResult = HostAesGcmOpenResult;
+pub type HostAesGcmSealWithNonceResultPayload = HostAesGcmOpenResultPayload;
+pub type HostAesGcmSealWithNonceResultTag = HostAesGcmOpenResultTag;
 pub type HostBlobComposeResult = HostBlobCheckResult;
 pub type HostBlobComposeResultPayload = HostBlobCheckResultPayload;
 pub type HostBlobComposeResultTag = HostBlobCheckResultTag;
@@ -4363,6 +4397,12 @@ pub type HostKvTakeResult = HostActorAskResult;
 pub type HostKvTakeResultPayload = HostActorAskResultPayload;
 pub type HostKvTakeResultTag = HostActorAskResultTag;
 pub type HostLiveNext = AnonStructFa59a42fc999ca94;
+pub type HostP256EcdhResult = HostAesGcmOpenResult;
+pub type HostP256EcdhResultPayload = HostAesGcmOpenResultPayload;
+pub type HostP256EcdhResultTag = HostAesGcmOpenResultTag;
+pub type HostP256SignResult = HostAesGcmOpenResult;
+pub type HostP256SignResultPayload = HostAesGcmOpenResultPayload;
+pub type HostP256SignResultTag = HostAesGcmOpenResultTag;
 pub type HostStoreGetResult = HostActorAskResult;
 pub type HostStoreGetResultPayload = HostActorAskResultPayload;
 pub type HostStoreGetResultTag = HostActorAskResultTag;
@@ -5609,6 +5649,16 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_aes_gcm_seal(arg0: RocListWith<u8, false>, arg1: RocListWith<u8, false>) -> HostAesGcmOpenResult;
 
+    /// Hosted symbol for Host.aes_gcm_seal_with_nonce!
+    /// Roc signature: List(U8), List(U8), List(U8) => Try(List(U8), Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_aes_gcm_seal_with_nonce(arg0: RocListWith<u8, false>, arg1: RocListWith<u8, false>, arg2: RocListWith<u8, false>) -> HostAesGcmOpenResult;
+
     /// Hosted symbol for Host.blob_check!
     /// Roc signature: Str => Try({}, Str)
     /// Owned arguments. Release each exactly once before returning, unless it is
@@ -5933,6 +5983,24 @@ unsafe extern "C" {
     /// Hosted symbol for Host.now_nanos!
     /// Roc signature: {} => U64
     pub fn roc_host_now_nanos() -> u64;
+
+    /// Hosted symbol for Host.p256_ecdh!
+    /// Roc signature: List(U8) => Try(List(U8), Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_p256_ecdh(arg0: RocListWith<u8, false>) -> HostAesGcmOpenResult;
+
+    /// Hosted symbol for Host.p256_sign!
+    /// Roc signature: List(U8), List(U8), List(U8) => Try(List(U8), Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    ///     unsafe { arg2.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_p256_sign(arg0: RocListWith<u8, false>, arg1: RocListWith<u8, false>, arg2: RocListWith<u8, false>) -> HostAesGcmOpenResult;
 
     /// Hosted symbol for Host.page_scripts!
     /// Roc signature: Str => {}

@@ -8,8 +8,8 @@ import crypto.Base64
 ##
 ##     Authorization: vapid t=<the JWT>, k=<the public key, base64url>
 ##
-## The signature is the host's (PROPOSALS.md): this builds what it signs (`signing_input`) and
-## the header from the signature (`token`, `authorization`).
+## The signature is the server platform's (`P256.sign!`, D-080): this builds what it signs
+## (`signing_input`) and the header from the signature (`token`, `authorization`).
 Vapid := [].{
 
 	## The server's key pair and its contact: the public key an uncompressed P-256 point (65

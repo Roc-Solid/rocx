@@ -1467,7 +1467,7 @@ pub extern "C" fn roc_host_http_close(id: u64) {
     }
 }
 
-// ---- AES-256-GCM ----
+// ---- AES-GCM ----
 
 /// `plaintext` sealed under `key` (32 bytes): a fresh random nonce, the ciphertext, the tag.
 #[unsafe(no_mangle)]
@@ -1516,6 +1516,69 @@ fn open(key: &[u8], sealed: &[u8]) -> Result<Vec<u8>, String> {
     let mut buffer = rest.to_vec();
     let plaintext = key.open_in_place(nonce, ring::aead::Aad::empty(), &mut buffer).map_err(|_| "forged".to_string())?;
     Ok(plaintext.to_vec())
+}
+
+/// `plaintext` sealed under `key` with the caller's 12-byte `nonce` (RFC 8188's, Web Push's):
+/// AES-128 under a 16-byte key, AES-256 under a 32-byte one; the ciphertext, then the tag. "bad
+/// key", or "bad nonce".
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_aes_gcm_seal_with_nonce(key: RocListWith<u8, false>, nonce: RocListWith<u8, false>, plaintext: RocListWith<u8, false>) -> BytesResult {
+    let _host = preempt::host();
+    let (key, nonce, plaintext) = (taken_bytes(key), taken_bytes(nonce), taken_bytes(plaintext));
+    bytes_or_error(guarded(|| seal_with_nonce(&key, &nonce, &plaintext)))
+}
+
+fn seal_with_nonce(key: &[u8], nonce: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    let algorithm = match key.len() {
+        16 => &ring::aead::AES_128_GCM,
+        32 => &ring::aead::AES_256_GCM,
+        _ => return Err("bad key".into()),
+    };
+    let key = ring::aead::LessSafeKey::new(ring::aead::UnboundKey::new(algorithm, key).map_err(|_| "bad key".to_string())?);
+    let nonce = ring::aead::Nonce::try_assume_unique_for_key(nonce).map_err(|_| "bad nonce".to_string())?;
+    let mut sealed = plaintext.to_vec();
+    key.seal_in_place_append_tag(nonce, ring::aead::Aad::empty(), &mut sealed).map_err(|_| "too long to seal".to_string())?;
+    Ok(sealed)
+}
+
+// ---- P-256 ----
+
+/// ECDH on P-256 with a key pair made for this call alone, and forgotten with it: its public key
+/// (65 bytes, uncompressed), then the 32 bytes it shares with `peer`; "bad key" unless `peer` is an
+/// uncompressed point on the curve (ring checks it is).
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_p256_ecdh(peer: RocListWith<u8, false>) -> BytesResult {
+    let _host = preempt::host();
+    let peer = taken_bytes(peer);
+    bytes_or_error(guarded(|| p256_ecdh(&peer)))
+}
+
+/// ES256: the signature of `message` by `private_key` (its 32-byte scalar), whose public key is
+/// `public_key` (65 bytes, uncompressed): 64 bytes, `r` then `s`; "bad key" when they aren't a
+/// pair (ring checks the scalar gives the point).
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_p256_sign(private_key: RocListWith<u8, false>, public_key: RocListWith<u8, false>, message: RocListWith<u8, false>) -> BytesResult {
+    let _host = preempt::host();
+    let (private_key, public_key, message) = (taken_bytes(private_key), taken_bytes(public_key), taken_bytes(message));
+    bytes_or_error(guarded(|| p256_sign(&private_key, &public_key, &message)))
+}
+
+fn p256_ecdh(peer: &[u8]) -> Result<Vec<u8>, String> {
+    use ring::agreement::{ECDH_P256, EphemeralPrivateKey, UnparsedPublicKey, agree_ephemeral};
+    let random = ring::rand::SystemRandom::new();
+    let mine = EphemeralPrivateKey::generate(&ECDH_P256, &random).map_err(|_| "the operating system gave no random bytes".to_string())?;
+    let mut both = mine.compute_public_key().map_err(|_| "no public key".to_string())?.as_ref().to_vec();
+    let shared = agree_ephemeral(mine, &UnparsedPublicKey::new(&ECDH_P256, peer), |secret| secret.to_vec()).map_err(|_| "bad key".to_string())?;
+    both.extend_from_slice(&shared);
+    Ok(both)
+}
+
+fn p256_sign(private_key: &[u8], public_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
+    use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair};
+    let random = ring::rand::SystemRandom::new();
+    let pair = EcdsaKeyPair::from_private_key_and_public_key(&ECDSA_P256_SHA256_FIXED_SIGNING, private_key, public_key, &random).map_err(|_| "bad key".to_string())?;
+    let signature = pair.sign(&random, message).map_err(|_| "the operating system gave no random bytes".to_string())?;
+    Ok(signature.as_ref().to_vec())
 }
 
 // ---- Time zones ----

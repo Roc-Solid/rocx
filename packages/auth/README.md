@@ -302,4 +302,4 @@ Expired sessions and links are swept as sessions start.
 
 Built and tested (D-072, D-077): links, the link page, Google, GitHub, OpenID Connect, the dev
 sign-in, sessions, the middleware, impersonation. Not yet: passwords (they need a slow hash, Argon2, from the host), passkeys
-(P-256 from the host), discovery of a provider's endpoints from its issuer. PROPOSALS.md has them.
+(a P-256 signature verified, by the host), discovery of a provider's endpoints from its issuer. PROPOSALS.md has them.

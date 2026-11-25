@@ -16,7 +16,7 @@ import ../../../Generated/Paths
 ## Static but for the notification demo: this site is files, and a push needs a server.
 meta = {
 	title: "Push",
-	description: "Web Push notifications for Roc Solid apps, as a plugin: a button that subscribes, a table that keeps each browser's subscription, and jobs that send. Sending waits on the server's host.",
+	description: "Web Push notifications for Roc Solid apps, as a plugin: a button that subscribes, a table that keeps each browser's subscription, and jobs that encrypt, sign and send.",
 	toc: [
 		{ id: "example", label: "A first app" },
 		{ id: "button", label: "<PushButton>" },
@@ -42,9 +42,7 @@ view! = |_|
 			</PageHero>
 			<p>
 				Use it for news a user wants even when they aren't looking at your site: a reply to their question,
-				an export that finished, an order that shipped. One piece is still missing. The server's host can't
-				yet do the encryption Web Push needs, so today every send fails and says why (see
-				<a href="#status">Status</a>). Everything else works and is tested.
+				an export that finished, an order that shipped.
 			</p>
 
 			<Heading id="example">A first app</Heading>
@@ -248,7 +246,9 @@ view! = |_|
 				<li>Later, the server calls <code>Push.notify!</code>, which queues a job for each of the user's subscriptions.</li>
 				<li>
 					The job encrypts the notification for that one browser (RFC 8291), signs a token that says which
-					server sent it (VAPID, RFC 8292), and posts both to the subscription's URL (RFC 8030).
+					server sent it (VAPID, RFC 8292), and posts both to the subscription's URL (RFC 8030). The
+					elliptic-curve work and the AES are the server platform's
+					(<a href={"${Paths.platform_crypto}#p256"}><code>P256</code> and <code>AesGcm</code></a>).
 				</li>
 				<li>
 					The push service wakes the browser. The package's service worker shows the notification, and a
@@ -344,13 +344,17 @@ view! = |_|
 			<ul>
 				<li>
 					Everything that is plain Roc, checked by <code>expect</code>s against the RFCs' own examples: the
-					keys, the VAPID token's claims and signing input, the content coding, the message's key derivation
-					(up to the AES), the request's headers, and what each answer means.
+					keys, the VAPID token's claims and signing input, the content coding, the message's key derivation,
+					the request's headers, and what each answer means. The server platform's tests check its AES
+					against RFC 8291's and RFC 8188's examples, and its ECDH and ES256 against Node's crypto.
 				</li>
 				<li>
 					The plugin, built into the example app and run on SQLite, and on Postgres when one is available. It
-					saves and forgets subscriptions and queues a job for each; each job reads its subscription and then
-					fails, saying the host can't encrypt yet.
+					saves and forgets subscriptions, and refuses one at an unknown service or with a key that isn't
+					on the curve. A broadcast is delivered to a push service the test runs, which plays the browsers
+					too: it checks each request's VAPID token and signature, decrypts each message as a browser
+					would, and answers as a push service might, so a subscription that is gone is deleted and a
+					refusal is noted on its row. VAPID keys that aren't a pair stop the server as it starts.
 				</li>
 				<li>
 					The button, the page's script and the service worker, tried in Chromium behind a guard that refuses
@@ -358,15 +362,13 @@ view! = |_|
 					the whole site, and the button subscribes.
 				</li>
 			</ul>
+			<p>
+				No test sends to a real push service (Google's, Mozilla's, Apple's or Microsoft's): what they accept
+				is what the RFCs say, which the tests check, and a real browser's first notification is the last
+				check.
+			</p>
 			<p>Not yet (each has a proposal in <code>packages/push/PROPOSALS.md</code>):</p>
 			<ul>
-				<li>
-					<strong>Sending.</strong> The server's host has no P-256, which Web Push needs for the key agreement
-					that encrypts a message and for the signature on the VAPID token. It also needs AES-128-GCM with a
-					nonce it derives, which the host doesn't offer. Until the host has both, every delivery fails and says
-					so. The proposal sketches them on <code>ring</code>, which the host already links, and the sketch
-					passes the RFCs' examples.
-				</li>
 				<li>
 					<strong>Jobs that give up, or come back at a set time.</strong> Today a refused message ends its job
 					as if it had been sent, and a <code>Retry-After</code> queues a copy of the job for that time.

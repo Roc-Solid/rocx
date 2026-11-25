@@ -3,7 +3,7 @@
 ## transactions inside them, D-076, as `server/test/nested-checks.mjs` asks them), jobs
 ## (with attempts, time limits and keys, listed and acted on, and the jobs page behind a guard) and
 ## cron, email, live topics and rooms, actors, pages of components, with the endpoints they read
-## answered by their routes, requests to other servers, the environment, AES-GCM, random
+## answered by their routes, requests to other servers, the environment, AES-GCM and P-256, random
 ## bytes, the crypto written in Roc (packages/crypto), files in storage (packages/storage), and cookies; and what the docs show of them
 ## (`Samples.roc`), as an app would write it.
 app [program] { pf: platform "../../platform/main.roc", admin: "../../../packages/admin/main.roc", crypto: "../../../packages/crypto/main.roc", email: "../../../packages/email/main.roc", fixture: "../fixture/main.roc", guard: "../../../packages/guard/main.roc", jobs: "../../../packages/jobs/main.roc", storage: "../../../packages/storage/main.roc" }
@@ -24,6 +24,7 @@ import admin.JobsPage
 import email.Email
 import pf.Actor
 import pf.AesGcm
+import pf.P256
 import pf.Db
 import pf.Env
 import pf.Http
@@ -1071,6 +1072,27 @@ route! = |request, context| {
 				Err(BadKey) => text(400, "BadKey")
 				Err(Forged) => text(400, "Forged")
 			}
+		("POST", "/aes/seal-with-nonce") =>
+		# The key and the nonce in the query, as numbers; what to seal the body.
+			match AesGcm.seal_with_nonce!(from_numbers(param(request.query, "key")), from_numbers(param(request.query, "nonce")), request.body) {
+				Ok(sealed) => text(200, numbers(sealed))
+				Err(BadKey) => text(400, "BadKey")
+				Err(BadNonce) => text(400, "BadNonce")
+			}
+
+		# ---- P-256: ECDH with a key pair of its own, ES256 ----
+		("POST", "/p256/ecdh") =>
+		# The peer's public key, as numbers, the body: the host's public key and the secret, a line each.
+			match P256.ecdh!(from_numbers(Server.text_of(request))) {
+				Ok({ public_key, secret }) => text(200, "${numbers(public_key)}\n${numbers(secret)}")
+				Err(BadKey) => text(400, "BadKey")
+			}
+		("POST", "/p256/sign") =>
+		# The keys in the query, as numbers; the message the body.
+			match P256.sign!(from_numbers(param(request.query, "private")), from_numbers(param(request.query, "public")), request.body) {
+				Ok(signature) => text(200, numbers(signature))
+				Err(BadKey) => text(400, "BadKey")
+			}
 		("POST", "/crypto") =>
 		# The crypto written in Roc, compiled: the body's SHA-256, its HMAC and an HKDF under the
 		# key (hex, in the query), its Base64; and whether each decodes to what was encoded.
@@ -1170,6 +1192,11 @@ route! = |request, context| {
 			match Samples.seal!(Server.text_of(request)) {
 				Ok(kept) => text(200, kept)
 				Err(BadKey) => text(500, "BadKey")
+			}
+		("POST", "/samples/es256") =>
+			match Samples.es256_token!(Server.text_of(request), Base64.url_decode(param(request.query, "private")) ?? [], Base64.url_decode(param(request.query, "public")) ?? []) {
+				Ok(token) => text(200, token)
+				Err(BadKey) => text(400, "BadKey")
 			}
 		("POST", "/samples/unseal") =>
 			match Samples.unseal!(Server.text_of(request)) {

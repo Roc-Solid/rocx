@@ -241,6 +241,7 @@ SiteSources := [].{
 		Defined("platform_tokens", "server/test/app/Samples.roc", ["token!", "digest"]),
 		Defined("platform_links", "server/test/app/Samples.roc", ["signed_link!", "link_member!", "link_key!", "app_secret!"]),
 		Defined("platform_sealed", "server/test/app/Samples.roc", ["seal!", "unseal!", "sealing_key!"]),
+		Defined("platform_es256", "server/test/app/Samples.roc", ["es256_token!"]),
 		Defined("platform_files", "server/test/app/Samples.roc", ["files!"]),
 		Defined("platform_avatar", "server/test/app/Samples.roc", ["save_avatar!", "avatar_size!", "take_avatar!"]),
 		Defined("platform_upload_link", "server/test/app/Samples.roc", ["upload_link!"]),

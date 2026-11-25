@@ -133,8 +133,8 @@ view! = |_|
 				</Feature>
 				<Feature title="Crypto" href={Paths.platform_crypto}>
 					<p>
-						Secure random bytes and AES-GCM from the host; SHA-256, HMAC and HKDF from the crypto
-						package.
+						Secure random bytes, AES-GCM and P-256 (ES256, ECDH) from the host; SHA-256, HMAC and HKDF
+						from the crypto package.
 					</p>
 				</Feature>
 				<Feature title="Plugins" href={"${Paths.platform_server}#plugins"}>

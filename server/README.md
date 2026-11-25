@@ -71,8 +71,8 @@ The platform's Roc (`platform/`):
   defined in this file), and the hosted functions. Its `##` comment is the platform's own summary.
 - `Host.roc` declares the hosted functions. Apps never import it.
 - The server's own exposed modules: `Db`, `Kv`, `Live`, `Actor`, `Log`, `Time`, `Tcp`, `Http`,
-  `HttpResponse`, `Env`, `Random`, `AesGcm`, `Blobs`, `Plugin`, and `Navigate` (the server's
-  `<Navigate>`, which answers with a 303).
+  `HttpResponse`, `Env`, `Random`, `AesGcm`, `P256`, `Blobs`, `Plugin`, and `Navigate` (the
+  server's `<Navigate>`, which answers with a 303).
 - Internal modules: `Migrations` (the platform's tables, and applying migrations), `Plugins`
   (checking, ordering and logging plugins), `ActorTurn` and `ActorTimers` (an actor's turn and its
   durable timers), `FlashStore` (where a form's flash waits), `Setting` (the start's settings).
@@ -811,16 +811,28 @@ to another call. A socket the call leaves open is closed when the call ends.
 `Random.seed_u64!` and `Random.bytes!(count)` are the operating system's randomness (`ring`). If
 the system gives none, the call crashes rather than make a key from anything weaker.
 
-## Crypto: `AesGcm`, and `packages/crypto`
+## Crypto: `AesGcm`, `P256`, and `packages/crypto`
 
 ```roc
 sealed = AesGcm.seal!(app_key, plaintext)?                         # nonce ++ ciphertext ++ tag
 opened = AesGcm.open!(app_key, sealed)                             # Try(List(U8), [BadKey, Forged])
+signature = P256.sign!(private_key, public_key, message)?          # ES256: 64 bytes, r ++ s
+{ public_key, secret } = P256.ecdh!(peer)?                         # a key pair for this call alone
+record = AesGcm.seal_with_nonce!(key, nonce, plaintext)?           # ciphertext ++ tag
 ```
 
 `AesGcm` is the host's (`ring`'s AES-256-GCM): a 32-byte key (`BadKey` otherwise) and a fresh random
 12-byte nonce for each seal. Its output is Web Crypto's with the nonce in front, so each can open
 the other's. Make the key with `Random.bytes!`, or derive it from the app's secret with HKDF.
+
+`P256` is the elliptic curve P-256, also `ring`'s, as much as Web Push needs (packages/push,
+D-080): ES256 signatures by a key pair (the private key's 32-byte scalar, the public key's 65-byte
+uncompressed point; `BadKey` unless they are a pair), and ECDH with a key pair the host makes for
+one call and forgets, answering its public key and the 32-byte shared secret (`BadKey` unless the
+peer's key is on the curve). `AesGcm.seal_with_nonce!` is AES-GCM with the caller's 12-byte nonce,
+for a protocol that derives its own (RFC 8188's `aes128gcm`): AES-128 under a 16-byte key, AES-256
+under a 32-byte one, the ciphertext then the tag. Anything else should use `seal!`: a nonce used
+twice under one key gives the key away.
 
 The rest is pure Roc, so it is a package on no platform (`packages/crypto`, D-025), which a page in
 the browser may use too: `Sha256`, `Hmac` (with a constant-time comparison), `Hkdf`, `Base64` (both

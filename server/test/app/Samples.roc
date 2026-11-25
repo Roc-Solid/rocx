@@ -12,6 +12,7 @@ import pf.HttpResponse
 import jobs.Job
 import pf.Kv
 import pf.Log
+import pf.P256
 import pf.Random
 import pf.Server
 import pf.Time
@@ -93,7 +94,7 @@ Samples := [].{
 			Server.refused(404, "No page here.")
 		}
 
-	# ---- Crypto: packages/crypto's Sha256, Hmac, Hkdf, Base64 and Hex; the platform's AesGcm and Random ----
+	# ---- Crypto: packages/crypto's Sha256, Hmac, Hkdf, Base64 and Hex; the platform's AesGcm, P256 and Random ----
 
 	## A fresh token for a link: 32 random bytes, URL-safe.
 	token! : {} => Str
@@ -143,6 +144,17 @@ Samples := [].{
 		sealed = Hex.decode(kept)?
 		opened = AesGcm.open!(sealing_key!({}), sealed)?
 		Str.from_utf8(opened).map_err(|_| BadUtf8)
+	}
+
+	## A JWT signed with ES256, for a service that takes one (Web Push's VAPID token is one): the
+	## header and the claims, each base64url, then the signature by a P-256 key pair (the private
+	## key's 32 bytes, the public key's 65), each after a `.`.
+	es256_token! : Str, List(U8), List(U8) => Try(Str, [BadKey])
+	es256_token! = |claims, private_key, public_key| {
+		header = "{\"typ\":\"JWT\",\"alg\":\"ES256\"}"
+		input = "${Base64.url_encode(header.to_utf8())}.${Base64.url_encode(claims.to_utf8())}"
+		signature = P256.sign!(private_key, public_key, input.to_utf8())?
+		Ok("${input}.${Base64.url_encode(signature)}")
 	}
 
 	# ---- Jobs: options, keys, listing ----
