@@ -3,7 +3,7 @@ import pf.Solid exposing [create_signal!]
 
 ## A long `.map` (D-071): a thousand rows, each two holes that read its item. A row is told its item
 ## changed only when it isn't `==` the one it had (D-053's `compared`, every list's now). One item
-## changed, or every item.
+## changed, or every item; or two rows swapped, which moves those two.
 Rows := [].{
 	Row : { id : U64, title : Str, done : Bool }
 
@@ -13,6 +13,7 @@ Rows := [].{
 		<div>
 			<button class="one" on:click={|| set_rows!(Rows.toggle(rows!(), 500))}>One</button>
 			<button class="all" on:click={|| set_rows!(Rows.toggle(rows!(), 0))}>All</button>
+			<button class="swap" on:click={|| set_rows!(Rows.swapped(rows!()))}>Swap</button>
 			<ul class="rows">
 				{...rows!().map(|row|
 					<li key={row.id} class:done={row.done}>{row.title}</li>
@@ -23,6 +24,14 @@ Rows := [].{
 
 	start : List(Rows.Row)
 	start = List.repeat(0, 1000).map_with_index(|_, index| { id: index + 1, title: "Row ${(index + 1).to_str()}", done: Bool.False })
+
+	## The second row and the 999th change places (js-framework-benchmark's swap).
+	swapped : List(Rows.Row) -> List(Rows.Row)
+	swapped = |rows|
+		match (rows.get(1), rows.get(998)) {
+			(Ok(second), Ok(last)) => rows.map_with_index(|row, i| if (i == 1) last else if (i == 998) second else row)
+			_ => rows
+		}
 
 	## The row `id` done or not done again; every row with 0.
 	toggle : List(Rows.Row), U64 -> List(Rows.Row)

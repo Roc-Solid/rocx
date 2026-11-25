@@ -744,13 +744,14 @@ window.hydrated = true;
 		const r = window.runtime;
 		const before = { ...r.stats, allocations: r.allocations(), live: r.live() };
 		const patched = [];
-		r.observer = { patch: ({ node }) => patched.push((node.nodeType === 1 ? node : node.parentElement)?.className || (node.nodeType === 1 ? node : node.parentElement)?.tagName.toLowerCase()) };
+		const rows = [];
+		r.observer = { patch: ({ node }) => patched.push((node.nodeType === 1 ? node : node.parentElement)?.className || (node.nodeType === 1 ? node : node.parentElement)?.tagName.toLowerCase()), row: ({ what, key }) => rows.push(what + " " + key) };
 		const started = performance.now();
 		document.querySelector(selector).click();
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		const ms = performance.now() - started;
 		r.observer = null;
-		return { ms, patched: patched.sort(), runs: r.stats.runs - before.runs, selections: r.stats.selections - before.selections, allocations: r.allocations() - before.allocations, live: r.live() - before.live };
+		return { ms, patched: patched.sort(), rows: rows.sort(), runs: r.stats.runs - before.runs, selections: r.stats.selections - before.selections, allocations: r.allocations() - before.allocations, live: r.live() - before.live };
 	}`);
 	return { tab, site, html };
 }
@@ -815,6 +816,20 @@ test("a .map's rows (D-071), compared as D-053's <For compared> was: a list read
 		assert.ok(one.allocations < all.allocations, `fewer allocations for one: ${one.allocations} against ${all.allocations}`);
 		for (const step of [one, all]) assert.equal(step.live, 0);
 		console.log(`.map of 1,000, a dev build (median of 5): one changed ${one.ms.toFixed(1)} ms, all changed ${all.ms.toFixed(1)} ms`);
+		// Two rows swapped in a thousand: those two move, and no row between them (the longest run
+		// already in order stays, as Solid's reconcile keeps it). Counted, not timed.
+		const titles = () => tab.eval("[...document.querySelectorAll('.rows li')].map((li) => li.textContent)");
+		const before = await titles();
+		const swap = await tab.eval("window.step('button.swap')");
+		assert.deepEqual(swap.rows, ["moved 2", "moved 999"], "two rows moved");
+		assert.equal(swap.runs, 1, "the list alone: the rows' items are the same, only their places changed");
+		const after = await titles();
+		assert.deepEqual([after[1], after[998]], [before[998], before[1]]);
+		assert.deepEqual(after.filter((_, i) => i !== 1 && i !== 998), before.filter((_, i) => i !== 1 && i !== 998), "the others where they were");
+		const back = await tab.eval("window.step('button.swap')");
+		assert.deepEqual(back.rows, ["moved 2", "moved 999"]);
+		assert.deepEqual(await titles(), before);
+		assert.equal(back.live, 0);
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();

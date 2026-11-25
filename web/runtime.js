@@ -202,6 +202,36 @@ function replaceRange(range, content) {
 }
 
 /** The range's nodes, its comments with them, taken out to be put elsewhere. */
+/** Whether a range isn't on the page: never put there (its fragment holds it), or taken off. */
+function detached(range) {
+	return range.start.parentNode === null || range.start.parentNode.nodeType === 11;
+}
+
+/**
+ * Which rows stay where they are when a list's rows are put in order: `was` is where each row was
+ * (by its place now; -1 for one that wasn't on the page), and the rows of a longest increasing run
+ * of it are already in order among themselves, so only the others need to move. O(n log n).
+ */
+function steady(was) {
+	const tails = [];
+	const before = new Array(was.length).fill(-1);
+	for (let index = 0; index < was.length; index++) {
+		if (was[index] < 0) continue;
+		let low = 0;
+		let high = tails.length;
+		while (low < high) {
+			const middle = (low + high) >> 1;
+			if (was[tails[middle]] < was[index]) low = middle + 1;
+			else high = middle;
+		}
+		if (low > 0) before[index] = tails[low - 1];
+		tails[low] = index;
+	}
+	const stays = new Array(was.length).fill(false);
+	for (let index = tails.length ? tails[tails.length - 1] : -1; index >= 0; index = before[index]) stays[index] = true;
+	return stays;
+}
+
 function collectRange(range) {
 	const fragment = document.createDocumentFragment();
 	let node = range.start;
@@ -3905,17 +3935,24 @@ export class Runtime {
 		// Rows that go, come or move change the page: where what glides is, first.
 		if (later && !adopting && (entries.length !== list.rows.size || entries.some(({ k }, index) => list.indexes.get(k)?.value !== index || !list.rows.has(k)))) this.measure();
 		const cursor = adopting ? new Cursor(target.start.nextSibling) : null;
+		// The rows' boxes aren't the run's to let go of: each is its row's, or let go of here. Taken out
+		// of what the run keeps in one pass (one search a row was quadratic in the rows).
 		const kept = computation.making.kept;
+		const runners = new Set(entries.map(({ r }) => r));
+		let left = 0;
+		for (const id of kept) if (!runners.has(id)) kept[left++] = id;
+		kept.length = left;
 		const rows = new Map();
+		// Where each row was, by its place now: -1 for a row that wasn't on the page (see `steady`).
+		const was = new Array(entries.length).fill(-1);
 		entries.forEach(({ k, r }, index) => {
 			let row = list.rows.get(k);
-			const mine = kept.indexOf(r);
-			if (mine >= 0) kept.splice(mine, 1);
 			if (row) {
 				// Still there: the box this run made for it isn't needed.
 				this.ex.release(this.kept.get(r));
 				this.kept.delete(r);
 				const at = list.indexes.get(k);
+				if (!detached(row.range)) was[index] = at.value;
 				if (at.value !== index) {
 					at.value = index;
 					for (const observer of at.observers) this.schedule(observer);
@@ -3964,25 +4001,28 @@ export class Runtime {
 			target.end.before(computation.fallbackRange.fragment);
 			computation.part = this.part([node.fallback], scope, computation.fallbackRange, false);
 		}
-		// Rows in order: one already where it goes stays; the others move (or arrive) there. A row on
-		// its way out stays where it is, passed over.
-		let at = target.start.nextSibling;
-		const pass = () => {
-			while (this.leaving.has(at)) at = this.leaving.get(at).end.nextSibling;
-		};
-		pass();
-		for (const row of rows.values()) {
-			if (row.range.start === at) {
-				at = row.range.end.nextSibling;
-				pass();
-			} else {
-				if (row.range.start.parentNode === null || row.range.start.parentNode.nodeType === 11) at.before(row.range.fragment ?? collectRange(row.range));
-				else at.before(collectRange(row.range));
+		// Rows in order, as few moved as can be: the longest run of rows already in order (by where
+		// each was) stays where it is, and the others move (or arrive) beside them, the last first, as
+		// Solid's reconcile does. Two rows swapped in a thousand move two, not the ones between. A row
+		// on its way out stays where it is.
+		const order = [...rows.values()];
+		const stays = steady(was);
+		const placed = [];
+		let next = target.end;
+		for (let index = order.length - 1; index >= 0; index--) {
+			const row = order[index];
+			if (!stays[index]) {
+				next.before(detached(row.range) ? (row.range.fragment ?? collectRange(row.range)) : collectRange(row.range));
 				this.stats.patches++;
-				this.notify("row", { what: row.fresh ? "made" : "moved", key: row.key, nodes: inside(row.range) });
+				placed.push(row);
 			}
-			row.fresh = false;
+			next = row.range.start;
 		}
+		for (let index = placed.length - 1; index >= 0; index--) {
+			const row = placed[index];
+			this.notify("row", { what: row.fresh ? "made" : "moved", key: row.key, nodes: inside(row.range) });
+		}
+		for (const row of order) row.fresh = false;
 	}
 
 	/** A row goes: at once, or (`animated`, its key gone from the list) once the transitions out of
