@@ -1,0 +1,19 @@
+import pf.Html
+
+## The document around the table, with the benchmark's stylesheet. Its server serves it at
+## /css/currentStyle.css, three folders above an entry's page; the URL is relative because
+## `rocx build --static` puts every URL that begins with / under the entry's base.
+view! = |{ children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<title>Roc Solid (keyed)</title>
+				<link href="../../../css/currentStyle.css" rel="stylesheet" />
+			</head>
+			<body>
+				{...children}
+			</body>
+		</html>
+	</>
