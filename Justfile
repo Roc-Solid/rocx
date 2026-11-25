@@ -355,12 +355,14 @@ test-web: server-host
     ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
 
 # `just test`'s third part: the server platform, and packages/testing's, packages/posthog's and
-# the guard, push and auth examples' tests against an app each builds (DATABASE_URL for their Postgres),
-# its browser's half too (the web platform's host first: `test-web`'s tests build it, but this part
+# the guard, push and auth examples' tests against an app each builds, and `rocx new`'s template's
+# (an app made from templates/app/ for each database: DATABASE_URL for their Postgres), its
+# browser's half too (the web platform's host first: `test-web`'s tests build it, but this part
 # may run alone, as CI runs it).
 test-server: server-host web-host
     ROC={{ roc }} node --test 'server/test/*.test.mjs'
     ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs' 'packages/guard/example/test/*.test.mjs' 'packages/push/example/test/*.test.mjs' 'packages/auth/example/test/*.test.mjs'
+    ROC={{ roc }} node --test 'templates/test/*.test.mjs'
 
 # Type-checks the site, both programs, with reports pointed into .rocx files, and lints its markup:
 # the server's, and the browser's, built from the copy of the site in which a route file has no
@@ -389,7 +391,7 @@ check-times *args:
 # (`examples`, below) with roc fmt: each .rocx file's (its markup kept as written) and each
 # hand-written .roc file. `just fmt --check` only says which aren't formatted.
 fmt *args:
-    ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli cli/platform site packages web/platform server/platform {{ examples }}
+    ROC={{ roc }} {{ rocx }} fmt {{ args }} rocx-cli cli/platform site packages templates web/platform server/platform {{ examples }}
 
 # Checks the editor support (editors/): every .rocx file git tracks, tokenized by VS Code's
 # TextMate engine with the grammar in editors/grammars, must end with its markup closed, or the
