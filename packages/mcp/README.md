@@ -21,11 +21,14 @@ The package has two parts:
 
 ```roc
 # main.roc
-app [program] { mcp: "…/packages/mcp/main.roc", pf: platform "…/server/platform/main.roc" }
+app [program] { mcp: "…/packages/mcp/main.roc", pf: platform "…/server/platform/main.roc", tools: "…/packages/tools/main.roc" }
 ```
 
 The package is not a plugin, and it has no components: its readers are agents, not people. It
-depends on `packages/crypto` (for Base64), which it names itself, so the app names `mcp` alone.
+depends on `packages/crypto` (for Base64) and `packages/tools`, which it names itself. What a tool
+is (`Tool`), what it answers (`Content`) and `JsonValue` are packages/tools', not this package's
+(D-085): packages/ai gives the same tools to Claude. An app that makes tools names `tools` too, and
+imports `tools.Tool`.
 
 ## A first server
 
@@ -81,14 +84,14 @@ effects of its own: tools, resources and prompts are functions the app gives it.
 | Module | What it has |
 |---|---|
 | `Mcp` | `Mcp.Server(ctx)`: what the server offers ([below](#the-server-record)). `handle!(server, incoming, ctx)`: a request's answer. `receive(server, incoming)`: the same, pure: `Reply(answer)` or `Run(running)`. `progress(running, done, total, message)`: a progress notification. `problems(server)`: for the app's own test. `versions`: the versions it speaks, current first. Types: `Incoming`, `Answer`, `Era`, `Step`, `Running`, `Ran`. |
-| `Tool` | `Tool.typed(name, description, schema, run!)`: arguments read into a Roc type, the answer written as JSON. `Tool.typed_with_params(name, description, params_schema, body_schema, run!)`: arguments read into two types from one object (an endpoint's path params and its body), their schemas merged. `Tool.new(name, description, schema, run!)`: any JSON in, an `Outcome` out. Hints: `read_only`, `additive`, `idempotent`, `closed_world`. Also `titled`, `answers(schema)`, `reporting`. Outcomes: `Tool.text`, `Tool.structured`, `Tool.answer`. |
 | `Resource` | `Resource.text(uri, name, mime, read!)` and `Resource.new(uri, name, read!)`: what reading a URI gives. `titled`, `described`, `typed(mime)`. `Resource.contents(uri, mime, Text(…) or Blob(bytes))`. |
 | `Template` | `Template.new("notes://note/{id}", name, read!)`: a family of resources; `read!` gets the values the URI gave the template's names, and the URI. `titled`, `described`, `typed(mime)`. `Template.matching(pattern, uri)`. |
 | `Prompt` | `Prompt.new(name, description, arguments, get!)`: messages made from string arguments. `Prompt.argument` (required), `Prompt.optional`; `Prompt.user`, `Prompt.assistant`; `titled`. |
-| `Content` | What a tool answers with: `Text`, `Image` and `Audio` (bytes, sent as Base64), `Link` (to a resource), `Embedded` (a resource's contents). Helpers: `Content.text`, `Content.image`, `Content.link`. |
 | `Bearer` | The pieces of OAuth's answers, for the app's middleware: `token`, `challenge`, `insufficient`, `metadata` ([below](#who-may-ask)). |
-| `JsonValue` | Any JSON, read a field at a time (`parse`, `get`, `to_text`, `is_object`, `to_str`). `decode` into a Roc type and `encode` from one, through `Json`. A number keeps the text it came as, so an id or an `I64` goes back exactly. |
 | `Rpc` | JSON-RPC 2.0: `read` one message; write a `result`, an `error` or a `notification`; the error codes, MCP's own among them (`header_mismatch`, `missing_capability`, `unsupported_version`). |
+
+`Tool`, `Content` and `JsonValue` are in packages/tools ([its README](../tools/README.md)): a tool
+made there is served here as it is, and packages/ai's models use it too.
 
 ## The HTTP side
 

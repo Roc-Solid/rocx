@@ -1,0 +1,17 @@
+import pf.Html
+import pf.Endpoint
+import ../Generated/Api
+import ../Ui/Chat
+import ../Ui/Meal
+
+## The page: the chat that keeps notes, and the meal read into a record.
+view! = |_| {
+	started = Endpoint.get!(Api.get_root({}))
+	notes = Endpoint.get!(Api.get_api_notes({}))
+	<main>
+		<h1>Notes assistant</h1>
+		<p>Claude, from a Roc Solid app's server (packages/ai): a chat whose model keeps your notes with the app's tools, and a meal read into a typed record.</p>
+		<Chat chat={started.chat} notes={notes} />
+		<Meal />
+	</main>
+}

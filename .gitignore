@@ -1,3 +1,6 @@
+# Secrets kept beside a checkout (ANTHROPIC_API_KEY, STRIPE_SECRET_KEY): never committed
+.env
+
 # The pinned toolchain (`just setup`)
 .tools/
 

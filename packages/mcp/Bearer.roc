@@ -1,4 +1,4 @@
-import JsonValue
+import tools.JsonValue
 
 ## Who may ask. MCP's authorization is OAuth 2.1: a client sends an access token with each request
 ## (`Authorization: Bearer …`), and a request without a good one is refused with 401 and where to

@@ -1,4 +1,4 @@
-import JsonValue
+import tools.JsonValue
 
 ## JSON-RPC 2.0, as MCP sends it over HTTP: one message a POST. A client sends a request (it has an
 ## id, and is answered with a result or an error for that id) or a notification (no id, no answer).

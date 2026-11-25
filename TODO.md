@@ -12,6 +12,13 @@ When an item lands, delete its line here in the same commit.
 
 ## Waiting on a decision by the user
 
+- **packages/ai (D-085): its fallback request, against the API.** On the models that take it
+  (Opus 5.5 and the others in D-085) every request carries `"fallbacks": "default"` and
+  `anthropic-beta: server-side-fallback-2026-07-01`; the stand-in checks that it is sent, but the API
+  has never seen it, as development used `claude-haiku-5-5` (which has none). One call with
+  `ANTHROPIC_MODEL=claude-opus-5-5` checks it, on the user's go. Then the package's next users:
+  examples/notes' assistant on its MCP tools (`Ai.run!` over `Agents.server.tools`, one tool for both),
+  and Plate's meal from words (`Ai.extract!`).
 - **iOS and Android apps (D-063, Proposed).** Background work; the web stays primary. The Android
   spike is in master, as an experiment: one screen as native views, typed calls to the server, and
   a dev mode (`rocx dev --android [--lan]`, about a second from a save to the phone, each reload a
@@ -138,6 +145,10 @@ When an item lands, delete its line here in the same commit.
 
 ## Tooling and distribution
 
+- **`rocx dev` doesn't read `.env`.** A key kept beside the checkout (`ANTHROPIC_API_KEY`,
+  `STRIPE_SECRET_KEY`) reaches the server only when the shell exports it. Rails and Next read `.env`
+  in development; `rocx dev` could too (and never a release's server). `.env` is gitignored since
+  D-085.
 - **The first release (D-078), waiting on the user:** a `LICENSE` at the repository's root (its
   text is the user's call: the repository states none, and `just release-pack` refuses a real
   release without the file); the x86_64 Linux fork compiler published and pinned (`just roc-fork-linux

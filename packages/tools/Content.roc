@@ -1,6 +1,5 @@
 import crypto.Base64
 import JsonValue
-import Resource
 
 ## What a tool answers with, and what a prompt's message holds: text; an image or a sound, its bytes
 ## and their type; a link to a resource the agent can read (`resources/read`); or a resource's
@@ -10,7 +9,7 @@ Content := [
 	Image({ data : List(U8), mime : Str }),
 	Audio({ data : List(U8), mime : Str }),
 	Link({ uri : Str, name : Str, mime : Str, description : Str }),
-	Embedded(Resource.Contents),
+	Embedded(Content.Contents),
 ].{
 	is_eq : _
 
@@ -25,6 +24,21 @@ Content := [
 	## A link to a resource: its URI and its name.
 	link : Str, Str -> Content
 	link = |uri, name| Link({ uri: uri, name: name, mime: "", description: "" })
+
+	## A resource's contents, held whole (`Embedded`), as reading it gives them: its URI, its type,
+	## and its text or bytes. packages/mcp's `Resource.Contents` is this.
+	Contents : { uri : Str, mime : Str, body : [Text(Str), Blob(List(U8))] }
+
+	## Contents as MCP writes them (`resources/read`, an embedded resource): text, or bytes as Base64.
+	contents_json : Content.Contents -> JsonValue
+	contents_json = |read| {
+		body =
+			match read.body {
+				Text(said) => ("text", String(said))
+				Blob(bytes) => ("blob", String(Base64.encode(bytes)))
+			}
+		JsonValue.object_of([("uri", Ok(String(read.uri))), ("mimeType", JsonValue.text_unless_empty(read.mime)), (body.0, Ok(body.1))])
+	}
 
 	## The content as MCP writes it (a `ContentBlock`).
 	to_json : Content -> JsonValue
@@ -41,7 +55,7 @@ Content := [
 					("description", JsonValue.text_unless_empty(linked.description)),
 					("mimeType", JsonValue.text_unless_empty(linked.mime)),
 				])
-			Embedded(contents) => Object([("type", String("resource")), ("resource", Resource.contents_json(contents))])
+			Embedded(contents) => Object([("type", String("resource")), ("resource", Content.contents_json(contents))])
 		}
 }
 

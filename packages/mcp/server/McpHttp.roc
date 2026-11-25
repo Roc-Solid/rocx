@@ -4,9 +4,9 @@ import pf.Log
 import pf.Middleware
 import pf.OpenApi
 import pf.Server
-import mcp.JsonValue
+import tools.JsonValue
 import mcp.Mcp
-import mcp.Tool
+import tools.Tool
 
 ## The HTTP side of an app's MCP server, on the server platform: the route that serves it
 ## (`respond!`, or `middleware`), and tools made from what the app has already, in a line each: an

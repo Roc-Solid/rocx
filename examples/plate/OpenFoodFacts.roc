@@ -1,6 +1,6 @@
 import pf.Env
 import pf.Http
-import mcp.JsonValue
+import tools.JsonValue
 import charts.Format
 import Plate
 
@@ -13,7 +13,7 @@ import Plate
 ## a minute) are never near. `OFF_URL` points it somewhere else (the tests' stand-in).
 ##
 ## Its JSON names nutrients with dashes (`energy-kcal_100g`), which a Roc record's fields can't
-## have, so it is read a field at a time with packages/mcp's `JsonValue`.
+## have, so it is read a field at a time with packages/tools' `JsonValue`.
 OpenFoodFacts := [].{
 
 	## A product, as the app keeps it.

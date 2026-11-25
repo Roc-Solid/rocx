@@ -1,0 +1,453 @@
+import pf.Html
+import ../../../Ui/Callout
+import ../../../Ui/Code
+import ../../../Ui/Heading
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Generated/Sources
+import ../../../Generated/Paths
+
+## The ai package, a plugin: Claude from an app's server. Installing it (the key, the model),
+## asking, streaming an answer to a page, typed answers, the app's functions as tools, agents (and
+## agents as tools), conversations, what it costs, what can go wrong, what it sends, and the example
+## app, file by file. Static: asking needs a server.
+meta = {
+	title: "AI",
+	description: "packages/ai, a plugin for Roc Solid's server: Claude through Anthropic's Messages API, in plain Roc. An answer whole or streamed to a page as it is written, an answer read into a Roc type, a model that uses the app's own functions as tools until it is done, and agents that other agents use as tools.",
+	toc: [
+		{ id: "install", label: "Installing it" },
+		{ id: "ask", label: "Asking" },
+		{ id: "stream", label: "Streaming to a page" },
+		{ id: "extract", label: "Typed answers" },
+		{ id: "tools", label: "Tools" },
+		{ id: "agents", label: "Agents" },
+		{ id: "conversations", label: "Conversations" },
+		{ id: "cost", label: "What it costs" },
+		{ id: "problems", label: "What went wrong" },
+		{ id: "sends", label: "What it sends" },
+		{ id: "example", label: "The example app" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/ai</code>]}
+				title="Claude, from your app's server"
+			>
+				Ask a question and get the answer whole, or stream it to a page as the model writes it. Read an
+				answer into a Roc type. Give the model your app's own functions as tools, and it uses them until it
+				is done. Make agents, each a model with its own role and tools, and let one hand work to the others.
+				The package is plain Roc on the server platform's HTTP client: no SDK, and no change to the platform.
+			</PageHero>
+			<p>
+				The package does the parts that are easy to get wrong. It puts a stream's events back together into
+				the model's message, with its thinking and signatures exactly as they came, because the API checks
+				them when a conversation goes on. It tries a rate limit, an overloaded API or a passing server error
+				again after the time the API asks for, but never once text has gone to a page. A refusal is an error the app must handle, not empty text. When
+				the page that asked goes, the request ends and the model stops writing. A Roc type becomes a JSON
+				Schema the API's structured outputs accept, and each turn's tokens go on the log. Your app keeps its
+				prompts, its tools, and what it does with the answers.
+			</p>
+
+			<Heading id="install">Installing it</Heading>
+			<p>
+				Name the package in the app's header, with the two packages it uses (<code>crypto</code> and
+				<code>tools</code>), and list its <a href={"${Paths.platform_server}#plugins"}>plugin</a>. The package
+				names the server platform, so only the server's half of the app sees it. This is the example app's
+				<code>main.roc</code>:
+			</p>
+			<Code title={Sources.ai_example_main.file} source={Sources.ai_example_main.rocx} />
+			<p>
+				Then give the server an API key, from <a href="https://console.anthropic.com">console.anthropic.com</a>,
+				as <code>ANTHROPIC_API_KEY</code>. Outside <code>--dev</code> the server doesn't start without one. Under
+				<code>--dev</code> (as <code>rocx dev</code> starts it) it starts, and each call answers <code>NoKey</code>.
+			</p>
+			<p>The model it asks:</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>When</th><th>Model</th></tr></thead>
+					<tbody>
+						<tr><td>by default</td><td><code>claude-opus-5-5</code></td></tr>
+						<tr><td>under <code>--dev</code> (<code>rocx dev</code>)</td><td><code>claude-haiku-5-5</code>, so answers come fast and cost little while you develop</td></tr>
+						<tr><td><code>ANTHROPIC_MODEL</code> or the plugin's <code>model</code> names one</td><td>that model, under <code>--dev</code> too</td></tr>
+						<tr><td>a request names one (<code>model</code>)</td><td>that model, for that call</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>Once started, the server logs which model it asks, and where (<code>ai.model</code>):</p>
+			<Code source={"claude-haiku-5-5 (the model under --dev: ANTHROPIC_MODEL or the plugin's model names another), at https://api.anthropic.com"} plain numbers={Bool.False} />
+			<p>
+				Each setting can be given to <code>{"Ai.plugin({ key, model, base_url })"}</code> instead of the
+				environment. An option given in code wins.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Option</th><th>Environment</th><th>Default</th></tr></thead>
+					<tbody>
+						<tr><td><code>key</code></td><td><code>ANTHROPIC_API_KEY</code></td><td>none: outside <code>--dev</code> the server doesn't start</td></tr>
+						<tr><td><code>model</code></td><td><code>ANTHROPIC_MODEL</code></td><td><code>claude-opus-5-5</code>, or <code>claude-haiku-5-5</code> under <code>--dev</code></td></tr>
+						<tr><td><code>base_url</code></td><td><code>ANTHROPIC_BASE_URL</code></td><td><code>https://api.anthropic.com</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				<code>ANTHROPIC_BASE_URL</code> is where the API is. The example's tests point it at their stand-in for
+				the API.
+			</p>
+
+			<Heading id="ask">Asking</Heading>
+			<p>
+				Every call takes an <code>Ai.Request</code>: a record whose fields all have defaults, but which needs
+				one of <code>prompt</code> or <code>messages</code>.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Field</th><th>Default</th><th>What it is</th></tr></thead>
+					<tbody>
+						<tr><td><code>prompt</code></td><td><code>""</code></td><td>the user's message, after <code>messages</code></td></tr>
+						<tr><td><code>messages</code></td><td><code>[]</code></td><td>the conversation so far: an earlier reply's <code>messages</code>, or <code>Message.load</code>ed</td></tr>
+						<tr><td><code>system</code></td><td><code>""</code></td><td>how the model should go about it: its role, the rules, the app's facts</td></tr>
+						<tr><td><code>model</code></td><td>the plugin's</td><td>this call's model</td></tr>
+						<tr><td><code>max_tokens</code></td><td><code>64_000</code></td><td>how much the model may write, its thinking too</td></tr>
+						<tr><td><code>effort</code></td><td><code>Medium</code></td><td><code>Low</code>, <code>Medium</code>, <code>High</code>, <code>XHigh</code> or <code>Max</code>: how hard it thinks. More costs more and takes longer</td></tr>
+						<tr><td><code>cache</code></td><td><code>Bool.True</code></td><td>keep what is sent in the API's prompt cache, so the next call that starts the same reads it for a tenth of the price</td></tr>
+						<tr><td><code>max_turns</code></td><td><code>10</code></td><td>how many turns <code>run!</code> takes at most</td></tr>
+						<tr><td><code>label</code></td><td><code>""</code></td><td>what the call is, on the log (<code>ai.turn</code>'s <code>label</code>: <code>"summary"</code>, an agent's name)</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				<code>Low</code> effort suits a quick answer, such as a chat or a label; <code>High</code> and above,
+				work that needs care. <code>Ai.ask!</code> waits for the whole answer. The example sums up the notes
+				with it:
+			</p>
+			<Code title={Sources.ai_example_summary.file} source={Sources.ai_example_summary.rocx} />
+			<p>The reply is <code>{"{ text, messages, stop, usage, model }"}</code>:</p>
+			<ul>
+				<li><code>text</code>: the answer's text;</li>
+				<li><code>messages</code>: the conversation with the answer in it, to go on with or to keep;</li>
+				<li>
+					<code>stop</code>: why the model stopped: <code>EndTurn</code>, <code>MaxTokens</code> when the text is
+					cut off, <code>ToolUse</code>, and a few more;
+				</li>
+				<li>
+					<code>usage</code>: what it cost, in tokens: <code>{"{ input, output, cache_read, cache_write }"}</code>
+					(all of <code>run!</code>'s turns, for <code>run!</code>);
+				</li>
+				<li><code>model</code>: the model that wrote it.</li>
+			</ul>
+
+			<Heading id="stream">Streaming to a page</Heading>
+			<p>
+				<code>{"Ai.stream!(request, heard!)"}</code> gives <code>heard!</code> each piece of text as the model
+				writes it, then answers the whole reply. From an endpoint's
+				<a href={"${Paths.calls}#events"}><code>events!</code></a>, each piece is an event the page listens to
+				with <code>Endpoint.listen!</code>:
+			</p>
+			<Code
+				title="+server.roc, in part"
+				source={"events! = |{ params, .. }|\n\tOk(Events.stream(|{ send!, .. }|\n\t\tmatch Ai.stream!({ prompt: params.question }, |text| send!({ text: text })) {\n\t\t\tOk(_) => send!({ text: \"\" })\n\t\t\tErr(Stopped(Gone)) => Err(Gone)\n\t\t\tErr(problem) => send!({ text: Ai.explain(problem) })\n\t\t}))"}
+				numbers={Bool.False}
+			/>
+			<Callout kind="note" title="When the page goes, the model stops">
+				<p>
+					When the page goes, <code>send!</code> answers <code>Err(Gone)</code> and <code>heard!</code> passes it
+					on. The package closes the request to the API, so the model stops writing, and stops costing.
+					<code>stream!</code> answers <code>Err(Stopped(Gone))</code>, which <code>events!</code> hands back as
+					<code>Err(Gone)</code>.
+				</p>
+			</Callout>
+			<p>
+				<code>events!</code> takes no body. So a page posts what it asks first, then listens to the events of
+				a path that names it. The example's chat posts the user's message to <code>/api/chat/[chat]</code>,
+				then listens to the same path's events:
+			</p>
+			<Code title={"${Sources.ai_example_listen.file}, in part"} source={Sources.ai_example_listen.rocx} numbers={Bool.False} />
+			<p>
+				<code>heard!</code> is given <code>Event(said)</code> for each event, then <code>Ended</code>, or
+				<code>Failed(problem)</code>. On the server, <code>post!</code> adds the message to the chat's
+				conversation, kept in <a href={Paths.platform_kv}>Kv</a> under the chat's id, and <code>events!</code>
+				answers it with the example's assistant (an <a href="#agents">agent</a>, asked with
+				<code>Agent.chat!</code>): its text as it is written, the name of each agent or tool as it is about to
+				be used, then the notes as they are now.
+			</p>
+			<Code title={Sources.ai_example_chat.file} source={Sources.ai_example_chat.rocx} />
+
+			<Heading id="extract">Typed answers</Heading>
+			<p>
+				<code>{"Ai.extract!(request, Ai.schema(tags))"}</code> holds the model to the JSON Schema of the answer's
+				type (the API's structured outputs) and reads what it writes into that type with <code>Json</code>,
+				as an endpoint reads a body. The type comes from the annotation:
+			</p>
+			<Code
+				source={"Meal : { items : List({ food : Str, grams : U32, kcal : U32 }), total_kcal : U32 }\n\nmeal : Meal\nmeal = Ai.extract!({ system: \"Read the meal into its foods.\", prompt: said }, Ai.schema([]))?"}
+				numbers={Bool.False}
+			/>
+			<p>The example's meal endpoint answers with that type, read from what the user typed:</p>
+			<Code title={Sources.ai_example_meal.file} source={Sources.ai_example_meal.rocx} />
+			<ul>
+				<li>
+					<strong>The schema is the platform's</strong>, the one the
+					<a href={"${Paths.routing}#openapi"}>OpenAPI document</a> uses. <code>tags</code> names the tags of the
+					type's unions (<code>["Breakfast", "Lunch"]</code>; <code>[]</code> for a type with none), because a
+					union's parser doesn't say them.
+				</li>
+				<li>
+					<strong>It is made the API's subset on the way</strong>: every object closed
+					(<code>additionalProperties: false</code>), <code>oneOf</code> written as <code>anyOf</code>, and what
+					the API doesn't hold a model to (an integer's range, a string's length) left out. <code>Json</code>
+					checks those as the answer is read, so an answer outside a <code>U32</code> is
+					<code>InvalidJson</code>, not a wrong number.
+				</li>
+				<li>
+					<strong>A type that isn't a record</strong> is asked for as an object's <code>result</code> field.
+				</li>
+				<li>
+					<strong><code>Ai.schema</code> is given as a value</strong>, so it is made where the type is known, as
+					<code>{"McpHttp.openapi({})"}</code> is.
+				</li>
+			</ul>
+			<p>
+				An answer that reaches <code>max_tokens</code> before its JSON ends is <code>Truncated</code>.
+			</p>
+
+			<Heading id="tools">Tools</Heading>
+			<p>
+				<code>{"Ai.run!(request, tools, context, heard!)"}</code> sends the model the tools. Each turn that asks
+				for some has them run, in order, each given <code>context</code>, and their answers sent back, until the
+				model stops asking, or <code>max_turns</code> turns have gone (<code>TooManyTurns</code>).
+				<code>heard!</code> is given <code>Text(piece)</code> as the model writes, and <code>Calling(name)</code>
+				as it is about to use a tool.
+			</p>
+			<p>
+				A tool is <code>packages/tools</code>' <code>Tool</code>, which the <a href={Paths.ecosystem_mcp}>MCP
+				package</a> serves too, so one tool serves the app's own model and its MCP server alike.
+				<code>Ai.tool</code> makes one from a function of the app's: its name and what it does, for the model;
+				the function, given the arguments as its type and the context; and the arguments' schema, the
+				platform's. The example's notes, and the three tools its notes keeper uses:
+			</p>
+			<Code title={Sources.ai_example_notes.file} source={Sources.ai_example_notes.rocx} />
+			<p>
+				<code>McpHttp.endpoint</code>'s, <code>McpHttp.tool</code>'s and <code>Tool.typed</code>'s tools work too,
+				with their own context (an MCP tool's is <code>McpHttp.Caller(c)</code>: the request, the context,
+				<code>progress!</code>). What the model gets back:
+			</p>
+			<ul>
+				<li>the tool's answer, as JSON text;</li>
+				<li>its <code>Err(why)</code>, as a tool error, which the model can read and act on;</li>
+				<li>
+					arguments that don't fit the tool's type, input that isn't JSON, and a tool it doesn't have, as tool
+					errors too;
+				</li>
+				<li>
+					a failure inside (<code>Failed</code>), as <code>{"\"<name> failed.\""}</code>, its reason logged
+					(<code>ai.tool</code>) and not sent.
+				</li>
+			</ul>
+			<p>
+				Each tool's input is streamed as the model writes it, then read whole and checked against its type
+				before the tool runs. A turn cut off by <code>max_tokens</code>, or refused, never runs its tools.
+			</p>
+
+			<Heading id="agents">Agents</Heading>
+			<p>
+				An <code>Agent(ctx)</code> is a model with a role and its tools, made once as a plain value and asked as
+				often as needed:
+			</p>
+			<Code
+				source={"keeper : Agent({})\nkeeper = {\n\tname: \"notes_keeper\",\n\tdescription: \"Keeps the user's notes. Give it a task in words: add a note, say what is noted, or remove one.\",\n\tsystem: \"You keep the user's notes, with the tools list_notes, add_note and remove_note.\",\n\ttools: Notes.tools,\n\teffort: Low,\n}\n\nreply = Agent.ask!(keeper, \"What did I note about the dentist?\", {}, |_| Ok({}))?\nreply = Agent.chat!(keeper, conversation, {}, heard!)?"}
+				numbers={Bool.False}
+			/>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Field</th><th>What it is</th></tr></thead>
+					<tbody>
+						<tr><td><code>name</code>, <code>description</code></td><td>what a model that uses the agent as a tool reads: its name, and what it does</td></tr>
+						<tr><td><code>system</code></td><td>its role: how it goes about its work</td></tr>
+						<tr><td><code>tools</code></td><td>the tools it may use (<code>[]</code>)</td></tr>
+						<tr><td><code>model</code></td><td>its model (the plugin's)</td></tr>
+						<tr><td><code>effort</code></td><td>how hard it thinks (<code>Medium</code>)</td></tr>
+						<tr><td><code>max_turns</code>, <code>max_tokens</code></td><td>as a request's (10, and 64,000)</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				<code>{"Agent.ask!(agent, prompt, context, heard!)"}</code> is a conversation of one message, and
+				<code>{"Agent.chat!(agent, messages, context, heard!)"}</code> the next turn of one, the user's message
+				last. Both are <code>Ai.run!</code> with the agent's settings: <code>heard!</code> is given its text and
+				the tools it is about to use, and its turns are on the log under its name (<code>label</code>).
+			</p>
+			<p>
+				<strong>Agents as tools.</strong> <code>agent.as_tool()</code> is the agent as a <code>Tool</code>: its
+				name and description are the tool's, and it takes one argument, <code>task</code>, the work it is
+				handed, in words. So a team is plain values: specialists, each with its own prompt and tools, and an
+				agent that knows when to ask which. The calling agent stays in charge, as in Strands Agents' agents as
+				tools. The example's chat talks to such a team:
+			</p>
+			<Code title={Sources.ai_example_team.file} source={Sources.ai_example_team.rocx} />
+			<p>
+				The chat's <code>events!</code> (under <a href="#stream">streaming to a page</a>) asks
+				<code>Team.assistant</code> with <code>Agent.chat!</code>, the chat's conversation, and a
+				<code>heard!</code> that sends each piece to the page.
+			</p>
+			<ul>
+				<li>
+					<strong>A task is a conversation of its own.</strong> The agent sees nothing of the conversation it was
+					called from, so the calling model must put everything needed in the task. Say so in its system
+					prompt, as the assistant's does.
+				</li>
+				<li>
+					<strong>An agent's own work isn't streamed.</strong> Its caller hears <code>Calling(name)</code>, then
+					the answer. The example's page shows the assistant's text, and while an agent works, its name. The
+					agent's turns are on the log under its name.
+				</li>
+				<li>
+					<strong>Its answer is the tool's result.</strong> The agent's final text goes back to the calling
+					model. What went wrong is a tool error (<code>{"\"<name> couldn't do it: …\""}</code>), and so is a
+					call with no task, without asking the API.
+				</li>
+				<li>
+					<strong>One context.</strong> Every agent in a team gives its tools the context it was given.
+				</li>
+				<li>
+					<strong>An MCP tool too.</strong> Being a <code>Tool</code>, an agent can be an MCP server's tool as well.
+				</li>
+			</ul>
+
+			<Heading id="conversations">Conversations</Heading>
+			<p>
+				A conversation is a <code>List(Message)</code>. <code>Message.user(text)</code> is the user's message.
+				The model's are kept as the API wrote them, thinking blocks and their signatures included, because the
+				API needs them back. <code>reply.messages</code> is the conversation after a call: give it as the next
+				request's <code>messages</code>, with a new <code>prompt</code>.
+			</p>
+			<p>
+				<code>Message.save(messages)</code> writes a conversation as JSON text, to keep in Kv or a table, and
+				<code>Message.load(text)</code> reads it back exactly. <code>Message.text(message)</code> is a message's
+				text, without its thinking or its tools' use. The example keeps each chat's conversation in Kv for a
+				day:
+			</p>
+			<Code title={Sources.ai_example_chats.file} source={Sources.ai_example_chats.rocx} />
+			<p>
+				After a server-side fallback in the middle of a turn (another model took over where the first
+				declined, see <a href="#sends">what it sends</a>), the first model's thinking and tool uses before the
+				<code>fallback</code> block are left out of the message, as the API asks. The <code>fallback</code> block
+				stays where it was.
+			</p>
+
+			<Heading id="cost">What it costs</Heading>
+			<p>Each turn is on the log, with its tokens (<code>ai.turn</code>):</p>
+			<Code
+				source={"{\"msg\":\"ai.turn\",\"label\":\"notes_keeper\",\"model\":\"claude-haiku-5-5\",\"stop\":\"tool_use\",\"input\":4,\"cache_read\":640,\"cache_write\":215,\"output\":112,\"ms\":878}"}
+				plain
+				numbers={Bool.False}
+			/>
+			<ul>
+				<li>
+					<code>label</code>: the request's, or an agent's name, so what each agent spends can be told apart
+					(left out when there is none);
+				</li>
+				<li><code>input</code>: what was read without the cache;</li>
+				<li><code>cache_read</code>: what came from the cache, at a tenth of the price;</li>
+				<li><code>cache_write</code>: what was written to the cache, at a quarter more, once;</li>
+				<li><code>output</code>: what the model wrote; <code>ms</code>: how long the turn took.</li>
+			</ul>
+			<p>
+				With <code>cache</code> on (the default), a conversation's next turn reads all of the last one from the
+				cache. A prompt shorter than the model's minimum (512 to 4,096 tokens, by model) isn't cached, and
+				costs nothing more for asking. The other levers are the model and <code>effort</code>:
+				<code>--dev</code> asks <code>claude-haiku-5-5</code>, and the example asks with <code>Low</code>
+				effort.
+			</p>
+
+			<Heading id="problems">What went wrong</Heading>
+			<p>
+				A call that fails answers an <code>Ai.Problem(err)</code>, and <code>Ai.explain(problem)</code> says it in
+				a sentence, for the log or a page:
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Tag</th><th>When</th></tr></thead>
+					<tbody>
+						<tr><td><code>NoKey</code></td><td>no <code>ANTHROPIC_API_KEY</code> (under <code>--dev</code>)</td></tr>
+						<tr><td><code>Status(code, why)</code></td><td>the API refused: 400 the request, 401 the key, 429 too many (still, after two tries), 529 overloaded</td></tr>
+						<tr><td><code>Unreachable(why)</code>, <code>TimedOut</code>, <code>Broken(why)</code></td><td>no whole answer came</td></tr>
+						<tr><td><code>Refused(category)</code></td><td>the model declined (the API's category, as <code>"cyber"</code>; often <code>""</code>)</td></tr>
+						<tr><td><code>Truncated</code></td><td><code>extract!</code>'s answer reached <code>max_tokens</code> before its JSON ended</td></tr>
+						<tr><td><code>InvalidJson(why)</code></td><td><code>extract!</code>'s answer didn't fit its type</td></tr>
+						<tr><td><code>TooManyTurns</code></td><td><code>run!</code> took <code>max_turns</code> turns and the model still wanted its tools</td></tr>
+						<tr><td><code>Stopped(err)</code></td><td><code>heard!</code> answered <code>Err(err)</code>: from an endpoint's <code>events!</code>, the page went (<code>Stopped(Gone)</code>)</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				A 408, 409, 429, 500, 502, 503, 504 or 529 answer, or a stream that fails as overloaded before anything was heard,
+				is tried again, twice, after what <code>retry-after</code> says (a minute at most; else half a second,
+				then a second). Each try is
+				logged (<code>ai.retry</code>). Once text has been passed on, nothing is tried again.
+			</p>
+
+			<Heading id="sends">What it sends</Heading>
+			<p>
+				<code>{"POST <base_url>/v1/messages"}</code>, with <code>anthropic-version: 2026-10-21</code>,
+				<code>x-api-key</code>, and <code>"stream": true</code>: every call streams, so a long answer never
+				times out (30 minutes at most). <code>output_config</code> carries the effort, and
+				<code>extract!</code>'s format; <code>cache_control</code> asks for the prompt cache. It sends no
+				sampling parameters (that version refuses <code>temperature</code> and the rest), no
+				<code>thinking</code> (the current models think as they need to, and <code>effort</code> says how much),
+				and no forced <code>tool_choice</code> (Claude Opus 5.5 refuses it).
+			</p>
+			<p>
+				<code>effort</code> is always sent, so the model must take it. Claude Opus 4.5 and every model from the
+				4.6s on do; Claude Haiku 4.5 and Sonnet 4.5 refuse it (a 400), so <code>ANTHROPIC_MODEL</code> can't
+				name those.
+			</p>
+			<p>
+				On the models that take it (<code>claude-opus-5-5</code>, <code>claude-opus-5</code>,
+				<code>claude-sonnet-5-5</code>, <code>claude-fable-5-2</code>, <code>claude-fable-5-1</code>, and Mythos
+				5.2 and 5.1), it sends <code>"fallbacks": "default"</code> with
+				<code>anthropic-beta: server-side-fallback-2026-07-01</code>. When the model's safety classifiers
+				decline a request, the API runs it again, in the same call, on the model it names for that kind of
+				refusal. <code>claude-haiku-5-5</code> has no fallback, so a refusal there is <code>Refused</code>.
+			</p>
+
+			<Heading id="example">The example app</Heading>
+			<p>
+				<code>packages/ai/example</code> is a notes assistant. Its page has a chat with an assistant agent that
+				hands notes to a notes keeper and meals to a nutritionist, each an agent it uses as a tool, its answers
+				streamed as they are written; a button that sums up the notes (<code>ask!</code>); and a meal
+				described in words, read into a typed record (<code>extract!</code>). The notes and the chats are kept
+				in the server's memory (Kv).
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>File</th><th>What it shows</th></tr></thead>
+					<tbody>
+						<tr><td><code>main.roc</code></td><td>the header and the plugin</td></tr>
+						<tr><td><code>Notes.roc</code></td><td>the notes, and the three tools the notes keeper uses</td></tr>
+						<tr><td><code>Team.roc</code></td><td>the agents: the notes keeper, the nutritionist, and the assistant that uses both as tools</td></tr>
+						<tr><td><code>Chats.roc</code></td><td>each chat's conversation, saved and loaded</td></tr>
+						<tr><td><code>routes/api/chat/[chat]/+server.roc</code></td><td>the chat: <code>post!</code> the message, then <code>events!</code> with <code>Agent.chat!</code></td></tr>
+						<tr><td><code>routes/api/notes/summary/+server.roc</code></td><td>the summary, with <code>ask!</code></td></tr>
+						<tr><td><code>routes/api/meal/+server.roc</code></td><td>the meal, with <code>extract!</code></td></tr>
+						<tr><td><code>Ui/Chat.rocx</code></td><td>the page's chat: it posts, then listens</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Its tests (<code>example/test/ai.test.mjs</code>) run it against a stand-in for the API
+				(<code>example/test/stand-in.mjs</code>), and check what the app sent as well as what it made of the
+				answer. They never ask the API itself. To try the example against the API, with your key:
+			</p>
+			<Code source={"ANTHROPIC_API_KEY=sk-ant-… bin/rocx dev packages/ai/example --port 8095"} plain numbers={Bool.False} />
+			<p>
+				Under <code>--dev</code> it asks <code>claude-haiku-5-5</code>. One chat message to the example's team asked
+				the model six times (the assistant three, the nutritionist once, the notes keeper twice): about 4,400
+				tokens read, most from the cache, and 470 written, well under a tenth of a cent. The package's <code>README.md</code> is the reference. Images and documents in a
+				prompt, batches, counting tokens, the API's own tools (web search, code execution) and an agent's work
+				heard by its caller are not built yet; the package's <code>PROPOSALS.md</code> has them.
+			</p>
+		</NoHydration>
+	</>

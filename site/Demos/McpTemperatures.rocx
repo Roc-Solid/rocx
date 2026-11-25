@@ -1,9 +1,9 @@
-import mcp.JsonValue
 import mcp.Mcp
 import mcp.Prompt
 import mcp.Resource
 import mcp.Template
-import mcp.Tool
+import tools.JsonValue
+import tools.Tool
 
 ## An MCP server, for the ecosystem's MCP page: a tool that converts temperatures, a resource about
 ## the scales, a family of resources (a substance's boiling point), and a prompt. The site is static

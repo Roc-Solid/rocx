@@ -5118,3 +5118,97 @@ every match on `Html` handles; a skeleton per site kept for the page's life; row
 component's markup, made once, isn't a template).
 
 **Reversible:** yes: rocx stops writing `Html.template`; the markup is as before.
+
+## D-085 Claude from the server: packages/ai, and packages/tools
+
+**Status.** Built (2026-11-26), the user's ask (a way for apps to use AI, then agents usable as
+tools, as in Strands Agents), as a package in pure Roc on the server platform's `Http.fetch_chunks!`, with no
+platform change. Tried against the API itself with
+`claude-haiku-5-5` (the user's choice for development); its tests run against a stand-in.
+
+**Context.** An app that calls a model writes the same parts each time, each easy to get wrong:
+reading the API's stream of events back into a message, keeping the model's thinking blocks and
+their signatures exactly (the API checks them when a conversation goes on, and refuses some that
+were changed), trying a 429 or a 5xx again but never once text has reached a page, handling a
+refusal rather than reading empty content, stopping the model when the page that asked goes, a JSON
+Schema the API's structured outputs accept, and a tool loop whose tools check their input. The
+platform already had what it takes: `fetch_chunks!` hands a body on as it comes (its doc names "a
+model's answer, word by word, to a stream of events"), an endpoint's `events!` streams to a page
+and says when the page has gone, `OpenApi` writes a JSON Schema from a Roc type, and packages/mcp
+has typed tools.
+
+**Decision.**
+
+- **Anthropic's Messages API, spoken directly**: no layer over several providers, which would give
+  only what they share; another provider would be a module of its own. `anthropic-version:
+  2026-10-21`; every call streams (`"stream": true`), so a long answer never times out; no
+  `thinking` (the current models think as they need, `output_config.effort` says how hard, sent
+  always, `Medium` by default), no sampling parameters, no forced `tool_choice`.
+- **A plugin, `Ai.plugin({ key, model, base_url })`**, each `""` for the environment's
+  (`ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_BASE_URL`). The model is `claude-opus-5-5`,
+  and `claude-haiku-5-5` under `--dev`, where answers should come fast and cost little; the check
+  once started (`ai.model`) says which and why. Outside `--dev` the server doesn't start without a
+  key; under it each call answers `NoKey` (as D-079 treats email without SMTP). Without the plugin a
+  call reads the environment itself.
+- **Four effects on one `Ai.Request`** (`prompt`, `messages`, `system`, `model`, `max_tokens ??
+  64_000`, `effort`, `cache ?? Bool.True`, `max_turns ?? 10`): `ask!` (one turn, whole), `stream!`
+  (each text delta to a function whose `Err` closes the request: `Stopped`), `extract!` (structured
+  outputs; the answer decoded with `Json`), `run!` (the tool loop). Each answers a `Reply` (text,
+  the conversation with it, why it stopped, usage, the model) or an `Ai.Problem(err)`.
+- **The stream** is read by `Sse.feed` (bytes to events, a chunk ending anywhere) and put together
+  by `Turn.step` (each content block's start and deltas: text, thinking, signature, a tool's input
+  JSON). `Turn.message` is the model's message as the next turn sends it; after a server-side
+  fallback mid-turn, the declining model's thinking and tool uses before the last `fallback` block
+  are left out, as the API asks.
+- **Conversations** are `List(Message)`; a message holds its content blocks as `JsonValue`
+  (packages/tools'), so what the model wrote goes back unchanged. `Message.save` and `load` keep one
+  as JSON text.
+- **Typed answers**: `extract!(request, Ai.schema(tags))`. `Ai.schema` is `OpenApi.body` given as a
+  value, so it is made where the type is known (`McpHttp.openapi`'s reason). The schema is made the
+  API's subset: objects closed, `oneOf` as `anyOf`, ranges, lengths and an integer's `format` left
+  out for `Json` to check as it reads; a type that isn't a record is an object's `result`.
+- **What a tool is moves out of packages/mcp into a package of its own, packages/tools** (the
+  user's call): `Tool`, `Content` and `JsonValue`, on no platform. packages/ai and packages/mcp
+  both import it, and ai no longer depends on mcp. Not into packages/ai: ai names the server
+  platform (it needs `Http`), and mcp must stay platform-free (the docs site's browser half compiles
+  its MCP demo), so mcp can't import ai. `Content.Contents` (a resource's contents, held whole) is
+  the type mcp's `Resource.Contents` names. Plate reads Open Food Facts with `tools.JsonValue`
+  (its README's gap, "`JsonValue` would be at home in a package of its own", closed).
+- **Tools are packages/tools' `Tool(ctx)`**: one tool serves the app's MCP server and its own model.
+  `Ai.tool(name, description, run!, Ai.schema([]))` makes one from a function of the app's. Each
+  tool's input is streamed (`eager_input_streaming`), then parsed strictly and decoded into its
+  type (`Tool.prepare`) before it runs; a bad input, a tool's `Err`, an unknown tool go back as
+  tool errors; a `Failed` goes back as "<name> failed.", its reason logged (`ai.tool`). A turn that
+  stopped for `max_tokens` or a refusal never runs its tools.
+- **Agents, and agents as tools** (the user's ask, after Strands Agents): `Agent(ctx)` is a record
+  (`name`, `description`, `system`, `tools ?? []`, `model`, `effort`, `max_turns`, `max_tokens`),
+  asked with `Agent.ask!(agent, prompt, ctx, heard!)` or `Agent.chat!(agent, messages, ctx,
+  heard!)` (`Ai.run!` with its settings). `agent.as_tool()` is a `Tool(ctx)` taking one `task`
+  string: the agent runs it as a conversation of its own and its final text is the result; a
+  problem is a tool error (`"<name> couldn't do it: …"`). The caller stays in charge (no handoff);
+  the agent's own work isn't streamed to the caller's listener. A request's `label` (an agent's
+  name) goes on each `ai.turn` line, so a team's spending can be told apart.
+- **Retries**: 408, 409, 429, 5xx, and an `overloaded_error` event before anything was heard,
+  tried again twice, after `retry-after` (a minute at most) or half a second, then a second
+  (`ai.retry`). Not a connection that broke: its text may already be on a page.
+- **Refusals** are `Err(Refused(category))`. On the models that take it (Opus 5.5 and 5, Sonnet
+  5.5, Fable and Mythos 5.2 and 5.1) the request carries `"fallbacks": "default"` with
+  `anthropic-beta: server-side-fallback-2026-07-01`; Haiku 5.5 has none.
+- **Cost on the log**: `ai.turn` with the model, why it stopped, `input`, `cache_read`,
+  `cache_write`, `output` and the milliseconds. `cache` (on by default) sends top-level
+  `cache_control: {"type": "ephemeral"}`: a conversation's next turn reads the last from the cache.
+
+**Alternatives.** A host-side client in Rust (an SDK's): a platform change for what `fetch_chunks!`
+already does, against the user's rule that platforms stay lean (app layer first). Non-streaming
+calls for `ask!` and `extract!`: two parsers instead of one, and a timeout to pick for long answers.
+A provider-neutral `Model` type: the lowest common denominator of APIs that differ in thinking,
+caching, tools and refusals.
+
+**Costs.** The fallback request shape is untested against the API (development used Haiku, which
+has none); the stand-in checks what is sent. A connection that breaks mid-stream is not retried.
+An app that names packages/ai names packages/tools (and crypto) too; one that imported
+`mcp.Tool`, `mcp.Content` or `mcp.JsonValue` imports `tools.` instead (no re-export: a Roc package
+can't expose another's modules).
+
+**Reversible:** yes: packages/ai is a package nothing else depends on; packages/tools' three
+modules could go back into packages/mcp.

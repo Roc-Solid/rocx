@@ -1,5 +1,5 @@
-import Content
-import JsonValue
+import tools.Content
+import tools.JsonValue
 
 ## A message template an agent's user picks from a menu (a slash command, say): its name, the
 ## arguments it takes, and the messages it makes of them.

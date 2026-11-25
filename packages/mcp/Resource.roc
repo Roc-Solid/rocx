@@ -1,5 +1,6 @@
 import crypto.Base64
-import JsonValue
+import tools.Content
+import tools.JsonValue
 
 ## What an agent can read from the app, by URI (`notes://index`): reading one gives its contents,
 ## text or bytes. A family of them, whose URIs a template matches, is a `Template`.
@@ -56,19 +57,13 @@ Resource(ctx) := {
 			("mimeType", JsonValue.text_unless_empty(resource.mime)),
 		])
 
-	## What reading a resource gives (`Resource.contents`).
-	Contents : { uri : Str, mime : Str, body : [Text(Str), Blob(List(U8))] }
+	## What reading a resource gives (`Resource.contents`): packages/tools' `Content.Contents`, which
+	## a tool's answer can hold whole too.
+	Contents : Content.Contents
 
 	## Contents as `resources/read` (and an embedded resource) writes them: text, or bytes as Base64.
 	contents_json : Contents -> JsonValue
-	contents_json = |read| {
-		body =
-			match read.body {
-				Text(said) => ("text", String(said))
-				Blob(bytes) => ("blob", String(Base64.encode(bytes)))
-			}
-		JsonValue.object_of([("uri", Ok(String(read.uri))), ("mimeType", JsonValue.text_unless_empty(read.mime)), (body.0, Ok(body.1))])
-	}
+	contents_json = |read| Content.contents_json(read)
 }
 
 expect Resource.contents_json({ uri: "notes://index", mime: "text/markdown", body: Text("# Notes") }) == Object([("uri", String("notes://index")), ("mimeType", String("text/markdown")), ("text", String("# Notes"))])

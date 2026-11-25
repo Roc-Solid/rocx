@@ -1,0 +1,74 @@
+import pf.Html
+import ../Generated/Styles
+
+## The document around the page: its head, with the stylesheet every component's `<style>` is in
+## (`Generated/Styles`), and the app's base styles, below.
+view! = |{ children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<title>Notes assistant</title>
+				<NoHydration>{Styles.style}</NoHydration>
+			</head>
+			<body>
+				{...children}
+			</body>
+		</html>
+	</>
+
+<style>
+	:global(body) {
+		margin: 0;
+		font: 16px/1.5 system-ui, sans-serif;
+		color: #1d2330;
+		background: #f6f7f9;
+	}
+
+	:global(main) {
+		max-width: 46rem;
+		margin: 0 auto;
+		padding: 2rem 1.25rem 4rem;
+	}
+
+	:global(section) {
+		margin-top: 2rem;
+		padding: 1.25rem;
+		border-radius: 10px;
+		background: #fff;
+		box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+	}
+
+	:global(h2) {
+		margin-top: 0;
+		font-size: 1.15rem;
+	}
+
+	:global(button) {
+		padding: 0.5rem 1rem;
+		border: 0;
+		border-radius: 6px;
+		background: #3156d3;
+		color: #fff;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	:global(button:disabled) {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	:global(input, textarea) {
+		padding: 0.5rem 0.65rem;
+		border: 1px solid #c9ced8;
+		border-radius: 6px;
+		font: inherit;
+	}
+
+	:global(.problem) {
+		color: #b42318;
+	}
+</style>

@@ -2,4 +2,4 @@
 ## endpoints, functions and handlers (`McpHttp`). A package that names the server platform,
 ## so only the server's half of an app can name it: see ../README.md, and PROPOSALS.md, "Server-only
 ## modules in packages".
-package [McpHttp] { mcp: "../main.roc", pf: platform "../../../server/platform/main.roc" }
+package [McpHttp] { mcp: "../main.roc", pf: platform "../../../server/platform/main.roc", tools: "../../tools/main.roc" }

@@ -17,7 +17,8 @@ Roc Solid has three parts:
   actors and plugins. On the **browser platform** (`web/`), the same components are compiled to
   WebAssembly and run by a small JavaScript runtime.
 - **The ecosystem**: packages any app can use, in `packages/`. Sign-in (mailed links, Google,
-  GitHub, OpenID Connect), payments and subscriptions through Stripe, charts, forms, Markdown, intl, an admin, guards (rate limits, feature
+  GitHub, OpenID Connect), payments and subscriptions through Stripe, Claude from the server (streamed
+  answers, typed answers, the app's functions as tools, agents as tools), charts, forms, Markdown, intl, an admin, guards (rate limits, feature
   flags), jobs and cron, email, MCP, presence, Web Push, OpenTelemetry, PostHog error tracking,
   storage (S3, files, memory), crypto, QR codes, audio, vibration, testing helpers and virtual
   lists.
@@ -1009,6 +1010,8 @@ browser runtime's engine. See `spike/native-apps/README.md` and `examples/pomodo
 | `packages/charts` | Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: the arithmetic in plain Roc (scales, round ticks, SVG paths, in `Dec`), the components copied into each app |
 | `packages/forms` | Zod-like schemas: one for the page and the endpoint, issues shown in place, `LiveForm` |
 | `packages/auth`, `stripe`, `jobs`, `email`, `push`, `audio`, `vibrate` | Plugins: sign-in by mailed links and at providers, with sessions, middleware and two-factor sign-in (`Auth.plugin`), payments and subscriptions through Stripe's Checkout and Customer Portal, its webhook kept in step (`Stripe.plugin`), jobs and cron in the app's database (`Job.plugin`), email over SMTP or the dev mailbox (`Email.plugin`), Web Push (`Push.plugin`, `<PushButton>`), sound files from a handler (`AudioPlayer.plugin`), the phone's vibration (`Vibrator.plugin`) |
+| `packages/ai` | Claude from the server, through Anthropic's Messages API: an answer whole (`Ai.ask!`), streamed to a page as it is written (`Ai.stream!`), read into a Roc type (`Ai.extract!`), a model that uses the app's functions as tools, packages/tools' `Tool`s (`Ai.run!`), and agents, each usable as another's tool (`Agent`); conversations kept exactly (`Message`), each turn's tokens on the log (`Ai.plugin`) |
+| `packages/tools` | What a tool is, for a model to use (`Tool`, what it answers, `Content`, and any JSON, `JsonValue`), on no platform: packages/ai gives tools to Claude and packages/mcp serves the same tools over MCP |
 | `packages/storage`, `crypto`, `qr` | Files in a bucket whose URL says where (S3, a directory, memory) with signed URLs; SHA-256, HMAC, HKDF, Base64 and hex in plain Roc (and SHA-1 and Base32, for authenticator codes); QR codes and `<QrCode>` |
 | `packages/admin`, `guard`, `intl`, `markdown`, `mcp`, `otel`, `posthog`, `presence`, `testing`, `virtual` | A Django-style admin for the app's tables (and the jobs page); rate limits, feature flags and request guards; formatting and translations; Markdown with typed frontmatter; an MCP server; OpenTelemetry metrics and logs; PostHog error tracking; who is here; test helpers; virtual lists |
 | `packages/dbcheck` | What `rocx check --sql` checks rows with; apps don't import it |
@@ -1083,8 +1086,8 @@ just test
   graceful stop. `server/test/sqlite.test.mjs` does the same database, jobs and cron tests on SQLite
   and on Turso, which need no database server.
 - `packages/testing/test/` tests that package's helpers against an app it builds; posthog, and the
-  guard, push, auth and stripe packages' examples, have tests of their own (stripe's against a
-  stand-in for Stripe's API).
+  guard, push, auth, stripe and ai packages' examples, have tests of their own (stripe's against a
+  stand-in for Stripe's API, ai's against one for Anthropic's Messages API).
 
 The browser tests drive Chromium's headless shell over the DevTools protocol, with no npm
 dependencies: `$CHROME`, or Playwright's cached one; without one they are skipped. The tests of

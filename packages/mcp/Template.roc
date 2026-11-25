@@ -1,4 +1,4 @@
-import JsonValue
+import tools.JsonValue
 import Resource
 
 ## A family of resources an agent can read from the app, whose URIs a template matches

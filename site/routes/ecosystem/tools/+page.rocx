@@ -1,0 +1,91 @@
+import pf.Html
+import ../../../Ui/Heading
+import ../../../Ui/Code
+import ../../../Generated/Paths
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+
+## The tools package: what a tool is, made once and used by packages/ai's models and packages/mcp's
+## server; installing it; its modules; and what isn't here. Static.
+meta = {
+	title: "Tools",
+	description: "The tools package for Roc Solid apps: what a tool is for a model to use (its name, its arguments' JSON Schema and what it does), what it answers, and any JSON, on no platform. packages/ai gives tools to Claude, and packages/mcp serves the same tools over MCP.",
+	toc: [
+		{ id: "install", label: "Installing it" },
+		{ id: "once", label: "One tool, two ways in" },
+		{ id: "modules", label: "The modules" },
+		{ id: "limits", label: "What isn't here" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/tools</code>]}
+				title="Tools, made once, for any model"
+			>
+				A tool is something a model can do through your app: a name, what it does, the JSON Schema of its
+				arguments, and the function that does it. This package holds that definition, what a tool answers,
+				and a JSON value read a field at a time. It is plain Roc on no platform, and it is what both
+				<a href={Paths.ecosystem_ai}>the AI package</a> and <a href={Paths.ecosystem_mcp}>the MCP package</a> import.
+			</PageHero>
+
+			<Heading id="install">Installing it</Heading>
+			<p>Name it in your app's header, beside the packages that use it:</p>
+			<Code
+				title="main.roc's header"
+				source={"app [program] { ai: \"../packages/ai/main.roc\", crypto: \"../packages/crypto/main.roc\", pf: platform \"../server/platform/main.roc\", tools: \"../packages/tools/main.roc\" }"}
+				numbers={Bool.False}
+			/>
+			<p>
+				Then <code>import tools.Tool</code> where you make tools, and <code>import tools.JsonValue</code>
+				where you read JSON whose shape no record names (keys with dashes, a field that is sometimes a
+				number and sometimes text).
+			</p>
+
+			<Heading id="once">One tool, two ways in</Heading>
+			<p>
+				A tool made once is used wherever a model asks for it. Given to an agent, Claude uses it from your
+				server; given to an MCP server, an AI client (Claude, an editor) calls it over the protocol:
+			</p>
+			<Code
+				title="the same tools, twice"
+				source={"tools = [\n    Ai.tool(\"add_note\", \"Adds a note of the text given\", Notes.add!, Ai.schema([])),\n    Ai.tool(\"list_notes\", \"Lists every note\", Notes.list!, Ai.schema([])),\n]\n\n# The app's own model\nkeeper : Agent({})\nkeeper = { name: \"notes_keeper\", description: \"Keeps the user's notes\", system: \"…\", tools: tools }\n\n# AI clients, over MCP\nserver : Mcp.Server({})\nserver = { name: \"notes\", version: \"1.0.0\", tools: tools }"}
+				numbers={Bool.False}
+			/>
+			<p>
+				<code>Ai.tool</code>, and the MCP package's <code>McpHttp.tool</code> and
+				<code>McpHttp.endpoint</code>, write a tool's arguments' schema from their Roc type, as the platform
+				writes <code>/openapi.json</code>'s. A tool checks its arguments against that type before it runs:
+				arguments that don't fit go back to the model as a tool error it can act on, as does the tool's own
+				<code>Err</code>.
+			</p>
+
+			<Heading id="modules">The modules</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Module</th><th>What it has</th></tr></thead>
+					<tbody>
+						<tr><td><code>Tool</code></td><td><code>Tool.typed(name, description, schema, run!)</code> reads the arguments into a Roc type and writes the answer as JSON; <code>Tool.typed_with_params</code> reads two types from one object (an endpoint's path params and its body); <code>Tool.new</code> takes any JSON and answers with content. Hints for an MCP client: <code>read_only</code>, <code>additive</code>, <code>idempotent</code>, <code>closed_world</code>. Also <code>titled</code>, <code>answers(schema)</code> and <code>reporting</code>.</td></tr>
+						<tr><td><code>Content</code></td><td>What a tool answers with: text, an image or a sound (bytes), a link to a resource, or a resource's contents held whole (<code>Content.Contents</code>). <code>Content.to_json</code> writes MCP's content block; the AI package writes the Messages API's from the same value.</td></tr>
+						<tr><td><code>JsonValue</code></td><td>Any JSON, read a field at a time (<code>parse</code>, <code>get</code>, <code>to_text</code>, <code>to_str</code>). <code>decode</code> turns it into a Roc type and <code>encode</code> makes one from a Roc value. A number keeps the text it came as, so an id or an <code>I64</code> goes back exactly.</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				It depends on the crypto package (Base64, for an image's bytes), which it names itself.
+				<code>roc test packages/tools/main.roc</code> runs its <code>expect</code>s.
+			</p>
+
+			<Heading id="limits">What isn't here</Heading>
+			<ul>
+				<li>
+					<code>Tool.typed</code> takes the schema as text: the writer that makes one from a type is the
+					server platform's, and this package names no platform. Make tools with <code>Ai.tool</code> or
+					<code>McpHttp.tool</code> to have it written for you.
+				</li>
+				<li>Resources and prompts are MCP's alone: they stay in the MCP package.</li>
+			</ul>
+		</NoHydration>
+	</>

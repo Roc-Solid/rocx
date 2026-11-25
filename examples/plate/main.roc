@@ -8,7 +8,7 @@
 ## password (`PLATE_PASSWORD`: Session.roc checks it, and starts a session itself, since the plugin
 ## has no `admit!` and nobody signs in by a link or a provider). The browser's program is the same
 ## pages, compiled to WebAssembly from the copy `rocx build --client` writes.
-app [program] { auth: "../../packages/auth/main.roc", charts: "../../packages/charts/main.roc", crypto: "../../packages/crypto/main.roc", forms: "../../packages/forms/main.roc", mcp: "../../packages/mcp/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc" }
+app [program] { auth: "../../packages/auth/main.roc", charts: "../../packages/charts/main.roc", crypto: "../../packages/crypto/main.roc", forms: "../../packages/forms/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc", tools: "../../packages/tools/main.roc" }
 
 import auth.Auth
 import Generated/App

@@ -177,9 +177,10 @@ view! = |_| {
 			</Way>
 			<Way kind="Ecosystem" href={Paths.ecosystem} more="The ecosystem →" code={[<Code source={Sources.charts_use.rocx} numbers={Bool.False} />]}>
 				What an app can use: packages of plain Roc and components, which work in both halves of an app.
-				Twenty-two so far: sign-in, payments through Stripe, charts, crypto, file storage (S3, disk or
-				memory), email, forms, Markdown, intl, an admin, audio, guards, jobs and cron, MCP, OpenTelemetry,
-				PostHog, presence, Web Push, QR codes, vibration, testing and virtual lists.
+				Twenty-four so far: sign-in, payments through Stripe, Claude from the server, charts, crypto, file
+				storage (S3, disk or memory), email, forms, Markdown, intl, an admin, audio, guards, jobs and cron,
+				MCP, tools for models, OpenTelemetry, PostHog, presence, Web Push, QR codes, vibration, testing
+				and virtual lists.
 			</Way>
 
 			<Heading id="pipeline">From a .rocx file to a running page</Heading>

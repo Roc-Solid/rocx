@@ -1,0 +1,174 @@
+import pf.Html
+import pf.Call
+import pf.Solid exposing [create_signal!]
+import pf.Endpoint
+import pf.Server as Http
+import ../Generated/Api
+
+## The chat: what the user says is posted to the chat's path, then its events are the model's
+## answer, as it is written (`Ai.run!` on the server, with the notes tools): text, the tool it is
+## about to use, and the notes once it is done. Beside it, the notes, and a button for their summary
+## (`Ai.ask!`).
+Chat := [].{
+	Line : { id : U64, who : Str, text : Str }
+
+	State : [Idle, Thinking, Failed(Str)]
+
+	view! : { chat : Str, notes : List({ id : U64, text : Str }) } => Html
+	view! = |{ chat, notes }| {
+		(draft!, set_draft!) = create_signal!("")
+		(lines!, set_lines!) = create_signal!([])
+		(reply!, set_reply!) = create_signal!("")
+		(tool!, set_tool!) = create_signal!("")
+		(state!, set_state!) = create_signal!(idle)
+		(kept!, set_kept!) = create_signal!(notes)
+		(summary!, set_summary!) = create_signal!("")
+		heard! = |event|
+			match event {
+				Event(said) =>
+					if said.done {
+						if !reply!().is_empty() {
+							set_lines!(lines!().append({ id: lines!().len(), who: "assistant", text: reply!() }))
+						}
+						set_reply!("")
+						set_tool!("")
+						set_kept!(said.notes)
+						set_state!(if (said.problem.is_empty()) Idle else Failed(said.problem))
+					} else if !said.tool.is_empty() {
+						set_tool!(said.tool)
+					} else {
+						set_reply!(Str.concat(reply!(), said.text))
+						set_tool!("")
+					}
+				Ended =>
+					if state!() == Thinking {
+						set_state!(Idle)
+					}
+				Failed(problem) => set_state!(Failed(explain(problem)))
+			}
+		send! = || {
+			text = draft!().trim()
+			if !text.is_empty() and state!() != Thinking {
+				posted : Try({}, Http.Problem)
+				posted = Endpoint.send!(Api.post_api_chat_chat({ chat: chat }), { text: text }, Call.fetch!)
+				set_draft!("")
+				set_lines!(lines!().append({ id: lines!().len(), who: "you", text: text }))
+				set_reply!("")
+				set_tool!("")
+				match posted {
+					Ok({}) => {
+						set_state!(Thinking)
+						Endpoint.listen!(Api.events_api_chat_chat({ chat: chat }), Call.listen!, heard!)
+					}
+					Err(problem) => set_state!(Failed(explain(problem)))
+				}
+			}
+		}
+		sum! = || {
+			summed : Try({ text : Str }, Http.Problem)
+			summed = Endpoint.send!(Api.post_api_notes_summary({}), {}, Call.fetch!)
+			match summed {
+				Ok(answer) => set_summary!(answer.text)
+				Err(problem) => set_summary!(explain(problem))
+			}
+		}
+		<div class="assistant">
+			<section class="chat" aria-label="Chat">
+				<h2>Chat</h2>
+				<ol class="lines" aria-live="polite">
+					{...lines!().map(|line| <li key={line.id.to_str()} class={line.who}>{line.text}</li>)}
+					{if state!() == Thinking {
+						<li class="assistant pending">{pending(reply!(), tool!())}</li>
+					}}
+				</ol>
+				<form on:submit={send!}>
+					<input aria-label="Message" placeholder="Remember that the dentist is on Tuesday" autocomplete="off" value={draft!()} on:input.value={set_draft!} />
+					<button type="submit" disabled?={state!() == Thinking}>Send</button>
+				</form>
+				{match state!() {
+					Failed(why) => <p class="problem">{why}</p>
+					_ => <></>
+				}}
+			</section>
+			<section class="notes" aria-label="Notes">
+				<h2>Notes</h2>
+				{if kept!().is_empty() {
+					<p class="empty">No notes yet: tell the chat something to remember.</p>
+				} else {
+					<ul>{...kept!().map(|note| <li key={note.id.to_str()}>{note.text}</li>)}</ul>
+				}}
+				<button type="button" on:click={sum!}>Sum them up</button>
+				<p class="summary">{summary!()}</p>
+			</section>
+		</div>
+	}
+
+	<style>
+		.lines {
+			margin: 0 0 1rem;
+			padding: 0;
+			list-style: none;
+		}
+
+		.lines li {
+			margin: 0.4rem 0;
+			padding: 0.5rem 0.75rem;
+			border-radius: 8px;
+			white-space: pre-wrap;
+		}
+
+		.lines .you {
+			margin-left: 20%;
+			background: #e8edfc;
+		}
+
+		.lines .assistant {
+			margin-right: 20%;
+			background: #f1f2f4;
+		}
+
+		.pending {
+			color: #5b6475;
+		}
+
+		form {
+			display: flex;
+			gap: 0.5rem;
+		}
+
+		input {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.empty,
+		.summary {
+			color: #5b6475;
+		}
+	</style>
+}
+
+idle : Chat.State
+idle = Idle
+
+## What the model's turn shows while it comes: its text so far, else the tool it is using.
+pending : Str, Str -> Str
+pending = |reply, tool|
+	if !reply.is_empty() {
+		reply
+	} else if !tool.is_empty() {
+		"Using ${tool}…"
+	} else {
+		"…"
+	}
+
+explain : Http.Problem -> Str
+explain = |problem|
+	match problem {
+		HttpErr(why) => "No answer: ${why}"
+		Refused(status_code, text) => "Refused (${status_code.to_str()}): ${text}"
+		BadAnswer(why) => "An answer that didn't fit: ${why}"
+	}
+
+expect pending("", "add_note") == "Using add_note…"
+expect pending("Noted.", "add_note") == "Noted."

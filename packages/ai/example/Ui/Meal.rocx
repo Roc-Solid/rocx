@@ -1,0 +1,92 @@
+import pf.Html
+import pf.Call
+import pf.Solid exposing [create_signal!]
+import pf.Endpoint
+import pf.Server as Http
+import ../Generated/Api
+
+## A meal described in words, read into a record by the model (`Ai.extract!` on the server): each
+## food, how much, its calories.
+Meal := [].{
+	Read : { items : List({ food : Str, grams : U32, kcal : U32 }), total_kcal : U32 }
+
+	State : [Idle, Reading, Done(Meal.Read), Failed(Str)]
+
+	view! : {} => Html
+	view! = |{}| {
+		(described!, set_described!) = create_signal!("Two eggs, a slice of toast with butter and a coffee with milk")
+		(state!, set_state!) = create_signal!(idle)
+		read! = || {
+			answered : Try(Meal.Read, Http.Problem)
+			answered = Endpoint.send!(Api.post_api_meal({}), { text: described!() }, Call.fetch!)
+			match answered {
+				Ok(meal) => set_state!(Done(meal))
+				Err(problem) => set_state!(Failed(explain(problem)))
+			}
+		}
+		<section class="meal" aria-label="Meal">
+			<h2>A meal, read into a record</h2>
+			<form on:submit={read!}>
+				<textarea aria-label="What you ate" rows="2" value={described!()} on:input.value={set_described!}></textarea>
+				<button type="submit">Read it</button>
+			</form>
+			{match state!() {
+				Done(meal) =>
+					<table>
+						<thead><tr><th>Food</th><th>Grams</th><th>kcal</th></tr></thead>
+						<tbody>
+							{...meal.items.map(|item| <tr key={item.food}><td>{item.food}</td><td>{item.grams.to_str()}</td><td>{item.kcal.to_str()}</td></tr>)}
+						</tbody>
+						<tfoot><tr><th>Total</th><td></td><td>{meal.total_kcal.to_str()}</td></tr></tfoot>
+					</table>
+				Failed(why) => <p class="problem">{why}</p>
+				_ => <></>
+			}}
+		</section>
+	}
+
+	<style>
+		form {
+			display: flex;
+			flex-direction: column;
+			gap: 0.5rem;
+			align-items: flex-start;
+		}
+
+		textarea {
+			width: 100%;
+			box-sizing: border-box;
+		}
+
+		table {
+			margin-top: 1rem;
+			border-collapse: collapse;
+		}
+
+		th,
+		td {
+			padding: 0.3rem 0.8rem;
+			text-align: left;
+		}
+
+		td:not(:first-child) {
+			font-variant-numeric: tabular-nums;
+		}
+
+		tfoot th,
+		tfoot td {
+			border-top: 1px solid #c9ced8;
+		}
+	</style>
+}
+
+idle : Meal.State
+idle = Idle
+
+explain : Http.Problem -> Str
+explain = |problem|
+	match problem {
+		HttpErr(why) => "No answer: ${why}"
+		Refused(status_code, text) => "Refused (${status_code.to_str()}): ${text}"
+		BadAnswer(why) => "An answer that didn't fit: ${why}"
+	}

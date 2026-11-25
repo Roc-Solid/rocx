@@ -8,7 +8,7 @@
 ## mailbox); that signing in is packages/auth's plugin (D-072: the links, the sessions, signing
 ## out), which lets in anyone with a mailed link (`Account.admit!`); and that its database is SQLite
 ## (D-045), a file beside the server.
-app [program] { auth: "../../packages/auth/main.roc", crypto: "../../packages/crypto/main.roc", email: "../../packages/email/main.roc", guard: "../../packages/guard/main.roc", markdown: "../../packages/markdown/main.roc", mcp: "../../packages/mcp/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc" }
+app [program] { auth: "../../packages/auth/main.roc", crypto: "../../packages/crypto/main.roc", email: "../../packages/email/main.roc", guard: "../../packages/guard/main.roc", markdown: "../../packages/markdown/main.roc", mcp: "../../packages/mcp/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc", tools: "../../packages/tools/main.roc" }
 
 import auth.Auth
 import email.Email

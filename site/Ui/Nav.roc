@@ -104,6 +104,7 @@ Nav := [].{
 				pages: [
 					{ path: Paths.ecosystem_auth, label: "Auth", blurb: "Sign-in by a mailed link or at Google, GitHub and OpenID Connect providers, and sessions: a plugin" },
 					{ path: Paths.ecosystem_stripe, label: "Stripe", blurb: "Payments and subscriptions through Stripe's Checkout and Customer Portal, its webhooks kept in step: a plugin" },
+					{ path: Paths.ecosystem_ai, label: "AI", blurb: "Claude from the server: answers streamed to a page, typed answers, tools, and teams of agents: a plugin" },
 					{ path: Paths.ecosystem_jobs, label: "Jobs and cron", blurb: "Work that runs later, and again, on a schedule too: a plugin" },
 					{ path: Paths.ecosystem_email, label: "Email", blurb: "Email over SMTP, or a dev mailbox while you develop: a plugin" },
 					{ path: Paths.ecosystem_push, label: "Push", blurb: "Web Push notifications: a button that subscribes, and jobs that send: a plugin" },
@@ -118,6 +119,7 @@ Nav := [].{
 					{ path: Paths.ecosystem_admin, label: "Admin", blurb: "A Django-style admin for your database's tables" },
 					{ path: Paths.ecosystem_testing, label: "Testing", blurb: "Find things in a page by role, name and label, from Roc and Node" },
 					{ path: Paths.ecosystem_mcp, label: "MCP", blurb: "An app's tools, resources and prompts, for AI agents" },
+					{ path: Paths.ecosystem_tools, label: "Tools", blurb: "What a tool is, made once for the AI package's models and an MCP server" },
 				],
 			},
 			{

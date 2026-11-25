@@ -1,10 +1,10 @@
 import crypto.Base64
-import JsonValue
+import tools.JsonValue
 import Prompt
 import Resource
 import Rpc
 import Template
-import Tool
+import tools.Tool
 
 ## An app's MCP server: what it offers AI agents (tools, resources, prompts), and the protocol they
 ## ask for them with, over HTTP (Streamable HTTP: one endpoint, a JSON-RPC message a POST).

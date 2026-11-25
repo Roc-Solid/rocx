@@ -137,7 +137,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/p
 
 | Feature | Where |
 |---|---|
-| `Http.fetch!` to another service, its JSON read a field at a time (packages/mcp's `JsonValue`), and the result kept | [`OpenFoodFacts.roc`](OpenFoodFacts.roc), [`routes/barcode/+server.roc`](routes/barcode/+server.roc) |
+| `Http.fetch!` to another service, its JSON read a field at a time (packages/tools' `JsonValue`), and the result kept | [`OpenFoodFacts.roc`](OpenFoodFacts.roc), [`routes/barcode/+server.roc`](routes/barcode/+server.roc) |
 | A stand-in for that service in the tests, through `OFF_URL` | [`test/plate.test.mjs`](test/plate.test.mjs) |
 | A password, only when one is set (`PLATE_PASSWORD`), compared in constant time; wrong ones are limited with a `Kv` counter. The session is packages/auth's (`Auth.sign_in!`; the plugin is listed without `admit!`, so nobody signs in by a link or a provider): a random token in the `plate_session` cookie (`__Host-plate_session` and `Secure` when the public URL is HTTPS), kept as its hash in the database (`auth_sessions`) for 90 days and renewed while it is used. The middleware lets everything through when the diary is open, and is `Auth.required` otherwise: a browser without a session goes to sign in, and back to where it was going after. Signing out is a form posting to the plugin's `/auth/sign-out` | [`main.roc`](main.roc), [`Session.roc`](Session.roc), [`Middlewares.roc`](Middlewares.roc), [`routes/sign-in/`](routes/sign-in), [`migrations/0003_auth_sessions.sql`](migrations/0003_auth_sessions.sql) |
 
@@ -201,21 +201,18 @@ instead. None of it needed a change to the platform.
    SQLite as text, which a `real` column takes as its number (`dec` in `Store.roc`). Reading back
    is simpler: SQLite's `real` comes as a JSON number, which a `Dec` field reads as written. A
    `Dec` value in `Db.Value` would remove the text step.
-2. **The JSON reader for keys a record can't name is in packages/mcp.** Open Food Facts names
-   nutrients with dashes (`energy-kcal_100g`), so its answer is read with `mcp.JsonValue`, and a
-   food diary imports the MCP package. `JsonValue` would be at home in a package of its own.
-3. **Bulk imports can't be done by the app.** `Http.fetch!` holds a whole answer in memory (64 MiB
+2. **Bulk imports can't be done by the app.** `Http.fetch!` holds a whole answer in memory (64 MiB
    at most, by default). `Http.fetch_chunks!` hands a body over a chunk at a time, but nothing
    unpacks zip or gzip, so neither the USDA's downloads (zipped CSV) nor Open Food Facts' dump
    (gigabytes of gzipped JSON lines) can be imported by a job. The USDA's foods are a seed that a
    Node script generates instead, and Open Food Facts is asked one barcode at a time. A gzip reader
    would let a job keep a country's packets up to date.
-4. **No camera.** A barcode is typed. Scanning one needs the camera and a decoder.
+3. **No camera.** A barcode is typed. Scanning one needs the camera and a decoder.
    `BarcodeDetector` is in Chromium and on Android, but not in Firefox, so it would be a JavaScript
    or WebAssembly decoder called through `Browser.call!`, or the camera of a native phone app.
-5. **No installing it, and nothing offline.** On a phone it is a web page: no icon on the home
+4. **No installing it, and nothing offline.** On a phone it is a web page: no icon on the home
    screen, and no way to log a meal on a plane.
-6. **Roc, met on the way:**
+5. **Roc, met on the way:**
     - `targets`, `has` and `with` are reserved: they can't name a field, a local or a definition.
     - A local or a lambda's argument can't share a name with a definition of its module (`grams`,
       `words`, `whole`, `sum`, `food`, `value`, `name`).
