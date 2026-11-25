@@ -1,0 +1,84 @@
+import pf.Html
+import pf.Endpoint
+import ../../Middlewares
+import ../../Generated/Api
+
+## Your account: the address you sign in with, and every browser you are signed in on, with a way
+## to sign out of all of them. Only signed-in people get here: the middleware sends anyone else to
+## sign in, and back here after. The page names it, and so does `+server.roc`, which answers what
+## the page reads and posts.
+middleware = Middlewares.signed_in
+
+meta = { title: "Your account" }
+
+## The account, as `GET /account` says.
+account! : {} => { email : Str, sessions : List({ id : Str, current : Bool, started : Str }) }
+account! = |{}| Endpoint.get!(Api.get_account({}))
+
+view! = |_| {
+	me = account!({})
+	<>
+		<section class="who">
+			<h1>Your account</h1>
+			<p>You sign in as <strong>{me.email}</strong>.</p>
+		</section>
+		<section class="sessions card" aria-labelledby="sessions-title">
+			<h2 id="sessions-title">Where you're signed in</h2>
+			<ul>
+				{...me.sessions.map(|session|
+					<li key={session.id}>
+						<span>{if (session.current) "This browser" else "Another browser"}</span>
+						<span class="when">signed in {session.started}</span>
+					</li>
+				)}
+			</ul>
+			<form method="post" action={Endpoint.url_of(Api.post_account({}))}>
+				<button type="submit">Sign out everywhere</button>
+			</form>
+		</section>
+	</>
+}
+
+<style>
+	.who {
+		display: grid;
+		gap: 0.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.who p {
+		margin: 0;
+		color: var(--ink-soft);
+	}
+
+	.sessions {
+		display: grid;
+		gap: 1rem;
+	}
+
+	ul {
+		display: grid;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.25rem 1rem;
+		padding: 0.6rem 0;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.when {
+		color: var(--ink-faint);
+		font-size: 0.9rem;
+	}
+
+	form {
+		margin: 0;
+	}
+</style>

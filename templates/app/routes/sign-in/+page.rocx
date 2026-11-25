@@ -1,0 +1,127 @@
+import pf.Html
+import pf.Endpoint
+import pf.Router
+import pf.Server
+import pf.Router exposing [use_submission!]
+import auth.SignInError
+import ../../Generated/Api
+
+## Signing in: an address, and a link mailed to it; a button for each provider set up; and, under
+## `rocx dev`, any address at once. Plain forms and links, so it works before the page's JavaScript
+## has loaded. A sign-in that didn't work comes back here with `?error=`, and the page says why
+## (packages/auth's `SignInError`); `?then=` is where to go after.
+meta = { title: "Sign in" }
+
+## What the page offers besides an address (`GET /sign-in`).
+offered! : {} => { providers : List({ name : Str, label : Str, path : Str }), dev : Bool }
+offered! = |{}| Endpoint.get!(Api.get_sign_in({}))
+
+view! = |_| {
+	query = Router.location!({}).query
+	then = SignInError.field(query, "then")
+	failed = SignInError.message(query)
+	sending = use_submission!(Api.post_sign_in_mail({}))
+	offers = offered!({})
+	<section class="sign-in card">
+		{match sending.result!() {
+			Ok(sent) =>
+				<div class="sent" role="status">
+					<h1>Check your inbox</h1>
+					<p>We sent a sign-in link to <strong>{sent.sent}</strong>. It works once, for the next 15 minutes.</p>
+				</div>
+			Err(_) =>
+				<form method="post" action={Endpoint.url_of(Api.post_sign_in_mail({}))}>
+					<h1>Sign in</h1>
+					{if !failed.is_empty() {
+						<p class="problem" role="alert">{failed}</p>
+					}}
+					<input type="hidden" name="then" value={then} />
+					<label for="email">Email address</label>
+					<input id="email" name="email" type="email" required autocomplete="email" placeholder="you@example.com" value={sending.field!("email")} />
+					<button type="submit" class="primary" disabled?={sending.pending!()}>{if (sending.pending!()) "Sending…" else "Email me a link"}</button>
+					{match sending.error!() {
+						Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+						Err(_) => <></>
+					}}
+				</form>
+		}}
+		{if !offers.providers.is_empty() {
+			<div class="providers">
+				<p class="or">or</p>
+				{...offers.providers.map(|provider|
+					<a key={provider.name} class="button" href={"${provider.path}?then=${Server.encode_segment(then)}"}>Continue with {provider.label}</a>
+				)}
+			</div>
+		}}
+		{if offers.dev {
+			<form class="dev" method="post" action="/auth/dev">
+				<h2>Dev sign-in</h2>
+				<p>Under <code>rocx dev</code> only: any address, signed in at once.</p>
+				<input type="hidden" name="then" value={then} />
+				<label for="dev-email">Email address</label>
+				<input id="dev-email" name="email" type="email" required placeholder="ada@example.com" />
+				<button type="submit">Sign in as them</button>
+			</form>
+		}}
+	</section>
+}
+
+<style>
+	.sign-in {
+		display: grid;
+		gap: 1.25rem;
+		max-width: 26rem;
+		margin: 0 auto;
+	}
+
+	form {
+		display: grid;
+		gap: 0.6rem;
+	}
+
+	h1 {
+		margin-bottom: 0.25rem;
+	}
+
+	button {
+		margin-top: 0.25rem;
+	}
+
+	.sent p {
+		color: var(--ink-soft);
+	}
+
+	.providers {
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.or {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin: 0;
+		color: var(--ink-faint);
+		font-size: 0.85rem;
+	}
+
+	.or::before,
+	.or::after {
+		content: "";
+		flex: 1;
+		border-top: 1px solid var(--line);
+	}
+
+	.dev {
+		padding: 1rem;
+		border: 1px dashed var(--line-strong);
+		border-radius: var(--radius);
+		background: var(--sunk);
+	}
+
+	.dev p {
+		margin: 0;
+		color: var(--ink-soft);
+		font-size: 0.9rem;
+	}
+</style>

@@ -1,0 +1,89 @@
+import pf.Html
+
+## The front page: a welcome, and where to start. Replace it with your app's own.
+meta = { title: "Home" }
+
+view! = |_|
+	<>
+		<section class="hello">
+			<h1>Your app is running</h1>
+			<p class="lead">Signing in, sessions, mail and security headers are set up. Here is where to start.</p>
+		</section>
+		<ol class="steps">
+			<li>
+				<h2>This page</h2>
+				<p>It is <code>routes/+page.rocx</code>. Change it and save: <code>rocx dev</code> builds again and reloads the page.</p>
+			</li>
+			<li>
+				<h2>Sign in</h2>
+				<p>At <a href="/sign-in">/sign-in</a>, by a mailed link. Under <code>rocx dev</code> the mail lands in the dev mailbox, <a href="/__rocx/mail">/__rocx/mail</a>, and any address can sign in at once.</p>
+			</li>
+			<li>
+				<h2>A page for signed-in people</h2>
+				<p><a href="/account">Your account</a> is <code>routes/account/</code>: the page in <code>+page.rocx</code>, and what it reads and posts in <code>+server.roc</code>, whose <code>middleware</code> lets only signed-in people through.</p>
+			</li>
+			<li>
+				<h2>Your data</h2>
+				<p>Add a table in <code>migrations/</code> (the next file is <code>0002_….sql</code>), then read and write it with <code>Db.all!</code> and <code>Db.run!</code> in a route's <code>+server.roc</code>.</p>
+			</li>
+		</ol>
+		<p class="more">README.md says the rest: mail, the database, going live. The guide is at <a href="https://roc-solid.github.io/">roc-solid.github.io</a>.</p>
+	</>
+
+<style>
+	.hello {
+		display: grid;
+		gap: 0.5rem;
+		margin-bottom: 2rem;
+	}
+
+	.lead {
+		margin: 0;
+		color: var(--ink-soft);
+		font-size: 1.1rem;
+	}
+
+	.steps {
+		display: grid;
+		gap: 0.75rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		counter-reset: step;
+	}
+
+	.steps li {
+		position: relative;
+		padding: 1rem 1.25rem 1rem 3.5rem;
+		border: 1px solid var(--line);
+		border-radius: calc(var(--radius) + 4px);
+		background: var(--surface);
+		counter-increment: step;
+	}
+
+	.steps li::before {
+		content: counter(step);
+		position: absolute;
+		left: 1.1rem;
+		top: 1rem;
+		display: grid;
+		place-items: center;
+		width: 1.6rem;
+		height: 1.6rem;
+		border-radius: 50%;
+		background: var(--accent-soft);
+		color: var(--accent);
+		font-size: 0.85rem;
+		font-weight: 700;
+	}
+
+	.steps p {
+		margin: 0.25rem 0 0;
+		color: var(--ink-soft);
+	}
+
+	.more {
+		margin: 2rem 0 0;
+		color: var(--ink-soft);
+	}
+</style>

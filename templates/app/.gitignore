@@ -1,0 +1,10 @@
+# The installed Roc Solid this app builds with: a link rocx makes (.rocx-version says which)
+/.rocx
+# Written by rocx build: Generated/ (the routes, Api, Paths, App, Styles), and the .roc beside each
+# component's .rocx
+Generated/
+components/*.roc
+# Builds, and the database's files
+build/
+data/
+*.db*

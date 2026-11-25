@@ -1,0 +1,80 @@
+import pf.Html
+import testing.Dom
+
+## The bar across the top of every page: the app's name, linking home, and who is signed in, with
+## their account and a way to sign out; or, signed out, a way to sign in. A pure component (`view`,
+## no `!`): markup made from its props and nothing else, so its stories need no server (a dev
+## build's catalog, /__rocx/stories) and a Roc `expect` can render it (below; `rocx test` runs them).
+Nav := [].{
+	view : { name : Str, email : Str } -> Html
+	view = |{ name, email }|
+		<header class="nav">
+			<a class="brand" href="/">{name}</a>
+			{if email.is_empty() {
+				<a class="button primary" href="/sign-in">Sign in</a>
+			} else {
+				<nav class="account" aria-label="Account">
+					<a class="who" href="/account" title="Your account">{email}</a>
+					<form method="post" action="/auth/sign-out">
+						<button type="submit" class="quiet">Sign out</button>
+					</form>
+				</nav>
+			}}
+		</header>
+
+	<story name="Signed out">
+		<Nav name="Acme" email="" />
+	</story>
+
+	<story name="Signed in">
+		<Nav name="Acme" email="ada@example.com" />
+	</story>
+
+	<style>
+		.nav {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 1rem;
+			padding: 0.75rem clamp(1rem, 4vw, 2rem);
+			border-bottom: 1px solid var(--line);
+			background: var(--surface);
+		}
+
+		.brand {
+			color: var(--ink);
+			font-weight: 700;
+			letter-spacing: -0.01em;
+			text-decoration: none;
+		}
+
+		.account {
+			display: flex;
+			align-items: center;
+			gap: 0.25rem;
+			min-width: 0;
+		}
+
+		.who {
+			overflow: hidden;
+			color: var(--ink-soft);
+			font-size: 0.9rem;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		form {
+			margin: 0;
+		}
+	</style>
+}
+
+## The bar for someone signed in as `email` ("" for nobody), as a page a test reads.
+bar : Str -> Dom
+bar = |email| Dom.parse(Html.to_str(Nav.view({ name: "Acme", email: email })))
+
+expect bar("").contains(Named("link", "Sign in"))
+expect !bar("").contains(Named("button", "Sign out"))
+expect bar("ada@example.com").contains(Named("button", "Sign out"))
+expect bar("ada@example.com").get(Named("link", "ada@example.com")).map_ok(|link| link.attr("href")) == Ok(Ok("/account"))
+expect bar("ada@example.com").get(Named("link", "Acme")).map_ok(|link| link.attr("href")) == Ok(Ok("/"))

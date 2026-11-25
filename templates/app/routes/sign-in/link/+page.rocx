@@ -1,0 +1,54 @@
+import pf.Html
+import pf.Endpoint
+import pf.Router
+import pf.Server
+import auth.SignInError
+import ../../../Generated/Api
+
+## Where a mailed link lands: whom it signs in, and a button that does (posting the token to
+## packages/auth's /auth/link). Opening the link signs nobody in by itself, so a mail scanner that
+## opens every link in a message doesn't use yours up.
+meta = { title: "Sign in" }
+
+## Whom the link signs in, or why it doesn't (used, or expired: 410).
+link! : Str => Try({ email : Str }, Server.Problem)
+link! = |token| Endpoint.read!(Api.get_sign_in_link({}).with_query("token=${Server.encode_segment(token)}"))
+
+view! = |_| {
+	token = SignInError.field(Router.location!({}).query, "token")
+	<section class="link card">
+		{match link!(token) {
+			Ok(found) =>
+				<form method="post" action="/auth/link">
+					<h1>Sign in?</h1>
+					<p>This link signs in <strong>{found.email}</strong>.</p>
+					<input type="hidden" name="token" value={token} />
+					<button type="submit" class="primary">Sign in</button>
+				</form>
+			Err(_) =>
+				<div role="alert">
+					<h1>This link has expired</h1>
+					<p>A sign-in link works once, for 15 minutes. This one has been used, or its time is up.</p>
+					<p><a class="button primary" href="/sign-in">Get a new link</a></p>
+				</div>
+		}}
+	</section>
+}
+
+<style>
+	.link {
+		max-width: 26rem;
+		margin: 0 auto;
+	}
+
+	form,
+	div {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	p {
+		margin: 0;
+		color: var(--ink-soft);
+	}
+</style>
