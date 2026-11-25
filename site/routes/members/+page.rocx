@@ -1,15 +1,13 @@
 import pf.Html
 import pf.Endpoint
-import ../../Middlewares
 import ../../Generated/Api
 import ../../Generated/Paths
 import ../../Ui/Note
 import ../../Ui/Button
 import ../../Ui/PageHero
 
-## Members only: `Middlewares.member` runs before this page, and hands on who the member is.
-middleware = Middlewares.member
-
+## Members only: `Middlewares.member`, which `+server.roc` names, runs before this page too (a page
+## that names no middleware runs behind its `+server.roc`'s), and hands on who the member is.
 meta = {
 	title: "Members",
 	description: "A page behind middleware: only members see it.",

@@ -38,7 +38,7 @@ The app reads these environment variables:
 |---|---|
 | `ADMIN_PASSWORD` | The admin's password. Without it, nobody can sign in. A session lasts 12 hours, and goes on while the admin uses it. |
 | `PUBLIC_URL` | Where the app is (`https://status.example.com`, or `--public-url`). It is used for the links in emails and for the checks the app makes of itself. Without it, the app uses the address the server listens on. |
-| `SMTP_URL` | Where alerts are sent (`smtp://user:password@host:587?tls=required`). Without it, they are kept for the dev mailbox. |
+| `SMTP_URL` | Where alerts are sent (`smtp://user:password@host:587?tls=required`). Without it, they are kept for the dev mailbox under `--dev`, and without `--dev` the server doesn't start. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | An OpenTelemetry collector for the metrics (`http://localhost:4318`). Without it, nothing is measured. |
 
 ### Build it as it would ship
@@ -55,7 +55,7 @@ cd examples/uptime && ADMIN_PASSWORD=acme-demo build/uptime --port 8080 \
   --static build/client/static --static static
 ```
 
-Without `--dev`, the dev mailbox isn't served, so set `SMTP_URL` to see the alerts.
+Without `--dev` the server needs `SMTP_URL`, to send the alerts: it doesn't start without one.
 
 ## A tour
 

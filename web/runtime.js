@@ -437,6 +437,64 @@ function inertScript() {
 	return document.importNode(template.content.firstChild, true);
 }
 
+/** Whether markup may have `name` (D-079), a byte loop (it runs for every element): an ASCII
+ * letter, then letters, digits and `-`; an attribute's `_`, `.` and `:` too, and never `on…`, an
+ * inline handler, which runs its value (rocx's handlers are `on:click`). signals.rs's `plain_tag`
+ * and `plain_attribute`, and `Html.to_str`'s, are the same rule. */
+function plainName(name, attribute) {
+	const length = name.length;
+	for (let at = 0; at < length; at++) {
+		const c = name.charCodeAt(at) | 32;
+		if (c >= 97 && c <= 122) continue;
+		const code = name.charCodeAt(at);
+		if (at === 0 || !((code >= 48 && code <= 57) || code === 45 || (attribute && (code === 95 || code === 46 || code === 58)))) return false;
+	}
+	return length > 0 && !(attribute && length >= 2 && (name.charCodeAt(0) | 32) === 111 && (name.charCodeAt(1) | 32) === 110);
+}
+
+/** Attributes that name themselves (the others are handlers, keys, classes and styles). */
+const NAMED = new Set(["v", "o", "vo", "oo", "f", "fo"]);
+/** The names refused, each said once. */
+const refusedNames = new Set();
+
+/**
+ * An element's markup as it may be written (D-079): `null` when it isn't (its tag isn't a plain
+ * name, or it is a `<script>` that isn't as a `.rocx` file has it, its text as written, `raw`);
+ * else `node`, or a copy without the attributes whose names it can't have. Each refused name is
+ * said once on the console; `runtime`, when it is building, lets go of a refused computed
+ * attribute's box. Markup built by hand in Roc (`Html.element`, `Html.attr`) can name anything.
+ */
+function writable(node, runtime) {
+	const tag = node.tag;
+	if (!plainName(tag, false) || (isScript(tag) && !(node.c.length && node.c.every((part) => part.t === "raw")))) {
+		refuse(`<${tag}>`);
+		return null;
+	}
+	let kept = null;
+	for (let at = 0; at < node.a.length; at++) {
+		const attribute = node.a[at];
+		if (NAMED.has(attribute[0]) && !plainName(attribute[1], true)) {
+			kept ??= node.a.slice(0, at);
+			refuse(`${attribute[1]} on <${tag}>`);
+			if (runtime && attribute[0].length === 2) runtime.releaseKept(attribute[2]);
+		} else if (kept) kept.push(attribute);
+	}
+	return kept ? { ...node, a: kept } : node;
+}
+
+/** Whether a tag is `script`, in any case, without making a string. */
+function isScript(tag) {
+	if (tag.length !== 6) return false;
+	for (let at = 0; at < 6; at++) if ((tag.charCodeAt(at) | 32) !== "script".charCodeAt(at)) return false;
+	return true;
+}
+
+function refuse(what) {
+	if (refusedNames.has(what)) return;
+	refusedNames.add(what);
+	console.warn(`rocx: ${what} isn't written: a page can't have that name (D-079). Markup built by hand (Html.element, Html.attr) names only plain elements and attributes, never an inline handler (on…) or a <script> of data`);
+}
+
 const RANGES = new Set(["app", "html", "list", "loading", "errored", "x", "show", "for", "row", "fallback", "nohydration"]);
 /** The elements whose content the HTML parser reads as text (RCDATA): the server writes no hole's
  * comments inside one (they would show), and hydrating binds its holes to its text. */
@@ -4693,7 +4751,9 @@ export class Runtime {
 		}
 	}
 
-	element(node, owner, scope) {
+	element(given, owner, scope) {
+		const node = writable(given, this);
+		if (!node) return document.createDocumentFragment();
 		const element = node.tag === "script" ? inertScript() : node.tag === "svg" || scope.svg ? document.createElementNS(SVG, node.tag) : document.createElement(node.tag);
 		// Its classes in one `class`, first, as the server writes them.
 		const classes = [];
@@ -4912,6 +4972,9 @@ export class Runtime {
 				for (const child of node.c) this.adopt(child, owner, scope, cursor);
 				return;
 			case "e": {
+				// What the server didn't write (D-079) isn't there to adopt.
+				node = writable(node, this);
+				if (!node) return;
 				// The parser makes the `<head>` a document leaves out: an empty one is passed over.
 				if (node.tag === "body" && cursor.top && cursor.node?.localName === "head" && !cursor.node.firstChild) cursor.node = cursor.node.nextSibling;
 				const element = cursor.take((found) => found.nodeType === 1 && found.localName === node.tag, `<${node.tag}>`);
@@ -5824,6 +5887,8 @@ export class Runtime {
 				if (scope.region && node.a.length) throw new Error(inRegion(node.to === "window" ? "Window" : "Document", node.a[0][1]));
 				return "";
 			case "e": {
+				node = writable(node, null);
+				if (!node) return "";
 				const classes = [];
 				const attributes = [];
 				const styles = [];

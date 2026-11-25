@@ -75,6 +75,7 @@ if (!skip) {
 		["docs", join(out, "app-client", "docs_app.roc"), "size"],
 		["alone", join(here, "app", "alone_app.roc"), "dev"],
 		["raw", join(here, "app", "raw_app.roc"), "dev"],
+		["names", join(here, "app", "names_app.roc"), "dev"],
 		["document-server", join(here, "app", "document_app.roc"), "dev"],
 		["document", join(out, "app-client", "document_app.roc"), "size"],
 		["wrapped-server", join(here, "app", "wrapped_app.roc"), "dev"],
@@ -1920,6 +1921,60 @@ window.mounted = true;
 		assert.equal(await other.eval("window.ran ?? null"), null, "nor does one it mounts");
 		assert.deepEqual(other.errors, []);
 		assert.deepEqual(other.console, []);
+	} finally {
+		await site.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+// ---- Names markup can't have (D-079): never written, by the server's walker or the browser's ----
+
+test("names markup can't have (D-079): a tag that isn't a plain name, an inline handler, an attribute name that would end the tag, a <script> of data are never written, rendered, hydrated or built; each said once on the console; what is around them works", { skip }, async () => {
+	const wasm = readFileSync(join(out, "names.wasm"));
+	const server = await Runtime.load(wasm);
+	const warned = [];
+	const warn = console.warn;
+	console.warn = (message) => warned.push(message);
+	let html;
+	try {
+		html = server.renderToString({ path: "/" }).html;
+	} finally {
+		console.warn = warn;
+	}
+	const expected = '<!--app--><section class="names"><p class="kept" data-ok="1" data-said="alert(2)">plain</p><custom-el xml:lang="en">after</custom-el><button class="say">Say</button></section><!--/app-->';
+	assert.equal(html, expected);
+	const refused = ["onclick on <p>", "x onmouseover=alert(1) on <p>", "ONLOAD on <p>", "onfocus on <p>", 'a"b on <p>', "<img src=x onerror=alert(1)>", "<script>", "<SCRIPT>"];
+	const said = (messages) => messages.map((message) => /^rocx: (.+) isn't written: a page can't have that name \(D-079\)/.exec(message)?.[1] ?? message);
+	assert.deepEqual(said(warned), refused, "each said once, by name");
+	const dir = mkdtempSync(join(tmpdir(), "rocx-names-"));
+	cpSync(join(web, "runtime.js"), join(dir, "runtime.js"));
+	writeFileSync(join(dir, "names.wasm"), wasm);
+	const hydrated = `<!doctype html><html><body><div id="app">${html}</div><script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/names.wasm"));
+window.runtime.hydrate(document.getElementById("app"));
+window.hydrated = true;
+</script></body></html>`;
+	const mounted = `<!doctype html><html><body><div id="app"></div><script type="module">
+import { Runtime } from "/runtime.js";
+window.runtime = await Runtime.load(fetch("/names.wasm"));
+window.runtime.mount(document.getElementById("app"));
+window.mounted = true;
+</script></body></html>`;
+	const site = await serve(dir, (path) => (path === "/" ? hydrated : path === "/mount" ? mounted : null));
+	try {
+		for (const [path, ready] of [["/", "window.hydrated === true"], ["/mount", "window.mounted === true"]]) {
+			const tab = await browser.page();
+			await tab.goto(`${site.url}${path}`);
+			await tab.wait(ready, 3000);
+			assert.deepEqual(tab.errors, [], `${path}: nothing thrown (a DOM name with a space in it would be)`);
+			assert.deepEqual(said(tab.console.map((entry) => entry.text)), refused, `${path}: no mismatch; each refused name said once`);
+			assert.equal(await tab.eval("document.getElementById('app').innerHTML"), html, `${path}: the server's markup`);
+			await tab.click(".kept");
+			await tab.click(".say");
+			await tab.wait("document.querySelector('.kept').dataset.said === 'window.said = 1'");
+			assert.deepEqual(await tab.eval("[window.clicked ?? null, window.said ?? null, document.querySelector('.kept').getAttribute('onload'), document.querySelectorAll('script').length]"), [null, null, null, 1], `${path}: no handler, no script of data; the computed one refused stays out as its signal changes`);
+		}
 	} finally {
 		await site.close();
 		rmSync(dir, { recursive: true, force: true });

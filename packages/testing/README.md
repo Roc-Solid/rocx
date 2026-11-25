@@ -132,7 +132,8 @@ and gets the endpoint's answer directly.
 
 `mail()` and `waitForMail` read the dev mailbox's JSON, `/__rocx/mail.json`, which the email plugin
 (packages/email) serves under `--debug`. When no `SMTP_URL` is set, `Email.send!` keeps each message
-there instead of sending it: the last 100, oldest first, each with an `id`. They live in the
+there instead of sending it (under `--debug` or `--dev`; a server with neither doesn't start without
+one): the last 100, oldest first, each with an `id`. They live in the
 server's memory (`Kv`), with or without a database, so each server a test starts begins with an
 empty mailbox, and a restart forgets it.
 

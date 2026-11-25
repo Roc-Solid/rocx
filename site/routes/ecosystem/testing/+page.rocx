@@ -222,7 +222,8 @@ view! = |_|
 		<Code title={Sources.testing_node_form.file} source={Sources.testing_node_form.rocx} numbers={Bool.False} />
 		<p>
 			When no <code>SMTP_URL</code> is set, the <a href={"${Paths.ecosystem_email}#mailbox"}>email
-			plugin</a> keeps the mail it would send instead of sending it: the last 100 messages, in the server's
+			plugin</a> keeps the mail it would send instead of sending it, under <code>--debug</code> (which
+			<code>startServer</code> passes) as under <code>--dev</code>: the last 100 messages, in the server's
 			memory. Every server a test starts therefore begins with an empty mailbox. <code>app.mail()</code>
 			reads the messages, <code>waitForMail</code> waits for one that matches, and <code>links</code>
 			finds the links in a message:

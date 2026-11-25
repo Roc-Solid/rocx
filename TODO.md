@@ -56,22 +56,12 @@ When an item lands, delete its line here in the same commit.
   drops every `*.mjs`), so an installed rocx has only `npx web-push generate-vapid-keys`. Ship the
   script, or add `P256.generate!` (one hosted function) and have the push plugin print a fresh pair
   when the keys are missing under `--dev`?
-- **Found by the docs pass (2026-11-24), each a choice for the user:**
-  - **Names in hand-written Roc markup aren't checked.** `Html.element`, `Html.void` and
-    `Html.attr` take any `Str` as a tag or attribute name, and the server's renderer writes names
-    as they are (`server/host/src/signals.rs`, around 544–585), so Roc that builds markup by hand
-    can make `Html.attr("onclick", data)` or a `<script>`. `.rocx` files are safe (names come from
-    the file). Refuse or escape names that aren't plain tag and attribute names?
-  - **`Email.send!` with no `SMTP_URL` answers `Ok`, in production too,** and only keeps the
-    message (the docs now warn). Fail without `SMTP_URL` outside `--dev`?
 
 ## Framework work, decided but not built
 
-- **A page doesn't take its route's middleware** (found writing `rocx new`'s template, 2026-11-25):
-  `routes/account/+server.roc` names `middleware = Middlewares.signed_in`, but its `+page.rocx`
-  must name it too, or a signed-out visit renders the page, whose own read gets the 401, and shows
-  the error page instead of going to sign in. A page could take its `+server.roc`'s middleware
-  when it names none, or a 401 from `Auth.signed_out!` during a render could become the redirect.
+- **D-079's names on the phone.** native/core's engine builds what hand-built markup names as it is.
+  It runs no script and hides `<script>`, so nothing runs from a name there, but for parity with the
+  web it could leave out the same names (and say so on its log).
 
 - **D-070's leftovers.** `{=x}` is the same hole as `{x}`, kept for old files: `rocx fmt` could drop
   the `=` and rocx then refuse it. `{...x}` is still a list's own hole: a `List` encodes through a

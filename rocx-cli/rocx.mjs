@@ -100,6 +100,7 @@ export const routeModule = (code, where) => call("routeModule", code, where);
 export const hasPages = (table) => table.pages.length > 0 || Boolean(table.error);
 export const viewProblems = (table, sources) => call("viewProblems", table, plain(sources));
 export const metaProblems = (table, sources) => call("metaProblems", table, plain(sources));
+export const middlewareProblems = (table, sources) => call("middlewareProblems", table, plain(sources));
 export const routesModule = (table, { sources, stories = null }) => call("routesModule", table, { sources: plain(sources), stories });
 export const apiModule = (table, { sources, client = false, tags = [], title = "app" }) => call("apiModule", table, { sources: plain(sources), client, tags, title });
 export const handlersModule = (table, { sources }) => call("handlersModule", table, { sources: plain(sources) });

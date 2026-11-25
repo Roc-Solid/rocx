@@ -3,14 +3,12 @@ import pf.Endpoint
 import pf.Server
 import pf.Router exposing [use_submission!]
 import ../Board
-import ../Middlewares
 import ../Generated/Api
 import ../Ui/Avatar
 
-## The front page: every board, and a form for a new one. For members only (its middleware): someone
-## who hasn't joined is sent to join first.
-middleware = Middlewares.member
-
+## The front page: every board, and a form for a new one. For members only (the middleware
+## `+server.roc` names, which a page that names none runs behind): someone who hasn't joined is
+## sent to join first.
 meta = { title: "Board" }
 
 ## Who is asking, and every board (`GET /`), its type said here too (the endpoint's own is in

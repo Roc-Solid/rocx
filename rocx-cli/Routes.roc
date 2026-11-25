@@ -5,7 +5,8 @@
 ## `respond!`: every method the others don't, with a `Server.Response` of its own; `channel!`: a
 ## channel, which pages subscribe to over the tab's one stream, `/rocx/live`, with its hooks
 ## `receive!`, `on_open!` and `on_close!`), and `+error.rocx` is what a path nothing has shows. A
-## route file names its `middleware`, which runs around it. A directory may have dots after its
+## route file names its `middleware`, which runs around it; a page that names none runs behind the
+## one the `+server.roc` beside it names (D-079). A directory may have dots after its
 ## first character, for a file's name (`routes/sitemap.xml/+server.roc` answers `/sitemap.xml`; its
 ## names are `SitemapXmlServer` and `sitemap_xml`). Directories that start with a dot are skipped,
 ## but for `.well-known` (`routes/.well-known/openid-configuration/+server.roc`).
@@ -165,6 +166,47 @@ Routes := [].{
 	## Whether the file names a middleware.
 	guards : List(Source), Str -> Bool
 	guards = |sources, file| Routes.filled(Routes.defs_of(sources, file).middleware)
+
+	## The middleware a page runs behind (D-079): the page's own, when it names one; else the one the
+	## `+server.roc` in its directory names, which guards the page's own data, so the page can't
+	## render for someone its data refuses. As its module (`MembersServer`) and as written. A
+	## layout's, or a parent directory's, never counts.
+	page_guard : Table, List(Source), Entry -> [Some({ module_name : Str, said : Str }), None]
+	page_guard = |table, sources, page| {
+		own = Routes.defs_of(sources, page.file).middleware
+		if Routes.filled(own) {
+			Some({ module_name: page.module_name, said: Routes.or_empty(own) })
+		} else {
+			match table.servers.find_first(|server| server.parts == page.parts) {
+				Ok(server) if Routes.guards(sources, server.file) => Some({ module_name: server.module_name, said: Routes.or_empty(Routes.defs_of(sources, server.file).middleware) })
+				_ => None
+			}
+		}
+	}
+
+	## Whether a page runs behind a middleware, its own or its directory's (`page_guard`).
+	page_guarded : Table, List(Source), Entry -> Bool
+	page_guarded = |table, sources, page|
+		match Routes.page_guard(table, sources, page) {
+			Some(_) => Bool.True
+			None => Bool.False
+		}
+
+	## A layout or the error page that names a middleware, a line each: nothing runs it, so it would
+	## guard nothing (D-079).
+	middleware_problems : Table, List(Source) -> List(Str)
+	middleware_problems = |table, sources| {
+		errors =
+			match table.error {
+				Some(error) => [error.file]
+				None => []
+			}
+		table.layouts
+			.map(|layout| layout.file)
+			.concat(errors)
+			.keep_if(|file| Routes.guards(sources, file))
+			.map(|file| "routes/${file}: names a middleware, which nothing runs: a layout's or the error page's guards no page. Name it in the +server.roc beside each page (a page takes its directory's), or in the page")
+	}
 
 	## Whether the file defines a channel.
 	has_channel : List(Source), Str -> Bool
@@ -1480,7 +1522,11 @@ Routes := [].{
 	routes_module : Table, List(Source), [Some(List(Placed)), None] -> Str
 	routes_module = |table, sources, stories| {
 		pages = Routes.has_pages(table)
-		page_answer = |entry| if (Routes.guards(sources, entry.file)) "Middleware.run!(${entry.module_name}.middleware, request, context, |_passed, _handed| Routes.page(200))" else "Routes.page(200)"
+		page_answer = |entry|
+			match Routes.page_guard(table, sources, entry) {
+				Some(guard) => "Middleware.run!(${guard.module_name}.middleware, request, context, |_passed, _handed| Routes.page(200))"
+				None => "Routes.page(200)"
+			}
 		endpoint = |at, method| Routes.guarded(sources, Routes.server_of(at), |request, context| "Endpoint.${if (method == "events!") "stream!" else "respond!"}(Handlers.${Routes.api_name(method, at.name)}(params), ${request}, ${context})")
 		branch = |at| {
 			condition = Routes.matched_by(at.parts, at.params)
@@ -1688,8 +1734,9 @@ Routes := [].{
 					"\t## The answer to `request` (a `Server.Request`): a page, in its layouts, for a browser's GET; an",
 					"\t## endpoint's answer for its method; a channel's, for the host's asks about its subscriptions",
 					"\t## (`channel!`); the error page (404) where nothing is. A file that names its `middleware` has it",
-					"\t## run around its page, endpoints and channel. `context` is what the app's middleware handed on:",
-					"\t## each page, layout, endpoint and channel is given it (or what its own middleware hands on).",
+					"\t## run around its page, endpoints and channel; a page that names none runs behind the one its",
+					"\t## +server.roc names. `context` is what the app's middleware handed on: each page, layout,",
+					"\t## endpoint and channel is given it (or what its own middleware hands on).",
 					"\trespond! = |request, ${context_name}| {",
 					"\t\tsegments = request.path.split_on(\"/\").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)",
 					"\t\tmethod = if (request.method == \"HEAD\") \"GET\" else request.method",
@@ -2961,7 +3008,14 @@ Routes := [].{
 			|at| {
 				page_rows =
 					match at.page {
-						Some(page) => [{ method: "GET", path: at.path, file: "routes/${page.file}", middleware: Routes.defs_of(sources, page.file).middleware }]
+						Some(page) => {
+							middleware =
+								match Routes.page_guard(table, sources, page) {
+									Some(guard) => Some(guard.said)
+									None => None
+								}
+							[{ method: "GET", path: at.path, file: "routes/${page.file}", middleware }]
+						}
 						None => []
 					}
 				server_rows =
@@ -3246,6 +3300,10 @@ Routes := [].{
 			"metaProblems" => {
 				table = Routes.table_from(arg(0))?
 				Ok(Value.strs(Routes.meta_problems(table, Routes.sources_from(arg(1)))))
+			}
+			"middlewareProblems" => {
+				table = Routes.table_from(arg(0))?
+				Ok(Value.strs(Routes.middleware_problems(table, Routes.sources_from(arg(1)))))
 			}
 			"routesModule" => {
 				table = Routes.table_from(arg(0))?

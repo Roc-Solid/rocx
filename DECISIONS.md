@@ -4773,6 +4773,81 @@ be made on each machine (rocx does it). A release needs both a Mac (its host) an
 
 **Reversible:** yes: a clone still works as before; the install is files under `~/.rocx`.
 
+## D-079 Safe by default: a page's middleware, email with no SMTP server, names in hand-built markup
+
+**Status.** Built (2026-11-25), before the first public release. The user decided each direction:
+a page takes its route's middleware (found writing `rocx new`'s template), and the docs pass's two
+questions (TODO.md, 2026-11-24): email fails without `SMTP_URL` outside `--dev`, and names that
+aren't plain are never written.
+
+**Context.** Three defaults were the unsafe way round, each found by writing a real page.
+
+- The template's `routes/account/+server.roc` named `middleware = Middlewares.signed_in`, and its
+  `+page.rocx` had to say it again: a page that forgot rendered for anyone, its own read got the
+  401, and a signed-out visitor saw the error page instead of going to sign in.
+- `Email.send!` with no `SMTP_URL` answered `Ok` and kept the message for the dev mailbox, on a
+  deployed server too: every sign-in link was lost, and nothing said so but a line at info.
+- `Html.element`, `Html.void` and `Html.attr` take any `Str` as a name, and the server's renderer
+  wrote it as it was, so Roc that builds markup by hand from data could write
+  `<img src=x onerror=…>`, an `onclick`, or a `<script>` (`.rocx` files name only what the file
+  says, and the build refuses an inline handler there).
+
+**Decision.**
+
+- **A page that names no middleware runs behind the one its directory's `+server.roc` names**
+  (`Routes.page_guard`): one line guards the page and the data it reads, so the page can't render
+  for someone its data refuses. A page that names its own keeps it. Only the page's own directory
+  counts: a parent's `+server.roc` guards nothing below it (it has no notion of the paths under it,
+  and none was wanted). `rocx build` refuses `middleware` in a layout or the error page, which
+  nothing runs (`middleware_problems`), rather than ignore it. `rocx routes`, the static build's
+  list of pages it leaves out, and the docs' route tree say which a page runs behind. The template,
+  the examples, the docs site and test/e2e's app dropped their pages' duplicated lines.
+- **With no SMTP server, email is kept only where the dev mailbox can be read: `--dev`, and
+  `--debug`**, which tests start a server with (packages/testing's `startServer` passes it; it
+  serves the mailbox's JSON already; a deployed server never runs with its debug paths). Anywhere
+  else the email plugin's start fails, so the server doesn't start: `rocx server: can't start` with
+  `email: SMTP_URL isn't set, so email can't be sent: set it where the server runs …`. A plugin's
+  `needs: [Env("SMTP_URL")]` would refuse `--dev` too, and a `check` only warns once the server
+  runs; a start's `Err` is how the platform refuses to start. Without the plugin, `send!` answers
+  `EmailErr` saying the same. A package tells `--debug` by `Env.debug!` (new: Roc over the host's
+  existing `setting`, beside `Env.dev!`; no host change).
+- **A name markup can't have is never written**, by every renderer that writes or builds markup:
+  - a tag is an ASCII letter, then letters, digits and `-`;
+  - an attribute's name (`attr`, `optional`, `flag` and the computed ones) an ASCII letter, then
+    letters, digits, `-`, `_`, `.` and `:`, and never `on…` (an inline handler; rocx's handlers are
+    `on:click`, Roc, never text);
+  - a `<script>` is written only as a `.rocx` file has it: its children all its text as written
+    (`Html.source_text`, which `rocx lint` refuses in hand-written Roc). One of text, of a hole, or
+    of nothing but a `src` is left out. The transpiler gives a `<script … />` an empty
+    `source_text`, so a file's self-closed script stays the file's.
+
+  What isn't plain is left out (the element with what is inside it, or the attribute); a page
+  never fails for a name. The server's walker (`signals.rs`: `plain_tag`, `plain_attribute`,
+  `written_element`) logs one warning a render, `rocx server: markup named what a page can't have,
+  which wasn't written`, with the page's `path` and the `names`. The runtime (`writable`, for
+  building, hydrating and `renderToString`) warns on the console once a name, and lets go of a
+  refused computed attribute's box. `Html.to_str` leaves them out quietly (it is pure). The checks
+  are byte loops, as they run for every element. The phone's engine (native/core) is unchanged: it
+  turns markup into native views, hides `<script>` and runs no attribute (TODO.md).
+
+**Why.** A newcomer's app should be safe without knowing where the traps are: a forgotten line
+shouldn't open a page, a missing variable shouldn't lose mail in silence, and data shouldn't name
+markup. Each check is where the mistake would surface anyway (the route table, the plugin's start,
+the renderers), and each says what is wrong. Not in `Html.serialize!`: the web host has no log to
+say what was dropped, and the browser's renderer would still have to keep `createElement` from
+throwing on a name with a space.
+
+**Costs.** A page that should be public beside a `+server.roc` with a guard must name its own
+middleware, and a `+server.roc`'s middleware that guards only some methods must look at the method
+(as notes' `posts_only` does). An app deployed without `SMTP_URL` that counted on `Ok` no longer
+starts. `--debug` keeps mail too, so it must stay off deployed servers (as it should: it serves
+debug paths). A byte loop per element and per named attribute in each renderer. Names a browser
+would take but the rule doesn't (`@click`, non-ASCII) are left out. In the browser, the holes inside
+an element left out are never run, and their boxes are kept until the page goes.
+
+**Reversible:** yes: each is a few functions (`page_guard`, the plugin's start, the renderers'
+checks); taking one out brings the old behaviour back.
+
 ## D-080 P-256 and AES-128-GCM in the server's host, so Web Push sends
 
 **Status.** Built (2026-11-25): packages/push's proposal 1 (PROPOSALS.md there), leaner.

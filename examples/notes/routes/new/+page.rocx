@@ -2,15 +2,12 @@ import pf.Html
 import pf.Endpoint
 import pf.Server
 import pf.Router exposing [use_submission!]
-import ../../Middlewares
 import ../../Pages
 import ../../Generated/Api
 import ../../Ui/Editor
 import ../../Ui/Topbar
 
 ## A new note: the editor, in a form that posts to `/new`, which saves it and goes on to it.
-middleware = Middlewares.signed_in
-
 meta = { title: "New note · Notes" }
 
 blank! : {} => Pages.Blank

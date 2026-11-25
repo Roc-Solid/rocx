@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.Server
 import pf.Title
 import pf.Router exposing [use_submission!]
-import ../../../Middlewares
 import ../../../Note
 import ../../../Pages
 import ../../../Generated/Api
@@ -12,8 +11,6 @@ import ../../../Ui/Topbar
 
 ## A note: its Markdown as it reads, its tags, and what can be done with it. The buttons are forms
 ## posting to `/notes/<id>`; with JavaScript the page stays, and reads the note again after each.
-middleware = Middlewares.signed_in
-
 meta = { title: "Note · Notes" }
 
 ## A note that isn't there, or isn't yours (its endpoint refuses both alike, so nobody learns which

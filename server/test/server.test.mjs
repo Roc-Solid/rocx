@@ -1554,7 +1554,8 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 	}
 
 	// With neither --dev nor --debug, the app answers those paths; with --debug alone, only the JSON.
-	const plain = await start([], app, {}, { debug: false });
+	// (Without either, the email plugin wants an SMTP server: one that isn't there will do here.)
+	const plain = await start([], app, { SMTP_URL: "smtp://127.0.0.1:9" }, { debug: false });
 	try {
 		for (const path of ["/__rocx/mail", "/__rocx/mail.json", `/__rocx/mail/1`]) {
 			const answer = await plain.get(path);
@@ -1571,6 +1572,24 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 		assert.equal((await debug.get("/__rocx/mail/1")).status, 404);
 	} finally {
 		await debug.stop();
+	}
+});
+
+test("email: with no SMTP_URL, a server with neither --dev nor --debug doesn't start, saying so, rather than lose every email (D-079); under --dev it keeps them", { skip }, async () => {
+	const refused = await start([], app, {}, { debug: false }).then(
+		async (started) => {
+			await started.stop();
+			assert.fail("a server that would lose its email started");
+		},
+		(error) => error.message,
+	);
+	assert.match(refused, /email: SMTP_URL isn't set, so email can't be sent: set it where the server runs/);
+	const dev = await start(["--dev"], app, {}, { debug: false });
+	try {
+		assert.equal(await dev.text(`/mail?to=ada@example.com&run=${run}dev`, { method: "POST", body: "Hi" }), "sent");
+		assert.ok(JSON.parse(await dev.text("/__rocx/mail.json")).some((mail) => mail.subject === `Hello ${run}dev`), "kept for the dev mailbox");
+	} finally {
+		await dev.stop();
 	}
 });
 
@@ -3800,6 +3819,22 @@ test("pages of components: a hole in <title> or <textarea> (RCDATA, read as text
 		await text("/page-rcdata"),
 		`<!doctype html><html><head><title>2 notes</title></head><body><textarea>&lt;b&gt;2&lt;/b&gt;</textarea><p><!--x-->2<!--/x--></p>${scripts("[]")}</body></html>`,
 	);
+});
+
+test("pages of components: a name markup can't have is never written (D-079): a tag that isn't a plain name, an inline handler, an attribute name that would end the tag, a <script> made of data; the page renders around them, says them on the log, and holds nothing after", { skip }, async () => {
+	assert.equal(
+		await text("/page-names"),
+		`<!doctype html><html><body><p class="kept" data-ok="1">plain</p><script type="module">window.ok = 1</script><custom-el xml:lang="en" aria-label="fine">after</custom-el>${scripts("[]")}</body></html>`,
+	);
+	await logsEvent({
+		level: "warn",
+		msg: "rocx server: markup named what a page can't have, which wasn't written",
+		path: "/page-names",
+		names: 'onclick on <p>, x onmouseover=alert(1) on <p>, ONLOAD on <p>, onfocus on <p>, a"b on <p>, x>y on <p>, <img src=x onerror=alert(1)>, <svg/onload=alert(1)>, <script>, <SCRIPT>',
+	});
+	const before = await settled();
+	for (let i = 0; i < 20; i++) await text("/page-names");
+	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
 
 test("pages of components: a <NoHydration> is static markup between its markers, with none inside; what it reads isn't recorded; a handler inside is refused", { skip }, async () => {

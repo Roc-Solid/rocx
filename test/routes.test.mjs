@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { build } from "../rocx-cli/rocx.mjs";
-import { actorsIn, apiModule, appModule, clientMainModule, contractProblems, definitions, findRouteFiles, handlersModule, jobsIn, matches, metaProblems, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../rocx-cli/rocx.mjs";
+import { actorsIn, apiModule, appModule, clientMainModule, contractProblems, definitions, findRouteFiles, handlersModule, jobsIn, matches, metaProblems, middlewareProblems, migrationsIn, pathsModule, rootModule, routeList, routeModule, routesModule, routesTable, routeTable, tagNames, viewProblems } from "../rocx-cli/rocx.mjs";
 
 const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/+page.rocx", "blog/[slug]/+page.rocx", "blog/[slug]/+server.rocx", "blog/new/+page.rocx", "getting-started/+page.rocx", "feed/+server.roc"];
 
@@ -142,8 +142,9 @@ test("routes: Routes answers a request: a page (Root's) for a browser's GET; an 
 	const routes = routesModule(table, { sources });
 	assert.match(routes, /if \(segments == \["blog", "new"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogNewPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)/, "a page's middleware, before Root renders it");
 	assert.match(routes, /else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}/);
-	// A page and endpoints at one path: a GET a browser sends is the page's.
-	assert.match(routes, /if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.get_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.put_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET", "PUT"\]\)/);
+	// A page and endpoints at one path: a GET a browser sends is the page's, behind the +server's
+	// middleware, since the page names none (D-079).
+	assert.match(routes, /if \(method == "GET" and wants_html\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.get_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.put_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET", "PUT"\]\)/);
 	assert.match(routes, /if \(segments == \["feed"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Handlers\.get_feed\(params\), request, context\)/, "an endpoint with no page, and no middleware of its own");
 	assert.match(routes, /if \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)/);
 	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Handlers\nimport Root\n/m, "the platform's modules; each endpoint with its handler (Handlers); no Html: no page is rendered here");
@@ -152,7 +153,7 @@ test("routes: Routes answers a request: a page (Root's) for a browser's GET; an 
 	assert.doesNotMatch(routes, /^import FeedServer$/m);
 	assert.deepEqual(
 		routeList(table, sources).map((row) => Object.values(row).join(" ")),
-		["GET / routes/+page.rocx ", "GET /blog routes/blog/+page.rocx ", "GET /blog/[slug] routes/blog/[slug]/+page.rocx ", "GET /blog/[slug] routes/blog/[slug]/+server.rocx Guards.member", "PUT /blog/[slug] routes/blog/[slug]/+server.rocx Guards.member", "GET /blog/new routes/blog/new/+page.rocx Guards.writer", "GET /feed routes/feed/+server.roc ", "GET /getting-started routes/getting-started/+page.rocx ", "* (anything else) routes/+error.rocx "],
+		["GET / routes/+page.rocx ", "GET /blog routes/blog/+page.rocx ", "GET /blog/[slug] routes/blog/[slug]/+page.rocx Guards.member", "GET /blog/[slug] routes/blog/[slug]/+server.rocx Guards.member", "PUT /blog/[slug] routes/blog/[slug]/+server.rocx Guards.member", "GET /blog/new routes/blog/new/+page.rocx Guards.writer", "GET /feed routes/feed/+server.roc ", "GET /getting-started routes/getting-started/+page.rocx ", "* (anything else) routes/+error.rocx "],
 	);
 	const paths = pathsModule(table);
 	assert.match(paths, /^import pf\.Server$/m);
@@ -375,6 +376,41 @@ test("Routes.pattern: the route that answers a path, as its directory names it, 
 	assert.match(pattern, /\t\t\} else \{\n\t\t\t""\n\t\t\}\n\t\}/, "nothing answers: no route");
 	assert.doesNotMatch(routes, /rocx\/call/, "no server functions, no call routes (D-023)");
 	assert.match(routesModule(routeTable([]), { sources: new Map() }), /\tpattern = \|_path\| ""\n/, "no routes: none, and no unused variable");
+});
+
+test("routes: a page that names no middleware runs behind its +server's; its own wins; a parent's, a layout's and the error page's never count (D-079)", () => {
+	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "account/+page.rocx", "account/+server.roc", "account/edit/+page.rocx", "admin/+page.rocx", "admin/+server.roc", "open/+page.rocx", "open/+server.roc"];
+	const table = routeTable(files);
+	const sources = new Map(
+		files.map((file) => {
+			const defs = {
+				"account/+server.roc": { methods: ["get!"], middleware: "Middlewares.signed_in" },
+				"admin/+page.rocx": { middleware: "Middlewares.admin" },
+				"admin/+server.roc": { methods: ["get!"], middleware: "Middlewares.signed_in" },
+				"open/+server.roc": { methods: ["post!"] },
+			}[file];
+			return [file, component(defs ?? {})];
+		}),
+	);
+	const routes = routesModule(table, { sources });
+	const pageAt = (segments) => new RegExp(`if \\(segments == \\[${segments}\\]\\) \\{\\n(?:\\t\\t\\tparams = \\{\\}\\n)?\\t\\t\\tif \\(method == "GET"(?: and wants_html)?\\) \\{\\n\\t\\t\\t\\t(.+)\\n`);
+	assert.equal(pageAt('"account"').exec(routes)?.[1], "Middleware.run!(AccountServer.middleware, request, context, |_passed, _handed| Routes.page(200))", "its directory's +server.roc's");
+	assert.equal(pageAt('"admin"').exec(routes)?.[1], "Middleware.run!(AdminPage.middleware, request, context, |_passed, _handed| Routes.page(200))", "its own, over the +server.roc's");
+	assert.equal(pageAt('"account", "edit"').exec(routes)?.[1], "Routes.page(200)", "a parent directory's doesn't count");
+	assert.equal(pageAt('"open"').exec(routes)?.[1], "Routes.page(200)", "a +server.roc that names none");
+	assert.deepEqual(
+		routeList(table, sources).filter((row) => row.method === "GET").map((row) => `${row.path} ${row.file} ${row.middleware ?? "-"}`),
+		["/ routes/+page.rocx -", "/account routes/account/+page.rocx Middlewares.signed_in", "/account routes/account/+server.roc Middlewares.signed_in", "/account/edit routes/account/edit/+page.rocx -", "/admin routes/admin/+page.rocx Middlewares.admin", "/admin routes/admin/+server.roc Middlewares.signed_in", "/open routes/open/+page.rocx -"],
+		"rocx routes says which a page runs behind",
+	);
+	assert.deepEqual(middlewareProblems(table, sources), []);
+	const named = new Map([...sources, ["+layout.rocx", component({ middleware: "Middlewares.signed_in" })], ["+error.rocx", component({ middleware: "Middlewares.signed_in" })]]);
+	assert.deepEqual(
+		middlewareProblems(table, named).map((line) => line.split(":")[0]),
+		["routes/+layout.rocx", "routes/+error.rocx"],
+		"a layout's or the error page's guards nothing, so rocx build refuses it",
+	);
+	assert.match(middlewareProblems(table, named)[0], /names a middleware, which nothing runs: .*Name it in the \+server\.roc beside each page/);
 });
 
 test("route files' views: a page, a layout and the error page are components, which define view!", () => {

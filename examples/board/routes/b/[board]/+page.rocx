@@ -10,7 +10,6 @@ import pf.Router
 import presence.AvatarStack
 import presence.Presence
 import ../../../Board
-import ../../../Middlewares
 import ../../../Generated/Api
 import ../../../Ui/AddColumn
 import ../../../Ui/Archive
@@ -32,8 +31,6 @@ import ../../../Ui/Shared
 ## - The card open is the address's (`?card=12`), read in a memo: a card's link opens it in place
 ##   (D-040), an entry pushed, so Back closes it; closing it takes `card` out of the query
 ##   (`use_search_params!`). A shared link, or a page loaded without JavaScript, opens it as well.
-middleware = Middlewares.member
-
 meta = { title: "Board" }
 
 view! = |{ params }| {

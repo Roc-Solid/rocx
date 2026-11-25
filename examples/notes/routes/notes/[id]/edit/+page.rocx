@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.Server
 import pf.Title
 import pf.Router exposing [use_submission!]
-import ../../../../Middlewares
 import ../../../../Note
 import ../../../../Pages
 import ../../../../Generated/Api
@@ -13,8 +12,6 @@ import ../../../../Ui/Topbar
 ## A note's editor: its fields filled from the note (`GET /notes/<id>`, the note page's endpoint),
 ## in a form that posts to `/notes/<id>/edit`. What was typed survives a refusal: the fields are
 ## filled from the submission then, rather than the note.
-middleware = Middlewares.signed_in
-
 meta = { title: "Edit · Notes" }
 
 ## A note that isn't there, or isn't yours, is the app's error page, a 404 (`get!` fails the page).

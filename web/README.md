@@ -195,6 +195,12 @@ becomes `about:invalid#rocx-unsafe-url` (an image's `data:image/…` is allowed;
 style's value goes through `safe_css`, which drops anything that could end the declaration and any
 CSS function except those that compute a value (`rgb(…)`, `calc(…)`, `var(…)`; never `url(…)`).
 `Html` never writes a `value` into an `<input type="password">`, whatever a component gives it.
+Names are checked wherever markup is written or built (D-079: signals.rs, `Html.to_str`, the
+runtime's `writable`): an element whose tag isn't a plain name (an ASCII letter, then letters,
+digits and `-`), or a `<script>` whose children aren't all `raw` (a `.rocx` file's text), is left
+out, and so is an attribute (`v`, `vo`, `o`, `oo`, `f`, `fo`) whose name isn't one (letters,
+digits, `-`, `_`, `.`, `:`, starting with a letter) or starts with `on`. The server logs each
+page's, the runtime warns once a name.
 
 ### Static holes and computed holes
 

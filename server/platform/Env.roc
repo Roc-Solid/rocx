@@ -2,8 +2,8 @@ import Host
 
 ## The app's settings, from the process's environment: secrets, and what differs from one machine
 ## to another (`APP_SECRET`, an API's key), read alike in a request, a job or a schedule. And
-## whether the server was started with `--dev`, for what only development may do, and where the app
-## is (`public_url!`), for the links it sends.
+## whether the server was started with `--dev` (or `--debug`), for what only development (or a test)
+## may do, and where the app is (`public_url!`), for the links it sends.
 Env := [].{
 
 	## The environment variable `name`, as the server was started with it; `NotFound` when it has
@@ -18,6 +18,12 @@ Env := [].{
 	## Whether the server was started with `--dev`.
 	dev! : {} => Bool
 	dev! = |{}| !Host.setting!("dev").is_empty()
+
+	## Whether the server was started with `--debug`, which tests start it with (its debug paths under
+	## `/__rocx/`), never a deployed server: what a plugin keeps for a test to read (the dev mailbox's
+	## mail) rather than doing.
+	debug! : {} => Bool
+	debug! = |{}| !Host.setting!("debug").is_empty()
 
 	## Where the app is, as the world reaches it, for a link it sends (in an email, to another
 	## server): `--public-url` or `PUBLIC_URL` when the server was started with one

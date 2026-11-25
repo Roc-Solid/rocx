@@ -538,8 +538,12 @@ Every handler must be annotated, for example
 
 **Middleware** (the platform's `Middleware`) runs around answers: the app's default middleware
 around every request, and a route file's own `middleware = …` around that file's page and
-endpoints. A middleware may answer by itself (a redirect to sign in) or pass the request on, with a
-**context** for the handlers (who is signed in). A handler reads it as `context`.
+endpoints. A page that names none runs behind the one the `+server.roc` beside it names, so one line
+guards a page and its data, and a page can't render for someone its data refuses (D-079); a page
+that names its own keeps it. Only the page's own directory counts: a parent's `+server.roc` doesn't
+guard the pages below it, and `rocx build` refuses a `middleware` in a layout or the error page,
+which nothing would run. A middleware may answer by itself (a redirect to sign in) or pass the
+request on, with a **context** for the handlers (who is signed in). A handler reads it as `context`.
 
 ### How a page is put together
 
@@ -824,6 +828,12 @@ read it with `Endpoint.get!(Api.get_…(params))` where you would have called it
   picture with its scripts off.
 - Inline handlers (`onclick=`), a computed `style` and unquoted values are refused when building.
   Handlers are Roc functions, never text in the page.
+- Markup built by hand in Roc (`Html.element`, `Html.void`, `Html.attr`) has its names checked by
+  every renderer (D-079): a tag is an ASCII letter, then letters, digits and `-`; an attribute's
+  name may also have `_`, `.` and `:`, and never starts with `on` (an inline handler); a
+  `<script>` is written only with its text as a `.rocx` file has it. What isn't is left out, never
+  a failed page: the server logs the page's path and the names, and the browser warns on the
+  console.
 - The browser's runtime builds elements with `createElement` and sets text and attributes as such.
 - `rocx lint` refuses `Html.source_text` (raw HTML) in hand-written `.roc` files.
 - `Middleware.same_origin` refuses a change (a POST, a PUT…) that another site's page sends. The

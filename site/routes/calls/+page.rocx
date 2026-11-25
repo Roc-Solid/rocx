@@ -496,7 +496,8 @@ view! = |_|
 					<p>
 						<strong>It routes them.</strong> <code>Generated/Routes.roc</code> gives each path's requests to
 						its page (a GET that accepts HTML) or to its endpoints, after the app's default middleware and the
-						route file's own, each endpoint with its handler from <code>Generated/Handlers.roc</code>. The GETs
+						route file's own (a page that names none runs behind its <code>+server.roc</code>'s), each
+						endpoint with its handler from <code>Generated/Handlers.roc</code>. The GETs
 						the server makes as it renders go the same way.
 					</p>
 				</li>

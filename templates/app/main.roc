@@ -18,8 +18,9 @@ program = App.program({
 	# Around every request: a post from another site refused, and the security headers.
 	middleware: Middlewares.default,
 	plugins: [
-		# Mail goes out over SMTP_URL; without it, to the dev mailbox (/__rocx/mail). Put an address
-		# here that your mail service lets you send from.
+		# Mail goes out over SMTP_URL; without it, under rocx dev, to the dev mailbox (/__rocx/mail),
+		# and anywhere else the server doesn't start. Put an address here that your mail service lets
+		# you send from.
 		Email.plugin({ from: "{{title}} <hello@example.com>" }),
 		# Signing in (packages/auth): a mailed link opens /sign-in/link, and `Accounts.admit!` says
 		# which user someone is. A provider is offered once its environment variables are set.

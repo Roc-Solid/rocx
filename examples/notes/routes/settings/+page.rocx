@@ -2,7 +2,6 @@ import pf.Html
 import pf.Endpoint
 import pf.Server
 import pf.Router exposing [use_submission!]
-import ../../Middlewares
 import ../../Note
 import ../../Pages
 import ../../Token
@@ -11,8 +10,6 @@ import ../../Ui/Topbar
 
 ## Settings: personal access tokens for AI clients and scripts (made, shown once, revoked), how to
 ## connect a client to the MCP server, and signing out everywhere. Every button is a plain form.
-middleware = Middlewares.signed_in
-
 meta = { title: "Settings · Notes" }
 
 ## Your tokens and the MCP server's address (`GET /settings`).

@@ -10,10 +10,11 @@ import Smtp
 
 ## Email, for Roc Solid's server. With an SMTP server (`SMTP_URL`:
 ## `smtp://user:password@host:587?tls=required`, or `smtps://…:465` for TLS from the start) it
-## sends it, from `MAIL_FROM`, over SMTP (`Smtp`, on the platform's `Tcp`); without, it keeps it in
-## the server's memory (`Kv`) and logs it: the dev mailbox (`Mailbox`, `/__rocx/mail` under `--dev`)
-## shows it, so development sends nothing. Send from a job (packages/jobs), so a server that doesn't
-## answer is tried again.
+## sends it, from `MAIL_FROM`, over SMTP (`Smtp`, on the platform's `Tcp`). Without one, under
+## `--dev` (or `--debug`, the tests') it keeps it in the server's memory (`Kv`) and logs it: the dev
+## mailbox (`Mailbox`, `/__rocx/mail` under `--dev`) shows it, so development sends nothing. Anywhere
+## else that is a mistake that would lose mail: the plugin's server doesn't start, and `send!` fails
+## (D-079). Send from a job (packages/jobs), so a server that doesn't answer is tried again.
 ##
 ## ```roc
 ## plugins: [Email.plugin({})]                                   # SMTP_URL and MAIL_FROM, from the environment
@@ -30,13 +31,14 @@ Email := [].{
 	## `rocx <rocx@localhost>`), and where it
 	## goes: the SMTP server's URL, which `smtp_url!` finds when the server starts (`SMTP_URL`, from
 	## the environment, unless the app gives a function of its own: a secret it keeps elsewhere); ""
-	## for none, and mail is kept for the dev mailbox.
+	## for none, which only `--dev` and `--debug` allow: mail is kept for the dev mailbox.
 	Options := { from : Str ?? "", smtp_url! : ({} => Str) ?? smtp_url_from_env! }
 
 	## The email plugin: the dev mailbox's pages, before the app and only under `--dev` (its JSON
 	## under `--debug` too: `/__rocx/mail`, `/__rocx/mail.json`, `/__rocx/mail/<id>`), a look at the
 	## SMTP server once the server has started (`email.smtp`: whether it answers, on the log), and
-	## its options kept for `send!`.
+	## its options kept for `send!`. Its start refuses a server with no SMTP server outside `--dev`
+	## and `--debug`, saying `SMTP_URL` is missing, rather than one that would lose every email.
 	plugin : Options -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		from = options.from
@@ -49,9 +51,11 @@ Email := [].{
 		}
 	}
 
-	## Sends `message`: over SMTP when there is an SMTP server; without, kept for the dev mailbox
-	## and logged. `EmailErr` if an address can't be read, the SMTP server refuses it or can't be
-	## reached. Without the plugin in the app's list, it reads `SMTP_URL` and `MAIL_FROM` itself.
+	## Sends `message`: over SMTP when there is an SMTP server; without, under `--dev` or `--debug`,
+	## kept for the dev mailbox and logged. `EmailErr` if there is no SMTP server anywhere else (it
+	## says `SMTP_URL` is missing), if an address can't be read, or if the SMTP server refuses it or
+	## can't be reached. Without the plugin in the app's list, it reads `SMTP_URL` and `MAIL_FROM`
+	## itself.
 	send! : Message => Try({}, [EmailErr(Str)])
 	send! = |message| {
 		settings = settings!({})
@@ -63,9 +67,14 @@ Email := [].{
 				now = Time.now_millis!({}).to_i64_wrap()
 				data = compose(from, to, message, now, Random.seed_u64!() ?? 0)
 				if settings.smtp_url.is_empty() {
-					Log.info!("email: kept, not sent (no SMTP_URL)", { to: message.to, subject: message.subject })
-					Mailbox.keep!({ at: now, from: from_text, to: message.to, subject: message.subject, text: message.text, html: message.html, raw: data })
-					Ok({})
+					match unsent(Env.dev!({}) or Env.debug!({})) {
+						Ok({}) => {
+							Log.info!("email: kept, not sent (no SMTP_URL)", { to: message.to, subject: message.subject })
+							Mailbox.keep!({ at: now, from: from_text, to: message.to, subject: message.subject, text: message.text, html: message.html, raw: data })
+							Ok({})
+						}
+						Err(why) => Err(EmailErr("email to ${message.to}: ${why}"))
+					}
 				} else {
 					sent =
 						match Smtp.parse(settings.smtp_url) {
@@ -101,14 +110,28 @@ settings! = |{}|
 		Err(NotFound) => { from: sender!(""), smtp_url: smtp_url_from_env!({}) }
 	}
 
-## The plugin's start: its options, kept for `send!`.
+## The plugin's start: its options, kept for `send!`; an `Err` (`no_smtp`), which stops the server,
+## when there is no SMTP server outside `--dev` and `--debug`.
 keep! : Str, ({} => Str) => Try({}, Str)
 keep! = |from, smtp_url!| {
 	found : Settings
 	found = { from: sender!(from), smtp_url: smtp_url!({}) }
+	if found.smtp_url.is_empty() and !(Env.dev!({}) or Env.debug!({})) {
+		return Err(no_smtp)
+	}
 	Plugin.keep!("email:settings", Json.to_str(found))
 	Ok({})
 }
+
+## What becomes of email with no SMTP server (D-079): kept for the dev mailbox where there is one to
+## read it (`--dev`, or `--debug` for the tests); anywhere else an error saying what is missing, since
+## the mail would be lost.
+unsent : Bool -> Try({}, Str)
+unsent = |kept_here| if (kept_here) Ok({}) else Err(no_smtp)
+
+## Why email can't go out.
+no_smtp : Str
+no_smtp = "SMTP_URL isn't set, so email can't be sent: set it where the server runs (smtps://user:password@smtp.example.com), or give Email.plugin an smtp_url!. Only --dev keeps email unsent, for the dev mailbox"
 
 ## Whether the SMTP server answers (its greeting, TLS, a goodbye), said on the log once the server
 ## has started: a wrong `SMTP_URL` shows then, not at the first email. Nothing without one.
@@ -258,6 +281,8 @@ hex = |number| {
 	Str.from_utf8_lossy($out)
 }
 
+expect unsent(Bool.True) == Ok({}) and unsent(Bool.False) == Err(no_smtp)
+expect no_smtp.starts_with("SMTP_URL isn't set")
 expect mailbox("Rocx Tests <tests@rocx.example>") == Ok({ name: "Rocx Tests", address: "tests@rocx.example" })
 expect mailbox("\"Ada L\" <ada@example.com>") == Ok({ name: "Ada L", address: "ada@example.com" })
 expect mailbox("grace@example.com") == Ok({ name: "", address: "grace@example.com" })

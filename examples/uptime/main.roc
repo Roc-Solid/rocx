@@ -6,8 +6,8 @@
 ## - packages/jobs runs the jobs: a sweep every 10 seconds that queues the checks due, the checks,
 ##   the alerts, and a roll-up each night at 03:00 UTC.
 ## - packages/admin's jobs page shows that queue at /admin/jobs, behind the admin's sign-in.
-## - packages/email sends the alerts: over SMTP with `SMTP_URL`, or else kept for the dev mailbox
-##   (`/__rocx/mail` under `--dev`).
+## - packages/email sends the alerts: over SMTP with `SMTP_URL`, or else, under `--dev`, kept for
+##   the dev mailbox (`/__rocx/mail`); a server with neither doesn't start.
 ## - packages/auth keeps the admin's sessions (12 hours, in the `uptime_admin` cookie, their hashes
 ##   in the database) and ends them at `POST /auth/sign-out`. It has no `admit!`, so nobody signs in
 ##   by a link or a provider: Session.roc checks `ADMIN_PASSWORD` and starts a session itself.

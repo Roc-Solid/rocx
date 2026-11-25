@@ -39,7 +39,7 @@ The app reads these settings from the environment:
 |---|---|
 | `DATABASE_URL` | Where the notes are, as `sqlite:<path>` (or `--database-url`). Unset, `data/notes.db` from where the server starts. |
 | `PUBLIC_URL` | The app's address (or `--public-url`), for the links in emails and the MCP address that Settings shows. Unset, the address the server listens on (`http://127.0.0.1:8080` above). On `https://`, the session cookie is `Secure` and named `__Host-notes_session`. |
-| `SMTP_URL` | A mail server (`smtp://user:password@smtp.example.com:587?tls=required`). Unset, mail goes to the dev mailbox. |
+| `SMTP_URL` | A mail server (`smtp://user:password@smtp.example.com:587?tls=required`). Unset, mail goes to the dev mailbox under `--dev`, and without `--dev` the server doesn't start. |
 | `NOTES_MCP_PER_MINUTE` | MCP calls a minute for each token (120). |
 
 Mail is sent from `Notes <notes@example.com>` (the `from` given to `Email.plugin` in `main.roc`).
@@ -57,8 +57,8 @@ node server/build.mjs examples/notes/main.roc examples/notes/build/server --opt=
 cd examples/notes && build/server --port 8080 --static build/client/static
 ```
 
-Without `--dev`, the dev mailbox isn't served, so set `SMTP_URL` to receive the sign-in links (or add
-`--dev` to try it locally).
+Without `--dev` the server needs `SMTP_URL`, to send the sign-in links: it doesn't start without one
+(add `--dev` to try it locally, with the dev mailbox).
 
 ## A tour
 

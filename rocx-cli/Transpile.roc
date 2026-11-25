@@ -1938,7 +1938,10 @@ Transpile := [].{
 			return Ok({ st: st1, out: "Html.void(${quoted}, [${Transpile.render_items(attrs)}])" })
 		}
 		if self_closing {
-			return Ok({ st: st1, out: "Html.element(${quoted}, [${Transpile.render_items(attrs)}], [])" })
+			# A `<script … />` is the file's too, its text none (D-079: a script is written only with
+			# its text as the file has it).
+			empty_text = if (name == "script") "Html.source_text(\"\")" else ""
+			return Ok({ st: st1, out: "Html.element(${quoted}, [${Transpile.render_items(attrs)}], [${empty_text}])" })
 		}
 		if name == "script" or name == "style" {
 			raw = Transpile.read_raw_text(cfg, st1, name, start)?

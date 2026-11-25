@@ -193,12 +193,19 @@ Html :: [
 	empty : {} -> Html
 	empty = |{}| Fragment([])
 
+	## An element, as markup in a `.rocx` file makes one. Its tag must be a plain name (an ASCII
+	## letter, then letters, digits and `-`), and a `<script>`'s text as a file has it
+	## (`source_text`): an element that isn't is never written, nor what is inside it (D-079).
 	element : Str, List(Attr), List(Html) -> Html
 	element = |tag, attrs, children| Element(tag, attrs, children)
 
+	## An element with no children or closing tag (`<img>`, `<input>`); its tag as `element`'s.
 	void : Str, List(Attr) -> Html
 	void = |tag, attrs| Void(tag, attrs)
 
+	## An attribute. Its name must be a plain one (an ASCII letter, then letters, digits, `-`, `_`,
+	## `.` and `:`), and not `on…`, an inline handler (a handler is `on`'s): one that isn't is never
+	## written (D-079). `optional`, `flag` and the computed ones' names are the same.
 	attr : Str, Str -> Attr
 	attr = |name, value| Value(name, value)
 
@@ -858,6 +865,9 @@ way_name = |way|
 static_str : Html, Bool -> Str
 static_str = |node, quiet|
 	match node {
+		# A name markup can't have is never written (D-079).
+		Element(tag, _, children) if !written(tag, children) => ""
+		Void(tag, _) if !written(tag, []) => ""
 		Element(tag, attrs, children) => {
 			open = "<${tag}${static_attributes(tag, unfilled(tag, attrs))}>"
 			if (void_elements.contains(tag)) open else "${open}${static_nodes(children, quiet)}</${tag}>"
@@ -896,6 +906,10 @@ static_attributes = |tag, attrs| {
 		{ classes: [], styles: [], others: [] },
 		|state, attribute|
 			match attribute {
+				# An attribute's name markup can't have is never written (D-079).
+				Value(name, _) if !plain_name(name, Bool.True) => state
+				Optional(name, _) if !plain_name(name, Bool.True) => state
+				Flag(name, _) if !plain_name(name, Bool.True) => state
 				Value("class", value) => { ..state, classes: state.classes.append(value) }
 				Value("style", value) => { ..state, styles: state.styles.append(value) }
 				Value(name, value) => { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }
@@ -922,6 +936,48 @@ static_attributes = |tag, attrs| {
 
 void_elements : List(Str)
 void_elements = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]
+
+## Whether an element is written (D-079), as the server's renderer (signals.rs) and the runtime say:
+## its tag a plain name, and a `<script>` only as a `.rocx` file has it, its text as written
+## (`Html.source_text`). One built by hand from data never is.
+written : Str, List(Html) -> Bool
+written = |tag, children|
+	if !plain_name(tag, Bool.False) {
+		Bool.False
+	} else if tag.caseless_ascii_equals("script") {
+		!children.is_empty()
+			and children.all(
+				|child|
+					match child {
+						Raw(_) => Bool.True
+						_ => Bool.False
+					},
+			)
+	} else {
+		Bool.True
+	}
+
+## Whether markup may have a name (D-079): an ASCII letter, then letters, digits and `-`; an
+## attribute's (`attribute`) `_`, `.` and `:` too, and never `on…`, an inline handler.
+plain_name : Str, Bool -> Bool
+plain_name = |name, attribute| {
+	letter = |byte| (byte >= 'a' and byte <= 'z') or (byte >= 'A' and byte <= 'Z')
+	rest = |byte| letter(byte) or (byte >= '0' and byte <= '9') or byte == '-' or (attribute and (byte == '_' or byte == '.' or byte == ':'))
+	bytes = name.to_utf8()
+	handler =
+		match bytes {
+			[o, n, ..] => attribute and (o == 'o' or o == 'O') and (n == 'n' or n == 'N')
+			_ => Bool.False
+		}
+	match bytes {
+		[first, .. as others] => letter(first) and others.all(rest) and !handler
+		[] => Bool.False
+	}
+}
+
+expect plain_name("custom-element", Bool.False) and plain_name("linearGradient", Bool.False) and !plain_name("img src=x", Bool.False) and !plain_name("a_b", Bool.False) and !plain_name("", Bool.False)
+expect plain_name("data-id", Bool.True) and plain_name("xml:lang", Bool.True) and plain_name("viewBox", Bool.True) and !plain_name("onclick", Bool.True) and !plain_name("ONLOAD", Bool.True) and !plain_name("a\"b", Bool.True) and !plain_name("x y", Bool.True) and !plain_name("_x", Bool.True)
+expect Html.to_str(Html.element("p", [Html.attr("onclick", "go()"), Html.attr("x onmouseover", "y"), Html.flag("onfocus", Bool.True), Html.attr("data-ok", "1")], [Html.element("img src=x", [], []), Html.element("script", [], [Html.text("go()")]), Html.element("script", [], [Html.source_text("go()")])])) == "<p data-ok=\"1\"><script>go()</script></p>"
 
 ## Text as HTML: `<`, `>`, `&` and quotes as entities.
 escape : Str -> Str

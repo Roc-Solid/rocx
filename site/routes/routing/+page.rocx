@@ -236,8 +236,13 @@ view! = |_|
 			<Code title={Sources.route_main.file} source={Sources.route_main.rocx} numbers={Bool.False} />
 			<p>
 				The second is a route file's own, <code>middleware = …</code>. It runs after the default, around
-				that file's page or its endpoints. What it hands on is the <code>context</code> the file's handlers
-				are given (<code>{"get! = |{ context, .. }| …"}</code>). This site's middleware:
+				that file's page or its endpoints. A page that names none runs behind the one the
+				<code>+server.roc</code> beside it names, so one line guards both the page and the data it reads,
+				and a page can't render for someone its own data refuses. A page that names its own keeps it. Only
+				the page's own directory counts: a <code>+server.roc</code> further up guards nothing below it, and
+				<code>rocx build</code> refuses a <code>middleware</code> in a layout or the error page, since nothing
+				would run it. What a middleware hands on is the <code>context</code> the file's handlers are given
+				(<code>{"get! = |{ context, .. }| …"}</code>). This site's middleware:
 			</p>
 			<Code title={Sources.site_middlewares.file} source={Sources.site_middlewares.rocx} />
 			<Versus>
@@ -245,9 +250,9 @@ view! = |_|
 				<Code title={Sources.members_server.file} source={Sources.members_server.rocx} numbers={Bool.False} />
 			</Versus>
 			<p>
-				So a request to <code>/members</code> goes through the app's default middleware, then
-				<code>Middlewares.member</code>, then the page (for a browser) or <code>get!</code> (for anything
-				else). The answer goes back out through them, and picks up the default's headers on its way. The
+				The page names no middleware, so a request to <code>/members</code> goes through the app's default
+				middleware, then <code>Middlewares.member</code> (the <code>+server.roc</code>'s), then the page
+				(for a browser) or <code>get!</code> (for anything else). The answer goes back out through them, and picks up the default's headers on its way. The
 				page itself isn't given the context. It reads its own endpoint, <code>GET /members</code>, as it
 				renders, and the server answers that read behind the same middleware, so the handler gets the
 				member's name. <code>rocx routes</code> lists every route, the file that answers it, and the
@@ -417,7 +422,8 @@ view! = |_|
 				<code>App.program</code> answers every request with it, behind the app's default middleware, and
 				the GETs the server makes while it renders a page go the same way. When a file names middleware, its
 				page and its endpoints are wrapped in <code>Middleware.run!</code>, and the handler is given what the
-				middleware passed on:
+				middleware passed on. The members page names none, so its page runs behind
+				<code>MembersServer.middleware</code>, its <code>+server.roc</code>'s:
 			</p>
 			<Code title={"${Sources.route_members.file}, in part"} source={Sources.route_members.rocx} numbers={Bool.False} />
 

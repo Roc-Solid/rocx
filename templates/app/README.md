@@ -44,12 +44,16 @@ forms post), and `+layout.rocx` wraps the pages below it. `rocx build` writes `G
 (the routes, `Api`, `Paths`): don't edit it, and don't commit it.
 
 A file's `middleware = Middlewares.signed_in` lets only signed-in people through. A signed-out page
-visit goes to the sign-in page, and comes back after; anything else is refused (401).
+visit goes to the sign-in page, and comes back after; anything else is refused (401). A page that
+names no middleware runs behind its `+server.roc`'s, so `routes/account/+server.roc`'s line guards
+the account page too. A layout's middleware would guard nothing, so `rocx build` refuses one.
 
 ## Mail
 
-Without `SMTP_URL`, nothing is sent: each message is kept for the dev mailbox, and the log says
-so. To send mail, set these where the server runs:
+Under `rocx dev`, without `SMTP_URL`, nothing is sent: each message is kept for the dev mailbox, and
+the log says so. A server started without `--dev` needs `SMTP_URL`: without it, it doesn't start
+(the log says why), rather than lose every sign-in link. To send mail, set these where the server
+runs:
 
 | Variable | What it is |
 | --- | --- |
@@ -57,7 +61,7 @@ so. To send mail, set these where the server runs:
 | `PUBLIC_URL` | Where people reach the app, `https://app.example.com`: the links in the mail point there |
 
 Who mail is from is `main.roc`'s `from`. Change `hello@example.com` to an address your mail service
-lets you send from. (`MAIL_FROM` is read only when `from` is empty.)
+lets you send from. (`MAIL_FROM`, when it is set, wins over `from`.)
 
 ## The database
 

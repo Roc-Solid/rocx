@@ -61,10 +61,10 @@ SiteSources := [].{
 		Pick("route_routes", "site/Generated/Routes.roc", ["Routes := [].{", "respond! = |request, context| {", "segments = ", "method = ", "wants_html = ", "if (Endpoint.channel_asked(request) != \"\")", "Routes.channel!(segments, request, context)", "} else if (segments == [\"api\", \"facts\"])", "params = {}", "if (method == \"GET\")", "Endpoint.respond!(Handlers.get_api_facts", "} else {", "Endpoint.not_allowed", "}", "} else if (segments == [\"api\", \"shout\"])", "params = {}", "if (method == \"POST\")", "Endpoint.respond!(Handlers.post_api_shout", "} else {", "Endpoint.not_allowed", "}", "} else if (segments == [\"calls\"])", "if (method == \"GET\")", "Routes.page(200)", "} else {", "Endpoint.not_allowed", "}", "} else {", "if (wants_html)", "Routes.page(404)", "} else {", "Routes.text(404,", "}", "}", "}"]),
 		Pick("route_main", "site/main.roc", ["import audio.AudioPlayer", "import Generated/App", "import Middlewares", "", "# The count", "# The calls page", "import Demos/Count", "", "## Every request:", "## server was started with", "## jobs or schedules; its one plugin", "## showcase's sounds.", "program = App.program({", "init!:", "middleware:", "openapi:", "plugins:", "})"]),
 		RouteList,
-		Pick("route_members", "site/Generated/Routes.roc", ["} else if (segments == [\"members\"])", "params = {}", "if (method == \"GET\" and wants_html)", "Middleware.run!(MembersPage.middleware", "} else if (method == \"GET\")", "Middleware.run!(MembersServer.middleware", "} else {", "Endpoint.not_allowed", "}"]),
+		Pick("route_members", "site/Generated/Routes.roc", ["} else if (segments == [\"members\"])", "params = {}", "if (method == \"GET\" and wants_html)", "Middleware.run!(MembersServer.middleware", "} else if (method == \"GET\")", "Middleware.run!(MembersServer.middleware", "} else {", "Endpoint.not_allowed", "}"]),
 		Pick("middleware_type", "web/platform/Middleware.roc", ["Middleware(given, handed) ::", "## A middleware, from what it does.", "make :", "## `first`, then `second`", "then :", "## A request that would change", "## an action) sent by", "## can make a browser", "## (`Origin`).", "same_origin :", "## Every answer with these headers too.", "headers :"]),
 		Whole("site_middlewares", "site/Middlewares.roc"),
-		Pick("members_page", "site/routes/members/+page.rocx", ["import pf.Html", "import pf.Endpoint", "import ../../Middlewares", "import ../../Generated/Api", "import ../../Generated/Paths", "", "## Members only", "middleware = Middlewares.member", "", "## Who the member is", "## middleware, which read", "## the page, and the page", "member! :", "member! =", "", "view! = |_| {", "member = member!({})", "<>", "<PageHero", "eyebrow=\"Members\"", "title={\"Welcome, \${member}\"}"]),
+		Pick("members_page", "site/routes/members/+page.rocx", ["import pf.Html", "import pf.Endpoint", "import ../../Generated/Api", "import ../../Generated/Paths", "", "## Members only", "## that names no middleware", "## Who the member is", "## middleware, which read", "## the page, and the page", "member! :", "member! =", "", "view! = |_| {", "member = member!({})", "<>", "<PageHero", "eyebrow=\"Members\"", "title={\"Welcome, \${member}\"}"]),
 		Whole("members_server", "site/routes/members/+server.roc"),
 		Whole("members_join_server", "site/routes/members/join/+server.roc"),
 		Pick("openapi_api", "site/Generated/Api.roc", ["## The OpenAPI document of these endpoints", "## each path and its methods", "## sent and answers", "## could be a tag", "openapi : Str", "openapi = {", "tags = [", "\"", "]", "OpenApi.document(", "OpenApi.path(\"/api/shout/{word}\"", "OpenApi.operation(\"get\"", "]),", "])", "}"]),
@@ -267,7 +267,7 @@ SiteSources := [].{
 		Pick("bag_reader", "site/Demos/Bag.rocx", ["## Who is reading", "## The server renders", "## again.", "reader! :", "reader! ="]),
 		Whole("endpoint_reader", "site/routes/api/reader/+server.roc"),
 		Whole("endpoint_echo", "site/routes/api/echo/[message]/+server.roc"),
-		Pick("members_read", "site/routes/members/+page.rocx", ["middleware = Middlewares.member", "member! : {} => Str", "member! = |{}| Endpoint.get!"]),
+		Pick("members_read", "site/routes/members/+page.rocx", ["member! : {} => Str", "member! = |{}| Endpoint.get!"]),
 		Whole("endpoint_members", "site/routes/members/+server.roc"),
 		Whole("test_session", "web/test/app/Profile.rocx"),
 		Whole("signals_echo", "site/Demos/Echo.rocx"),
@@ -618,16 +618,25 @@ SiteSources := [].{
 		routes = Fs.join([root, "site", "routes"])
 		files = Routes.find_route_files!(routes)
 		table = Routes.route_table(files)?
-		var $behind = []
+		var $sources = []
 		for file in files {
-			defs = Routes.definitions(Fs.read_or_empty!(Fs.join([routes, file])))
-			said =
-				match defs.middleware {
-					Some(middleware) if !middleware.is_empty() => ", behind ${middleware}"
-					_ => ""
-				}
-			$behind = $behind.append({ file, said })
+			$sources = $sources.append({ file, defs: Routes.definitions(Fs.read_or_empty!(Fs.join([routes, file]))) })
 		}
+		sources = $sources
+		# A page's, as it runs (its own, or its +server.roc's: D-079); any other file's own.
+		behind = |file|
+			match table.pages.find_first(|page| page.file == file) {
+				Ok(page) =>
+					match Routes.page_guard(table, sources, page) {
+						Some(guard) => ", behind ${guard.said}"
+						None => ""
+					}
+				Err(_) =>
+					match Routes.defs_of(sources, file).middleware {
+						Some(middleware) if !middleware.is_empty() => ", behind ${middleware}"
+						_ => ""
+					}
+			}
 		paths = table.pages.map(|page| { file: page.file, path: page.path }).concat(table.servers.map(|server| { file: server.file, path: "${server.path}, its endpoints" }))
 		depth = |file| file.split_on("/").len()
 		sorted = files.sort_with(
@@ -654,12 +663,7 @@ SiteSources := [].{
 						Ok(found) => found.path
 						Err(_) => role(file)
 					}
-				behind =
-					match $behind.keep_if(|each| each.file == file).first() {
-						Ok(each) => each.said
-						Err(_) => ""
-					}
-				"${Text.pad_end(file, width)}# ${what}${behind}"
+				"${Text.pad_end(file, width)}# ${what}${behind(file)}"
 			},
 		)
 		Ok(SiteSources.shown("route_tree", "site/routes", Str.join_with(lines, "\n")))

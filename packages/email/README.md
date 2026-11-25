@@ -1,8 +1,9 @@
 # email
 
 Email for a Roc Solid app's server, as a plugin: messages over SMTP, as text or as text and HTML.
-With no SMTP server set, a message is kept in the server's memory instead, and the dev mailbox shows
-it, so development sends nothing.
+With no SMTP server set, under `--dev` (and `--debug`, the tests'), a message is kept in the server's
+memory instead, and the dev mailbox shows it, so development sends nothing. Anywhere else a server
+with no SMTP server would lose every message, so it doesn't start (D-079).
 
 The package names the server platform, so only the server's half of an app uses it; the browser's
 half doesn't see it. The user guide is the docs site's
@@ -54,34 +55,39 @@ Email.send! : Email.Message => Try({}, [EmailErr(Str)])
 
 Email.Options := {
     from : Str ?? "",                              # unless MAIL_FROM is set; "": "rocx <rocx@localhost>"
-    smtp_url! : ({} => Str) ?? (reads SMTP_URL),   # "": no SMTP server; mail is kept for the mailbox
+    smtp_url! : ({} => Str) ?? (reads SMTP_URL),   # "": no SMTP server: --dev and --debug only
 }
 Email.plugin : Email.Options -> Plugin.Value(context, ctx)
 ```
 
 **`send!`** sends one message and waits for the SMTP server's answer: `Ok({})`, or `EmailErr(why)`
-when an address can't be read, or the server refuses the message or can't be reached. `to` is one
+when an address can't be read, the server refuses the message or can't be reached, or there is no
+SMTP server outside `--dev` and `--debug`. `to` is one
 address, bare (`ada@example.com`) or with a name (`Ada Lovelace <ada@example.com>`); `from` takes
 the same forms. `html` may be `""`, for text alone.
 
-With no SMTP server, `send!` keeps the message for the dev mailbox, logs
-`email: kept, not sent (no SMTP_URL)` at info with `to` and `subject` as fields, and answers
-`Ok({})`. That is true without `--dev` too: set `SMTP_URL` wherever the app should really send.
+With no SMTP server, under `--dev` or `--debug` (`Env.dev!`, `Env.debug!`), `send!` keeps the
+message for the dev mailbox, logs `email: kept, not sent (no SMTP_URL)` at info with `to` and
+`subject` as fields, and answers `Ok({})`. Anywhere else it answers `EmailErr("email to …: SMTP_URL
+isn't set, so email can't be sent: …")`, and the message is lost; with the plugin listed, such a
+server never gets that far, as its start refuses it (below).
 
 **`plugin`** adds:
 
 - **Its settings, read once at start.** `MAIL_FROM` when it is set (so a deploy names the sender),
   or else `from`, or else `rocx <rocx@localhost>`;
   and the SMTP server's URL from `smtp_url!`, which reads `SMTP_URL` unless the app gives a function
-  of its own (a secret kept in a vault).
+  of its own (a secret kept in a vault). With no SMTP server, and neither `--dev` nor `--debug`, the
+  start fails, so the server doesn't start: it logs `rocx server: can't start` with `email: SMTP_URL
+  isn't set, so email can't be sent: …` and exits, rather than run and lose every email.
 - **A check of the SMTP server** (`email.smtp`), once the server has started: it connects (TLS and
   all) and says goodbye, and logs whether the server answered. A wrong URL shows then, not at the
   first email. A server that doesn't answer doesn't stop the app.
 - **The dev mailbox's paths**, answered before the app, under `--dev` (its JSON under `--debug`
   too). See below.
 
-Without the plugin, `send!` still works, reading `SMTP_URL` and `MAIL_FROM` itself on each send; only
-the mailbox's pages and the check are missing.
+Without the plugin, `send!` still works, reading `SMTP_URL` and `MAIL_FROM` itself on each send; the
+mailbox's pages, the check and the refusal at start are missing (each send fails instead).
 
 ### `Smtp`
 

@@ -4,7 +4,6 @@ import pf.Endpoint
 import pf.Title
 import pf.Solid exposing [create_effect!, create_memo!, refresh!]
 import pf.Router exposing [use_submission!]
-import ../../Middlewares
 import ../../Report
 import ../../Generated/Api
 import ../../Ui/AdminRow
@@ -16,8 +15,6 @@ import ../../Ui/UpdateForm
 ## packages/admin's tables (adding and editing monitors), the jobs page, and the dev mailbox.
 ## Its data is `GET /admin` as JSON, read again after each of its forms and whenever the live
 ## channel says something changed.
-middleware = Middlewares.admin
-
 meta = { title: "Admin · Status" }
 
 view! = |_| {

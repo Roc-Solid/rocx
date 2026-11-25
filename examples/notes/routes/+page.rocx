@@ -3,7 +3,6 @@ import pf.Endpoint
 import pf.Router
 import pf.Server
 import pf.Title
-import ../Middlewares
 import ../Note
 import ../Pages
 import ../Generated/Api
@@ -13,8 +12,6 @@ import ../Ui/Topbar
 ## The notebook: your notes as cards, pinned ones first; a search's results, best first, the words
 ## it found highlighted; a tag's notes; or the archive. The sidebar lists your tags. Everything here
 ## is a link or a plain form, so it works the same without JavaScript.
-middleware = Middlewares.signed_in
-
 meta = { title: "Notes" }
 
 ## The notebook, as `GET /` answers it for this page's query (`?q=`, `?tag=`, `?archived=true`).

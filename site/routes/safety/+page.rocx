@@ -15,9 +15,10 @@ import ../../Ui/Refusals
 
 meta = {
 	title: "Safety",
-	description: "How rocx keeps data out of markup: an opaque Html type, escaping, safe URLs, refused attributes, handlers that are never script, a same-origin check for requests, and rocx lint.",
+	description: "How rocx keeps data out of markup: an opaque Html type, escaping, names checked in hand-written markup, safe URLs, refused attributes, handlers that are never script, a same-origin check for requests, and rocx lint.",
 	toc: [
 		{ id: "opaque", label: "Html is opaque" },
+		{ id: "names", label: "Names in hand-written Roc" },
 		{ id: "lab", label: "Try to break it" },
 		{ id: "urls", label: "URLs" },
 		{ id: "refused", label: "What the build refuses" },
@@ -71,14 +72,42 @@ view! = |_|
 					<p>Tags, attribute names and script come only from the file, never from a value.</p>
 				</Feature>
 			</FeatureGrid>
-			<Callout kind="note" title="In hand-written Roc">
-				<p>
-					Plain Roc code can build markup too, with <code>Html.element</code>, <code>Html.void</code>
-					and <code>Html.attr</code>, and there a tag or attribute name is a <code>Str</code> argument.
-					Text and values are still escaped, but a name isn't checked: pass names as literals, never
-					from data.
-				</p>
-			</Callout>
+			<Heading id="names">Names in hand-written Roc</Heading>
+			<p>
+				Plain Roc code can build markup too, with <code>Html.element</code>, <code>Html.void</code>
+				and <code>Html.attr</code> (<code>Html.optional</code>, <code>Html.flag</code> and their
+				computed forms too), and there a tag or attribute name is a <code>Str</code> argument, which
+				could come from data. Text and values are escaped as in a file, and every renderer (the server's,
+				the browser's, <code>Html.to_str</code>) checks the names. One that isn't plain is never written:
+			</p>
+			<ul>
+				<li>
+					<strong>A tag</strong> is an ASCII letter, then letters, digits and <code>-</code>
+					(<code>p</code>, <code>h2</code>, <code>linearGradient</code>, <code>acme-card</code>).
+					<code>img src=x onerror=…</code> isn't, so that element, and what is inside it, is left out.
+				</li>
+				<li>
+					<strong>An attribute</strong> is an ASCII letter, then letters, digits, <code>-</code>,
+					<code>_</code>, <code>.</code> and <code>:</code> (<code>data-id</code>, <code>aria-label</code>,
+					<code>xml:lang</code>, <code>viewBox</code>), and never starts with <code>on</code>: an inline
+					handler (<code>onclick</code>) runs its value as script, and a handler is Roc, written
+					<code>on:click</code> (<a href="#handlers">below</a>). One that isn't is left out, and the
+					element is written without it.
+				</li>
+				<li>
+					<strong>A <code>{"<script>"}</code></strong> is written only as a <code>.rocx</code> file has
+					it, its text as written there (<code>Html.source_text</code>, which
+					<a href="#lint"><code>rocx lint</code></a> refuses in hand-written Roc). One built of text, of a
+					hole, or of nothing but a <code>src</code> is left out.
+				</li>
+			</ul>
+			<p>
+				A page never fails for a name. It renders without what was left out, and says so: the server logs
+				<code>rocx server: markup named what a page can't have, which wasn't written</code> with the
+				page's <code>path</code> and the <code>names</code>, once a render, and the browser warns on the
+				console, once a name. <code>.rocx</code> files are unaffected: their names come from the file, and
+				the build refuses an inline handler there already.
+			</p>
 
 			<Heading id="lab">Try to break it</Heading>
 			<p>

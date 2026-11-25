@@ -1,14 +1,11 @@
 import pf.Html
 import pf.Endpoint
-import ../../Middlewares
 import ../../Generated/Api
 
 ## Your account: the address you sign in with, and every browser you are signed in on, with a way
-## to sign out of all of them. Only signed-in people get here: the middleware sends anyone else to
-## sign in, and back here after. The page names it, and so does `+server.roc`, which answers what
-## the page reads and posts.
-middleware = Middlewares.signed_in
-
+## to sign out of all of them. Only signed-in people get here: `+server.roc`, which answers what the
+## page reads and posts, names `Middlewares.signed_in`, and a page that names no middleware runs
+## behind its `+server.roc`'s. It sends anyone else to sign in, and back here after.
 meta = { title: "Your account" }
 
 ## The account, as `GET /account` says.

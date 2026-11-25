@@ -154,6 +154,9 @@ struct Render {
     /// The build's id, if the page's root told it (`Router.app!`, D-040): its bootstrap's
     /// `data-build`, which the browser checks a page it fetched against before rendering it.
     build: Option<String>,
+    /// The names markup had that it may not (`<script>` made of data, `onclick`), each once, as
+    /// the log says them: none of them was written (`refused`, D-079).
+    refused: Vec<String>,
 }
 
 impl Render {
@@ -259,6 +262,10 @@ pub fn render_page(page: roc::Page) -> Result<Rendered, Crash> {
     let heads = std::mem::take(&mut render.heads);
     let redirect = render.redirect.take();
     let build = render.build.take();
+    if !render.refused.is_empty() {
+        let path = hosted::asked().map(|asked| asked.target).unwrap_or_default();
+        crate::logging::warn("rocx server: markup named what a page can't have, which wasn't written", &[("path", path.into()), ("names", render.refused.join(", ").into())]);
+    }
     render.release_all();
     roc::drop_page(page);
     match (walked, redirect) {
@@ -365,6 +372,45 @@ fn parse(json: &str) -> Result<Value, Stop> {
 }
 
 const VOID: &[&str] = &["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"];
+
+/// Whether markup may name an element `tag` (D-079): an ASCII letter, then letters, digits and `-`.
+/// `Html.element` takes any `Str`; one built from data could be `img src=x onerror=…`.
+fn plain_tag(tag: &str) -> bool {
+    let bytes = tag.as_bytes();
+    bytes.first().is_some_and(u8::is_ascii_alphabetic) && bytes.iter().all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
+}
+
+/// Whether markup may name an attribute `name` (D-079): an ASCII letter, then letters, digits, `-`,
+/// `_`, `.` and `:`; and not `on…`, an inline handler, which runs what its value says (a handler is
+/// `on:click`, rocx's own).
+fn plain_attribute(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    let plain = bytes.first().is_some_and(u8::is_ascii_alphabetic) && bytes.iter().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'));
+    plain && !(bytes.len() >= 2 && bytes[..2].eq_ignore_ascii_case(b"on"))
+}
+
+/// Whether an element is written (D-079): its tag is a plain one, and a `<script>` is as a `.rocx`
+/// file has it, its text as written (`Html.source_text`, `raw`), which only rocx writes. A
+/// `<script>` built by hand, of text, holes or nothing but a `src`, never is.
+fn written_element(tag: &str, node: &Value) -> bool {
+    if !plain_tag(tag) {
+        return false;
+    }
+    if !tag.eq_ignore_ascii_case("script") {
+        return true;
+    }
+    let parts = node.get("c").and_then(Value::as_array);
+    parts.is_some_and(|parts| !parts.is_empty() && parts.iter().all(|part| part.get("t").and_then(Value::as_str) == Some("raw")))
+}
+
+/// Notes a name that wasn't written, for the page's line on the log.
+fn refused(what: String) {
+    with(|render| {
+        if !render.refused.contains(&what) {
+            render.refused.push(what);
+        }
+    });
+}
 
 fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -526,6 +572,11 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
         }
         "e" => {
             let tag = field("tag").as_str().unwrap_or("");
+            // A name markup can't have is never written (D-079): the element, or the attribute.
+            if !written_element(tag, node) {
+                refused(format!("<{tag}>"));
+                return Ok(String::new());
+            }
             let mut classes: Vec<String> = Vec::new();
             let mut attributes: Vec<String> = Vec::new();
             let mut styles: Vec<String> = Vec::new();
@@ -541,7 +592,12 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                         _ => {}
                     }
                 }
-                match part(0).as_str().unwrap_or("") {
+                let kind = part(0).as_str().unwrap_or("");
+                if matches!(kind, "v" | "o" | "oo" | "vo" | "f" | "fo") && !plain_attribute(name) {
+                    refused(format!("{name} on <{tag}>"));
+                    continue;
+                }
+                match kind {
                     "on" | "onp" | "onk" | "frame" | "view" if scope.region => return Err(Stop::Crashed(in_region(tag, name))),
                     "v" if name == "class" => classes.push(shown(part(2))),
                     "v" if name == "style" => styles.push(shown(part(2))),

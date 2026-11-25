@@ -912,6 +912,7 @@ route! = |request, context| {
 		(_, "/page-unhandled") => page(unhandled!)
 		(_, "/page-effects") => page(effects!)
 		(_, "/page-rcdata") => page(rcdata!)
+		(_, "/page-names") => page(unnamed!)
 		(_, "/page-region") => page(region!)
 		(_, "/page-region-handler") => page(region_handler!)
 		(_, "/page-gated") => { status: 200, headers: [{ name: "x-page", value: "yes" }], body: Page(gated!) }
@@ -2212,6 +2213,35 @@ read_gated! = |{}|
 ## A page that reads an endpoint whose handler reads the flash a plain form's post left.
 read_flash! : {} => Html
 read_flash! = |{}| Html.element("html", [], [Html.element("body", [], [Html.element("p", [Html.attr("class", "flash")], [Html.text_of(|| Endpoint.get!(flash_endpoint))])])])
+
+## Markup built by hand with names a page can't have (D-079), each left out, and what is around
+## them written: tags that aren't plain names, inline handlers and attribute names that would end
+## the tag (static and computed), and `<script>`s made of text or of nothing but a `src`. A
+## `<script>` whose text is source (`Html.source_text`, as a `.rocx` file's is) is written.
+unnamed! : {} => Html
+unnamed! = |{}| {
+	(said!, _set_said!) = Solid.create_signal!("alert(2)")
+	from_data = "x onmouseover=alert(1)"
+	Html.element(
+		"html",
+		[],
+		[
+			Html.element(
+				"body",
+				[],
+				[
+					Html.element("p", [Html.attr("class", "kept"), Html.attr("onclick", "alert(1)"), Html.attr(from_data, "y"), Html.attr("data-ok", "1"), Html.attr_of("ONLOAD", || said!()), Html.flag("onfocus", Bool.True), Html.optional("a\"b", "z"), Html.flag_of("x>y", || Bool.True)], [Html.text("plain")]),
+					Html.element("img src=x onerror=alert(1)", [], [Html.text("gone")]),
+					Html.void("svg/onload=alert(1)", []),
+					Html.element("script", [], [Html.text_of(|| said!())]),
+					Html.element("SCRIPT", [Html.attr("src", "https://evil.example/x.js")], []),
+					Html.element("script", [Html.attr("type", "module")], [Html.source_text("window.ok = 1")]),
+					Html.element("custom-el", [Html.attr("xml:lang", "en"), Html.attr("aria-label", "fine")], [Html.text("after")]),
+				],
+			),
+		],
+	)
+}
 
 ## A page whose `<title>` and `<textarea>` (RCDATA: the parser reads markup there as text) hold
 ## holes: written without comments.

@@ -4,10 +4,10 @@
 ## keeps its counts in); this says the rest: what every request goes through first (the default
 ## middleware, then the MCP server at /mcp); that the JSON API's OpenAPI document is served, with
 ## Scalar to read it in (`/openapi.json`, `/openapi.html`); that sign-in links are mailed by
-## packages/email's plugin (over SMTP with `SMTP_URL`; without it, to the dev mailbox); that signing
-## in is packages/auth's plugin (D-072: the links, the sessions, signing out), which lets in anyone
-## with a mailed link (`Account.admit!`); and that its database is SQLite (D-045), a file beside the
-## server.
+## packages/email's plugin (over SMTP with `SMTP_URL`; without it, under `--dev`, to the dev
+## mailbox); that signing in is packages/auth's plugin (D-072: the links, the sessions, signing
+## out), which lets in anyone with a mailed link (`Account.admit!`); and that its database is SQLite
+## (D-045), a file beside the server.
 app [program] { auth: "../../packages/auth/main.roc", crypto: "../../packages/crypto/main.roc", email: "../../packages/email/main.roc", guard: "../../packages/guard/main.roc", markdown: "../../packages/markdown/main.roc", mcp: "../../packages/mcp/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc" }
 
 import auth.Auth
