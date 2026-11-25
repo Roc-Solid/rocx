@@ -763,7 +763,7 @@ keep! = |run| Host.keep!(Box.box(run)).to_str()
 
 nodes! : List(Html) => Str
 nodes! = |parts| {
-	var $out = []
+	var $out = List.with_capacity(parts.len())
 	for part in parts {
 		$out = $out.append(Html.serialize!(part))
 	}
@@ -773,7 +773,7 @@ nodes! = |parts| {
 ## An element's attributes, `tag`'s (which URLs it may have depends on it: `safe_value`).
 attributes! : Str, List(Html.Attr) => Str
 attributes! = |tag, attrs| {
-	var $out = []
+	var $out = List.with_capacity(attrs.len())
 	for attribute in attrs {
 		$out = $out.append(
 			match attribute {
@@ -1096,10 +1096,16 @@ safe_url = |url| {
 hex_digits : List(U8)
 hex_digits = "0123456789abcdef".to_utf8()
 
+## Text as a JSON string. Most text needs nothing escaped: it is quoted as it is, in one allocation
+## (each string of a page's markup went through here a byte at a time, the list growing as it went).
 json_str : Str -> Str
 json_str = |text| {
-	var $out = ['"']
-	for byte in text.to_utf8() {
+	bytes = text.to_utf8()
+	if !bytes.any(|byte| byte == '"' or byte == '\\' or byte < 32) {
+		return "\"${text}\""
+	}
+	var $out = List.with_capacity(bytes.len() + 8).append('"')
+	for byte in bytes {
 		$out =
 			if byte == '"' {
 				$out.concat(['\\', '"'])
@@ -1115,6 +1121,11 @@ json_str = |text| {
 	}
 	Str.from_utf8_lossy($out.append('"'))
 }
+
+expect json_str("Hello, Roc Solid") == "\"Hello, Roc Solid\""
+expect json_str("") == "\"\""
+expect json_str("say \"hi\" \\ there\nnext\t\u(1)") == "\"say \\\"hi\\\" \\\\ there\\nnext\\u0009\\u0001\""
+expect json_str("naïve 日本") == "\"naïve 日本\""
 
 expect safe_value("a", "href", "java\nscript:alert(1)") == "about:invalid#rocx-unsafe-url"
 expect safe_value("a", "href", "/signals?x=1") == "/signals?x=1"
