@@ -537,8 +537,8 @@ routes as `Routes` does, and renders the page inside its layouts.
   sidebar's scroll, an open menu and its signals.
 
 With `--client <out>`, `rocx build` also writes the browser's copy of the app: `<out>/main.roc` (the
-browser's program, `Root.view!`) and `<out>/static/rocx/` with `start.js`, `runtime.js` and the
-stylesheet. Build the wasm beside them
+browser's program, `Root.view!`) and `<out>/static/rocx/` with `start.js`, `runtime.js` (minified:
+its comments and indentation gone, D-075; as it is written under `--dev`) and the stylesheet. Build the wasm beside them
 (`roc build --target=wasm32 --opt=size --output=<out>/static/rocx/app.wasm <out>/main.roc`) and
 serve the directory with the server's `--static <out>/static`. A page's `/rocx/start.js` loads the
 other files. `rocx dev` does all of this for you.

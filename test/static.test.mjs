@@ -83,6 +83,12 @@ test("rocx build --static: every page as a file under the base, what a link or a
 		const html = readFileSync(join(copy, page), "utf8");
 		assert.deepEqual(html.match(/\s(?:href|src|action)="\/(?!base\/|\/)[^"]*"/g), null, `${page}: every URL under /base/`);
 	}
+	// The runtime as pages load it: minified (D-075), the same tokens without comments and
+	// indentation (rocx-cli/Minify.roc's expects test the tokenizer; the pages below run it).
+	const shipped = readFileSync(join(copy, "rocx", "runtime.js"), "utf8");
+	const source = readFileSync(join(root, "web", "runtime.js"), "utf8");
+	assert.ok(shipped.length < source.length * 0.7, `minified: ${shipped.length} bytes of ${source.length}`);
+	assert.ok(!shipped.includes("/**") && !/^\s/m.test(shipped), "no comments, no indentation");
 	assert.match(readFileSync(join(copy, "index.html"), "utf8"), /<a href="\/base\/about">About<\/a>/);
 	assert.match(readFileSync(join(copy, "index.html"), "utf8"), /<a href="https:\/\/www\.roc-lang\.org">Roc<\/a>/, "another site's link as it is");
 });
@@ -153,6 +159,18 @@ test("the CLI host's HTTP client (cli/host/src/http.rs): a body by its length, a
 		const ran = hostUnitTests("http.rs", join(dir, "http-unit-tests"), join(root, "cli", "host"));
 		assert.equal(ran.status, 0, ran.stdout + ran.stderr);
 		assert.match(ran.stdout, /test result: ok\. 4 passed/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("rocx build --client --dev: the runtime as it is written, to read and debug; without --dev, minified", { skip }, () => {
+	const dir = mkdtempSync(join(tmpdir(), "rocx-client-"));
+	try {
+		assert.equal(rocx("test/static/app", "--client", join(dir, "dev"), "--dev").status, 0);
+		assert.equal(readFileSync(join(dir, "dev", "static", "rocx", "runtime.js"), "utf8"), readFileSync(join(root, "web", "runtime.js"), "utf8"));
+		assert.equal(rocx("test/static/app", "--client", join(dir, "shipped")).status, 0);
+		assert.ok(readFileSync(join(dir, "shipped", "static", "rocx", "runtime.js")).length < readFileSync(join(root, "web", "runtime.js")).length * 0.7);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

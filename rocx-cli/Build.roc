@@ -3,6 +3,7 @@
 ## packages its headers name into Generated/<package>/, a dev build's stories, and with `--client`
 ## the browser's copy of the app.
 import Fs
+import Minify
 import Text
 import Transpile
 import Routes
@@ -471,7 +472,7 @@ Build := [].{
 		match options.client {
 			Some(client) => {
 				target = Fs.resolve(cwd, [client])
-				Build.write_client!(dir, target, $browser, { main: $main, sheet: $sheet }, options.rocx)?
+				Build.write_client!(dir, target, $browser, { main: $main, sheet: $sheet, minify: !options.dev }, options.rocx)?
 				# What the browser's copy reaches but can't compile (a module that imports pf.Db): said
 				# where the import that reaches it is, before the browser's build fails far from it.
 				# From what the browser builds: the main.roc rocx wrote, or the copy's apps on the web
@@ -912,7 +913,7 @@ Build := [].{
 	## browser's copy can't compile. `main`: for an app of component pages, the browser's app
 	## (main.roc), with the app's directory as the build shows it; an app of endpoints alone has none.
 	## `sheet`: the app's stylesheet, written as a file beside start.js (`static/rocx/<name>`).
-	write_client! : Str, Str, List({ key : Str, value : Str }), { main : [Some(Str), None], sheet : [Some({ name : Str, css : Str }), None] }, Str => Try({}, [Problem(Str)])
+	write_client! : Str, Str, List({ key : Str, value : Str }), { main : [Some(Str), None], sheet : [Some({ name : Str, css : Str }), None], minify : Bool }, Str => Try({}, [Problem(Str)])
 	write_client! = |dir, out, client, wrote, rocx| {
 		main = wrote.main
 		sheet = wrote.sheet
@@ -960,13 +961,14 @@ Build := [].{
 		}
 		# An app of component pages: the browser's app (main.roc, its root the app's page), and what
 		# a page loads beside the wasm built from it (`static/rocx/`, served at /rocx/): start.js,
-		# runtime.js and the stylesheet.
+		# runtime.js and the stylesheet. The runtime is minified but in a dev build (`Minify`).
 		match main {
 			Some(shown_dir) => {
 				main_module = Routes.client_main_module({ web: Build.web_platform!(target, rocx), package_lines: Build.header_packages!(dir, target), dir: shown_dir })
 				_ = Build.write!(Fs.join([target, "main.roc"]), main_module)
 				for name in ["start.js", "runtime.js"] {
-					_ = Build.write!(Fs.join([target, "static", "rocx", name]), Fs.read_or_empty!(Fs.join([rocx, "web", name])))
+					source = Fs.read_or_empty!(Fs.join([rocx, "web", name]))
+					_ = Build.write!(Fs.join([target, "static", "rocx", name]), if (wrote.minify and name == "runtime.js") Minify.js(source) else source)
 				}
 				match sheet {
 					Some(file) => {

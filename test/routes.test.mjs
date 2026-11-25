@@ -511,7 +511,10 @@ test("rocx build --client, for an app of component pages: the browser's main.roc
 		assert.doesNotMatch(main, /answer!/, "the web platform requires main! alone: the browser answers no calls");
 		assert.equal(main, clientMainModule({ web: /pf: platform "([^"]+)"/.exec(main)[1], packages: ['charts: "../../../packages/charts/main.roc"'], dir: "app" }));
 		assert.equal(readFileSync(join(out, "static", "rocx", "start.js"), "utf8"), readFileSync(join(dirname(web), "..", "start.js"), "utf8"));
-		assert.equal(readFileSync(join(out, "static", "rocx", "runtime.js"), "utf8"), readFileSync(join(dirname(web), "..", "runtime.js"), "utf8"));
+		// The runtime as pages load it: minified, not under --dev (D-075; test/static.test.mjs has both).
+		const shipped = readFileSync(join(out, "static", "rocx", "runtime.js"), "utf8");
+		const source = readFileSync(join(dirname(web), "..", "runtime.js"), "utf8");
+		assert.ok(shipped.length < source.length * 0.7 && !shipped.includes("/**"), "the runtime, minified");
 		assert.equal(readFileSync(join(out, "Generated", "Root.roc"), "utf8"), readFileSync(join(dir, "app", "Generated", "Root.roc"), "utf8"), "Root: the same in both copies");
 		assert.match(readFileSync(join(dir, "app", "Generated", "App.roc"), "utf8"), /^import jobs\.Job$[^]*^\tjobs = \[Job\.handler\(Jobs\.daily\)\]$/m, "App.jobs, for the jobs plugin, as the header names its package");
 		assert.ok(!existsSync(join(dir, "app", "reference.roc")) && !existsSync(join(out, "reference.roc")), "no reference.roc: the browser's copy renders from the answers the server's page recorded");

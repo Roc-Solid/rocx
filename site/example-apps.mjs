@@ -116,6 +116,14 @@ function browserHalf(name, rocx) {
 	return sizes(readFileSync(wasm));
 }
 
+/** The runtime as an app's pages load it: rocx build writes it, minified, beside start.js. */
+function shippedRuntime(rocx) {
+	const client = join(tmpdir(), "rocx-example-apps", "runtime");
+	rmSync(client, { recursive: true, force: true });
+	run(rocx, ["build", "examples/hello", "--client", client], { env: { ...process.env, ROC: roc() } });
+	return readFileSync(join(client, "static", "rocx", "runtime.js"));
+}
+
 /** The machine, as the page says it: "Apple M5, 10 cores". */
 function machineName() {
 	const model = spawnSync("sysctl", ["-n", "machdep.cpu.brand_string"], { encoding: "utf8" }).stdout?.trim() || cpus()[0]?.model || "an unknown CPU";
@@ -243,7 +251,7 @@ async function main(args) {
 		commit: counted ? before.commit : commit(),
 		roc: run(roc(), ["version"]).trim().replace(/^Roc compiler version /, ""),
 		machine: machineName(),
-		runtime: sizes(readFileSync(join(root, "web", "runtime.js"))),
+		runtime: sizes(shippedRuntime(rocx)),
 		examples,
 		bench: args.includes("--bench") ? await bench(rocx, Number(args.find((arg) => arg.startsWith("--seconds="))?.slice(10)) || 10) : before.bench,
 	};

@@ -4,9 +4,9 @@
 	"roc": "rocx-fork-4674b5973d",
 	"machine": "Apple M5, 10 cores",
 	"runtime": {
-		"bytes": 266020,
-		"gzip": 78039,
-		"brotli": 64557
+		"bytes": 166193,
+		"gzip": 42407,
+		"brotli": 35664
 	},
 	"examples": [
 		{

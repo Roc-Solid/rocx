@@ -267,7 +267,8 @@ async function measureClient(wasm, prefix, page) {
 /** The build's facts; with `compare`, the client built other ways too, for the internals page. */
 async function measure({ compare }) {
 	const browser = readFileSync(appWasm);
-	const runtime = readFileSync(join(root, "web", "runtime.js"));
+	// The runtime as pages load it: minified by rocx build (not under --dev).
+	const runtime = readFileSync(join(clientStatic, "rocx", "runtime.js"));
 	// The page the wasm renders, as the server answers it (started with the facts it had last).
 	if (!existsSync(context)) writeFileSync(context, lastFacts());
 	const running = await startServer();

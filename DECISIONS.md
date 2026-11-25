@@ -4535,3 +4535,75 @@ untouched but for the runtime's one line; apps need nothing new.
 copy's links are followed only from `<a href>`: a URL a component builds at run time isn't asked for.
 
 **Reversible:** yes: the site's prerender can go back to Node; nothing else depends on it.
+
+
+## D-074 Roc Solid in js-framework-benchmark
+
+**Status.** Built (2026-11-25). The user asked for js-framework-benchmark entries like Joy's, then
+to run them beside "all those" (vanillajs, Solid, Leptos, Joy, React), then why Roc Solid was so
+much slower; they chose the fixes before the published run.
+
+**Context.** js-framework-benchmark (krausest) is the common yardstick for web frameworks: one page,
+a table and six buttons; its runner clicks in Chrome and measures until the page has painted, the
+memory the page holds and what it downloads. An entry is a folder of files, which `rocx build
+--static` (D-073) writes.
+
+**Decision.**
+
+- **Two entries** in `benchmarks/jsframework/`: `keyed` (`.map` with `key={row.id}`) and
+  `non-keyed` (`.map_with_index` with `key={i}`; upstream retired its non-keyed entries on
+  2026-10-24, and its runner still measures them), each an app of one page with the vanillajs
+  entry's markup, the rows' data plain Roc with its expects (`Rows.roc`).
+- **`run.mjs`** (`just js-bench`): our entries built into a clone outside the repository
+  (`~/jsfb/js-framework-benchmark`), the benchmark's server on 8089 (never 8080), the runner
+  headless, the suite in rounds (benchmark by benchmark, every entry in turn; the second round in
+  reverse order), pooled into `site/js-framework-benchmark.json` (committed) with the machine, its
+  load, each step's power source, Chrome's version and the commits measured.
+- **The runner patched** (`runner-trace-start.patch`): a trace's events from before tracing
+  started are dropped. Our pages' traces held the warmup's clicks, which failed every benchmark that
+  creates rows ("at most one mousedown event is expected"); the other entries' 135 traces of a run
+  give the same durations with and without it.
+- **What the first run found, and what was fixed** (keyed, the runner's means): create 1,000 rows
+  217 ms against vanillajs's 19; replace all 798 against 21; swap 111 against 15; CPU geomean 4.99×
+  the fastest. Two causes: the browser host's notes of what runs allocate filled with hash-map
+  tombstones, so every run cost more than the one before (create 1,000 rows: 64 ms, then 199 after
+  five creates and clears), and a result was looked for among all of a run's allocations (fixed:
+  `clean`, and a string's allocation found at once); and a `.map`'s rows put in order moved every
+  row between two swapped ones (fixed: the longest run already in order stays). Both have counting
+  tests, not timing ones. And the runtime is minified (D-075).
+
+**Why.** A yardstick others use: where Roc Solid stands, and what to fix, from the same clicks
+every framework gets.
+
+**Costs.** A clone, Chrome for Testing and Joy's toolchain outside the repository; a patched runner.
+The numbers are this machine's until the entries are upstream (once the repository is public and
+its compiler can be downloaded).
+
+**Reversible:** yes: the entries and the script are files of their own.
+
+
+## D-075 The runtime minified in what ships
+
+**Status.** Built (2026-11-25), the user's go ("great idea").
+
+**Context.** `web/runtime.js` is written to be read: about 270 KB, half of it comments. Every page
+loads it beside its wasm, 65 KB with brotli, two thirds of a js-framework-benchmark entry's
+download (102 KB against Solid's 4.5 and Joy's 47).
+
+**Decision.** `rocx build --client` (and so `--static`, the docs site, every production build)
+writes the browser copy's `runtime.js` minified by rocx itself (`rocx-cli/Minify.roc`): comments
+and indentation gone, runs of spaces one; line breaks kept (so no semicolon JavaScript inserts
+changes), and no name shortened (so a stack trace names the runtime's functions). A small
+tokenizer keeps strings, template literals (and the code in their `${…}`) and regular expressions
+as they are. `--dev` (`rocx dev`, `just dev`) keeps the runtime as written. About 162 KB raw and
+35 KB with brotli; esbuild's full minification would make it 31. esbuild minifying the source and
+minifying our output gives byte-identical results (checked when it was built). The docs' sizes
+(the site's facts, the examples' page) now measure the runtime as it ships.
+
+**Why.** Half the bytes for nothing a page needs, with no tool beyond rocx: the same output on
+every machine, nothing generated to keep in step with the source.
+
+**Costs.** A tokenizer to keep right as the runtime's syntax grows (its expects, and the pages that
+run it in the site's and the static build's tests).
+
+**Reversible:** yes: copy the runtime as it is.
