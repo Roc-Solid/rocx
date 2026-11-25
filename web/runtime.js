@@ -3928,7 +3928,8 @@ export class Runtime {
 			this.run(made);
 		} else computation.part = this.part(holds ? node.c : [node.fallback], level, target, adopting);
 		if (!first && !adopting) this.entered(target);
-		if (!adopting) this.notify("show", { holds, nodes: inside(target) });
+		// Its nodes gathered only for an observer (the tests', the docs' demos): nothing else reads them.
+		if (!adopting && this.observer) this.notify("show", { holds, nodes: inside(target) });
 	}
 
 	/**
@@ -4033,9 +4034,12 @@ export class Runtime {
 			}
 			next = row.range.start;
 		}
-		for (let index = placed.length - 1; index >= 0; index--) {
-			const row = placed[index];
-			this.notify("row", { what: row.fresh ? "made" : "moved", key: row.key, nodes: inside(row.range) });
+		// Each row placed, said (its nodes gathered) only to an observer: the tests', the docs' demos.
+		if (this.observer) {
+			for (let index = placed.length - 1; index >= 0; index--) {
+				const row = placed[index];
+				this.notify("row", { what: row.fresh ? "made" : "moved", key: row.key, nodes: inside(row.range) });
+			}
 		}
 		for (const row of order) row.fresh = false;
 	}
