@@ -1025,6 +1025,10 @@ export class Runtime {
 		this.memos = new Map();
 		/** Selectors (`create_selector!`), by id: each its key now and a source each key read. */
 		this.selectors = new Map();
+		// Templates (`Html.template`, D-084): each site's id, and by id its skeleton (null until it comes,
+		// false for a site refused).
+		this.templateIds = new Map();
+		this.templates = [null];
 		/** Each `.map`'s rows (a "for" node), by key; its rows' indexes; and, by position, its items. */
 		this.lists = new Map();
 		this.boundaries = new Map();
@@ -1305,6 +1309,21 @@ export class Runtime {
 				this.selectors.set(selector.id, selector);
 				this.run(selector);
 				return selector.id;
+			},
+			// A template's state, by its site (D-084): 0 (the markup itself) on the server and while
+			// hydrating, whose nodes must be the server's, node for node; else its id times two, plus one
+			// once its skeleton is here.
+			js_template: (ptr, len) => {
+				if (this.onServer || this.current?.adopting) return 0;
+				const site = text(ptr, len);
+				let id = this.templateIds.get(site);
+				if (id === undefined) {
+					id = this.templates.length;
+					this.templates.push(null);
+					this.templateIds.set(site, id);
+				}
+				const template = this.templates[id];
+				return template === false ? 0 : id * 2 + (template ? 1 : 0);
 			},
 			js_selector_is: (id, ptr, len) => {
 				const selector = this.selectors.get(id);
@@ -4678,6 +4697,10 @@ export class Runtime {
 			}
 			case "e":
 				return this.element(node, owner, scope);
+			case "tpl":
+				// A template (D-084): its skeleton the first time, then a copy of it, its parts put in.
+				if (node.k) this.templates[node.s] = this.skeleton(node.k, scope);
+				return this.instantiate(this.templates[node.s], node.p, owner, scope);
 			case "loading": {
 				const loading = new Loading();
 				loading.range = makeRange("loading");
@@ -4774,6 +4797,88 @@ export class Runtime {
 		const inside = within(node, scope);
 		for (const child of node.c) element.append(this.build(child, owner, inside));
 		return element;
+	}
+
+	/**
+	 * A template's skeleton (`Html.template`, D-084): its elements as `element` makes them with the
+	 * attributes written in the file, its text, and an empty comment where each other child goes. Its
+	 * slots, in the order its parts come: an element with attributes to put in (`node`, its list with
+	 * `["?"]` where each goes), or a child's place; each by its path from the root.
+	 */
+	skeleton(node, scope) {
+		const slots = [];
+		const root = this.skeletal(node, scope, [], slots);
+		return { root, slots };
+	}
+
+	skeletal(node, scope, path, slots) {
+		if (node.t === "s") return document.createTextNode(node.v);
+		if (node.t !== "e") {
+			slots.push({ path, svg: Boolean(scope.svg) });
+			return document.createComment("");
+		}
+		const element = node.tag === "svg" || scope.svg ? document.createElementNS(SVG, node.tag) : document.createElement(node.tag);
+		const written = { tag: node.tag, a: node.a.filter(([kind]) => kind !== "?"), c: [] };
+		const classes = [];
+		for (const [, name, value] of written.a) if (name === "class") classes.push(value);
+		if (classes.length) element.setAttribute("class", classes.join(" "));
+		for (const [, name, value] of written.a) if (name !== "class") element.setAttribute(name, this.written(name, value));
+		Runtime.inOrder(element, written);
+		if (written.a.length !== node.a.length) slots.push({ path, node });
+		const inside = within(node, scope);
+		node.c.forEach((child, index) => element.append(this.skeletal(child, inside, [...path, index], slots)));
+		return element;
+	}
+
+	/** A copy of a template's skeleton with a row's parts put in, in its slots' order (D-084): an
+	 * element's attributes as `element` writes and binds them, a child as `build` makes it. */
+	instantiate(template, parts, owner, scope) {
+		const root = template.root.cloneNode(true);
+		const { slots } = template;
+		// Every slot's node first: a part put in may be several nodes, which would move the paths after it.
+		const nodes = new Array(slots.length);
+		for (let i = 0; i < slots.length; i++) {
+			let found = root;
+			for (const index of slots[i].path) found = found.childNodes[index];
+			nodes[i] = found;
+		}
+		let at = 0;
+		for (let i = 0; i < slots.length; i++) {
+			const slot = slots[i];
+			if (slot.node) {
+				let own = [];
+				const a = slot.node.a.map((attr) => (attr[0] === "?" ? (own[own.length] = parts[at++]) : attr));
+				// A part's name markup can't have (D-079) is left out, as `element` leaves it out.
+				const node = writable({ tag: slot.node.tag, a, c: [] }, this);
+				if (node.a !== a) own = own.filter((attr) => node.a.includes(attr));
+				this.fill(nodes[i], node, own, owner, scope);
+			} else {
+				nodes[i].replaceWith(this.build(parts[at++], owner, slot.svg && !scope.svg ? { ...scope, svg: true } : scope));
+			}
+		}
+		return root;
+	}
+
+	/** A skeleton's element given its other attributes (`own`; `node.a` all of them, in the markup's
+	 * order): what `element` does with them, the ones written in the file already on it. */
+	fill(element, node, own, owner, scope) {
+		if (own.some(([kind, name]) => kind === "ci" || (kind === "v" && name === "class"))) {
+			const classes = [];
+			for (const [kind, name, value] of node.a) {
+				if (kind === "v" && name === "class") classes.push(value);
+				else if (kind === "ci" && value) classes.push(name);
+			}
+			if (classes.length) element.setAttribute("class", classes.join(" "));
+		}
+		for (const [kind, name, value] of own) {
+			if (kind === "v" && name !== "class") element.setAttribute(name, this.written(name, value));
+			else if (kind === "o" && value !== "") element.setAttribute(name, this.written(name, value));
+			else if (kind === "f") element.toggleAttribute(name, value);
+			else if (kind === "sv" && value) element.style.setProperty(name, value);
+		}
+		this.bind(element, node, owner, scope);
+		this.styled(element, node);
+		Runtime.inOrder(element, node);
 	}
 
 	/** An element the runtime made, its `class` and `style` written as the server writes them

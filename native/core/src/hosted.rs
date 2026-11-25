@@ -101,6 +101,13 @@ pub extern "C" fn roc_selector_is(id: u64, key: RocStr) -> bool {
     }
 }
 
+/// A template (`Html.template`, D-084): none natively; the engine builds the markup itself.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_template(site: RocStr) -> u32 {
+    drop(taken(site));
+    0
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_refresh(probe: Callable) {
     engine::refresh_probe(probe)

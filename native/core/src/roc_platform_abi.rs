@@ -1716,6 +1716,15 @@ pub struct HostSubscribeArgs {
     pub arg1: RocErasedCallable,
 }
 
+/// Arguments for Host.template!
+/// Roc signature: Str => U32
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostTemplateArgs {
+    pub arg0: RocStr,
+}
+
 /// Arguments for Host.timeout!
 /// Roc signature: U64, Box({} => Str) => U64
 /// Refcounted fields are owned by the hosted function.
@@ -2210,6 +2219,13 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     ///     unsafe { decref_erased_callable(arg1, roc_host); }
     pub fn roc_subscribe(arg0: RocStr, arg1: RocErasedCallable);
+
+    /// Hosted symbol for Host.template!
+    /// Roc signature: Str => U32
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_template(arg0: RocStr) -> u32;
 
     /// Hosted symbol for Host.timeout!
     /// Roc signature: U64, Box({} => Str) => U64

@@ -304,6 +304,11 @@ Host := [].{
 
 	## Whether `key` is the selector's key.
 	selector_is! : U64, Str => Bool
+
+	## A template's state (`Html.template`, D-084): always 0 here, the markup itself (the server
+	## renders a page's HTML once; templates are for the browser).
+	template! : Str => U32
+
 	refresh! : Box(() => Str) => {}
 
 	## False: the server renders final values, so nothing it renders is computed again.

@@ -5,7 +5,8 @@ import pf.Solid exposing [create_selector!, create_signal!]
 ## changed only when it isn't `==` the one it had (D-053's `compared`, every list's now). One item
 ## changed, or every item; or two rows swapped, which moves those two. One row is picked, as
 ## js-framework-benchmark's select row is: a selector (`create_selector!`), so picking another runs
-## only the two rows' `class:picked` holes.
+## only the two rows' `class:picked` holes. Two rows more, made after the page is up: a template's
+## (D-084).
 Rows := [].{
 	Row : { id : U64, title : Str, done : Bool }
 
@@ -19,6 +20,7 @@ Rows := [].{
 			<button class="all" on:click={|| set_rows!(Rows.toggle(rows!(), 0))}>All</button>
 			<button class="swap" on:click={|| set_rows!(Rows.swapped(rows!()))}>Swap</button>
 			<button class="pick" on:click={|| set_picked!(picked!() + 1)}>Pick the next</button>
+			<button class="more" on:click={|| set_rows!(Rows.more(rows!()))}>Two more</button>
 			<ul class="rows">
 				{...rows!().map(|row|
 					<li key={row.id} class:done={row.done} class:picked={is_picked!(row.id)}>{row.title}</li>
@@ -29,6 +31,13 @@ Rows := [].{
 
 	start : List(Rows.Row)
 	start = List.repeat(0, 1000).map_with_index(|_, index| { id: index + 1, title: "Row ${(index + 1).to_str()}", done: Bool.False })
+
+	## Two rows more, numbered after the last.
+	more : List(Rows.Row) -> List(Rows.Row)
+	more = |rows| {
+		next = rows.len() + 1
+		rows.concat([next, next + 1].map(|id| { id, title: "Row ${id.to_str()}", done: Bool.False }))
+	}
 
 	## The second row and the 999th change places (js-framework-benchmark's swap).
 	swapped : List(Rows.Row) -> List(Rows.Row)

@@ -841,6 +841,22 @@ test("a .map's rows (D-071), compared as D-053's <For compared> was: a list read
 			assert.equal(next.live, 0);
 		}
 		assert.deepEqual(await picked(), ["Row 6"]);
+		// Rows made once the page is up are a template's (D-084): the first tells the runtime the row's
+		// skeleton, and each is a copy of it with its parts put in. The same as `element` makes them:
+		// the site refused, two more are made that way, and are the same but for their text.
+		const more = await tab.eval("window.step('button.more')");
+		assert.deepEqual(more.rows, ["made 1001", "made 1002"]);
+		assert.equal(await tab.eval("window.runtime.templates.filter(Boolean).length"), 1, "one skeleton, the row's");
+		await tab.eval("window.runtime.templates = window.runtime.templates.map((template) => (template ? false : template))");
+		const plain = await tab.eval("window.step('button.more')");
+		assert.deepEqual(plain.rows, ["made 1003", "made 1004"]);
+		const last = () => tab.eval("[...document.querySelectorAll('.rows li')].slice(-4).map((li) => li.outerHTML)");
+		const [a, b, c, d] = await last();
+		assert.deepEqual([a.replace("1001", "1003"), b.replace("1002", "1004")], [c, d], "a template's rows are what element makes");
+		// Their holes are live: every row done.
+		const done = await tab.eval("window.step('button.all')");
+		assert.equal(done.runs, 3013, "the list, and every row's three holes, the four new ones' too");
+		assert.deepEqual((await last()).map((html) => html.includes('class="done"')), [true, true, true, true]);
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();

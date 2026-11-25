@@ -922,6 +922,15 @@ pub extern "C" fn roc_selector_is(id: u64, key: RocStr) -> bool {
     }
 }
 
+/// A template (`Html.template`, D-084): none on the server, which renders a page's HTML once: the
+/// markup itself.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_template(site: RocStr) -> u32 {
+    let _host = crate::preempt::host();
+    unsafe { site.decref(&roc::host()) };
+    0
+}
+
 /// On the server nothing is computed again: a refresh is for the browser.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_refresh(probe: Callable) {

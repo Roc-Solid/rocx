@@ -25,9 +25,12 @@ Html :: [
 	Provided(Str, U64, List(Html)),
 	NoHydration(List(Html)),
 	Listen(Str, List(Html.Attr)),
+	Template(Str, Html),
+	Shown(Html),
 ].{
 	Attr := [
 		Value(Str, Str),
+		Literal(Str, Str),
 		ValueOf(Str, () => Str),
 		Optional(Str, Str),
 		OptionalOf(Str, () => Str),
@@ -123,6 +126,21 @@ Html :: [
 	hole_of : (() => Html) -> Html
 	hole_of = |compute| HoleOf(compute)
 
+	## A hole that reads nothing that changes (`{x}`, written once): what `Html.hole` shows, marked as a
+	## value, not markup written in the file, so a template (`Html.template`) takes it as one of its
+	## parts. rocx writes this.
+	shown : a -> Html where [a.encode : a, Html.Hole -> Try(Html, [])]
+	shown = |value| Shown(Html.hole(value))
+
+	## A `.map`'s row as a template (D-084): `site` names where it is written (the module, and where in
+	## it), and `markup` is the row. In the browser, once the page is up, the first row made there tells
+	## the runtime its skeleton (its elements, the attributes and text written in the file) and each
+	## row after sends only its parts (its holes, handlers, keys, attributes from values), which the
+	## runtime puts into a copy of the skeleton. On the server, natively and while hydrating it is the
+	## markup itself. rocx writes this.
+	template : Str, Html -> Html
+	template = |site, markup| Template(site, markup)
+
 	## What a name a `match` arm binds reads (D-070: rocx makes it a getter, so the arm stays while
 	## its value changes) once its arm no longer holds: never, as the arm is made again first; if it
 	## ever is, a failure, the nearest `<Errored>`'s.
@@ -208,6 +226,11 @@ Html :: [
 	## written (D-079). `optional`, `flag` and the computed ones' names are the same.
 	attr : Str, Str -> Attr
 	attr = |name, value| Value(name, value)
+
+	## An attribute written in the file (`class="row"`): a template's skeleton holds it. rocx writes
+	## this; anything else is `Html.attr`.
+	attr_literal : Str, Str -> Attr
+	attr_literal = |name, value| Literal(name, value)
 
 	attr_of : Str, (() => Str) -> Attr
 	attr_of = |name, compute| ValueOf(name, compute)
@@ -579,6 +602,7 @@ Html :: [
 				keep!(
 					|| match compute() {
 						Text(content) => json_str(content)
+						Shown(Text(content)) => json_str(content)
 						markup => serialize!(markup)
 					},
 				)
@@ -613,7 +637,127 @@ Html :: [
 			Provided(name, value, children) => "{\"t\":\"ctx\",\"n\":${json_str(name)},\"v\":${value.to_str()},\"c\":[${nodes!(children)}]}"
 			NoHydration(children) => "{\"t\":\"nh\",\"c\":[${nodes!(children)}]}"
 			Listen(target, handlers) => "{\"t\":\"listen\",\"to\":${json_str(target)},\"a\":[${attributes!(target, handlers)}]}"
+			Shown(markup) => serialize!(markup)
+			Template(site, markup) => template!(site, markup)
 		}
+}
+
+## A template's markup for the runtime (`Html.template`, D-084): as it is (`serialize!`) where the
+## runtime makes no templates (the server, natively, while hydrating: `Host.template!` answers 0) or
+## a skeleton can't hold it (`templatable`); else `{"t":"tpl","s":id,"p":[…]}`, its parts in its
+## skeleton's slots' order, with its skeleton (`"k"`) the first time the runtime is told of it.
+template! : Str, Html => Str
+template! = |site, markup| {
+	answer = if (templatable(markup)) Host.template!(site) else 0
+	if answer == 0 {
+		Html.serialize!(markup)
+	} else {
+		parts = Str.join_with(parts!(markup, []), ",")
+		known = if (answer % 2 == 1) "" else ",\"k\":${skeleton(markup)}"
+		"{\"t\":\"tpl\",\"s\":${(answer // 2).to_str()}${known},\"p\":[${parts}]}"
+	}
+}
+
+## Whether a skeleton can hold markup: an element at its root, no element whose content the
+## browser doesn't read as markup (`script`, `style`, `title`, `textarea`), which the runtime makes
+## its own way, and no name markup can't have (D-079), which only `element` leaves out.
+templatable : Html -> Bool
+templatable = |node|
+	match node {
+		Element(tag, attrs, children) => !unparsed.contains(tag) and written(tag, children) and literals_plain(attrs) and children.all(|child| skeletal(child))
+		Void(tag, attrs) => !unparsed.contains(tag) and written(tag, []) and literals_plain(attrs)
+		_ => Bool.False
+	}
+
+## Whether the attributes written in the file have names markup may have.
+literals_plain : List(Html.Attr) -> Bool
+literals_plain = |attrs|
+	attrs.all(
+		|attribute|
+			match attribute {
+				Literal(name, _) => plain_name(name, Bool.True)
+				_ => Bool.True
+			},
+	)
+
+## A child a skeleton holds as one of its own elements: an element, its own children checked too.
+skeletal : Html -> Bool
+skeletal = |child|
+	match child {
+		Element(_, _, _) => templatable(child)
+		Void(_, _) => templatable(child)
+		_ => Bool.True
+	}
+
+unparsed : List(Str)
+unparsed = ["script", "style", "title", "textarea"]
+
+## A template's skeleton: its elements, with the attributes written in the file (`Literal`) and a
+## slot (`["?"]`) for each other, and the text written in the file, a slot (`{"t":"?"}`) for any
+## other child (a hole, a component, a value's text).
+skeleton : Html -> Str
+skeleton = |node|
+	match node {
+		Element(tag, attrs, children) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${skeleton_attributes(tag, unfilled(tag, attrs))}],\"c\":[${Str.join_with(children.map(skeleton_child), ",")}]}"
+		Void(tag, attrs) => "{\"t\":\"e\",\"tag\":${json_str(tag)},\"a\":[${skeleton_attributes(tag, unfilled(tag, attrs))}],\"c\":[]}"
+		_ => "{\"t\":\"?\"}"
+	}
+
+skeleton_child : Html -> Str
+skeleton_child = |child|
+	match child {
+		Element(_, _, _) => skeleton(child)
+		Void(_, _) => skeleton(child)
+		Text(content) => "{\"t\":\"s\",\"v\":${json_str(content)}}"
+		_ => "{\"t\":\"?\"}"
+	}
+
+skeleton_attributes : Str, List(Html.Attr) -> Str
+skeleton_attributes = |tag, attrs|
+	Str.join_with(
+		attrs.map(
+			|attribute|
+				match attribute {
+					Literal(name, value) => "[\"v\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
+					_ => "[\"?\"]"
+				},
+		),
+		",",
+	)
+
+## A template's parts, in its skeleton's slots' order: an element's attributes not written in the
+## file, then its children's (an element's own, in turn), each as `serialize!` writes it.
+parts! : Html, List(Str) => List(Str)
+parts! = |node, out|
+	match node {
+		Element(tag, attrs, children) => {
+			var $out = attribute_parts!(tag, unfilled(tag, attrs), out)
+			for child in children {
+				$out =
+					match child {
+						Element(_, _, _) => parts!(child, $out)
+						Void(_, _) => parts!(child, $out)
+						Text(_) => $out
+						_ => $out.append(Html.serialize!(child))
+					}
+			}
+			$out
+		}
+		Void(tag, attrs) => attribute_parts!(tag, unfilled(tag, attrs), out)
+		_ => out.append(Html.serialize!(node))
+	}
+
+attribute_parts! : Str, List(Html.Attr), List(Str) => List(Str)
+attribute_parts! = |tag, attrs, out| {
+	var $out = out
+	for attribute in attrs {
+		$out =
+			match attribute {
+				Literal(_, _) => $out
+				_ => $out.append(attribute!(tag, attribute))
+			}
+	}
+	$out
 }
 
 ## Markup's text, its holes computed (`<Title>`'s children): what `textContent` would say.
@@ -628,6 +772,8 @@ plain! = |parts| {
 				Element(_, _, children) => plain!(children)
 				Fragment(children) => plain!(children)
 				NoHydration(children) => plain!(children)
+				Shown(markup) => plain!([markup])
+				Template(_, markup) => plain!([markup])
 				HtmlOf(compute) => plain!([compute()])
 				HoleOf(compute) => plain!([compute()])
 				ListOf(compute) => plain!(compute())
@@ -678,6 +824,8 @@ raw_text! = |parts| {
 			match part {
 				Raw(content) => content
 				Text(content) => content
+				Shown(markup) => raw_text!([markup])
+				Template(_, markup) => raw_text!([markup])
 				TextOf(compute) => compute()
 				Fragment(children) => raw_text!(children)
 				HtmlOf(compute) => raw_text!([compute()])
@@ -711,6 +859,7 @@ head_key = |element|
 					|attribute|
 						match attribute {
 							Value(name, value) if name.caseless_ascii_equals(wanted) => Ok(value)
+							Literal(name, value) if name.caseless_ascii_equals(wanted) => Ok(value)
 							Optional(name, value) if name.caseless_ascii_equals(wanted) and !value.is_empty() => Ok(value)
 							Flag(name, on) if name.caseless_ascii_equals(wanted) and on => Ok("")
 							_ => Err(NotIt)
@@ -782,48 +931,53 @@ attributes! : Str, List(Html.Attr) => Str
 attributes! = |tag, attrs| {
 	var $out = List.with_capacity(attrs.len())
 	for attribute in attrs {
-		$out = $out.append(
-			match attribute {
-				Value(name, value) => "[\"v\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
-				ValueOf(name, compute) => "[\"vo\",${json_str(name)},${keep!(|| json_str(safe_value(tag, name, compute())))}]"
-				Optional(name, value) => "[\"o\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
-				OptionalOf(name, compute) => "[\"oo\",${json_str(name)},${keep!(|| json_str(safe_value(tag, name, compute())))}]"
-				StyleVar(name, value) => "[\"sv\",${json_str(name)},${json_str(safe_style(name, value))}]"
-				StyleOf(name, compute) =>
-					if plain_property(name) {
-						"[\"so\",${json_str(name)},${keep!(|| json_str(safe_css(compute())))}]"
-					} else {
-						"[\"sv\",${json_str(name)},\"\"]"
-					}
-				Flag(name, is_on) => "[\"f\",${json_str(name)},${if (is_on) "true" else "false"}]"
-				FlagOf(name, compute) => "[\"fo\",${json_str(name)},${keep!(|| if (compute()) "true" else "false")}]"
-				ClassIf(name, is_on) => "[\"ci\",${json_str(name)},${if (is_on) "true" else "false"}]"
-				ClassOf(name, compute) => "[\"co\",${json_str(name)},${keep!(|| if (compute()) "true" else "false")}]"
-				On(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(handler))}]"
-				OnValue(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}))))}]"
-				OnChecked(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}) == "true")))}]"
-				OnKey(event, handler) => "[\"onk\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}))))}]"
-				OnKeys(event, handler) => "[\"onk\",${json_str(event)},${keep!(|| handled!(|| handler(keys_of(Host.event_value!({})))))},\"keys\"]"
-				OnNamedKey(event, wanted, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(handler))},${json_str(wanted)}]"
-				OnPrevent(event, handler) => "[\"onp\",${json_str(event)},${keep!(|| handled!(handler))}]"
-				OnFrame(handler) => "[\"frame\",\"frame\",${keep!(|| handled!(|| handler(frame_ms(Host.event_value!({})))))}]"
-				OnViewport(handler) => "[\"view\",\"viewport\",${keep!(|| handled!(|| handler(viewport_of(Host.event_value!({})))))}]"
-				OnPoint(event, handler) => "[\"pt\",${json_str(event)},${keep!(|| handled!(|| handler(point_of(Host.event_value!({})))))}]"
-				OnData(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(drag_items_of(Host.event_value!({})))))},\".data\"]"
-				OnFiles(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(files_of(Host.event_value!({})))))},\".files\"]"
-				DragData(items) => "[\"dd\",\"data\",${json_str(pairs_json(items))}]"
-				DragDataOf(compute) => "[\"ddo\",\"data\",${keep!(|| json_str(pairs_json(compute())))}]"
-				DragImage(id) => "[\"dd\",\"image\",${json_str(id)}]"
-				DragImageOf(compute) => "[\"ddo\",\"image\",${keep!(|| json_str(compute()))}]"
-				Key(id) => "[\"k\",${json_str(id)}]"
-				KeyOf(compute) => "[\"ko\",${keep!(|| json_str(compute()))}]"
-				Animate(way, animation) => "[\"tr\",${way_name(way)},${animation.json()}]"
-				AnimateOf(way, compute) => "[\"tro\",${way_name(way)},${keep!(|| compute().json())}]"
-			},
-		)
+		$out = $out.append(attribute!(tag, attribute))
 	}
 	Str.join_with($out, ",")
 }
+
+## One of them, as the runtime reads it: `[kind, name, value]` (a handler's or a computed one's value
+## the id of the box the runtime keeps).
+attribute! : Str, Html.Attr => Str
+attribute! = |tag, attribute|
+	match attribute {
+		Value(name, value) => "[\"v\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
+		Literal(name, value) => "[\"v\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
+		ValueOf(name, compute) => "[\"vo\",${json_str(name)},${keep!(|| json_str(safe_value(tag, name, compute())))}]"
+		Optional(name, value) => "[\"o\",${json_str(name)},${json_str(safe_value(tag, name, value))}]"
+		OptionalOf(name, compute) => "[\"oo\",${json_str(name)},${keep!(|| json_str(safe_value(tag, name, compute())))}]"
+		StyleVar(name, value) => "[\"sv\",${json_str(name)},${json_str(safe_style(name, value))}]"
+		StyleOf(name, compute) =>
+			if plain_property(name) {
+				"[\"so\",${json_str(name)},${keep!(|| json_str(safe_css(compute())))}]"
+			} else {
+				"[\"sv\",${json_str(name)},\"\"]"
+			}
+		Flag(name, is_on) => "[\"f\",${json_str(name)},${if (is_on) "true" else "false"}]"
+		FlagOf(name, compute) => "[\"fo\",${json_str(name)},${keep!(|| if (compute()) "true" else "false")}]"
+		ClassIf(name, is_on) => "[\"ci\",${json_str(name)},${if (is_on) "true" else "false"}]"
+		ClassOf(name, compute) => "[\"co\",${json_str(name)},${keep!(|| if (compute()) "true" else "false")}]"
+		On(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(handler))}]"
+		OnValue(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}))))}]"
+		OnChecked(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}) == "true")))}]"
+		OnKey(event, handler) => "[\"onk\",${json_str(event)},${keep!(|| handled!(|| handler(Host.event_value!({}))))}]"
+		OnKeys(event, handler) => "[\"onk\",${json_str(event)},${keep!(|| handled!(|| handler(keys_of(Host.event_value!({})))))},\"keys\"]"
+		OnNamedKey(event, wanted, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(handler))},${json_str(wanted)}]"
+		OnPrevent(event, handler) => "[\"onp\",${json_str(event)},${keep!(|| handled!(handler))}]"
+		OnFrame(handler) => "[\"frame\",\"frame\",${keep!(|| handled!(|| handler(frame_ms(Host.event_value!({})))))}]"
+		OnViewport(handler) => "[\"view\",\"viewport\",${keep!(|| handled!(|| handler(viewport_of(Host.event_value!({})))))}]"
+		OnPoint(event, handler) => "[\"pt\",${json_str(event)},${keep!(|| handled!(|| handler(point_of(Host.event_value!({})))))}]"
+		OnData(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(drag_items_of(Host.event_value!({})))))},\".data\"]"
+		OnFiles(event, handler) => "[\"on\",${json_str(event)},${keep!(|| handled!(|| handler(files_of(Host.event_value!({})))))},\".files\"]"
+		DragData(items) => "[\"dd\",\"data\",${json_str(pairs_json(items))}]"
+		DragDataOf(compute) => "[\"ddo\",\"data\",${keep!(|| json_str(pairs_json(compute())))}]"
+		DragImage(id) => "[\"dd\",\"image\",${json_str(id)}]"
+		DragImageOf(compute) => "[\"ddo\",\"image\",${keep!(|| json_str(compute()))}]"
+		Key(id) => "[\"k\",${json_str(id)}]"
+		KeyOf(compute) => "[\"ko\",${keep!(|| json_str(compute()))}]"
+		Animate(way, animation) => "[\"tr\",${way_name(way)},${animation.json()}]"
+		AnimateOf(way, compute) => "[\"tro\",${way_name(way)},${keep!(|| compute().json())}]"
+	}
 
 ## An element's attributes, without an `<input type="password">`'s `value`: what was typed in one is
 ## never written into a page (a form filled in again after a refused post, say), whatever the
@@ -833,11 +987,13 @@ unfilled = |tag, attrs| {
 	secret = |attribute|
 		match attribute {
 			Value("type", kind) => kind.with_ascii_lowercased() == "password"
+			Literal("type", kind) => kind.with_ascii_lowercased() == "password"
 			_ => Bool.False
 		}
 	filled = |attribute|
 		match attribute {
 			Value(name, _) => name == "value"
+			Literal(name, _) => name == "value"
 			ValueOf(name, _) => name == "value"
 			Optional(name, _) => name == "value"
 			OptionalOf(name, _) => name == "value"
@@ -884,6 +1040,8 @@ static_str = |node, quiet|
 		Errored(_, children) => marked("errored", static_nodes(children, quiet), quiet)
 		Provided(_, _, children) => static_nodes(children, quiet)
 		NoHydration(children) => marked("nohydration", static_nodes(children, Bool.True), quiet)
+		Shown(markup) => static_str(markup, quiet)
+		Template(_, markup) => static_str(markup, quiet)
 		# Handlers on the document or the window: nothing on the page.
 		Listen(_, _) => ""
 		_ => crash "Html.to_str renders markup with nothing to run in it: a computation, an if's part, a .map's rows or a component needs the runtime"
@@ -910,9 +1068,13 @@ static_attributes = |tag, attrs| {
 				Value(name, _) if !plain_name(name, Bool.True) => state
 				Optional(name, _) if !plain_name(name, Bool.True) => state
 				Flag(name, _) if !plain_name(name, Bool.True) => state
+				Literal(name, _) if !plain_name(name, Bool.True) => state
 				Value("class", value) => { ..state, classes: state.classes.append(value) }
+				Literal("class", value) => { ..state, classes: state.classes.append(value) }
 				Value("style", value) => { ..state, styles: state.styles.append(value) }
+				Literal("style", value) => { ..state, styles: state.styles.append(value) }
 				Value(name, value) => { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }
+				Literal(name, value) => { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }
 				Optional(name, value) => if (value.is_empty()) state else { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }
 				Flag(name, is_on) => if (is_on) { ..state, others: state.others.append(name) } else state
 				ClassIf(name, is_on) => if (is_on) { ..state, classes: state.classes.append(name) } else state

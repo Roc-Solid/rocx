@@ -5016,3 +5016,37 @@ item, the current tab): a pick costs two rows' holes, not the list's.
 whose inspection isn't unique (none of Roc's data types) would compare wrongly.
 
 **Reversible:** yes: a reader can compare with the signal again.
+
+
+## D-084 A `.map`'s row is a template
+
+**Status.** Built (2026-11-25), the user's go: the third of the steps that close js-framework-benchmark's
+gap (D-074; D-083 was the first).
+
+**Context.** Making a row cost Roc its whole markup as JSON (every element, attribute and text, a
+string built and joined at each level: about 110 allocations a row of the benchmark's table), and
+the browser parsing it and making it an element at a time. Solid compiles a row's static markup into
+a template it clones; the rest are its holes.
+
+**Decision.** rocx writes a `.map`'s row as `Html.template(site, markup)`, `site` naming the module
+and how many `.map`s come before it there (formatting doesn't change it). It marks what was written
+in the file: a literal attribute is `Html.attr_literal` (`Literal`), a hole that reads nothing that
+changes is `Html.shown` (`Shown`: a value, even when it is text, never part of a skeleton). In the
+browser, once the page is up, the first row at a site sends its skeleton (its elements, literal
+attributes and literal text, a slot for each other attribute and child) and its parts; every row
+after sends only its parts, in the slots' order (`Host.template!` says which: 0 for none, else an id
+and whether the skeleton is in). The runtime keeps the skeleton as nodes, clones it, finds each slot
+by its path, and puts each part in with `element`'s and `build`'s code (`fill`, `instantiate`), so
+a row is the nodes `element` would make (the web tests compare them). The server, the native engine
+and hydration get the markup itself (`Host.template!` answers 0); so does a row whose root isn't an
+element, or that holds `<script>`, `<style>`, `<title>`, `<textarea>` or a name D-079 refuses.
+
+**Why.** Creating 1,000 of the benchmark's rows: 39 allocations a row instead of 110, about 24 ms
+instead of 30 (click to layout, after D-083's selector and the host's cheaper notes). It needs no
+analysis in the transpiler beyond what it knows as it writes: which attributes and text are literal.
+
+**Costs.** Three constructors rocx writes (`template`, `attr_literal`, `shown`) and two variants
+every match on `Html` handles; a skeleton per site kept for the page's life; rows only (a
+component's markup, made once, isn't a template).
+
+**Reversible:** yes: rocx stops writing `Html.template`; the markup is as before.

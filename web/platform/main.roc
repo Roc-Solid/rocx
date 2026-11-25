@@ -85,6 +85,7 @@ platform ""
 		"roc_submissions": Host.submissions!,
 		"roc_submit": Host.submit!,
 		"roc_subscribe": Host.subscribe!,
+		"roc_template": Host.template!,
 		"roc_timeout": Host.timeout!,
 		"roc_title": Host.title!,
 		"roc_tracking": Host.tracking!,

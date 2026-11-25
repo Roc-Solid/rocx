@@ -28,6 +28,10 @@ Host := [].{
 	## when the answer for its own key changes. Waits while the selector does.
 	selector_is! : U64, Str => Bool
 
+	## A template's state (`Html.template`, D-084), by its site: 0 for none (as the page hydrates, or a
+	## site the runtime refused), else its id times two, plus one once the runtime has its skeleton.
+	template! : Str => U32
+
 	## Runs it once, noting the memos it reads, and computes those again, asking the server again.
 	refresh! : Box(() => Str) => {}
 

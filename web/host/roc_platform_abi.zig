@@ -1181,6 +1181,13 @@ pub const HostSubscribeArgs = extern struct {
     arg1: RocErasedCallable,
 };
 
+/// Arguments for Host.template!
+/// Roc signature: Str => U32
+/// Refcounted fields are owned by the hosted function.
+pub const HostTemplateArgs = extern struct {
+    arg0: RocStr,
+};
+
 /// Arguments for Host.timeout!
 /// Roc signature: U64, Box({} => Str) => U64
 /// Refcounted fields are owned by the hosted function.
@@ -1633,6 +1640,13 @@ pub extern fn roc_submit(arg0: RocStr, arg1: RocStr, arg2: RocStr, arg3: RocStr)
 ///     arg0.decref(roc_host);
 ///     decrefErasedCallable(arg1, roc_host);
 pub extern fn roc_subscribe(arg0: RocStr, arg1: RocErasedCallable) callconv(.c) void;
+
+/// Hosted symbol for Host.template!
+/// Roc signature: Str => U32
+/// Owned arguments. Release each exactly once before returning, unless it is
+/// moved into storage or into the result:
+///     arg0.decref(roc_host);
+pub extern fn roc_template(arg0: RocStr) callconv(.c) u32;
 
 /// Hosted symbol for Host.timeout!
 /// Roc signature: U64, Box({} => Str) => U64

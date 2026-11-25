@@ -582,6 +582,23 @@ it again, once its value is in.) Its holes, and the getters it gives its compone
 item. A row may hold another `.map` or an `if`, owned by the row (D-036). A key that is gone drops
 its row, after the row's transitions out.
 
+**A row is a template (D-084).** rocx writes a row's markup as `Html.template(site, …)`, `site`
+naming the module and how many `.map`s come before it there. It also marks what was written in the
+file: an attribute's literal value is `Html.attr_literal`, and a hole that reads nothing that
+changes is `Html.shown` (a value, even when it is text). Once the page is up, the first row made at
+a site sends the runtime its skeleton: its elements with their literal attributes, its literal
+text, and a slot for everything else (`{"t":"tpl","s":id,"k":…,"p":[…]}`). Each row after that
+sends only its parts (`"p"`: its holes, handlers, keys, attributes from values, components),
+in its slots' order. The runtime keeps the skeleton as nodes, copies it for each row
+(`cloneNode`), finds each slot by its path, and puts the parts in with the code `element` and
+`build` use (`fill`, `instantiate`). So a row costs Roc a walk and a short JSON, not its whole
+markup, and the browser one copy, not an element at a time: creating 1,000 js-framework-benchmark
+rows went from 110 allocations a row to 39, and from about 30 ms to 24. On the server, in the
+native engine and while hydrating (the nodes there must be the server's, node for node)
+`Host.template!` answers 0, and a row is its markup, as before; so is a row whose root isn't an
+element, or that holds a `<script>`, `<style>`, `<title>` or `<textarea>` or a name markup can't
+have (D-079).
+
 ### `<Repeat>`
 
 `<Repeat count!={n!()} from!={first!()}>{|index| …}</Repeat>` is Solid 2.0's: rows with no list

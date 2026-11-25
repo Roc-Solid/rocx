@@ -4305,6 +4305,15 @@ pub struct HostSubscribeArgs {
     pub arg1: RocErasedCallable,
 }
 
+/// Arguments for Host.template!
+/// Roc signature: Str => U32
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostTemplateArgs {
+    pub arg0: RocStr,
+}
+
 /// Arguments for Host.timeout!
 /// Roc signature: U64, Box({} => Str) => U64
 /// Refcounted fields are owned by the hosted function.
@@ -5280,7 +5289,7 @@ impl AnonStruct8f4fc9623a0f6755 {
     pub unsafe fn decref(self, roc_host: &RocHost) {
         let value = self;
         unsafe { value.bytes.decref(roc_host); }
-        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type107), roc_host); }
+        unsafe { decref_box_with(value.feed as RocBox, core::mem::align_of::<AnonStruct608867a33f852b1e>(), true, Some(decref_box_payload_type108), roc_host); }
         unsafe { value.headers.decref(roc_host); }
         unsafe { decref_erased_callable(value.page, roc_host); }
         unsafe { value.text.decref(roc_host); }
@@ -5392,7 +5401,7 @@ pub unsafe fn decref_list_of_str(value: RocList<RocStr>, roc_host: &RocHost) {
     unsafe { value.release_with::<RocStrRelease>(roc_host); }
 }
 
-extern "C" fn decref_box_payload_type92(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type93(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -5401,7 +5410,7 @@ extern "C" fn decref_box_payload_type92(data_ptr: *mut c_void, roc_host: *mut Ro
     unsafe { payload.decref(roc_host); }
 }
 
-extern "C" fn decref_box_payload_type107(data_ptr: *mut c_void, roc_host: *mut RocHost) {
+extern "C" fn decref_box_payload_type108(data_ptr: *mut c_void, roc_host: *mut RocHost) {
     if data_ptr.is_null() || roc_host.is_null() {
         return;
     }
@@ -6390,6 +6399,13 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     ///     unsafe { decref_erased_callable(arg1, roc_host); }
     pub fn roc_subscribe(arg0: RocStr, arg1: RocErasedCallable);
+
+    /// Hosted symbol for Host.template!
+    /// Roc signature: Str => U32
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_template(arg0: RocStr) -> u32;
 
     /// Hosted symbol for Host.timeout!
     /// Roc signature: U64, Box({} => Str) => U64

@@ -2112,7 +2112,7 @@ Transpile := [].{
 				}
 			match closing {
 				Some(done) => {
-					class_attr = if (scoped and !$classed) [Item(if (component) "class: ${Text.roc_string(scopes)}" else "Html.attr(\"class\", ${Text.roc_string(scopes)})")] else []
+					class_attr = if (scoped and !$classed) [Item(if (component) "class: ${Text.roc_string(scopes)}" else "Html.attr_literal(\"class\", ${Text.roc_string(scopes)})")] else []
 					return Ok({ st: { ..$st, pos: done.end }, attrs: $attrs.concat(class_attr), self_closing: done.self_closing, reads_props: $reads_props })
 				}
 				None => {}
@@ -2258,7 +2258,7 @@ Transpile := [].{
 								decoded0
 							}
 						value = Text.roc_string(decoded)
-						$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else if (drag) "Html.drag_image(${value})" else "Html.attr(${Text.roc_string(name)}, ${value})"))
+						$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else if (drag) "Html.drag_image(${value})" else "Html.attr_literal(${Text.roc_string(name)}, ${value})"))
 						$st = { ..$st, pos: end + 1 }
 					} else if quote == '{' {
 						effects_before = $st.effects
@@ -2721,7 +2721,7 @@ Transpile := [].{
 			} else if st1.effects > st0.effects {
 				"Html.hole_of(|| Html.hole(${expr}))"
 			} else {
-				"Html.hole(${expr})"
+				"Html.shown(${expr})"
 			}
 		Ok({ st: st1, parts: [Item(out)] })
 	}
@@ -2786,7 +2786,7 @@ Transpile := [].{
 				Plain => {}
 			}
 		}
-		Ok({ st: read.st, out: if (read.reads) "Html.hole_of(|| Html.hole(${read.out}))" else "Html.hole(${read.out})" })
+		Ok({ st: read.st, out: if (read.reads) "Html.hole_of(|| Html.hole(${read.out}))" else "Html.shown(${read.out})" })
 	}
 
 	## The source's line ends from `from` up to `to`, as they are, and then the indentation of the
@@ -3012,8 +3012,31 @@ Transpile := [].{
 			} else {
 				"Html.rows!(|| ${list.out}, |${found.item}| ${key_line}, |${item_param}, ${index_param}|"
 			}
-		out = head.concat(Transpile.newlines_in(src, found.list.to, found.body.from)).concat(" ").concat(body.out).concat(Transpile.newlines_in(src, found.body.to, to)).concat(")")
+		# The row a template (D-084), named by its module and how many `.map`s come before it there
+		# (which formatting doesn't change, as it does where in the file it is).
+		site = Text.roc_string("${cfg.module_path}:${Transpile.maps_before(src, found.list.from).to_str()}")
+		out = head.concat(Transpile.newlines_in(src, found.list.to, found.body.from)).concat(" Html.template(${site}, ").concat(body.out).concat(")").concat(Transpile.newlines_in(src, found.body.to, to)).concat(")")
 		Ok(Rowed({ st: body.st, out }))
+	}
+
+	## How many `.map`s (`.map(`, `.map_with_index(`) come before `at`.
+	maps_before : List(U8), U64 -> U64
+	maps_before = |src, at| {
+		word = ".map".to_utf8()
+		var $count = 0
+		var $from = 0
+		while $from < at {
+			match Text.index_of(src, word, $from) {
+				Ok(i) if i < at => {
+					$count = $count + 1
+					$from = i + 1
+				}
+				_ => {
+					$from = at
+				}
+			}
+		}
+		$count
 	}
 
 	## Whether `code` calls `name` (`todo!`) or reads it (`i`), in a string's interpolation too: the name,
