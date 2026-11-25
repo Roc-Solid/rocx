@@ -101,27 +101,84 @@ fn host() *abi.RocHost {
     return &roc_host;
 }
 
-fn countedAlloc(roc_host_ptr: *abi.RocHost, length: usize, alignment: usize) callconv(.c) *anyopaque {
+// ---- Roc's memory: each allocation with a header of the host's ----
+//
+// Before what Roc gets, 8 bytes (or its alignment's, if more): the allocation's number, if a frame
+// was open when it was made (`note`; 0 if not, or once the host holds it), then its length. Its
+// number says which frame made it without a lookup: a frame's are those numbered since it began.
+
+/// The header's bytes for an alignment code (`alignCode`): 8, 16, 32…
+fn headerBytes(code: u32) usize {
+    return @as(usize, 8) << @intCast(code);
+}
+
+/// An alignment as a code of 3 bits (one of 8 bytes or less: 0, 16: 1, 32: 2…), kept in a note's
+/// address (an allocation's is a multiple of 8).
+fn alignCode(alignment: usize) u32 {
+    return std.math.log2_int(usize, @max(alignment, 8)) - 3;
+}
+
+fn numberOf(ptr: usize) *u32 {
+    return @ptrFromInt(ptr - 8);
+}
+
+fn lengthOf(ptr: usize) *usize {
+    return @ptrFromInt(ptr - 4);
+}
+
+fn outOfMemory() noreturn {
+    roc_env.roc_io.writeStderr("roc_alloc: out of memory\n");
+    roc_env.roc_io.onFatal();
+}
+
+fn countedAlloc(_: *abi.RocHost, length: usize, alignment: usize) callconv(.c) *anyopaque {
     live += 1;
     allocated += 1;
-    const ptr = abi.DefaultAllocators.rocAlloc(roc_host_ptr, length, alignment);
-    track(@intFromPtr(ptr), alignment);
-    return ptr;
+    const code = alignCode(alignment);
+    const header = headerBytes(code);
+    const base = memory.rawAlloc(length + header, std.mem.Alignment.fromByteUnits(header), @returnAddress()) orelse outOfMemory();
+    const ptr = @intFromPtr(base) + header;
+    lengthOf(ptr).* = length;
+    numberOf(ptr).* = 0;
+    if (innermost()) |frame| note(frame, ptr, code);
+    return @ptrFromInt(ptr);
 }
 
-fn countedDealloc(roc_host_ptr: *abi.RocHost, ptr: *anyopaque, alignment: usize) callconv(.c) void {
+fn countedDealloc(_: *abi.RocHost, ptr: *anyopaque, alignment: usize) callconv(.c) void {
     live -= 1;
-    _ = made.remove(@intFromPtr(ptr));
-    abi.DefaultAllocators.rocDealloc(roc_host_ptr, ptr, alignment);
+    unmark(@intFromPtr(ptr));
+    freeAllocation(@intFromPtr(ptr), alignCode(alignment));
 }
 
-fn trackedRealloc(roc_host_ptr: *abi.RocHost, ptr: *anyopaque, new_length: usize, alignment: usize) callconv(.c) *anyopaque {
-    const moved = abi.DefaultAllocators.rocRealloc(roc_host_ptr, ptr, new_length, alignment);
-    // Grown from one a frame made: still that frame's.
-    if (made.fetchRemove(@intFromPtr(ptr))) |entry| {
-        if (frameNamed(entry.value.frame)) |frame| keepIn(frame, @intFromPtr(moved), entry.value.alignment);
+fn freeAllocation(ptr: usize, code: u32) void {
+    const header = headerBytes(code);
+    const base: [*]u8 = @ptrFromInt(ptr - header);
+    memory.rawFree(base[0 .. lengthOf(ptr).* + header], std.mem.Alignment.fromByteUnits(header), @returnAddress());
+}
+
+/// Grown where it is if the allocator can (the same size of slot), else moved: still the frame's
+/// that made it, if one open or unwound did (`renote`).
+fn trackedRealloc(_: *abi.RocHost, ptr_any: *anyopaque, new_length: usize, alignment: usize) callconv(.c) *anyopaque {
+    const ptr = @intFromPtr(ptr_any);
+    const code = alignCode(alignment);
+    const header = headerBytes(code);
+    const aligned = std.mem.Alignment.fromByteUnits(header);
+    const old_length = lengthOf(ptr).*;
+    const base: [*]u8 = @ptrFromInt(ptr - header);
+    if (memory.rawResize(base[0 .. old_length + header], aligned, new_length + header, @returnAddress())) {
+        lengthOf(ptr).* = new_length;
+        return ptr_any;
     }
-    return moved;
+    const new_base = memory.rawAlloc(new_length + header, aligned, @returnAddress()) orelse outOfMemory();
+    const moved = @intFromPtr(new_base) + header;
+    const kept = @min(old_length, new_length);
+    @memcpy(new_base[header..][0..kept], base[header..][0..kept]);
+    lengthOf(moved).* = new_length;
+    numberOf(moved).* = 0;
+    if (marked(ptr) and numberOf(ptr).* != 0) renote(moved, code, numberOf(ptr).*);
+    unmark(ptr);
+    memory.rawFree(base[0 .. old_length + header], aligned, @returnAddress());
+    return @ptrFromInt(moved);
 }
 
 // ---- Runs, and what one that unwinds leaves ----
@@ -130,148 +187,204 @@ fn trackedRealloc(roc_host_ptr: *abi.RocHost, ptr: *anyopaque, new_length: usize
 // above it, which never get to let go of what they hold: whatever the run had allocated and still
 // held (a URL it built, a value it was computing) would stay allocated for good, a few allocations
 // every time a memo or a hole waits. So the runtime opens a frame around each call into Roc
-// (`frame_begin`), and the host notes in it every allocation made while it is open, and every box
-// handed to the runtime meanwhile (`address`). A call that returns closes its frame (`frame_end`):
-// what it made is Roc's to let go of, as ever, and its notes go to the frame around it, if any (a
-// run inside a run: a memo made by a component). One that unwinds (`frame_unwound`) keeps its notes
-// until the runtime has let go of everything the run handed it (the computations, signals, cleanups
-// and boxes it made; `reclaim`). What the run made that is still allocated is then held by nothing
-// but the frames that unwound, and is freed. Roc's values are immutable, and a value the runtime
-// gives Roc comes with a reference of the runtime's own, so nothing made before the run points at
-// what the run made, and only the boxes it handed over could. Should one of those still be
-// allocated (the runtime keeps it, or a frame that unwound held it too), nothing is freed and the
-// notes go to the frame around it: a leak, never a use after free. What the unwound frames held of
-// older values (a reference counted once more) stays counted.
+// (`frame_begin`), and the host notes every allocation made while one is open, and every box handed
+// to the runtime meanwhile (`address`). A call that returns closes its frame (`frame_end`): what it
+// made is Roc's to let go of, as ever, and its notes are the frame's around it, if any (a run inside
+// a run: a memo made by a component). One that unwinds (`frame_unwound`) keeps its notes until the
+// runtime has let go of everything the run handed it (the computations, signals, cleanups and boxes
+// it made; `reclaim`). What the run made that is still allocated is then held by nothing but the
+// frames that unwound, and is freed. Roc's values are immutable, and a value the runtime gives Roc
+// comes with a reference of the runtime's own, so nothing made before the run points at what the run
+// made, and only the boxes it handed over could. Should one of those still be allocated (the
+// runtime keeps it, or a frame that unwound held it too), nothing is freed and the notes are the
+// frame's around it: a leak, never a use after free. What the unwound frames held of older values
+// (a reference counted once more) stays counted.
+//
+// The notes are one log (`notes`, `handed`) while frames are open: a frame's are those from where
+// it began, so one inside another that returns gives its notes to the frame around it by doing
+// nothing, and the outermost's are forgotten by emptying the log. An allocation's number (in its
+// header) says whether it is a frame's own: numbered since the frame began. Which addresses are
+// allocations a frame noted, still allocated, is a bitmap (`starts`), so a note of one since freed
+// (or of an address allocated again since, with another number) is passed over, exactly.
 
-const Made = struct { frame: u32, alignment: u32 };
+/// An allocation noted: its address with its alignment code in the low 3 bits, and its number.
+const Note = struct { at: u32, number: u32 };
+
 const Frame = struct {
     id: u32,
     /// The frame open around it when it began.
     parent: u32 = 0,
-    /// What was allocated while it was open (some since freed: `made` says which are its own still).
-    allocated: std.ArrayListUnmanaged(usize) = .empty,
-    /// The boxes handed to the runtime meanwhile.
-    handed: std.ArrayListUnmanaged(usize) = .empty,
+    /// The number the first allocation made while it was open got: those numbered since are its own.
+    first: u32,
+    /// Where its notes, and the boxes it handed to the runtime, start in the log.
+    notes_at: usize,
+    handed_at: usize,
     /// Whether everything was noted (out of memory to note something: never reclaimed).
     noted: bool = true,
 };
 
-/// Every allocation a frame open (or unwound, not yet reclaimed) made that is still allocated.
-var made: std.AutoHashMapUnmanaged(usize, Made) = .empty;
+/// A frame that unwound, waiting for `reclaim`: its notes, copied out of the log.
+const Unwound = struct {
+    id: u32,
+    parent: u32,
+    first: u32,
+    /// The number after its last allocation: its own are numbered from `first` to before this.
+    end: u32,
+    /// The last frame id given out before it unwound: the frames inside it are those after its own
+    /// id, to this one.
+    last: u32,
+    notes: std.ArrayListUnmanaged(Note) = .empty,
+    handed: std.ArrayListUnmanaged(usize) = .empty,
+    noted: bool,
+
+    fn drop(self: *Unwound) void {
+        self.notes.deinit(memory);
+        self.handed.deinit(memory);
+    }
+};
+
+var notes: std.ArrayListUnmanaged(Note) = .empty;
+var handed: std.ArrayListUnmanaged(usize) = .empty;
 /// The frames open, innermost last, and the unwound ones waiting for `reclaim`.
 var frames: std.ArrayListUnmanaged(Frame) = .empty;
-var unwound: std.ArrayListUnmanaged(Frame) = .empty;
+var unwound: std.ArrayListUnmanaged(Unwound) = .empty;
 var frame_ids: u32 = 0;
+/// The next allocation's number (never 0, which is none).
+var next_number: u32 = 1;
+/// A bit per 8 bytes of memory: set where an allocation a frame noted starts, while it is allocated.
+var starts: std.ArrayListUnmanaged(u32) = .empty;
 
 fn innermost() ?*Frame {
     if (frames.items.len == 0) return null;
     return &frames.items[frames.items.len - 1];
 }
 
-fn track(ptr: usize, alignment: usize) void {
-    if (innermost()) |frame| keepIn(frame, ptr, alignment);
+/// Whether `number` was given at or after `first` and before `end` (numbers wrap around).
+fn within(number: u32, first: u32, end: u32) bool {
+    return number != 0 and number -% first < end -% first;
 }
 
-/// Entries put in `made` since its tombstones were last cleared (`clean`).
-var made_puts: usize = 0;
-
-/// `made`'s removed entries cleared, once no frame is open: a hash map that is filled and emptied
-/// again and again keeps a tombstone for every entry removed (Zig's map only drops them when it
-/// grows), and a lookup probes past them all, so every allocation would cost more each time, without
-/// end (the js-framework-benchmark's create and clear, run again and again, slowed by 25 to 40 ms a
-/// cycle). Amortized: at most once per half the map's capacity of entries put.
-fn clean() void {
-    if (frames.items.len != 0 or made_puts < made.capacity() / 2) return;
-    if (made.count() == 0) made.clearRetainingCapacity() else made.rehash(std.hash_map.AutoContext(usize){});
-    made_puts = 0;
+fn mark(ptr: usize) bool {
+    const index = ptr >> 3;
+    const word = index >> 5;
+    if (word >= starts.items.len) {
+        const wanted = @max(word + 1, starts.items.len * 2);
+        starts.appendNTimes(memory, 0, wanted - starts.items.len) catch return false;
+    }
+    starts.items[word] |= @as(u32, 1) << @intCast(index & 31);
+    return true;
 }
 
-fn keepIn(frame: *Frame, ptr: usize, alignment: usize) void {
-    made_puts += 1;
-    made.put(memory, ptr, .{ .frame = frame.id, .alignment = @intCast(alignment) }) catch {
+fn unmark(ptr: usize) void {
+    const index = ptr >> 3;
+    const word = index >> 5;
+    if (word < starts.items.len) starts.items[word] &= ~(@as(u32, 1) << @intCast(index & 31));
+}
+
+/// Whether an allocation a frame noted starts at `ptr`, still allocated.
+fn marked(ptr: usize) bool {
+    if (ptr & 7 != 0) return false;
+    const index = ptr >> 3;
+    const word = index >> 5;
+    return word < starts.items.len and starts.items[word] & (@as(u32, 1) << @intCast(index & 31)) != 0;
+}
+
+/// An allocation made while `frame` is the innermost open: numbered, and noted in the log.
+fn note(frame: *Frame, ptr: usize, code: u32) void {
+    const number = next_number;
+    next_number +%= 1;
+    if (next_number == 0) next_number = 1;
+    if (!mark(ptr)) {
+        frame.noted = false;
+        return;
+    }
+    notes.append(memory, .{ .at = @intCast(ptr | code), .number = number }) catch {
+        unmark(ptr);
         frame.noted = false;
         return;
     };
-    frame.allocated.append(memory, ptr) catch {
-        _ = made.remove(ptr);
-        frame.noted = false;
-    };
+    numberOf(ptr).* = number;
 }
 
-fn frameNamed(id: u32) ?*Frame {
-    for (frames.items) |*frame| if (frame.id == id) return frame;
-    for (unwound.items) |*frame| if (frame.id == id) return frame;
-    return null;
-}
-
-/// Whether the allocation at `ptr` (as `roc_alloc` gave it) holds the address `at`.
-fn holds(ptr: usize, alignment: u32, at: usize) bool {
-    const total: usize = @as(*const usize, @ptrFromInt(ptr - @sizeOf(usize))).*;
-    const header: usize = @max(alignment, @alignOf(usize));
-    return at >= ptr and at < ptr + (total - header);
-}
-
-/// The frame's own allocation that holds the address `at`, if one does.
-fn ownAllocationHolding(frame: *const Frame, at: usize) ?usize {
-    for (frame.allocated.items) |ptr| {
-        const entry = made.get(ptr) orelse continue;
-        if (entry.frame == frame.id and holds(ptr, entry.alignment, at)) return ptr;
+/// An allocation moved (`trackedRealloc`), numbered `number`: noted again where it is now, for the
+/// open frame or the unwound one whose it is.
+fn renote(ptr: usize, code: u32, number: u32) void {
+    const entry: Note = .{ .at = @intCast(ptr | code), .number = number };
+    var kept = false;
+    if (frames.items.len > 0 and within(number, frames.items[0].first, next_number)) {
+        if (mark(ptr)) {
+            if (notes.append(memory, entry)) |_| {
+                kept = true;
+            } else |_| innermost().?.noted = false;
+        } else innermost().?.noted = false;
     }
-    return null;
-}
-
-fn dropNotes(frame: *Frame) void {
-    frame.allocated.deinit(memory);
-    frame.handed.deinit(memory);
-}
-
-/// Its notes, no longer kept: what it made is Roc's alone.
-fn forget(frame: *Frame) void {
-    for (frame.allocated.items) |ptr| {
-        if (made.get(ptr)) |entry| if (entry.frame == frame.id) {
-            _ = made.remove(ptr);
-        };
-    }
-    dropNotes(frame);
-}
-
-/// Its notes, given to the frame around it.
-fn hand(frame: *Frame, to: *Frame) void {
-    for (frame.allocated.items) |ptr| {
-        const entry = made.getPtr(ptr) orelse continue;
-        if (entry.frame != frame.id) continue;
-        to.allocated.append(memory, ptr) catch {
-            _ = made.remove(ptr);
-            to.noted = false;
+    for (unwound.items) |*frame| {
+        if (!within(number, frame.first, frame.end)) continue;
+        if (!mark(ptr)) {
+            frame.noted = false;
+            continue;
+        }
+        frame.notes.append(memory, entry) catch {
+            frame.noted = false;
             continue;
         };
-        entry.frame = to.id;
+        kept = true;
     }
-    to.handed.appendSlice(memory, frame.handed.items) catch {
-        to.noted = false;
-    };
-    to.noted = to.noted and frame.noted;
-    dropNotes(frame);
+    if (kept) numberOf(ptr).* = number else unmark(ptr);
 }
 
-/// Its notes, to the frame open around it if there is one, else forgotten.
-fn handOn(frame: *Frame) void {
-    if (frame.parent != 0) {
-        for (frames.items) |*open| if (open.id == frame.parent) return hand(frame, open);
-    }
-    forget(frame);
-}
-
-/// The unwound frames inside it that are still waiting (never reclaimed): theirs are its notes now,
-/// so what they handed over keeps it from being freed too.
-fn takeWaiting(frame: *Frame) void {
+/// The unwound frames inside frame `id` (begun after it, to frame `last`; frames nest), still
+/// waiting: theirs are its notes now (they are among its own), so they go; whether all of them were
+/// noted.
+fn takeWaiting(id: u32, last: u32, noted: bool) bool {
+    var all = noted;
     var at: usize = 0;
     while (at < unwound.items.len) {
-        if (unwound.items[at].parent == frame.id) {
-            var inside = unwound.swapRemove(at);
-            hand(&inside, frame);
+        const frame = &unwound.items[at];
+        if (frame.id -% id -% 1 < last -% id) {
+            all = all and frame.noted;
+            frame.drop();
+            _ = unwound.swapRemove(at);
         } else at += 1;
     }
+    return all;
+}
+
+/// The log emptied: the outermost frame is done. A big run's room is given back.
+fn forgetNotes() void {
+    if (notes.capacity > 1 << 14) notes.clearAndFree(memory) else notes.clearRetainingCapacity();
+    if (handed.capacity > 1 << 12) handed.clearAndFree(memory) else handed.clearRetainingCapacity();
+}
+
+/// A frame closed (its call returned, or one inside it unwound past it): its notes are the frame's
+/// around it (they are in the log, where that one's are), or forgotten if it was the outermost.
+fn ended(frame: Frame) void {
+    const noted = takeWaiting(frame.id, frame_ids, frame.noted);
+    if (innermost()) |around| {
+        around.noted = around.noted and noted;
+    } else forgetNotes();
+}
+
+/// An unwound frame's notes, given up on: the frame's around it, if that is open (they are in the
+/// log, where its are), else forgotten.
+fn handOn(frame: *Unwound) void {
+    for (frames.items) |*open| {
+        if (open.id == frame.parent) {
+            open.noted = open.noted and frame.noted;
+            break;
+        }
+    }
+    frame.drop();
+}
+
+/// The frame's own allocation, still allocated, that holds the address `at`, if one does.
+fn ownAllocationHolding(frame: *const Unwound, at: usize) ?usize {
+    for (frame.notes.items) |entry| {
+        const ptr: usize = entry.at & ~@as(u32, 7);
+        if (!marked(ptr) or numberOf(ptr).* != entry.number or !within(entry.number, frame.first, frame.end)) continue;
+        if (at >= ptr and at < ptr + lengthOf(ptr).*) return ptr;
+    }
+    return null;
 }
 
 /// A call into Roc starts: what it allocates is noted until it ends.
@@ -279,38 +392,41 @@ export fn frame_begin() u32 {
     frame_ids +%= 1;
     if (frame_ids == 0) frame_ids = 1;
     const parent = if (innermost()) |frame| frame.id else 0;
-    frames.append(memory, .{ .id = frame_ids, .parent = parent }) catch return 0;
+    frames.append(memory, .{ .id = frame_ids, .parent = parent, .first = next_number, .notes_at = notes.items.len, .handed_at = handed.items.len }) catch return 0;
     return frame_ids;
 }
 
 /// It returned: what it made is Roc's (and the runtime's) to let go of.
 export fn frame_end(id: u32) void {
     if (id == 0) return;
-    while (frames.pop()) |popped| {
-        var frame = popped;
-        takeWaiting(&frame);
-        handOn(&frame);
+    while (frames.pop()) |frame| {
+        ended(frame);
         if (frame.id == id) break;
     }
-    clean();
 }
 
 /// It unwound (a JS throw): its notes wait for `reclaim`.
 export fn frame_unwound(id: u32) void {
     if (id == 0) return;
-    while (frames.pop()) |popped| {
-        var frame = popped;
-        takeWaiting(&frame);
+    while (frames.pop()) |frame| {
         if (frame.id != id) {
-            handOn(&frame);
+            ended(frame);
             continue;
         }
+        var waiting: Unwound = .{ .id = frame.id, .parent = frame.parent, .first = frame.first, .end = next_number, .last = frame_ids, .noted = takeWaiting(frame.id, frame_ids, frame.noted) };
+        waiting.notes.appendSlice(memory, notes.items[frame.notes_at..]) catch {
+            waiting.noted = false;
+        };
+        waiting.handed.appendSlice(memory, handed.items[frame.handed_at..]) catch {
+            waiting.noted = false;
+        };
+        if (innermost() == null) forgetNotes();
         // Never reclaimed, from a run outside any other: let go of the oldest notes.
         if (unwound.items.len >= 64) {
             var oldest = unwound.orderedRemove(0);
             handOn(&oldest);
         }
-        unwound.append(memory, frame) catch handOn(&frame);
+        unwound.append(memory, waiting) catch handOn(&waiting);
         return;
     }
 }
@@ -322,21 +438,21 @@ export fn reclaim(id: u32) void {
     while (at < unwound.items.len and unwound.items[at].id != id) at += 1;
     if (at == unwound.items.len) return;
     var frame = unwound.swapRemove(at);
-    takeWaiting(&frame);
+    frame.noted = takeWaiting(frame.id, frame.last, frame.noted);
     var held = !frame.noted;
     for (frame.handed.items) |box| {
         if (held) break;
         held = ownAllocationHolding(&frame, box) != null;
     }
     if (held) return handOn(&frame);
-    for (frame.allocated.items) |ptr| {
-        const entry = made.get(ptr) orelse continue;
-        if (entry.frame != frame.id) continue;
-        _ = made.remove(ptr);
+    for (frame.notes.items) |entry| {
+        const ptr: usize = entry.at & ~@as(u32, 7);
+        if (!marked(ptr) or numberOf(ptr).* != entry.number or !within(entry.number, frame.first, frame.end)) continue;
+        unmark(ptr);
         live -= 1;
-        abi.DefaultAllocators.rocDealloc(host(), @ptrFromInt(ptr), entry.alignment);
+        freeAllocation(ptr, entry.at & 7);
     }
-    dropNotes(&frame);
+    frame.drop();
 }
 
 var result: RocStr = undefined;
@@ -346,23 +462,22 @@ fn setResult(text: RocStr) void {
     if (has_result) result.decref(host());
     result = text;
     has_result = true;
-    // The host holds it: never freed with the frame it was made in.
+    // The host holds it: never freed with the frame it was made in (its number taken off, so no
+    // note of it is its).
     if (!text.isSmallStr()) {
-        if (innermost()) |frame| if (ownStringAllocation(frame, text)) |ptr| {
-            _ = made.remove(ptr);
-        };
+        if (innermost()) |frame| {
+            const ptr = stringAllocation(text);
+            if (marked(ptr) and within(numberOf(ptr).*, frame.first, next_number)) numberOf(ptr).* = 0;
+        }
     }
 }
 
-/// The frame's own allocation a (big) string's bytes are in, if it is one, found at once rather
-/// than looked for among everything the frame made (`ownAllocationHolding`, which a result per
-/// call made quadratic): Roc puts a string's bytes a word after its allocation's start (the
-/// reference count is between), and a seamless slice names the bytes of the allocation it is in.
-fn ownStringAllocation(frame: *const Frame, text: RocStr) ?usize {
+/// Where a (big) string's allocation starts, if it has one: Roc puts a string's bytes a word after
+/// its allocation's start (the reference count is between), and a seamless slice names the bytes
+/// of the allocation it is in. A string in the module's data has none (`marked` says no).
+fn stringAllocation(text: RocStr) usize {
     const bytes: usize = if (text.isSeamlessSlice()) text.capacity_or_alloc_ptr & ~@as(usize, 1) else @intFromPtr(text.bytes);
-    const ptr = bytes -% @sizeOf(usize);
-    const entry = made.get(ptr) orelse return null;
-    return if (entry.frame == frame.id) ptr else null;
+    return bytes -% @sizeOf(usize);
 }
 
 /// The text the last import answered with, `len` bytes, as a Roc string.
@@ -376,7 +491,7 @@ fn taken(len: usize) RocStr {
 /// A box handed to the runtime: noted in the innermost frame open (see `reclaim`).
 fn address(boxed: Callable) usize {
     const at = @intFromPtr(boxed orelse return 0);
-    if (innermost()) |frame| frame.handed.append(memory, at) catch {
+    if (innermost()) |frame| handed.append(memory, at) catch {
         frame.noted = false;
     };
     return at;
@@ -421,24 +536,17 @@ export fn live_allocations() i64 {
     return live - held;
 }
 
-/// For the tests: the host's notes of what runs allocate (`made`), as counts that don't vary with the
-/// machine: its entries (0 between runs, unless an unwound run waits for `reclaim`), the slots of
-/// entries removed (tombstones, which `clean` keeps to under half the map), and its slots in all.
-export fn made_entries() u32 {
-    return made.count();
+/// For the tests: the host's notes of what runs allocate, as counts that don't vary with the
+/// machine: how many it keeps (0 between runs, unless an unwound run waits for `reclaim`), and the
+/// room it keeps for them (a big run's given back when it is done).
+export fn notes_kept() u32 {
+    var n = notes.items.len + handed.items.len;
+    for (unwound.items) |frame| n += frame.notes.items.len + frame.handed.items.len;
+    return @intCast(n);
 }
 
-export fn made_tombstones() u32 {
-    const metadata = made.metadata orelse return 0;
-    var n: u32 = 0;
-    for (metadata[0..made.capacity()]) |slot| {
-        if (slot.isTombstone()) n += 1;
-    }
-    return n;
-}
-
-export fn made_capacity() u32 {
-    return made.capacity();
+export fn notes_room() u32 {
+    return @intCast(notes.capacity + handed.capacity);
 }
 
 /// How many allocations Roc has made since the module started: the tests' measure of what a change
@@ -878,7 +986,7 @@ fn rocDealloc(ptr: *anyopaque, alignment: usize) callconv(.c) void {
     countedDealloc(host(), ptr, alignment);
 }
 fn rocRealloc(ptr: *anyopaque, new_length: usize, alignment: usize) callconv(.c) *anyopaque {
-    return abi.DefaultAllocators.rocRealloc(host(), ptr, new_length, alignment);
+    return trackedRealloc(host(), ptr, new_length, alignment);
 }
 fn rocDbg(bytes: [*]const u8, len: usize) callconv(.c) void {
     js.js_log(bytes, len);

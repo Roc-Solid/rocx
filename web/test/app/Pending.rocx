@@ -13,10 +13,22 @@ import Upstream
 ## while it is. An effect tells the page (`pending`) each answer its compute gets, so the tests can
 ## count its runs. A button shows and hides an <Upstream> (a memo read only through another).
 Pending := [].{
+	## The read's query, `page=N`, built a byte at a time: Roc grows the list where it is or moves it
+	## (`roc_realloc`), so a run that waits at the read leaves a grown allocation for the host to let
+	## go of (web/host's tracking, which Roc's own realloc once bypassed).
+	query : U64 -> Str
+	query = |page| {
+		var $bytes = []
+		for byte in "page=${page.to_str()}".to_utf8() {
+			$bytes = $bytes.append(byte)
+		}
+		Str.from_utf8($bytes) ?? ""
+	}
+
 	view! : {} => Html
 	view! = |{}| {
 		(page!, set_page!) = create_signal!(1.U64)
-		item! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.slow({}), "page=${page!().to_str()}")))
+		item! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.slow({}), Pending.query(page!()))))
 		label! = create_memo!(|| "page ${item!().page.to_str()}, version ${item!().version.to_str()}")
 		create_effect!(|| is_pending!(item!), |pending| Browser.call!("pending", pending))
 		(upstream!, set_upstream!) = create_signal!(Bool.False)

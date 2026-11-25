@@ -95,7 +95,7 @@ platform ""
 		wasm32: {
 			inputs: ["host.wasm", app],
 			output: Shared,
-			exports: ["mount", "run", "release", "result_ptr", "result_len", "live_allocations", "allocations", "frame_begin", "frame_end", "frame_unwound", "reclaim", "made_entries", "made_tombstones", "made_capacity"],
+			exports: ["mount", "run", "release", "result_ptr", "result_len", "live_allocations", "allocations", "frame_begin", "frame_end", "frame_unwound", "reclaim", "notes_kept", "notes_room"],
 			initial_stack_size: 1048576,
 		},
 		# The phone (D-063's spike): the app alone, as an archive that native/android/build.sh links

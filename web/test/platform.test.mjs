@@ -305,13 +305,11 @@ window.runtime.mount(document.getElementById("app"));
 		for (let i = 0; i < 20; i++) await page.click(i % 2 ? ".picks .add" : ".picks .clear");
 		await page.wait("document.querySelectorAll('.picks .keyed li').length === 1 && document.querySelector('.picks .keyed .none') === null");
 		assert.equal(await page.eval("window.runtime.live()"), live, "rows made and dropped leave nothing behind");
-		// The host notes what each run allocates, in a map filled and emptied run after run: what it
-		// removed stays as tombstones, which a lookup probes past, so without a clean every run would
-		// cost more than the one before (js-framework-benchmark's create 1,000 rows: 64 ms, then 199
-		// after five creates and clears). Counted, not timed: the same on every machine.
+		// The host notes what each run allocates, in a log emptied when the outermost run is done, and
+		// gives back the room a big run took. Counted, not timed: the same on every machine.
 		const notes = JSON.parse(await page.eval("JSON.stringify(window.runtime.notes())"));
-		assert.equal(notes.entries, 0, "nothing noted between runs");
-		assert.ok(notes.tombstones <= notes.capacity / 2, `the notes' tombstones kept to under half the map: ${JSON.stringify(notes)}`);
+		assert.equal(notes.kept, 0, "nothing noted between runs");
+		assert.ok(notes.room <= (1 << 14) + (1 << 12), `the room kept for notes is a small run's: ${JSON.stringify(notes)}`);
 		assert.deepEqual(page.errors, []);
 		assert.deepEqual(page.console, []);
 	});
@@ -1717,7 +1715,7 @@ test("is_pending!: false on the first load (<Loading> shows); a refresh or a new
 	}
 });
 
-test("a run that waits lets go of what it made: refreshes, new pages and memos made again and again, each run aborted until its read is in, leave no allocation behind", { skip }, async () => {
+test("a run that waits lets go of what it made: refreshes, new pages and memos made again and again, each run aborted until its read is in (its query a list grown first, moved by Roc's realloc), leave no allocation behind", { skip }, async () => {
 	const slow = slowApi();
 	slow.delay = 20;
 	const dir = mkdtempSync(join(tmpdir(), "rocx-aborts-"));

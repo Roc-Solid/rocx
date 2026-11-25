@@ -159,8 +159,9 @@ When an item lands, delete its line here in the same commit.
   (2026-11-25), the runner's clean run (beb7be7): CPU geomean 2.06× the fastest (Solid 1.16×, Joy
   1.26×, React 1.63×); creating 1,000 rows 45.8 ms against vanillajs's 18.6, 10,000 474 against 201,
   appending 52.5 against 22.5; run memory 4.6 MB against Solid's 2.7.
-  Per row there are about four calls into wasm, each a host frame that notes every allocation (a
-  hash-map insert each, ~6 ms of 1,000 rows), Roc building the row's markup as JSON, the runtime
+  Per row there are about four calls into wasm (each in a host frame, whose notes of what it
+  allocates cost about nothing since 2026-11-25: a header and a log, not a hash map; a row still
+  makes about 110 allocations to keep 8), Roc building the row's markup as JSON, the runtime
   parsing it and making the elements one by one, and comment markers around every row and hole. The
   JS heap with 1,000 rows is 2.75 MB against vanillajs's 0.66 (four computations a row, each with its
   sources' Set); the wasm memory grows to its high-water mark and stays. The download is ~72 KB
