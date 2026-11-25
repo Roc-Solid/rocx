@@ -2405,6 +2405,15 @@ pub struct HostIsDirArgs {
     pub arg0: RocStr,
 }
 
+/// Arguments for Host.is_terminal!
+/// Roc signature: U8 => Bool
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostIsTerminalArgs {
+    pub arg0: u8,
+}
+
 /// Arguments for Host.kill!
 /// Roc signature: U64, I32 => {}
 /// Refcounted fields are owned by the hosted function.
@@ -2515,6 +2524,16 @@ pub struct HostSpawnArgs {
     pub arg4: RocStr,
 }
 
+/// Arguments for Host.symlink!
+/// Roc signature: Str, Str => Try({}, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostSymlinkArgs {
+    pub arg0: RocStr,
+    pub arg1: RocStr,
+}
+
 /// Arguments for Host.watch!
 /// Roc signature: Str, List(Str) => Try({}, Str)
 /// Refcounted fields are owned by the hosted function.
@@ -2572,6 +2591,12 @@ pub type HostRenameResult = HostCopyResult;
 pub type HostRenameResultPayload = HostCopyResultPayload;
 pub type HostRenameResultTag = HostCopyResultTag;
 pub type HostRunOk = AnonStruct4789a1b2f954e45c;
+pub type HostStdinLineResult = HostReadResult;
+pub type HostStdinLineResultPayload = HostReadResultPayload;
+pub type HostStdinLineResultTag = HostReadResultTag;
+pub type HostSymlinkResult = HostCopyResult;
+pub type HostSymlinkResultPayload = HostCopyResultPayload;
+pub type HostSymlinkResultTag = HostCopyResultTag;
 pub type HostWatchResult = HostCopyResult;
 pub type HostWatchResultPayload = HostCopyResultPayload;
 pub type HostWatchResultTag = HostCopyResultTag;
@@ -3205,6 +3230,10 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     pub fn roc_host_is_dir(arg0: RocStr) -> bool;
 
+    /// Hosted symbol for Host.is_terminal!
+    /// Roc signature: U8 => Bool
+    pub fn roc_host_is_terminal(arg0: u8) -> bool;
+
     /// Hosted symbol for Host.kill!
     /// Roc signature: U64, I32 => {}
     pub fn roc_host_kill(arg0: u64, arg1: i32);
@@ -3306,6 +3335,20 @@ unsafe extern "C" {
     /// Roc signature: {} => Str
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_stdin() -> RocStr;
+
+    /// Hosted symbol for Host.stdin_line!
+    /// Roc signature: {} => Try(Str, Str)
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_stdin_line() -> HostReadResult;
+
+    /// Hosted symbol for Host.symlink!
+    /// Roc signature: Str, Str => Try({}, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_symlink(arg0: RocStr, arg1: RocStr) -> HostCopyResult;
 
     /// Hosted symbol for Host.watch!
     /// Roc signature: Str, List(Str) => Try({}, Str)

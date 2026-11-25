@@ -14,4 +14,8 @@ Stdout := [].{
 		Host.write!(1, text)
 		Ok({})
 	}
+
+	## Whether stdout is a terminal, not a file or a pipe.
+	is_terminal! : {} => Bool
+	is_terminal! = |{}| Host.is_terminal!(1)
 }

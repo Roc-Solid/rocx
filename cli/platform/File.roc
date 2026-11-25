@@ -77,6 +77,16 @@ File := [].{
 			Err(why) => Err(CantCopy("${from} → ${to}: ${why}"))
 		}
 
+	## Makes `link` a symbolic link to `target` (absolute, or from the link's directory), in place of
+	## a link or a file already there, never a directory (a link that points elsewhere, or at nothing,
+	## is mended this way): there is always something at `link` while it does.
+	symlink! : Str, Str => Try({}, [CantLink(Str)])
+	symlink! = |target, link|
+		match Host.symlink!(target, link) {
+			Ok({}) => Ok({})
+			Err(why) => Err(CantLink("${link} → ${target}: ${why}"))
+		}
+
 	## Makes the file with this text, only if nothing is there yet, in one step no other process can
 	## come between (a lock): `Exists` when something was.
 	create_new! : Str, Str => Try({}, [Exists, CantWrite(Str)])

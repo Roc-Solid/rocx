@@ -221,6 +221,33 @@ pub extern "C" fn roc_host_stdin() -> RocStr {
     roc_str(&String::from_utf8_lossy(&input))
 }
 
+/// One line of stdin, its line ending taken off; an error at the end of the input. Stdin's own
+/// buffer keeps what was read past the line, for the next.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_stdin_line() -> TextResult {
+    let mut line = Vec::new();
+    let read = std::io::BufRead::read_until(&mut std::io::stdin().lock(), b'\n', &mut line);
+    text_result(match read {
+        Ok(0) => Err("the end of the input".to_string()),
+        Ok(_) => {
+            if line.ends_with(b"\n") {
+                line.pop();
+            }
+            if line.ends_with(b"\r") {
+                line.pop();
+            }
+            Ok(String::from_utf8_lossy(&line).into_owned())
+        }
+        Err(error) => Err(error.to_string()),
+    })
+}
+
+/// Whether the file descriptor (0, 1, 2) is a terminal.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_is_terminal(fd: u8) -> bool {
+    unsafe { libc::isatty(fd as c_int) == 1 }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_pid() -> u32 {
     std::process::id()
@@ -265,6 +292,25 @@ pub extern "C" fn roc_host_create_new(path: RocStr, data: RocStr) -> abi::HostCr
 pub extern "C" fn roc_host_copy(from: RocStr, to: RocStr) -> UnitResult {
     let (from, to) = (taken(from), taken(to));
     unit_result(copy(std::path::Path::new(&from), std::path::Path::new(&to)).map_err(|error| error.to_string()))
+}
+
+/// `link` made a symbolic link to `target`: beside it first, then renamed over what is there (a
+/// link or a file; a rename onto a directory fails, so one is never replaced).
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_symlink(target: RocStr, link: RocStr) -> UnitResult {
+    let (target, link) = (taken(target), taken(link));
+    let partial = format!("{link}.{}.tmp", std::process::id());
+    let _ = std::fs::remove_file(&partial);
+    let made = std::os::unix::fs::symlink(&target, &partial).and_then(|()| {
+        if std::fs::symlink_metadata(&link).is_ok_and(|meta| meta.is_dir()) {
+            return Err(std::io::Error::other("a directory is there"));
+        }
+        std::fs::rename(&partial, &link)
+    });
+    if made.is_err() {
+        let _ = std::fs::remove_file(&partial);
+    }
+    unit_result(made.map_err(|error| error.to_string()))
 }
 
 /// A file, or a directory and everything in it (a symbolic link as the link).

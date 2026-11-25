@@ -8,6 +8,13 @@ Host := [].{
 	## All of stdin, as text (bytes that aren't UTF-8 replaced).
 	stdin! : {} => Str
 
+	## One line of stdin, without its line ending (bytes that aren't UTF-8 replaced); an error at the
+	## end of the input (or when it can't be read).
+	stdin_line! : {} => Try(Str, Str)
+
+	## Whether stdin (0), stdout (1) or stderr (2) is a terminal, not a file or a pipe.
+	is_terminal! : U8 => Bool
+
 	## The current directory.
 	cwd! : {} => Str
 
@@ -71,6 +78,11 @@ Host := [].{
 
 	## Copies a file, or a directory and everything in it, to `to` (made, with what it is in).
 	copy! : Str, Str => Try({}, Str)
+
+	## Makes `link` a symbolic link to `target` (as given: absolute, or from the link's directory),
+	## in place of a link or a file there (never a directory): made beside it and renamed into
+	## place, so there is always something at `link`.
+	symlink! : Str, Str => Try({}, Str)
 
 	## Runs a program (no shell) to its end: in a directory ("" for this one), with environment
 	## variables added (`NAME=value`), and `stdin` as its input. `mode` 0: its stdout and stderr

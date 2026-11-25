@@ -11,9 +11,9 @@ or ask that server for its pages, which is what `rocx build --static` does (D-07
 
 | Module | What |
 |---|---|
-| `Stdout`, `Stderr`, `Stdin` | `line!` and `write!`, each a `Try`, so a caller's `?` reads as on other platforms; `Stdin.read_to_end!`, all of stdin |
+| `Stdout`, `Stderr`, `Stdin` | `line!` and `write!`, each a `Try`, so a caller's `?` reads as on other platforms; `Stdin.read_to_end!`, all of stdin; `Stdin.line!`, one line (`EndOfInput` after the last); `Stdin.is_terminal!` and `Stdout.is_terminal!`, whether someone is typing or reading (not a file or a pipe) |
 | `Env` | `cwd!`, `var!`, `exe_path!`, `pid!`, `alive!` (whether a process is running) |
-| `File` | `exists!`, `is_dir!`, `modified!` (nanoseconds), `read!`, `write!` (its directory made first), `write_bytes!`, `create_new!` (only if nothing is there: a lock), `rename!`, `real_path!`, `make_dirs!`, `list!` (sorted), `delete!` and `copy!` (a file or a tree) |
+| `File` | `exists!`, `is_dir!`, `modified!` (nanoseconds), `read!`, `write!` (its directory made first), `write_bytes!`, `create_new!` (only if nothing is there: a lock), `rename!`, `real_path!`, `make_dirs!`, `list!` (sorted), `delete!` and `copy!` (a file or a tree), `symlink!(target, link)` (in place of a link or a file there, never a directory) |
 | `Cmd` | a command built up (`args`, `cwd`, `env`, `stdin`, `log`), run without a shell: to its end with stdout and stderr apart (`output!`), in one pipe in the order written (`merged!`) or on this program's own output (`status!`); started beside this program (`spawn!`, its output in the `log` file if it has one); or run in its place (`exec!`) |
 | `Http` | `get!(url, headers)`: a GET over plain HTTP/1.1 of a server on this machine (`rocx build --static` asks the app's server for its pages, D-073): its status, `Content-Type` and body (a chunked one put together); `free_port!`, a port nothing listens on |
 | `Child` | a command started beside: `terminate!` (SIGTERM), `kill!` (SIGKILL), `id` |
