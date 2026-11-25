@@ -145,16 +145,15 @@ When an item lands, delete its line here in the same commit.
   `web/runtime.js`; its static copy is `rocx build --static` since D-073), and the measuring
   scripts. All of `just site` in Roc would need a way to run the wasm, or to drop the measured
   rendering times.
-- **js-framework-benchmark entries, as Joy has** (the user, 2026-11-24: after the static copy,
-  D-073, which an entry is): a keyed app (`.map` with `key={row.id}`) and a non-keyed one
-  (`.map_with_index` with `key={i}`) in `benchmarks/jsframework/`, their DOM the vanillajs entry's;
-  each entry `rocx build <app> --static <clone>/frameworks/keyed/rocx-dev --base
-  /frameworks/keyed/rocx-dev/`; a clone of krausest/js-framework-benchmark outside the repo, its
-  server off 8080 (`PORT`); `just js-bench` writing `site/js-framework-benchmark.json`, run only on
-  the user's go (mains, `ROCX_GATE_EXCLUSIVE=1`, two rounds in reverse order); controls to confirm
-  with the user (Solid, Leptos, Joy, React, vanillajs). Likely weak spots: select row (every row
-  reads the selection; no `createSelector`), swap rows, and the bundle (runtime.js isn't minified:
-  64.6 KB brotli). Upstream only once the repository is public.
+- **js-framework-benchmark: what is still slower** (D-074; `just js-bench`, `benchmarks/jsframework/`).
+  With the host's notes kept clean, rows moved as few as can be and the runtime minified (2026-11-25):
+  creating rows is still about 3× vanillajs's (1,000 rows 43 ms against 12–14, measured by hand in
+  Chromium): per row about four calls into wasm, each a host frame that notes every allocation (a
+  hash-map insert each, ~30 ms of 10,000 rows), Roc building the row's markup and strings, the runtime
+  decoding it and making the elements one by one, and comment markers around every row and hole.
+  Memory: 6.1 MB after 1,000 rows against Solid's 2.6. Size: ~72 KB compressed against Joy's 47
+  (esbuild's name shortening would save 4 KB more of the runtime). The entries go upstream once the
+  repository is public and its compiler can be downloaded.
 - **Prebuilt, stripped platform bundles for every target** (`roc bundle`), so a newcomer needs only
   `roc` and `rocx`: no Node, Rust or Zig. With the fork compiler's release (D-069) and `rocx`, one
   download and an install script (and a Nix flake): the one-command install.
