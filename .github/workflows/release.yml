@@ -107,9 +107,9 @@ jobs:
 
   # Each archive installed by install.sh from the job's own files, as a user installs it, and
   # checked: rocx --version, the compiler, a server built against the installed platform and
-  # answering. Alpine has curl, xz and tar alone (no python3: file:// URLs). An app from `rocx new`
-  # on each database (check, test, check --sql, build --static and --release, signing in under
-  # --dev) joins this once rocx has them.
+  # answering; then a newcomer's first app: rocx new, check, check --sql, test, a release build
+  # started under --dev and signed in to. Alpine has curl, xz and tar alone (no python3: file://
+  # URLs).
   smoke:
     name: smoke (${{ matrix.name }})
     needs: pack

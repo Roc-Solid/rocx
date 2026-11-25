@@ -11,7 +11,9 @@
 # the template's routes, and the installed roc says the pinned fork, checks a package, and builds
 # a server against the installed platform (an app outside the install, reaching it through a .rocx
 # link), which answers; on a Mac it also builds that server for the Linux targets the archive
-# carries. Then: installing again
+# carries. A newcomer's first app: rocx new, rocx check, check --sql and test, a release build
+# that starts under --dev and is signed in to through /auth/dev, /account showing who. Then:
+# installing again
 # changes nothing, --no-modify-path writes no start-up file, --no-current leaves current, a corrupt
 # download installs nothing, and a version that isn't there fails.
 #
@@ -184,14 +186,59 @@ else
 	fail "bin/roc build of a server against the installed platform"
 fi
 if [ "$archive" = macos_arm64 ]; then
-	for target in arm64musl x64musl; do
-		if build --target=$target --output=server-$target; then
-			pass "bin/roc builds the server for $target"
+	for linux in arm64musl x64musl; do
+		if build --target=$linux --output=server-$linux; then
+			pass "bin/roc builds the server for $linux"
 		else
 			sed 's/^/  | /' "$tmp/build.log" >&2
-			fail "bin/roc build --target=$target"
+			fail "bin/roc build --target=$linux"
 		fi
 	done
+fi
+
+# A newcomer's first app, with nothing but the install on PATH: rocx new, its checks and its
+# expects, a release build, that server started under --dev and signed in to.
+apps=$tmp/apps
+mkdir -p "$apps"
+newcomer() { (cd "$1" && shift && env HOME="$home" PATH="$bare_path" rocx "$@" < /dev/null) > "$tmp/newcomer.log" 2>&1; }
+if newcomer "$apps" new shop --db sqlite && [ -f "$apps/shop/.rocx-version" ] && [ -L "$apps/shop/.rocx" ] && grep -q "$version" "$apps/shop/.rocx-version"; then
+	pass "rocx new shop: .rocx-version $(cat "$apps/shop/.rocx-version"), .rocx linked"
+	shop=$apps/shop
+	for step in "check ." "check --sql ." "test ."; do
+		# shellcheck disable=SC2086
+		if newcomer "$shop" $step; then pass "rocx $step in the new app"; else sed 's/^/  | /' "$tmp/newcomer.log" >&2; fail "rocx $step in the new app"; fi
+	done
+	if newcomer "$shop" build . --release dist --target "$target" && [ -x "$shop/dist/server" ]; then
+		pass "rocx build . --release dist ($target)"
+		(cd "$shop" && exec ./dist/server --port 0 --static dist/static --dev) 2> "$tmp/shop.log" &
+		app_pid=$!
+		url=""
+		tries=0
+		while [ -z "$url" ] && [ "$tries" -lt 300 ]; do
+			url=$(sed -n 's/.*rocx server: \(http:[^ ]*\).*/\1/p' "$tmp/shop.log" | head -1)
+			[ -n "$url" ] || { tries=$((tries + 1)); sleep 0.1; }
+		done
+		home_status=$(curl -s -o /dev/null -w '%{http_code}' "$url/") || true
+		[ "$home_status" = 200 ] && pass "the new app's / answers 200" || fail "the new app's / answered $home_status"
+		away=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -H 'accept: text/html' "$url/account") || true
+		case "$away" in "303 "*"/sign-in?then=%2Faccount") pass "signed out, /account goes to sign in" ;; *) fail "signed out, /account answered '$away'" ;; esac
+		signed=$(curl -s -c "$tmp/jar" -o /dev/null -w '%{http_code} %{redirect_url}' -H "origin: $url" -d 'email=ada@example.com&then=/account' "$url/auth/dev") || true
+		case "$signed" in "303 "*"/account") pass "the dev sign-in goes on to /account" ;; *) fail "the dev sign-in answered '$signed'" ;; esac
+		if curl -s -b "$tmp/jar" -H 'accept: text/html' "$url/account" | grep -q "ada@example.com"; then
+			pass "/account shows who signed in"
+		else
+			sed 's/^/  | /' "$tmp/shop.log" >&2
+			fail "/account doesn't show ada@example.com"
+		fi
+		kill "$app_pid" 2>/dev/null || true
+		app_pid=""
+	else
+		sed 's/^/  | /' "$tmp/newcomer.log" >&2
+		fail "rocx build . --release dist"
+	fi
+else
+	sed 's/^/  | /' "$tmp/newcomer.log" >&2
+	fail "rocx new shop"
 fi
 
 # Again: only current is pointed, and no second PATH line.
