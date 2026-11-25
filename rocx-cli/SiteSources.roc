@@ -233,6 +233,7 @@ SiteSources := [].{
 		Pick("components_form", "web/test/app/Form.rocx", ["view! = |{}| {", "submission = use_submission!(Form.join)", "<form class=\"join\"", "<input name=\"name\"", "<button type=\"submit\"", "</form>", "{match submission.result!()", "{match submission.error!()", "<button class=\"clear\""]),
 		Whole("routes_local", "test/e2e/app/routes/local/+page.rocx"),
 		Defined("platform_forecast", "server/test/app/Samples.roc", ["forecast!", "order!"]),
+		Defined("platform_nested_transaction", "server/test/app/Samples.roc", ["award!", "place_order!"]),
 		Defined("platform_preview", "server/test/app/Samples.roc", ["preview!"]),
 		Defined("platform_lines", "server/test/app/Samples.roc", ["lines!"]),
 		Defined("platform_partner", "server/test/app/Samples.roc", ["partner!"]),

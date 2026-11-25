@@ -13,10 +13,10 @@
 //!
 //! Every call into Roc has a context (`call`): the request it answers (if any: `call_asking`), the
 //! stream it sends (if any), whether it is a background loop, its deadline (a job's time limit),
-//! the transaction it began, the topics it listens to, the rooms it is in, the connections it
-//! opened, and, in an actor's turn, the actor and the ones waiting on it (`Turn`). When the call
-//! ends, however it ends, the transaction is rolled back if still open, it leaves its rooms and
-//! closes its connections.
+//! the transaction it began (and the levels inside it, savepoints: D-076), the topics it listens
+//! to, the rooms it is in, the connections it opened, and, in an actor's turn, the actor and the
+//! ones waiting on it (`Turn`). When the call ends, however it ends, the transaction is rolled back
+//! if still open, it leaves its rooms and closes its connections.
 //!
 //! A call with a deadline (`Host.isolated!` given a time limit: a job's) is cut off by the first
 //! effect that waits past it (Postgres, a socket, a request to another server, a sleep, an
@@ -177,6 +177,14 @@ struct Context {
     cut_off: bool,
     /// The connection of the transaction this call began.
     transaction: Option<db::Client>,
+    /// The levels opened inside that transaction (a `Db.transaction!` in one: a savepoint each,
+    /// `rocx_1`, `rocx_2`…, D-076), innermost last: how many notices the call had when each began,
+    /// so one rolled back drops what it notified.
+    levels: Vec<usize>,
+    /// Why that transaction can't commit any more, if it can't: it lost to another's write (on
+    /// Turso's MVCC a conflict rolls it all back there and then), or a level of it couldn't be
+    /// undone. Its statements fail with this at once, so none runs outside it, until it ends.
+    broken: Option<String>,
     /// Whether that transaction, or the last one, lost to another's write (a conflict, on Turso's
     /// MVCC, D-049), or needs to be exclusive: `Db.transaction!` runs its body again
     /// (`Host.db_conflicted!`).
@@ -214,7 +222,7 @@ impl Context {
             crate::logging::warn("rocx server: a call ended with its transaction open: rolled back", &[]);
             rolled_back(client);
         }
-        self.notices.clear();
+        self.transaction_ended();
         for room in self.rooms.drain(..) {
             live::leave(&room);
         }
@@ -224,6 +232,14 @@ impl Context {
         for id in self.chunked.drain(..) {
             client::let_go(id);
         }
+    }
+
+    /// The call's transaction has ended (rolled back, or gone with its connection): its levels, why
+    /// it was broken, and what it notified go with it.
+    fn transaction_ended(&mut self) {
+        self.levels.clear();
+        self.broken = None;
+        self.notices.clear();
     }
 
     /// Resolves when what this call waits on has gone: its stream's client, or, for a background
@@ -454,14 +470,25 @@ fn guarded<T>(with: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
 /// the context while it is used, and put back), or on one from the pool; told whether it is in the
 /// call's transaction. It waits no longer than the call's deadline: past it, the statement is
 /// cancelled and its connection closed (`db::abandon`), even the transaction's, which ends with it.
+/// A transaction that can't commit any more (`broken`) runs nothing: the statement fails with why.
 fn on_db<T>(work: impl AsyncFnOnce(&db::Client, bool) -> Result<T, String>) -> Result<Result<T, String>, Late> {
-    let pinned = CALL.with(|context| context.borrow_mut().transaction.take());
+    let pinned = CALL.with(|context| {
+        let mut context = context.borrow_mut();
+        match context.broken.clone() {
+            Some(why) => Err(why),
+            None => Ok(context.transaction.take()),
+        }
+    });
+    let pinned = match pinned {
+        Ok(pinned) => pinned,
+        Err(why) => return Ok(Err(why)),
+    };
     let (done, kept) = match pinned {
         Some(client) => match within(work(&client, true)) {
             Err(Late) => {
                 abandon(client);
-                // Its transaction ends with the connection: what it notified goes too.
-                CALL.with(|context| context.borrow_mut().notices.clear());
+                // Its transaction ends with the connection: its levels and what it notified go too.
+                CALL.with(|context| context.borrow_mut().transaction_ended());
                 (Err(Late), None)
             }
             done => {
@@ -490,7 +517,9 @@ fn on_db<T>(work: impl AsyncFnOnce(&db::Client, bool) -> Result<T, String>) -> R
 }
 
 /// Notes, of a statement of the call's transaction (or its commit) that failed, whether it lost to
-/// another's write, or needs an exclusive transaction: `Db.transaction!` runs its body again.
+/// another's write, or needs an exclusive transaction: `Db.transaction!` runs its body again. One
+/// that lost can't commit (on Turso it has been rolled back already): nothing more runs in it, even
+/// when the body around a level that lost takes the error and goes on (`broken`, D-076).
 fn noted(why: &str) {
     let (conflict, exclusive) = (db::is_conflict(why), db::is_exclusive(why));
     if conflict || exclusive {
@@ -498,6 +527,9 @@ fn noted(why: &str) {
             let mut context = context.borrow_mut();
             context.conflicted = true;
             context.exclusive |= exclusive;
+            if conflict {
+                context.broken.get_or_insert_with(|| why.to_string());
+            }
         });
     }
 }
@@ -901,8 +933,10 @@ pub extern "C" fn roc_host_db_flavor() -> RocStr {
 }
 
 /// Tells the listeners of `channel` (the topic `db:<channel>`) `payload`, when the call's transaction
-/// commits (never, if it rolls back), or at once outside one: on Postgres with `pg_notify`, which
-/// other processes hear too; on SQLite and Turso in the process, the host keeping the call's notices.
+/// commits (never, if it rolls back, nor if the level of it it was told in does), or at once outside
+/// one: on Postgres with `pg_notify`, which other processes hear too (Postgres drops what a
+/// savepoint rolled back to told); on SQLite and Turso in the process, the host keeping the call's
+/// notices.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_notify(channel: RocStr, payload: RocStr) -> HostDbScriptResult {
     let _host = preempt::host();
@@ -910,17 +944,20 @@ pub extern "C" fn roc_host_db_notify(channel: RocStr, payload: RocStr) -> HostDb
         let (channel, payload) = (taken(channel), taken(payload));
         let kept = CALL.with(|context| {
             let mut context = context.borrow_mut();
-            if context.transaction.is_some() {
+            if let Some(why) = context.broken.clone() {
+                // Refused in a transaction that can't commit, as a statement is.
+                Err(why)
+            } else if context.transaction.is_some() {
                 context.notices.push((channel.clone(), payload.clone()));
-                true
+                Ok(true)
             } else {
-                false
+                Ok(false)
             }
         });
-        if !kept {
+        if kept == Ok(false) {
             live::publish(&format!("db:{channel}"), &payload);
         }
-        return done(Ok(()));
+        return done(kept.map(|_| ()));
     }
     let waited = {
         let (channel, payload) = (taken(channel), taken(payload));
@@ -970,11 +1007,27 @@ pub extern "C" fn roc_host_db_script(sql: RocStr) -> HostDbScriptResult {
     done(in_time(waited))
 }
 
+/// Begins a transaction on a connection the call keeps until it ends; or, inside the one the call
+/// has open, a level of it (D-076): a savepoint, which `roc_host_db_commit` releases and
+/// `roc_host_db_rollback` rolls back to, the transaction around it going on.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_begin() -> HostDbScriptResult {
     let _host = preempt::host();
-    if CALL.with(|context| context.borrow().transaction.is_some()) {
-        return done(Err("a transaction is open already: one at a time".into()));
+    let open = CALL.with(|context| {
+        let context = context.borrow();
+        context.transaction.is_some().then_some(context.levels.len())
+    });
+    if let Some(levels) = open {
+        let depth = levels + 1;
+        let begun = in_time(on_db(async |client, _| db::savepoint(client, depth).await));
+        if begun.is_ok() {
+            CALL.with(|context| {
+                let mut context = context.borrow_mut();
+                let notified = context.notices.len();
+                context.levels.push(notified);
+            });
+        }
+        return done(begun);
     }
     // The connection, then `begin` on it: one cut off after `begin` was sent is closed, never given
     // back to the pool with a transaction open. Exclusive if the last one needed it.
@@ -1010,37 +1063,106 @@ pub extern "C" fn roc_host_db_begin() -> HostDbScriptResult {
     done(in_time(waited))
 }
 
+/// Commits the call's transaction, publishing what it notified (SQLite, Turso); or, in a level of
+/// it, releases that level, what it wrote and notified kept in the level around it. One that can't
+/// commit (`broken`) is rolled back, and says why.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_commit() -> HostDbScriptResult {
     let _host = preempt::host();
-    let pinned = CALL.with(|context| context.borrow_mut().transaction.take());
-    let Some(client) = pinned else { return done(Err("no transaction is open".into())) };
-    let waited = match within(db::commit(&client)) {
-        Err(Late) => {
-            abandon(client);
-            Err(Late)
-        }
-        Ok(committed) => {
-            if let Err(why) = &committed {
-                noted(why);
-                rolled_back(client);
-            }
-            Ok(committed)
-        }
-    };
-    match &waited {
-        Ok(Ok(())) => publish_notices(),
-        _ => CALL.with(|context| context.borrow_mut().notices.clear()),
+    let levels = CALL.with(|context| context.borrow().levels.len());
+    if levels > 0 {
+        return done(released(levels));
     }
+    let pinned = CALL.with(|context| {
+        let mut context = context.borrow_mut();
+        context.transaction.take().map(|client| (client, context.broken.take()))
+    });
+    let Some((client, broken)) = pinned else { return done(Err("no transaction is open".into())) };
+    let waited = match broken {
+        Some(why) => {
+            rolled_back(client);
+            Ok(Err(why))
+        }
+        None => match within(db::commit(&client)) {
+            Err(Late) => {
+                abandon(client);
+                Err(Late)
+            }
+            Ok(committed) => {
+                if let Err(why) = &committed {
+                    noted(why);
+                    rolled_back(client);
+                }
+                Ok(committed)
+            }
+        },
+    };
+    if let Ok(Ok(())) = &waited {
+        publish_notices();
+    }
+    CALL.with(|context| context.borrow_mut().transaction_ended());
     done(in_time(waited))
 }
 
+/// Ends level `depth` of the call's transaction (`release`), what it wrote kept in the level around
+/// it. One that can't be released (on Postgres, a statement of it failed and its body went on) is
+/// undone instead, so the level around it can go on, and says why; one that can't be undone either
+/// leaves the transaction broken. Either way the level has ended.
+fn released(depth: usize) -> Result<(), String> {
+    let waited = on_db(async |client, _| match db::release(client, depth).await {
+        Ok(()) => Ok(None),
+        Err(why) => match db::rollback_to(client, depth).await {
+            Ok(()) => Ok(Some(why)),
+            Err(undoing) => Err(format!("{why} (and undoing the level: {undoing})")),
+        },
+    });
+    let outcome = in_time(waited);
+    CALL.with(|context| {
+        let mut context = context.borrow_mut();
+        let notified = context.levels.pop().unwrap_or(context.notices.len());
+        match outcome {
+            Ok(None) => Ok(()),
+            Ok(Some(why)) => {
+                context.notices.truncate(notified);
+                Err(why)
+            }
+            Err(why) => {
+                context.notices.truncate(notified);
+                if context.transaction.is_some() {
+                    context.broken.get_or_insert_with(|| why.clone());
+                }
+                Err(why)
+            }
+        }
+    })
+}
+
+/// Rolls back the call's transaction; or, in a level of it, rolls back to that level's savepoint and
+/// ends it, dropping what it notified, the transaction around it going on. A level that can't be
+/// undone (its transaction lost to another's write, which on Turso rolled it all back) leaves the
+/// transaction broken: it can't commit, and its body learns so at its next statement.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_rollback() {
     let _host = preempt::host();
+    let levels = CALL.with(|context| context.borrow().levels.len());
+    if levels > 0 {
+        let undone = in_time(on_db(async |client, _| db::rollback_to(client, levels).await));
+        CALL.with(|context| {
+            let mut context = context.borrow_mut();
+            if let Some(notified) = context.levels.pop() {
+                context.notices.truncate(notified);
+            }
+            if let Err(why) = undone
+                && context.transaction.is_some()
+            {
+                context.broken.get_or_insert(why);
+            }
+        });
+        return;
+    }
     let pinned = CALL.with(|context| {
         let mut context = context.borrow_mut();
-        context.notices.clear();
+        context.transaction_ended();
         context.transaction.take()
     });
     if let Some(client) = pinned {
@@ -1049,11 +1171,16 @@ pub extern "C" fn roc_host_db_rollback() {
 }
 
 /// Whether the call's last transaction, rolled back, lost to another's write, or needed to be
-/// exclusive (Turso's MVCC, D-049): `Db.transaction!` runs its body again.
+/// exclusive (Turso's MVCC, D-049): `Db.transaction!` runs its body again. Never for a level inside
+/// a transaction still open (D-076): the whole transaction lost, and it runs again from its start
+/// once its outermost `Db.transaction!` has rolled it back.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_db_conflicted() -> bool {
     let _host = preempt::host();
-    CALL.with(|context| context.borrow().conflicted)
+    CALL.with(|context| {
+        let context = context.borrow();
+        context.conflicted && context.transaction.is_none()
+    })
 }
 
 /// Listens to a channel of the database's: this call hears what is notified on it (`Db.notify!`,

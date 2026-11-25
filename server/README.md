@@ -350,11 +350,30 @@ beside other errors (packages/jobs' `JobErr`, the app's own).
 stay only if it returns `Ok`. An `Err`, a failing statement or a crash rolls everything back. A
 call that ends with a transaction still open has it rolled back (and logged).
 
+A `Db.transaction!` inside one (an app's helper with a transaction of its own, called in another,
+as packages/auth's `admit!` is) is a level of it, a savepoint (D-076). The host keeps a count of the
+call's levels and picks the SQL: `savepoint rocx_<n>` to begin one, `release savepoint rocx_<n>`
+when its body returns `Ok`, and `rollback to savepoint rocx_<n>` (then `release`) when it returns
+`Err` or a statement of it fails. So an inner `Ok` keeps its writes in the level around it, which
+commits them or not; an inner `Err` undoes only its own writes and comes back to the body around
+it, which may handle it and go on. What a rolled-back level notified is dropped (Postgres drops
+it itself), so a job it queued is never queued and wakes nobody. A crash rolls everything back, as
+before. All three engines have savepoints: Postgres, SQLite, and Turso in MVCC and WAL
+mode. On Postgres a failing statement aborts the transaction until its level rolls back: a level
+whose body drops such an error and returns `Ok` can't be released, so the host undoes it and the
+inner `transaction!` returns the error.
+
+On Turso's MVCC a level that loses to another's write isn't run again on its own: Turso has rolled
+the whole transaction back already. The host marks the transaction broken: every statement after
+that fails with the conflict at once (none runs outside the transaction), and so does its commit.
+`Host.db_conflicted!` answers false while a transaction is open, so only the outermost
+`transaction!` runs its body again, once the error has reached it.
+
 `Db.script!` runs statements with no parameters. `Db.notify!(channel, payload)` tells
 `Db.listen!`'s listeners (the live topic `db:<channel>`, read with `Live.next!`) when the call's
-transaction commits, never if it rolls back, or at once outside a transaction. On Postgres it is
-`pg_notify` (the listening connection publishes what it hears); on SQLite it is the server's own.
-This is how the job workers hear that a job was queued.
+transaction commits, never if it (or the level it was told in) rolls back, or at once outside a
+transaction. On Postgres it is `pg_notify` (the listening connection publishes what it hears); on
+SQLite it is the server's own. This is how the job workers hear that a job was queued.
 
 ### Migrations
 
@@ -1554,9 +1573,10 @@ it over HTTP:
   was typed and noted for the browser, then let go; passwords never coming back; a flash gone after
   a minute; a script's and the runtime's posts answered as they are; a redirect for the runtime.
 - **The database:** Postgres statements, `Db.array`, `Db.Nullable`, waits on their own, migrations,
-  transactions; `--describe-sql` on Postgres (a scratch database, `--sql-database`, `CREATEDB`); a
-  SQLite or Turso URL refused for a Postgres app; packages/admin's tables admin (`admin-checks.mjs`,
-  shared with the SQLite tests); roc-pg (`server/examples/roc-pg`).
+  transactions, and transactions inside them (`nested-checks.mjs`, shared with the SQLite tests);
+  `--describe-sql` on Postgres (a scratch database, `--sql-database`, `CREATEDB`); a SQLite or
+  Turso URL refused for a Postgres app; packages/admin's tables admin (`admin-checks.mjs`, shared
+  with the SQLite tests); roc-pg (`server/examples/roc-pg`).
 - **Plugins:** the fixture plugin package's (`server/test/fixture`) route with the app's context,
   early path, files and scripts (served before an app that refuses everything,
   `server/test/refusing`), table, call, loop, start, check and need; an app whose plugins break
@@ -1608,8 +1628,9 @@ parameters and rows, transactions and a failing script, 40 read-then-write trans
 that each see the one before, a read beside a held write, notifications on commit only, the
 platform's and a plugin's tables made once, actors' state and timers across a restart, a plugin
 that needs Postgres refused, jobs (in a transaction, retried, keyed, cut off at their time limit
-with the statement interrupted and the transaction rolled back), cron, the jobs page, and
-packages/admin.
+with the statement interrupted and the transaction rolled back), cron, the jobs page,
+packages/admin, and transactions inside transactions (`nested-checks.mjs`: on Turso in WAL mode
+too, and a level that loses to another's write on Turso's MVCC).
 
 **`server/test/host-entries.test.mjs`** builds nothing: it reads the host's sources and checks that
 every function Roc can call (the glue's runtime and hosted symbols, every exported function, the

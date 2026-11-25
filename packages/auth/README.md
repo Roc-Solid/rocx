@@ -77,8 +77,10 @@ uses the rest (the middleware, signing out, the sessions' table).
 `admit!` runs inside the transaction that starts the session, with the identity's row. What it
 writes commits with the session, or with its refusal: a new user's row and a welcome job it queues
 when it lets someone in, a waiting list's row when it turns them away for now. A database error rolls
-all of it back. Keep anything slow (a fetch) out of it. On Turso, a transaction that loses to
-another's write runs again, and `admit!` with it.
+all of it back. Keep anything slow (a fetch) out of it. A helper of the app's that opens its own
+`Db.transaction!` is fine inside `admit!`: it becomes a level of the sign-in's transaction (a
+savepoint, D-076), whose `Err` undoes only what the helper wrote. On Turso, a transaction that loses
+to another's write runs again, and `admit!` with it.
 
 ## Signing in
 

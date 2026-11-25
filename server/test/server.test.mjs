@@ -4,10 +4,11 @@
 // fetched from a server this file runs and sent on as it comes, ranges and all; a page of
 // components is rendered whole, a document with the answers its endpoint reads got; a stream is a loop,
 // sent as it runs and stopped when its client goes; Postgres reads rows into records, in
-// transactions that roll back on an error or a crash; jobs run, retry and fail for good, and are
-// queued only if their transaction commits; a kind says how many times its jobs are tried and how
-// long each may take; a key is one pending job's, by which it is cancelled or moved; jobs are
-// listed and acted on, and the jobs page shows them behind the app's guard; cron queues its jobs;
+// transactions that roll back on an error or a crash, with levels inside them (savepoints, D-076);
+// jobs run, retry and fail for good, and are queued only if their transaction commits; a kind says
+// how many times its jobs are tried and how long each may take; a key is one pending job's, by
+// which it is cancelled or moved; jobs are listed and acted on, and the jobs page shows them behind
+// the app's guard; cron queues its jobs;
 // email is kept in the dev mailbox (in memory: Kv), or sent over SMTP (to
 // a server this file runs); live rooms count who is in them; actors answer one message at a time,
 // take tells and timers, log what they do not take, and keep their state across a restart (and an
@@ -39,6 +40,7 @@ import { join } from "node:path";
 import { buildApp, buildHost, hasRust, hostUnitTests, roc, root } from "../build.mjs";
 import { testDatabase } from "../../packages/testing/postgres.mjs";
 import { adminWorks } from "./admin-checks.mjs";
+import { nestedTests } from "./nested-checks.mjs";
 
 
 let hasRoc = true;
@@ -933,6 +935,17 @@ test("transactions: Ok commits all, an Err rolls back, a crash or a failing stat
 	// The connections went back to the pool clean: nothing is stuck in a transaction.
 	const after = await Promise.all(Array.from({ length: 20 }, () => text(`/tx/notes?run=${tx}`)));
 	assert.deepEqual(new Set(after), new Set([`committed ${tx}\nalso committed ${tx}`]));
+});
+
+// A transaction inside a transaction is a savepoint of it (D-076): the same tests as on SQLite and
+// Turso (nested-checks.mjs). Postgres drops what a savepoint rolled back to notified.
+nestedTests({ test, server: () => server, engine: "postgres", skip: skipDb });
+
+test("samples: an order and its points (Samples.roc's place_order!, whose award! is a transaction inside its transaction): points refused leave the order without them", { skip: skipDb }, async () => {
+	const customer = `${run}buyer`;
+	assert.equal(await post(`/samples/orders?customer=${customer}&total=500`), "ordered, with points");
+	assert.equal(await post(`/samples/orders?customer=${customer}&total=5000`), "ordered, without points");
+	assert.equal(await text(`/samples/orders?customer=${customer}`), "orders 500,5000; points 50");
 });
 
 // ---- Jobs, cron ----

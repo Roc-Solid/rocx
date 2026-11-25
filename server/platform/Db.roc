@@ -218,6 +218,14 @@ Db := [].{
 	## short. On Turso (D-049) transactions write at once, each on its own snapshot: one that loses
 	## to another's write to the same row rolls back, and its body runs again after a short random
 	## pause (up to 100 times), so keep what isn't the database's (a fetch, a message) out of it.
+	##
+	## Inside another transaction (a helper with a transaction of its own, called in one) it is a
+	## level of that one, a savepoint (D-076). Its `Ok` keeps what it wrote in the transaction
+	## around it, which commits it or not. Its `Err`, or a statement of it that fails, undoes what
+	## it wrote, notified and queued, and comes back to the body around it, which may handle it and
+	## go on. A crash still rolls back everything. On Turso a level that loses to another's write
+	## doesn't run again by itself: the whole transaction has lost, its statements fail from then
+	## on, and once the error reaches the outermost `transaction!`, that one runs again.
 	transaction! : ({} => Try(a, [DbErr(Str), ..others])) => Try(a, [DbErr(Str), ..others])
 	transaction! = |body!| attempted!(body!, 1)
 }
@@ -226,8 +234,9 @@ Db := [].{
 attempts : U64
 attempts = 100
 
-## `Db.transaction!`'s run `tries` of `body!`, in a transaction of its own: again after one that
-## lost to another's write (`Host.db_conflicted!`), while there are tries left.
+## `Db.transaction!`'s run `tries` of `body!`, in a transaction of its own (or a level of the one
+## the call has open: the host's savepoint, D-076): again after one that lost to another's write
+## (`Host.db_conflicted!`, never for a level), while there are tries left.
 attempted! : ({} => Try(a, [DbErr(Str), ..others])), U64 => Try(a, [DbErr(Str), ..others])
 attempted! = |body!, tries|
 	match Host.db_begin!({}) {

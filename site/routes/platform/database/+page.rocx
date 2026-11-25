@@ -15,6 +15,7 @@ meta = {
 		{ id: "rows", label: "Rows, as records" },
 		{ id: "write", label: "Writing" },
 		{ id: "transactions", label: "Transactions" },
+		{ id: "nested", label: "A transaction inside another" },
 		{ id: "migrations", label: "Migrations" },
 		{ id: "where", label: "Where it can be used" },
 		{ id: "notify", label: "Notifications" },
@@ -168,6 +169,38 @@ view! = |_|
 				</p>
 			</Callout>
 
+			<Heading id="nested">A transaction inside another</Heading>
+			<p>
+				A helper can open a transaction of its own and still be called inside another one. The inner
+				<code>Db.transaction!</code> is then a level of the outer transaction (a savepoint). When its body
+				returns <code>Ok</code>, what it wrote stays in the outer transaction, which commits it or not.
+				When its body returns <code>Err</code>, or a statement in it fails, only its own writes are undone,
+				along with what it notified and the jobs it queued. The error comes back to the outer body, which
+				can handle it and go on:
+			</p>
+			<Code title={"${Sources.platform_nested_transaction.file}, in part"} source={Sources.platform_nested_transaction.rocx} numbers={Bool.False} />
+			<ul>
+				<li>
+					An outer <code>Err</code> still undoes everything, including what inner levels kept, and a crash
+					rolls back the whole transaction.
+				</li>
+				<li>
+					Levels nest as deep as you like. Each one's writes stay only if it and every level around it
+					commit.
+				</li>
+				<li>
+					It works the same on Postgres, SQLite, and Turso in both modes. On Postgres a failing statement
+					aborts the transaction until its level rolls back. So an inner body that ignores a statement's
+					error and returns <code>Ok</code> gets the error back from <code>Db.transaction!</code>, and its
+					level is undone.
+				</li>
+				<li>
+					On Turso's MVCC a level that loses to another transaction's write isn't run again by itself: the
+					whole transaction has lost. Its statements fail from then on, and when the error reaches the
+					outermost <code>Db.transaction!</code>, that one runs its body again.
+				</li>
+			</ul>
+
 			<Heading id="migrations">Migrations</Heading>
 			<p>
 				An app's schema is a list of migrations, built into its executable. In an app that
@@ -222,9 +255,9 @@ view! = |_|
 			<Heading id="notify">Notifications</Heading>
 			<p>
 				<code>Db.notify!(channel, payload)</code> tells whoever listens to <code>channel</code>: when the
-				call's transaction commits (never if it rolls back), or at once outside a transaction. A call
-				listens with <code>Db.listen!(channel)</code>, then hears each notification as a message on the
-				topic <code>{"db:<channel>"}</code> from <code>Live.next!</code>
+				call's transaction commits (never if it, or the level of it that notified, rolls back), or at once
+				outside a transaction. A call listens with <code>Db.listen!(channel)</code>, then hears each
+				notification as a message on the topic <code>{"db:<channel>"}</code> from <code>Live.next!</code>
 				(<a href={"${Paths.platform_live}#topics"}>topics</a>). On Postgres it is <code>pg_notify</code>, so
 				another process writing to the database can notify too; on SQLite it stays within the server. It is
 				how the job workers sleep until a job is queued.
@@ -299,8 +332,9 @@ view! = |_|
 				<strong>What Turso adds: writes at the same time.</strong> Its file is in MVCC mode. A transaction
 				(<code>Db.transaction!</code>) begins <code>concurrent</code>, on a snapshot of its own, and writes
 				beside the others. When two write the same row, the one that commits second rolls back, and its
-				body runs again (up to a hundred times). So keep what isn't the database's (a fetch, an email) out
-				of a transaction. A write outside a transaction is its own concurrent transaction, retried the same
+				body runs again (up to a hundred times; the outermost body, when transactions are
+				<a href="#nested">nested</a>). So keep what isn't the database's (a fetch, an email) out of a
+				transaction. A write outside a transaction is its own concurrent transaction, retried the same
 				way; a schema change (a migration) takes the file to itself. Two transactions that read rows and
 				write different ones both commit, where on SQLite the second would wait for the first.
 			</p>

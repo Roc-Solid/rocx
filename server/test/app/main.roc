@@ -1,5 +1,6 @@
 ## A small app on the server platform, for its tests (`server/test/server.test.mjs`): a page, a
-## crash and an overflow, bytes each way, streams of events, Postgres and its transactions, jobs
+## crash and an overflow, bytes each way, streams of events, Postgres and its transactions (and
+## transactions inside them, D-076, as `server/test/nested-checks.mjs` asks them), jobs
 ## (with attempts, time limits and keys, listed and acted on, and the jobs page behind a guard) and
 ## cron, email, live topics and rooms, actors, pages of components, with the endpoints they read
 ## answered by their routes, requests to other servers, the environment, AES-GCM, random
@@ -50,6 +51,7 @@ import Samples
 import "migrations/0001_tables.sql" as tables : Str
 import "migrations/0002_note_index.sql" as note_index : Str
 import "migrations/0003_admin.sql" as admin_tables : Str
+import "migrations/0004_nested.sql" as nested_tables : Str
 
 program = {
 	# The context is what the server was started with (`--context-file`), as it was before `init!`.
@@ -58,7 +60,7 @@ program = {
 	# The app's database (D-045): Postgres, at --database-url.
 	database: Postgres,
 	# The app's schema, in the executable: applied once each, in order, when the server starts.
-	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_note_index.sql", sql: note_index }, { name: "0003_admin.sql", sql: admin_tables }],
+	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_note_index.sql", sql: note_index }, { name: "0003_admin.sql", sql: admin_tables }, { name: "0004_nested.sql", sql: nested_tables }],
 	# The actors' methods (`rocx build` lists them for an app it builds).
 	actors: [Actor.handler(Counter.add), Actor.handler(Counter.get), Actor.handler(Counter.boom), Actor.handler(Counter.nap), Actor.handler(Mirror.relay), Actor.handler(Mirror.itself), Actor.handler(Mirror.cycle), Actor.handler(Bouncer.back), Actor.handler(Ticker.start), Actor.handler(Ticker.tick({})), Actor.handler(Ticker.stop), Actor.handler(Ticker.ticks)],
 	# The log's format: `ROCX_LOG` if it's set, or else pretty on a terminal and JSON elsewhere.
@@ -464,6 +466,129 @@ route! = |request, context| {
 			found = Db.all!("select body from notes where body like $1 order by id", [Text("%${run}")])
 			match found {
 				Ok(notes) => text(200, Str.join_with(notes.map(|each| each.body), "\n"))
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
+		}
+
+		# ---- Transactions inside transactions (D-076): each a level of the one around it ----
+		# `outer` written, then `inner` in a transaction inside, which ends as `inner` says: `ok`, `err`
+		# (its own error), `statement` (a failing statement, `?`d), `swallow` (a failing statement
+		# whose error it drops, then `Ok`) or `crash`. The outer body says how the inner ended, writes
+		# `after`, and ends as `outer` says: `ok` or `err`.
+		("POST", "/nested") => {
+			ends = param(request.query, "inner")
+			outcome = Db.transaction!(
+				|{}| {
+					_ = Db.run!("insert into nested_marks (run, label) values ($1, 'outer')", [Text(run)])?
+					inner = Db.transaction!(
+						|{}| {
+							_ = Db.run!("insert into nested_marks (run, label) values ($1, 'inner')", [Text(run)])?
+							match ends {
+								"err" => Err(DbErr("inner on purpose"))
+								"statement" => {
+									_ = Db.run!("insert into nowhere values (1)", [])?
+									Ok("?")
+								}
+								"swallow" => {
+									dropped : Try(U64, [DbErr(Str)])
+									dropped = Db.run!("insert into nowhere values (1)", [])
+									_ = dropped
+									Ok("inner swallowed its error")
+								}
+								"crash" => if (run != "") crash "a crash in a level" else Ok("?")
+								_ => Ok("inner committed")
+							}
+						},
+					)
+					said =
+						match inner {
+							Ok(done) => done
+							Err(DbErr(why)) => "inner rolled back: ${why}"
+						}
+					_ = Db.run!("insert into nested_marks (run, label) values ($1, 'after')", [Text(run)])?
+					if (param(request.query, "outer") == "err") Err(DbErr("outer on purpose")) else Ok(said)
+				},
+			)
+			match outcome {
+				Ok(said) => text(200, said)
+				Err(DbErr(why)) => text(200, "rolled back: ${why}")
+			}
+		}
+		# Three levels, each writing and telling `nested` its name (`deep!`); level `fail` errs.
+		("POST", "/nested/deep") =>
+			match deep!(run, param(request.query, "payload"), number(request.query, "fail"), 1) {
+				Ok(said) => text(200, said)
+				Err(DbErr(why)) => text(200, "rolled back: ${why}")
+			}
+		# The marks a run's levels left, in the order they were written.
+		("GET", "/nested/marks") => {
+			marks : Try(List({ label : Str }), [DbErr(Str), BadRow(Str)])
+			marks = Db.all!("select label from nested_marks where run = $1 order by id", [Text(run)])
+			match marks {
+				Ok(rows) => text(200, Str.join_with(rows.map(|row| row.label), ","))
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
+		}
+		# What is told on `nested` for `ms` milliseconds, in order.
+		("GET", "/nested/listen") =>
+			match Db.listen!("nested") {
+				Err(DbErr(why)) => text(500, why)
+				Ok({}) => {
+					until = Time.now_millis!({}) + number(request.query, "ms")
+					var $heard = []
+					var $going = Bool.True
+					while $going {
+						now = Time.now_millis!({})
+						if now >= until {
+							$going = Bool.False
+						} else {
+							match Live.next!(until - now) {
+								Heard(said) => {
+									$heard = $heard.append(said.message)
+								}
+								_ => {}
+							}
+						}
+					}
+					text(200, Str.join_with($heard, ","))
+				}
+			}
+		# A job queued in a transaction (`<run>-kept`), and one queued in a level inside it that rolls
+		# back (`<run>-dropped`), the outer body going on: only the first is queued, and runs.
+		("POST", "/nested/job") => {
+			outcome = Db.transaction!(
+				|{}| {
+					Job.enqueue!(note_job, { run, said: "${run}-kept" }, { when: Now })?
+					dropped = Db.transaction!(
+						|{}| {
+							Job.enqueue!(note_job, { run, said: "${run}-dropped" }, { when: Now })?
+							Err(JobErr("dropped on purpose"))
+						},
+					)
+					match dropped {
+						Ok({}) => Ok("the inner level committed")
+						Err(JobErr(why)) => Ok(why)
+						Err(DbErr(why)) => Err(DbErr(why))
+					}
+				},
+			)
+			match outcome {
+				Ok(said) => text(200, said)
+				Err(DbErr(why)) => text(500, why)
+				Err(JobErr(why)) => text(500, why)
+			}
+		}
+		# How many of a run's two jobs (`/nested/job`) are in the queue, and how many ran.
+		("GET", "/nested/jobs") => {
+			counts : Try(List({ queued_kept : I64, queued_dropped : I64, ran_kept : I64, ran_dropped : I64 }), [DbErr(Str), BadRow(Str)])
+			counts = Db.all!(
+				"select (select count(*) from rocx_jobs where input like $1) as queued_kept, (select count(*) from rocx_jobs where input like $2) as queued_dropped, (select count(*) from job_log where said like $3) as ran_kept, (select count(*) from job_log where said like $4) as ran_dropped",
+				[Text("%${run}-kept%"), Text("%${run}-dropped%"), Text("%${run}-kept"), Text("%${run}-dropped")],
+			)
+			match counts {
+				Ok(rows) => text(200, Str.join_with(rows.map(|row| "queued ${row.queued_kept.to_str()} ${row.queued_dropped.to_str()}, ran ${row.ran_kept.to_str()} ${row.ran_dropped.to_str()}"), "\n"))
 				Err(DbErr(why)) => text(500, why)
 				Err(BadRow(why)) => text(500, why)
 			}
@@ -1013,6 +1138,24 @@ route! = |request, context| {
 				Err(HttpErr(why)) => text(502, why)
 				Err(_) => text(504, "no answer")
 			}
+		("POST", "/samples/orders") =>
+			match Samples.place_order!(param(request.query, "customer"), I64.from_str(param(request.query, "total")) ?? 0) {
+				Ok(said) => text(200, said)
+				Err(DbErr(why)) => text(500, why)
+			}
+		# A customer's orders and points: `orders 500,5000; points 50`.
+		("GET", "/samples/orders") => {
+			customer = param(request.query, "customer")
+			orders : Try(List({ total : I64 }), [DbErr(Str), BadRow(Str)])
+			orders = Db.all!("select total from orders where customer = $1 order by id", [Text(customer)])
+			points : Try(List({ points : I64 }), [DbErr(Str), BadRow(Str)])
+			points = Db.all!("select points from points where customer = $1", [Text(customer)])
+			match (orders, points) {
+				(Ok(placed), Ok(given)) => text(200, "orders ${Str.join_with(placed.map(|row| row.total.to_str()), ",")}; points ${Str.join_with(given.map(|row| row.points.to_str()), ",")}")
+				(Err(DbErr(why)), _) | (_, Err(DbErr(why))) => text(500, why)
+				(Err(BadRow(why)), _) | (_, Err(BadRow(why))) => text(500, why)
+			}
+		}
 		("GET", "/samples/origin") => text(200, Samples.origin!({}))
 		("POST", "/samples/dev") => Samples.dev_sign_in!(Server.text_of(request))
 		("GET", "/samples/token") => text(200, "${Samples.token!({})} ${Samples.digest(param(request.query, "of"))}")
@@ -1363,6 +1506,30 @@ noted = |note|
 
 strings : U64, List(Str) -> List(Str)
 strings = |n, made| if (n == 0) made else strings(n - 1, made.append("row ${n.to_str()}"))
+
+## Level `depth` of /nested/deep (D-076), and the levels inside it down to the third: each writes
+## its name (`l1`, `l2`, `l3`) and tells `nested` `<payload>-<name>`, then runs the next; the level
+## numbered `fail` ends with an error, which the level around it says and goes on from. What each
+## level saw, from this one down.
+deep! : Str, Str, U64, U64 => Try(Str, [DbErr(Str)])
+deep! = |run, payload, fail, depth|
+	Db.transaction!(
+		|{}| {
+			label = "l${depth.to_str()}"
+			_ = Db.run!("insert into nested_marks (run, label) values ($1, $2)", [Text(run), Text(label)])?
+			Db.notify!("nested", "${payload}-${label}")?
+			below =
+				if depth >= 3 {
+					""
+				} else {
+					match deep!(run, payload, fail, depth + 1) {
+						Ok(said) => " ${said}"
+						Err(DbErr(why)) => " (${why})"
+					}
+				}
+			if (depth == fail) Err(DbErr("${label} failed")) else Ok("${label}${below}")
+		},
+	)
 
 # ---- Jobs ----
 

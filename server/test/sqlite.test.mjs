@@ -9,7 +9,8 @@
 // the one before) while reads go on beside one; what is notified is heard once its transaction
 // commits, and never if it rolls back or crashes; the platform's tables and a plugin's for SQLite
 // alone are made, once; an actor's state is kept across a restart; a plugin that needs Postgres is
-// refused.
+// refused; transactions inside transactions are savepoints (D-076, nested-checks.mjs), on Turso in
+// WAL mode too.
 //
 // Needs the toolchain (`just setup`: Roc, and Rust for the host); no database server.
 import { describe, test, before, after } from "node:test";
@@ -20,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, buildHost, hasRust, roc, root } from "../build.mjs";
 import { adminWorks } from "./admin-checks.mjs";
+import { nestedTests } from "./nested-checks.mjs";
 
 let hasRoc = true;
 try {
@@ -286,9 +288,9 @@ function suite({ engine, name, tag, run, server, home }) {
 	test("the platform's tables and a plugin's for SQLite are made, a plugin's for Postgres isn't; each recorded once, and a restart applies none again", { skip }, async () => {
 		assert.equal(
 			await server().text("/tables"),
-			["admin_authors", "admin_books", "any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "rocx_actor_timers", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
+			["admin_authors", "admin_books", "any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "nested_marks", "rocx_actor_timers", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
 		);
-		assert.equal(await server().text("/migrated"), ["0001_tables.sql", "0002_admin.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors", "rocx/0002 actor timers"].join("\n"));
+		assert.equal(await server().text("/migrated"), ["0001_tables.sql", "0002_admin.sql", "0003_nested.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors", "rocx/0002 actor timers"].join("\n"));
 		assert.match(server().logged(), /migrated migration="rocx\/0001 jobs and actors"[\s\S]*migrated migration=jobs\/0001_jobs[\s\S]*migrated migration=lite\/0001_lite[\s\S]*migrated migration=0001_tables.sql/);
 		const cwd = join(home(), "restarted");
 		const first = await run([], { cwd });
@@ -413,6 +415,26 @@ function suite({ engine, name, tag, run, server, home }) {
 		assert.doesNotMatch(page, /class="problem"/);
 		assert.match(page, new RegExp(`The queue, in ${name}`));
 	});
+
+	// ---- Transactions inside transactions (D-076) ----
+
+	nestedTests({ test, server, engine, skip });
+
+	if (engine === "turso") {
+		describe("in WAL mode (?mvcc=off)", () => {
+			/** The app on Turso with its file in WAL mode, where writes take turns as on SQLite. */
+			let walled;
+			before(async () => {
+				if (skip) return;
+				const cwd = join(home(), "wal");
+				walled = await run(["--database-url", `turso:${join(cwd, "data", "wal.db")}?mvcc=off`], { cwd });
+			});
+			after(async () => {
+				await walled?.stop();
+			});
+			nestedTests({ test, server: () => walled, engine: "turso-wal", skip, prefix: "in WAL mode: " });
+		});
+	}
 
 	test(`packages/admin on ${name}: its catalog read from SQLite's pragmas, a check's values and a foreign key as choices, a row created, found, changed and deleted, a boolean written as 1 or 0 and read back`, { skip }, async () => {
 		await adminWorks(server().url);

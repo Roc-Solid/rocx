@@ -170,7 +170,9 @@ Host := [].{
 	db_script! : Str => Try({}, Str)
 
 	## Begins a transaction on a connection this call keeps (every statement goes to it) until it
-	## commits or rolls back. A call that ends with one open rolls it back.
+	## commits or rolls back. A call that ends with one open rolls it back. Inside the one the call
+	## has open, it begins a level of it instead (D-076): a savepoint, which `db_commit!` releases
+	## and `db_rollback!` rolls back to, the transaction around it going on.
 	db_begin! : {} => Try({}, Str)
 
 	db_commit! : {} => Try({}, Str)
@@ -179,7 +181,8 @@ Host := [].{
 
 	## Whether the call's last transaction, rolled back, lost to another's write to the same row,
 	## or needed to be exclusive (it changed the schema): on Turso's MVCC (D-049), where
-	## transactions write at once. `Db.transaction!` runs its body again.
+	## transactions write at once. `Db.transaction!` runs its body again. Never for a level inside
+	## a transaction still open (D-076): the whole transaction runs again, from its outermost level.
 	db_conflicted! : {} => Bool
 
 	## From now until this call ends, it hears what is notified on `channel` (`db_notify!`, or

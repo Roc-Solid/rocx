@@ -4,7 +4,8 @@
 //! statement says so. The rest is the same for both: statements whose parameters arrive as JSON
 //! (text, an integer, a boolean or null) and whose rows leave as JSON, an array of objects, each
 //! column by its name, for Roc to decode into records; and a call that begins a transaction keeps a
-//! connection (`Client`) until it commits or rolls back, its statements going there.
+//! connection (`Client`) until it commits or rolls back, its statements going there. A transaction
+//! begun inside it is a level of it, a savepoint (`savepoint`, `release`, `rollback_to`, D-076).
 //!
 //! A backend is a module here with the same functions (`connect` or `open`, `client`, `query`,
 //! `execute`, `script`, `begin`, `commit`, `rollback`, `abandon`, `listen`), and a scheme in `open`.
@@ -228,6 +229,23 @@ pub async fn rollback(client: &Client) {
         Client::Sqlite(client) => sqlite::rollback(client).await,
         Client::Turso(client) => turso::rollback(client).await,
     }
+}
+
+/// Opens level `depth` (1, 2…) inside the transaction `client` has open (D-076): a savepoint,
+/// `rocx_<depth>`, the same SQL on every backend.
+pub async fn savepoint(client: &Client, depth: usize) -> Result<(), String> {
+    script(client, true, &format!("savepoint rocx_{depth}")).await
+}
+
+/// Ends level `depth`, what it wrote now the level's around it.
+pub async fn release(client: &Client, depth: usize) -> Result<(), String> {
+    script(client, true, &format!("release savepoint rocx_{depth}")).await
+}
+
+/// Undoes what level `depth` wrote, and ends it: the level around it goes on (on Postgres, even
+/// after a statement of the level failed).
+pub async fn rollback_to(client: &Client, depth: usize) -> Result<(), String> {
+    script(client, true, &format!("rollback to savepoint rocx_{depth}; release savepoint rocx_{depth}")).await
 }
 
 /// Postgres's `pg_notify` on `client`: delivered when its transaction commits, or at once. (On

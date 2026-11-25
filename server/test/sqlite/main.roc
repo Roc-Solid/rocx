@@ -5,7 +5,8 @@
 ## boolean, one declared json, a real, a null); transactions, and a script that fails; writes taking
 ## turns, and reads going on beside one; what is notified, heard once its transaction commits; a
 ## plugin's migrations for SQLite alone; an actor's state, kept; jobs (queued in a transaction or
-## not, tried again, keyed, cancelled, moved, cut off past their time limit), cron, and the jobs page.
+## not, tried again, keyed, cancelled, moved, cut off past their time limit), cron, and the jobs page;
+## transactions inside transactions (D-076), as `server/test/nested-checks.mjs` asks them.
 app [program] { admin: "../../../packages/admin/main.roc", jobs: "../../../packages/jobs/main.roc", pf: platform "../../platform/main.roc" }
 
 import admin.Admin
@@ -15,6 +16,7 @@ import jobs.Cron
 import jobs.Job
 import pf.Actor
 import pf.Db
+import pf.Kv
 import pf.Live
 import pf.Middleware
 import pf.Plugin
@@ -23,6 +25,7 @@ import pf.Server
 import pf.Time
 import "migrations/0001_tables.sql" as tables : Str
 import "migrations/0002_admin.sql" as admin_tables : Str
+import "migrations/0003_nested.sql" as nested_tables : Str
 
 program = {
 	# The context is what the server was started with (`--context-file`), as it was before `init!`.
@@ -30,7 +33,7 @@ program = {
 	respond!,
 	# A file beside where the server starts, unless --database-url says `sqlite:<path>`.
 	database: Sqlite("data/sqlite-test.db"),
-	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_admin.sql", sql: admin_tables }],
+	migrations: [{ name: "0001_tables.sql", sql: tables }, { name: "0002_admin.sql", sql: admin_tables }, { name: "0003_nested.sql", sql: nested_tables }],
 	actors: [Actor.handler(Counter.add)],
 	logs: { format: Auto },
 	plugins: plugins.map(Plugin.running),
@@ -269,6 +272,192 @@ route! = |request, context| {
 			}
 		}
 
+		# ---- Transactions inside transactions (D-076): each a level of the one around it ----
+		# `outer` written, then `inner` in a transaction inside, which ends as `inner` says: `ok`, `err`
+		# (its own error), `statement` (a failing statement, `?`d), `swallow` (a failing statement
+		# whose error it drops, then `Ok`) or `crash`. The outer body says how the inner ended, writes
+		# `after`, and ends as `outer` says: `ok` or `err`.
+		("POST", "/nested") => {
+			run = param(query, "run")
+			ends = param(query, "inner")
+			outcome = Db.transaction!(
+				|{}| {
+					_ = Db.run!("insert into nested_marks (run, label) values ($1, 'outer')", [Text(run)])?
+					inner = Db.transaction!(
+						|{}| {
+							_ = Db.run!("insert into nested_marks (run, label) values ($1, 'inner')", [Text(run)])?
+							match ends {
+								"err" => Err(DbErr("inner on purpose"))
+								"statement" => {
+									_ = Db.run!("insert into nowhere values (1)", [])?
+									Ok("?")
+								}
+								"swallow" => {
+									dropped : Try(U64, [DbErr(Str)])
+									dropped = Db.run!("insert into nowhere values (1)", [])
+									_ = dropped
+									Ok("inner swallowed its error")
+								}
+								"crash" => if (run != "") crash "a crash in a level" else Ok("?")
+								_ => Ok("inner committed")
+							}
+						},
+					)
+					said =
+						match inner {
+							Ok(done) => done
+							Err(DbErr(why)) => "inner rolled back: ${why}"
+						}
+					_ = Db.run!("insert into nested_marks (run, label) values ($1, 'after')", [Text(run)])?
+					if (param(query, "outer") == "err") Err(DbErr("outer on purpose")) else Ok(said)
+				},
+			)
+			match outcome {
+				Ok(said) => text(200, said)
+				Err(DbErr(why)) => text(200, "rolled back: ${why}")
+			}
+		}
+		# Three levels, each writing and telling `nested` its name (`deep!`); level `fail` errs.
+		("POST", "/nested/deep") =>
+			match deep!(param(query, "run"), param(query, "payload"), number(query, "fail"), 1) {
+				Ok(said) => text(200, said)
+				Err(DbErr(why)) => text(200, "rolled back: ${why}")
+			}
+		# The marks a run's levels left, in the order they were written.
+		("GET", "/nested/marks") => {
+			marks : Try(List({ label : Str }), [DbErr(Str), BadRow(Str)])
+			marks = Db.all!("select label from nested_marks where run = $1 order by id", [Text(param(query, "run"))])
+			match marks {
+				Ok(rows) => text(200, Str.join_with(rows.map(|row| row.label), ","))
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
+		}
+		# What is told on `nested` for `ms` milliseconds, in order.
+		("GET", "/nested/listen") =>
+			match Db.listen!("nested") {
+				Err(DbErr(why)) => text(500, why)
+				Ok({}) => {
+					until = Time.now_millis!({}) + number(query, "ms")
+					var $heard = []
+					var $going = Bool.True
+					while $going {
+						now = Time.now_millis!({})
+						if now >= until {
+							$going = Bool.False
+						} else {
+							match Live.next!(until - now) {
+								Heard(said) => {
+									$heard = $heard.append(said.message)
+								}
+								_ => {}
+							}
+						}
+					}
+					text(200, Str.join_with($heard, ","))
+				}
+			}
+		# A job queued in a transaction (`<run>-kept`), and one queued in a level inside it that rolls
+		# back (`<run>-dropped`), the outer body going on: only the first is queued, and runs.
+		("POST", "/nested/job") => {
+			run = param(query, "run")
+			outcome = Db.transaction!(
+				|{}| {
+					Job.enqueue!(note_job, { said: "${run}-kept" }, { when: Now })?
+					dropped = Db.transaction!(
+						|{}| {
+							Job.enqueue!(note_job, { said: "${run}-dropped" }, { when: Now })?
+							Err(JobErr("dropped on purpose"))
+						},
+					)
+					match dropped {
+						Ok({}) => Ok("the inner level committed")
+						Err(JobErr(why)) => Ok(why)
+						Err(DbErr(why)) => Err(DbErr(why))
+					}
+				},
+			)
+			match outcome {
+				Ok(said) => text(200, said)
+				Err(DbErr(why)) => text(500, why)
+				Err(JobErr(why)) => text(500, why)
+			}
+		}
+		# How many of a run's two jobs (`/nested/job`) are in the queue, and how many ran.
+		("GET", "/nested/jobs") => {
+			run = param(query, "run")
+			counts : Try(List({ queued_kept : I64, queued_dropped : I64, ran_kept : I64, ran_dropped : I64 }), [DbErr(Str), BadRow(Str)])
+			counts = Db.all!(
+				"select (select count(*) from rocx_jobs where input like $1) as queued_kept, (select count(*) from rocx_jobs where input like $2) as queued_dropped, (select count(*) from job_log where said = $3) as ran_kept, (select count(*) from job_log where said = $4) as ran_dropped",
+				[Text("%${run}-kept%"), Text("%${run}-dropped%"), Text("${run}-kept"), Text("${run}-dropped")],
+			)
+			lines(counts, |row| "queued ${row.queued_kept.to_str()} ${row.queued_dropped.to_str()}, ran ${row.ran_kept.to_str()} ${row.ran_dropped.to_str()}")
+		}
+		# Reads the counter `name`, waits `ms`, and writes it back one more, in a level inside a
+		# transaction, counting in Kv how many times each level's body ran and how many times the
+		# inner level lost to another's write (`nested:<run>:outer`, `…:inner`, `…:lost`). With
+		# `handle=yes` the outer body takes the inner's error in its stride: it writes a mark
+		# (`after a lost level`), drops that write's error, and returns `Ok(0)`.
+		("POST", "/nested/bump") => {
+			run = param(query, "run")
+			named = param(query, "name")
+			pause = number(query, "ms")
+			_ = Db.run!("insert into counters (name, value) values ($1, 0) on conflict (name) do nothing", [Text(named)])
+			bumped = Db.transaction!(
+				|{}| {
+					_ = Kv.increment!("nested:${run}:outer", 1, {})
+					inner = Db.transaction!(
+						|{}| {
+							_ = Kv.increment!("nested:${run}:inner", 1, {})
+							now : List({ value : I64 })
+							now = Db.all!("select value from counters where name = $1", [Text(named)])?
+							was =
+								match now.get(0) {
+									Ok(row) => row.value
+									Err(_) => 0
+								}
+							if pause > 0 {
+								_ = Live.next!(pause)
+								{}
+							}
+							_ = Db.run!("update counters set value = $1 where name = $2", [Int(was + 1), Text(named)])?
+							Ok(was + 1)
+						},
+					)
+					match inner {
+						Ok(value) => Ok(value)
+						Err(DbErr(why)) => {
+							if why.starts_with("Conflict: ") {
+								_ = Kv.increment!("nested:${run}:lost", 1, {})
+								{}
+							}
+							if param(query, "handle") == "yes" {
+								marked : Try(U64, [DbErr(Str)])
+								marked = Db.run!("insert into nested_marks (run, label) values ($1, 'after a lost level')", [Text(run)])
+								_ = marked
+								Ok(0)
+							} else {
+								Err(DbErr(why))
+							}
+						}
+						Err(BadRow(why)) => Err(BadRow(why))
+					}
+				},
+			)
+			match bumped {
+				Ok(value) => text(200, value.to_str())
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
+		}
+		("GET", "/nested/runs") => {
+			run = param(query, "run")
+			outer = Kv.increment!("nested:${run}:outer", 0, {}) ?? 0
+			inner = Kv.increment!("nested:${run}:inner", 0, {}) ?? 0
+			lost = Kv.increment!("nested:${run}:lost", 0, {}) ?? 0
+			text(200, "outer=${outer.to_str()} inner=${inner.to_str()} lost=${lost.to_str()}")
+		}
+
 		# ---- The schema: the app's, the platform's, and the plugin's for SQLite ----
 		("GET", "/tables") => {
 			named : Try(List({ name : Str }), [DbErr(Str), BadRow(Str)])
@@ -473,6 +662,30 @@ tick_job = Job.define(
 			Err(DbErr(why)) => Err(why)
 		},
 )
+
+## Level `depth` of /nested/deep (D-076), and the levels inside it down to the third: each writes
+## its name (`l1`, `l2`, `l3`) and tells `nested` `<payload>-<name>`, then runs the next; the level
+## numbered `fail` ends with an error, which the level around it says and goes on from. What each
+## level saw, from this one down.
+deep! : Str, Str, U64, U64 => Try(Str, [DbErr(Str)])
+deep! = |run, payload, fail, depth|
+	Db.transaction!(
+		|{}| {
+			label = "l${depth.to_str()}"
+			_ = Db.run!("insert into nested_marks (run, label) values ($1, $2)", [Text(run), Text(label)])?
+			Db.notify!("nested", "${payload}-${label}")?
+			below =
+				if depth >= 3 {
+					""
+				} else {
+					match deep!(run, payload, fail, depth + 1) {
+						Ok(said) => " ${said}"
+						Err(DbErr(why)) => " (${why})"
+					}
+				}
+			if (depth == fail) Err(DbErr("${label} failed")) else Ok("${label}${below}")
+		},
+	)
 
 notified : Try({}, [DbErr(Str)]) -> Server.Response
 notified = |result|

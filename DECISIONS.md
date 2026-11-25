@@ -4616,6 +4616,71 @@ run it in the site's and the static build's tests).
 
 **Reversible:** yes: copy the runtime as it is.
 
+
+## D-076 A transaction inside a transaction is a savepoint of it
+
+**Status.** Built (2026-11-25), the user's ask.
+
+**Context.** The host kept one transaction per call: a second `Db.transaction!` inside the first
+answered `a transaction is open already: one at a time`. Real code nests. packages/auth runs an
+app's `admit!` inside the transaction that starts the session (D-072), and a helper of the app's
+that opened its own transaction failed there; the private app had to stop opening one
+(packages/auth/PROPOSALS.md §4). A helper can't know whether its caller is in a transaction.
+
+**Decision.**
+
+- **The host picks the SQL; `Db.transaction!`'s API is unchanged.** The call's context keeps its
+  levels (`levels`, in `hosted.rs`). `Host.db_begin!` inside an open transaction runs
+  `savepoint rocx_<n>`; `Host.db_commit!` in a level runs `release savepoint rocx_<n>`;
+  `Host.db_rollback!` in a level runs `rollback to savepoint rocx_<n>` then `release`
+  (`db::savepoint`, `db::release`, `db::rollback_to`, the same SQL on every backend). Outside a
+  level they begin, commit and roll back as before. No new hosted function, no glue.
+- **An inner `Ok` keeps its writes in the level around it; an inner `Err` (or a failing statement)
+  undoes only its own**, and comes back to the body around it, which may handle it and go on. An
+  outer `Err` undoes everything, inner levels' writes too. A crash, a call that ends or one cut off
+  at its time limit rolls the whole transaction back, as before; the levels go with the connection.
+- **What a level notified goes with it.** On SQLite and Turso the host keeps a call's notices until
+  its transaction commits: each level remembers how many there were when it began, and one rolled
+  back drops its own. Postgres drops a rolled-back savepoint's `NOTIFY` itself (checked by a test).
+  So a job queued in a rolled-back level (a row and a notify) is never queued and wakes nobody.
+- **A level that can't be released is undone.** On Postgres a failing statement aborts the
+  transaction until its level rolls back: a level whose body drops such an error and returns `Ok`
+  fails to release (`25P02`), so the host rolls back to its savepoint, and the inner
+  `Db.transaction!` returns that error. SQLite and Turso fail the statement alone, and the level
+  commits.
+- **On Turso's MVCC only the outermost transaction runs again.** A conflict rolls Turso's whole
+  transaction back there and then. `Host.db_conflicted!` answers false while the call's
+  transaction is open, so a level never runs its body again by itself: its error reaches the body
+  around it, and once the outermost `Db.transaction!` has rolled back, it runs again (D-049).
+- **A transaction that lost is broken until it ends.** After a conflict (or a level that couldn't
+  be undone), every statement, notify, level and commit of the call's transaction fails at once
+  with why, and runs nothing: on Turso the connection is back in autocommit, so a body that took
+  the inner's error in its stride would otherwise write outside any transaction (with this taken
+  out, the Turso test's write after a lost level landed, and the outer ran again). This holds
+  without nesting too.
+- **All three engines, both Turso modes.** Postgres, SQLite (rusqlite) and Turso 0.8.4 have
+  savepoints, in MVCC (`begin concurrent`, MVCC's named savepoints) and in WAL mode (`?mvcc=off`).
+  `server/test/nested-checks.mjs` runs the same tests on each (`server.test.mjs` on Postgres,
+  `sqlite.test.mjs` on SQLite, Turso and Turso in WAL mode): both levels kept, the inner undone and
+  the outer committed, the outer undoing both, three levels deep, notifications and jobs in a
+  rolled-back level, a crash in one, and on Turso's MVCC two writers on one row (the inner level
+  loses, runs once per outer run, and the outer runs again). The docs' sample (`Samples.roc`:
+  `place_order!` calling `award!`) runs on Postgres.
+
+**Why.** Code composes: a helper that keeps its writes together should work whether or not its
+caller already has a transaction. Django's `atomic` nests this way (Rails does with
+`requires_new: true`; Ecto folds an inner transaction into the outer, so an inner rollback loses
+both). Doing it in the host keeps `Db.transaction!` one function, with one meaning for its body's
+result.
+
+**Costs.** Two round trips more for each level (its savepoint, then its release or its rollback).
+What isn't the database's (a fetch, a message) in a level still happens even when the level rolls
+back, as in any transaction. On Turso's MVCC a conflict anywhere costs the whole transaction's work
+again.
+
+**Reversible:** yes: the host's levels are a few branches in `hosted.rs`; without them a nested
+`Db.transaction!` would be refused again.
+
 ## D-077 packages/auth, round two: impersonation, and what moving the apps found
 
 **Status.** Built (2026-11-25). The user, on the friction the moves found (packages/auth's

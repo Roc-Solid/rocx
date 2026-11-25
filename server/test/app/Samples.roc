@@ -5,6 +5,7 @@ import crypto.Hmac
 import crypto.Sha256
 import storage.Storage
 import pf.AesGcm
+import pf.Db
 import pf.Env
 import pf.Http
 import pf.HttpResponse
@@ -176,6 +177,34 @@ Samples := [].{
 			),
 		)
 	}
+
+	# ---- A transaction inside a transaction: Db (D-076) ----
+
+	## Gives a customer points, in a transaction of its own: more than 100 at once are refused, and
+	## none stay. Called inside another transaction, its transaction is a level of that one.
+	award! : Str, I64 => Try({}, [DbErr(Str), TooMany])
+	award! = |customer, points|
+		Db.transaction!(
+			|{}| {
+				_ = Db.run!("insert into points (customer, points) values ($1, $2)", [Text(customer), Int(points)])?
+				if (points > 100) Err(TooMany) else Ok({})
+			},
+		)
+
+	## An order, and a point for every 10 spent. Points refused leave the order without them: their
+	## level is rolled back, and this transaction goes on and commits.
+	place_order! : Str, I64 => Try(Str, [DbErr(Str)])
+	place_order! = |customer, total|
+		Db.transaction!(
+			|{}| {
+				_ = Db.run!("insert into orders (customer, total) values ($1, $2)", [Text(customer), Int(total)])?
+				match award!(customer, total // 10) {
+					Ok({}) => Ok("ordered, with points")
+					Err(TooMany) => Ok("ordered, without points")
+					Err(DbErr(why)) => Err(DbErr(why))
+				}
+			},
+		)
 
 	# ---- Files: packages/storage ----
 
