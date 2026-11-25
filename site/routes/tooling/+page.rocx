@@ -41,6 +41,19 @@ view! = |_|
 			</p>
 			<div class="commands">
 				<div class="command">
+					<p class="command-usage">rocx new {"<dir>"}<span>--db sqlite|postgres|turso</span></p>
+					<p>
+						Makes a new app in <code>dir</code>, which must be empty or new, from rocx's template: people
+						sign in through the <a href={Paths.ecosystem_auth}>auth package</a> (a link by email, Google and
+						GitHub once their keys are set, any address under <code>rocx dev</code>), its users are in its
+						own table, other sites' posts are refused, guard's security headers are on, and the sign-in
+						mail is rate limited. It asks which database (SQLite unless you say otherwise; off a terminal,
+						SQLite), names the app's version of rocx in <code>.rocx-version</code> (commit it), and makes
+						<code>.rocx</code>, the link through which the app's header reaches the platform and the
+						packages (gitignore it). Its <code>README.md</code> says what to change first.
+					</p>
+				</div>
+				<div class="command">
 					<p class="command-usage">rocx dev {"[dir]"}<span>--port 8080</span><span>--android {"[--lan]"}</span><span>-- {"<server options>"}</span></p>
 					<div>
 						<p>
@@ -132,6 +145,17 @@ view! = |_|
 					</div>
 				</div>
 				<div class="command">
+					<p class="command-usage">rocx build {"<dir>"}<span>--release {"<out>"}</span><span>--target arm64musl</span></p>
+					<p>
+						The app built to deploy: <code>out/server</code>, its server optimized for speed, and
+						<code>out/static</code>, the app's <code>static/</code> folder and the browser's files, its wasm
+						optimized for size. Run <code>out/server --static out/static</code> behind a proxy that speaks
+						TLS (Caddy, say). <code>--target</code> builds for another machine: <code>arm64mac</code>,
+						<code>x64mac</code>, or <code>arm64musl</code> and <code>x64musl</code>, static Linux executables
+						for a container. It refuses an <code>out</code> that has something else in it.
+					</p>
+				</div>
+				<div class="command">
 					<p class="command-usage">rocx check {"[dir]"}</p>
 					<p>
 						Checks the app from its sources: it builds the app as <code>rocx dev</code> does, then
@@ -141,6 +165,13 @@ view! = |_|
 						<code>match</code> arm's value or a list row's item given to a component that reads it only
 						once (<a href={"${Paths.components}#control"}>if, match and .map</a>). The app needs a
 						<code>main.roc</code>. Run it in CI.
+					</p>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx test {"[dir]"}</p>
+					<p>
+						Builds the app as <code>rocx check</code> does, then runs its <code>expect</code>s with the
+						compiler rocx has, each failure at its <code>.rocx</code> line. It exits 1 when one fails.
 					</p>
 				</div>
 				<div class="command">
@@ -205,6 +236,20 @@ view! = |_|
 						Prints the text as a QR code in the terminal, as <code>rocx dev --android --lan</code> does
 						for a phone, or as a PBM image with <code>--pbm</code>. A code holds 106 bytes at most.
 					</p>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx upgrade {"[version]"}</p>
+					<p>
+						Installs a version of rocx (the latest unless you name one) into <code>~/.rocx</code> and
+						makes it the default. In an app, it also moves the app onto it: its
+						<code>.rocx-version</code> and its <code>.rocx</code> link. Every command on an app runs the
+						version the app names, installing it first if it isn't, so a team shares one version through
+						the app's repository. A rocx from Nix leaves upgrading to Nix.
+					</p>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx --version</p>
+					<p>Which rocx this is: an installed version's number, commit and compiler; a clone's commit.</p>
 				</div>
 			</div>
 			<p>
@@ -304,8 +349,8 @@ view! = |_|
 			<Heading id="setup">Building an app yourself</Heading>
 			<p>
 				<code>rocx dev</code> builds both of an app's programs for you
-				(<a href={"${Paths.root}#start"}>getting started</a>). For a build that ships, you run the steps
-				yourself. An app is two programs (<a href={Paths.platform_}>the platform</a>): the server's, on the
+				(<a href={"${Paths.root}#start"}>getting started</a>), and <code>rocx build --release</code> builds
+				one that ships (below). An app is two programs (<a href={Paths.platform_}>the platform</a>): the server's, on the
 				server platform (native code in a Rust host), and the browser's, the same pages on the browser
 				platform (WebAssembly). <code>rocx build</code> writes the server's program,
 				<code>Generated/App.roc</code>: every request goes through the app's middleware to a plugin's
@@ -338,33 +383,15 @@ view! = |_|
 			</p>
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 			<p>
-				A release build is a few commands. Here they are as a Justfile, for an app in <code>app/</code>
-				beside a clone of Roc Solid in <code>rocx/</code>:
+				<code>rocx build . --release dist</code> does all of it for a release: the browser's copy, its wasm
+				(<code>--opt=size --specialize=yes</code>), and the server's program with its host, one
+				executable (<code>--opt=speed</code>), with what it serves beside it. <code>--target arm64musl</code>
+				or <code>x64musl</code> makes a static Linux executable for a container, from a Mac too
+				(<a href={"${Paths.platform_server}#deploying"}>deploying</a>). The executable takes its port,
+				database and the rest as flags or environment variables
+				(<a href={"${Paths.platform_server}#running"}>running it</a>).
 			</p>
-			<Code
-				title="Justfile"
-				source={"build:\n\t# The browser platform's host, a Zig object the wasm links with (once; rocx dev builds it too)\n\tzig build-obj rocx/web/host/host.zig -target wasm32-freestanding -O ReleaseSmall -fcompiler-rt -femit-bin=rocx/web/platform/targets/wasm32/host.wasm\n\trocx/bin/rocx build app --client build/client\n\trocx/.tools/roc-active build --target=wasm32 --opt=size --specialize=yes --output=build/client/static/rocx/app.wasm build/client/main.roc\n\tnode rocx/server/build.mjs app/main.roc build/server --opt=speed\n\nserve:\n\tbuild/server --port 8080 --static build/client/static\n\ncheck:\n\trocx/bin/rocx lint app\n\trocx/bin/rocx check app"}
-				numbers={Bool.False}
-				plain
-			/>
-			<ol>
-				<li><code>rocx build --client</code> writes the Roc for both programs, and the browser's copy.</li>
-				<li>
-					<code>.tools/roc-active</code>, the Roc compiler <code>just setup</code> installed, compiles the
-					browser's copy to wasm, beside <code>start.js</code>.
-				</li>
-				<li>
-					<code>server/build.mjs</code> (Node) builds the Rust host, then the server's program, into one
-					executable. <code>--target=arm64musl</code> or <code>x64musl</code> makes a static Linux
-					executable for a container (<a href={"${Paths.platform_server}#deploying"}>deploying</a>).
-				</li>
-				<li>
-					The executable serves the wasm and the rest of <code>build/client/static</code> with
-					<code>--static</code> (add the app's own <code>static/</code> folder, if it has one). It
-					takes its port, database and the rest as flags or environment variables
-					(<a href={"${Paths.platform_server}#running"}>running it</a>).
-				</li>
-			</ol>
+			<Code source={"rocx build . --release dist --target arm64musl\ndist/server --port 8080 --static dist/static"} numbers={Bool.False} plain />
 			<p>
 				The two programs are optimized differently. The server's, <code>--opt=speed</code>, is built with
 				boxy lowering (<code>--specialize=no</code>) by default. With lambda-set specialization, Roc's
@@ -372,7 +399,7 @@ view! = |_|
 				and a large app's could outgrow the stack a render runs on. Boxy keeps it small, renders about as
 				fast and builds much faster. <code>--specialize=yes</code> (or <code>ROCX_SPECIALIZE=yes</code>)
 				asks for specialization. The browser's wasm is better specialized: it is smaller with brotli and
-				renders faster, which is why the Justfile above passes <code>--specialize=yes</code>.
+				renders faster, which is why <code>--release</code> builds it with <code>--specialize=yes</code>.
 			</p>
 			<p>
 				Requests, routes, endpoints, events and middleware are both platforms'

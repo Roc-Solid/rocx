@@ -43,7 +43,6 @@ When an item lands, delete its line here in the same commit.
 - **packages/jobs:** a job's log in the jobs page, parked with its options in its `PROPOSALS.md`.
 - **The other packages' `PROPOSALS.md`** (admin, forms, intl, mcp, otel, push, testing) have more
   ideas and questions waiting.
-- **`rocx new`** asks which database (Postgres, SQLite, Turso); the question is open in D-045.
 - **The examples' and tests' wasm, specialized?** It is built `--opt=size` alone (packages/testing's
   `buildForTests`, `just example-apps`, test/e2e, web/test, README's build line), which is boxy by
   the compiler's default, while the site's is `--specialize=yes` (D-064). Specialized, journal's is
@@ -136,17 +135,18 @@ When an item lands, delete its line here in the same commit.
 
 ## Tooling and distribution
 
-- **The user's three for "a prod-ready full-stack app, fast" (2026-11-24), and nothing else (no
-  generators):** a one-command install (below: the bundles), `rocx new` (below), and sign-in
-  (packages/auth, D-072: built; passwords and passkeys in its `PROPOSALS.md`).
-- **`rocx new`:** not built (`rocx --help` has `dev`, `build`, `check`, `lint`, `routes`, `fmt`).
-  examples/tasks was written to be its template, and D-045 adds the database question above
-  (SQLite preselected, the user agreed 2026-11-24). Its template signs in with packages/auth (a
-  sign-in page, the link page, the dev sign-in) and lists `Middleware.same_origin` and guard's
-  security headers and sign-in rate limit by default.
-- **rocx on Linux** (D-062, D-069): on arm64 it runs (CI's), its watching polls (inotify is the next
-  step). x86_64 has no prebuilt fork compiler yet (`just roc-fork-linux` builds arm64's; its build.zig
-  cross-compiles `-Dtarget=x86_64-linux-musl` the same way).
+- **The first release (D-078), waiting on the user:** a `LICENSE` at the repository's root (its
+  text is the user's call: package.json says MIT, and `just release-pack` refuses a real release
+  without the file); the x86_64 Linux fork compiler published and pinned (`just roc-fork-linux
+  x86_64`, then `just publish-roc-fork`, from the Mac with the fork); then a `v<date>` tag, which
+  runs `.github/workflows/release.yml` (hosts, packs, smoke on macOS and Alpine arm64/x86_64,
+  publish). Once it is out: drop "the first release isn't out yet" from README.md's Getting
+  started and the front page, and redeploy the docs site.
+- **The examples' READMEs build with `node server/build.mjs`**: `rocx build <dir> --release <out>`
+  does it now (D-078).
+- **rocx on Linux** (D-062, D-069, D-078): on arm64 it runs (CI's), its watching polls (inotify is
+  the next step). x86_64: the release builds its host and rocx (cross-built by Zig on the Mac); its
+  fork compiler is built (`just roc-fork-linux x86_64`) but not yet published (above).
 - **What is still Node** (D-062): the tests, `just site`'s full build (it measures the wasm with
   `web/runtime.js`; its static copy is `rocx build --static` since D-073), and the measuring
   scripts. All of `just site` in Roc would need a way to run the wasm, or to drop the measured
@@ -165,9 +165,6 @@ When an item lands, delete its line here in the same commit.
   the benchmark's server compresses each file as it sends it (brotli at its slowest), which costs by
   the raw byte, and the runtime is 162 KB raw; shortening its names, as esbuild would, makes it 112.
   The entries go upstream once the repository is public and its compiler can be downloaded.
-- **Prebuilt, stripped platform bundles for every target** (`roc bundle`), so a newcomer needs only
-  `roc` and `rocx`: no Node, Rust or Zig. With the fork compiler's release (D-069) and `rocx`, one
-  download and an install script (and a Nix flake): the one-command install.
 - **Errors in an editor, beyond a build's** (the user, 2026-11-24: `rocx check` is enough for now;
   the VS Code extension shows a `rocx dev` task's on each build, and a `rocx check` task's): `rocx
   lsp`, running `rocx check <dir>` on save, for every editor with a language-server client; then hover and completion by

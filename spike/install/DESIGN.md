@@ -1,4 +1,4 @@
-# A one-command install, and `rocx new` (design, 2026-11-25)
+# A one-command install, and `rocx new` (design, 2026-11-25; built: D-078)
 
 The user asked for both (2026-11-24: the three things Roc Solid needs next are a one-command
 install, `rocx new`, and sign-in, which is packages/auth). This is the design the work follows; the

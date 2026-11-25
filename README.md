@@ -60,30 +60,60 @@ An app is two programs built from one set of files: the server's (native code) a
 
 ## Getting started
 
-### What you need
+### Install
+
+One command puts rocx, the Roc compiler it builds with, and both platforms prebuilt into
+`~/.rocx` (macOS on Apple silicon, Linux on arm64 or x86_64), with no Rust, Zig or Node:
+
+```sh
+curl -fsSL https://github.com/Roc-Solid/rocx/releases/latest/download/install.sh | sh
+```
+
+It checks each download's SHA-256, adds `~/.rocx/bin` to your shell's PATH (`sh -s --
+--no-modify-path` doesn't), and says how to remove it all (`rm -rf ~/.rocx`). With Nix: `nix profile install
+github:Roc-Solid/rocx`, or `nix run github:Roc-Solid/rocx -- new my-app`. The first release isn't
+out yet: until it is, set up from a clone (below).
+
+### A new app
+
+```sh
+rocx new my-app          # asks which database: SQLite (the default), Postgres or Turso (--db to say)
+cd my-app
+rocx dev                 # http://localhost:8080, rebuilt and reloaded as you save
+```
+
+The app signs people in from the start (packages/auth: a link by email, Google and GitHub once
+their keys are set, and under `rocx dev` any address at once), keeps its users in its own table,
+refuses other sites' posts, sends guard's security headers, and limits the sign-in mail. Its
+`README.md` says what to change first, and how to test it (`rocx test`), deploy it (`rocx build .
+--release dist`, behind a TLS proxy) and upgrade it (`rocx upgrade`). It names its version of rocx
+in `.rocx-version` (commit it) and reaches the platform through `.rocx`, a link rocx makes
+(gitignore it).
+
+### From a clone
+
+To work on Roc Solid itself, or before the first release:
 
 - macOS or Linux, with `git`, `curl` and [`just`](https://github.com/casey/just).
 - Zig 0.17.1 and Rust 1.85 or newer. If the ones on your PATH (from Nix, say) match, they are
   used; otherwise `just setup` downloads them into `.tools/`.
 - Roc: Roc Solid builds with a fork of Roc's pinned nightly that carries the compiler fixes rocx
   needs. `just setup` builds it from a local clone of the fork (`~/roc-fork`, or `$ROC_FORK`), or,
-  without one, downloads it prebuilt from this repository's releases. **Not yet:** the prebuilt
-  compiler is for macOS on Apple silicon and Linux on arm64, so elsewhere you need the fork's source. A `roc` on
-  your PATH is never used.
-- Node.js only for this repository's tests and build scripts (`site/build.mjs`, `server/build.mjs`).
-  Docker only for `just db`.
-
-### Set up
+  without one, downloads it prebuilt from this repository's releases (macOS on Apple silicon,
+  Linux on arm64; elsewhere you need the fork's source). A `roc` on your PATH is never used.
+- Node.js only for this repository's tests and build scripts. Docker only for `just db`.
 
 ```sh
 git clone https://github.com/Roc-Solid/rocx && cd rocx
 just setup                     # the toolchain into .tools/, then bin/rocx
 export PATH="$PWD/bin:$PATH"   # so `rocx` runs from anywhere
+rocx new ../my-app             # an app linked to this clone
 ```
 
-### Your first app
+### An app by hand
 
-An app is a directory with a `routes/` directory in it, anywhere on disk. Make one page:
+An app is a directory with a `routes/` directory in it, anywhere on disk. Without `rocx new`, make
+one page:
 
 ```sh
 mkdir -p ../my-app/routes && cd ../my-app
@@ -803,6 +833,9 @@ The docs site's [safety page](https://roc-solid.github.io/safety) shows each rul
 ## Commands
 
 ```sh
+rocx new <dir>           # a new app from rocx's template (sign-in, its users, security headers),
+                         # its .rocx-version and .rocx link made
+  --db sqlite            # its database: sqlite (the default), postgres or turso; asked at a terminal
 rocx dev [dir]           # build the app (a directory with routes/) and serve it at :8080 with the
                          # server's --dev; rebuilt and restarted on each save, open pages reloaded;
                          # a mistake shown at its .rocx line; writes the smallest main.roc if there is
@@ -936,8 +969,8 @@ format, plugins and routes.
   plugins, and actors' state and timers are the platform's Roc, written on top of them.
   [roc-pg](https://github.com/niclas-ahden/roc-pg), a Postgres client whose queries are checked at
   build time, runs on the platform's `Tcp`.
-- `node server/build.mjs <app.roc> <output> --target=arm64musl` cross-compiles one static Linux
-  executable.
+- `rocx build <dir> --release <out> --target arm64musl` builds one static Linux executable (and what
+  it serves), from a Mac too.
 
 `server/README.md` has every module's API, and the docs' [platform pages](https://roc-solid.github.io/platform)
 and [reference](https://roc-solid.github.io/platform/reference) cover each part.

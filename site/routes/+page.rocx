@@ -97,31 +97,49 @@ view! = |_| {
 					<div>
 						<h3>Install</h3>
 						<p>
-							Roc Solid builds from a clone of its repository for now. You need git and
-							<a href="https://just.systems">just</a>. <code>just setup</code> puts everything else in the
-							clone's <code>.tools/</code> folder: the Roc compiler Roc Solid builds with, and Zig and Rust
-							unless your system already has the versions it needs. It ends by building
-							<code>bin/rocx</code>, the command you use from then on, so put <code>bin/</code> on your
-							<code>PATH</code>.
+							One command puts <code>rocx</code>, the Roc compiler it builds with and both platforms,
+							prebuilt, in <code>~/.rocx</code>, on macOS on Apple silicon and on Linux (arm64 or x86_64).
+							You need no Rust, Zig or Node. It checks each download, and adds <code>~/.rocx/bin</code> to
+							your shell's <code>PATH</code>. With Nix: <code>nix profile install github:Roc-Solid/rocx</code>.
+						</p>
+						<Code source={"curl -fsSL https://github.com/Roc-Solid/rocx/releases/latest/download/install.sh | sh"} numbers={Bool.False} plain />
+						<p>
+							The first release isn't out yet. Until it is, build from a clone: you need git and
+							<a href="https://just.systems">just</a>, and <code>just setup</code> puts the rest in the
+							clone's <code>.tools/</code> folder and builds <code>bin/rocx</code>.
 						</p>
 						<Code source={"git clone https://github.com/Roc-Solid/rocx\ncd rocx\njust setup\nexport PATH=\"$PWD/bin:$PATH\""} numbers={Bool.False} plain />
-						<p>
-							For now this works out of the box on macOS on Apple silicon and on Linux on arm64. Roc Solid
-							needs compiler fixes that aren't in a Roc release yet, so it builds with a fork of the Roc
-							compiler, and <code>just setup</code> downloads that fork prebuilt only for these two. On other
-							systems it needs a clone of the fork to build the compiler from, and stops with a message
-							saying so.
-						</p>
 					</div>
 				</li>
 				<li>
 					<span class="start-num">2</span>
 					<div>
-						<h3>Make a page, or an endpoint</h3>
+						<h3>Make an app</h3>
 						<p>
-							An app is a folder of its own, anywhere (its own repository, say), with a
-							<code>routes/</code> folder in it. Each file in <code>routes/</code> answers the URL its
-							folders spell. A <code>+page.rocx</code> is a page: the server renders it to HTML, and the
+							<code>rocx new</code> makes an app in a folder of its own, ready to grow: people sign in by a
+							link mailed to them (or at Google and GitHub, once their keys are set), its users are in its
+							own table, other sites' posts are refused, and the sign-in mail is rate limited. It asks
+							which database: SQLite (the default, a file beside the server), Postgres, or Turso.
+						</p>
+						<Code source={"rocx new my-app\ncd my-app\nrocx dev"} numbers={Bool.False} plain />
+						<p>
+							<code>rocx dev</code> serves it at <code>http://localhost:8080</code>, and builds it again,
+							restarts the server and reloads your open pages each time you save a file. A mistake is
+							reported at its line in your file, and the last good build keeps running until you fix it.
+							Sign in with any address: under <code>rocx dev</code>, the dev sign-in needs no mail. The
+							app's <code>README.md</code> says what to change first, and how to test it
+							(<code>rocx test</code>), deploy it (<code>rocx build . --release dist</code>) and upgrade it
+							(<code>rocx upgrade</code>).
+						</p>
+					</div>
+				</li>
+				<li>
+					<span class="start-num">3</span>
+					<div>
+						<h3>Add a page, or an endpoint</h3>
+						<p>
+							Each file in the app's <code>routes/</code> folder answers the URL its folders spell (an app
+							needs no more than that folder: <code>rocx dev</code> serves any folder with one). A <code>+page.rocx</code> is a page: the server renders it to HTML, and the
 							browser makes it live. A <code>+server.roc</code> is an endpoint: functions named after HTTP
 							methods (<code>get!</code>, <code>post!</code>) that answer requests with JSON.
 						</p>
@@ -132,27 +150,6 @@ view! = |_| {
 							(<code>count!</code> reads it, <code>set_count!</code> changes it), and returns markup. The
 							button's text reads the count, so it is updated each time the count changes.
 							<code>get!</code> answers <code>GET /hello</code> with a string, as JSON.
-						</p>
-					</div>
-				</li>
-				<li>
-					<span class="start-num">3</span>
-					<div>
-						<h3>Run it</h3>
-						<p>
-							In the app's folder, run <code>rocx dev</code>. The first run writes <code>main.roc</code>
-							next to <code>routes/</code> (the app's program, which is yours to change) and builds the
-							server's host, which takes a few minutes, once. Then it serves the app at
-							<code>http://localhost:8080</code>. Each time you save a file, it builds the app again,
-							restarts the server and reloads your open pages, in a second or so for a small app. A
-							mistake is reported at its line in your file, and the last good build keeps running until
-							you fix it.
-						</p>
-						<Code source={"cd my-app\nrocx dev"} numbers={Bool.False} plain />
-						<p>
-							<code>rocx dev path/to/app</code> serves an app in another folder, and <code>--port</code>
-							picks another port. This app is the repository's <a href={Paths.examples_hello}>hello</a>
-							example.
 						</p>
 					</div>
 				</li>

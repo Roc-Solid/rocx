@@ -4722,3 +4722,53 @@ app needs to help someone, and done outside the package it would need the sessio
 that checks permissions must use `user`, and one that records who did what `real_user`.
 
 **Reversible:** yes: additions to a package, but for packages/mcp's rename.
+
+## D-078 A one-command install, and `rocx new`
+
+**Status.** Built (2026-11-25); the first release waits on the user (a LICENSE, the x86_64
+compiler's publishing, the tag). The user asked for both (2026-11-24, with sign-in: "the three
+things"), and took the design's defaults: date versions, `rocx test` and `rocx build --release`
+now, the Linux targets in the macOS archive, the template's mail limit trusting one proxy.
+
+**Context.** An app built only from a clone of this repository: `just setup` (Rust, Zig, the fork
+compiler from source or a download), headers reaching the platform by `../` paths, `node
+server/build.mjs` to deploy. A newcomer needed the repository's toolchain to write a page.
+
+**Decision.** (The design is `spike/install/DESIGN.md`.)
+
+- **An app reaches its version of rocx through a link.** `.rocx-version` (committed) names the
+  version; `.rocx` (gitignored) links to `~/.rocx/versions/<v>`; headers say `./.rocx/…`. Every
+  command on an app (`dev`, `build`, `check`, `test`, `routes`, `lint`) makes or mends the link, and
+  when the app names another version, that version runs the command (installed first). From a
+  clone, the link points at the clone. Roc's URL bundles were weighed and left: rocx reads packages'
+  components and `browser.roc` from disk, which bundles leave out, and a platform with every
+  target's host outgrows a bundle.
+- **rocx finds its "app root"**: an app's `.rocx` when it has one, else rocx's own home; the
+  compiler at `<root>/bin/roc`, then a clone's `.tools/roc-active`, then `$ROC`; no cargo without
+  `server/host/` (prebuilt hosts in `targets/`).
+- **New commands**: `rocx new <dir> [--db …]` (the template `templates/app/`: packages/auth's
+  sign-in with its link page and the dev sign-in, its own users' table, `same_origin` and guard's
+  headers, a rate limit on the sign-in mail, a layout, an account page, a component with a story
+  and expects, a README; SQLite unless asked), `rocx test`, `rocx build <dir> --release <out>
+  [--target …]` (the server `--opt=speed`, the wasm `--opt=size --specialize=yes`; `out/server
+  --static out/static`), `rocx upgrade [v]`, `rocx --version`. The CLI platform gained
+  `Stdin.line!`, `Stdin.is_terminal!`, `Stdout.is_terminal!`, `File.symlink!`.
+- **A release** is the repository's own layout per target (`rocx-macos_arm64.tar.xz`,
+  `rocx-linux_arm64.tar.xz`, `rocx-linux_x86_64.tar.xz`: about 84, 72 and 77 MB): `VERSION`,
+  `LICENSE`, `NOTICES`, `bin/rocx`, `bin/roc` (the pinned fork), `web/`, `server/platform/` with its
+  hosts built without debug info (Apple's `strip -S` breaks ThinLTO's symbols; `llvm-strip
+  --strip-debug` is used), `packages/`, `templates/app/`; never `server/host/`, `rocx-cli/`.
+  `install.sh` (POSIX sh) checks each SHA-256, installs read-only into `~/.rocx/versions/<v>`,
+  points `current`, adds `~/.rocx/bin` to the shell's PATH. `just release-hosts`,
+  `release-compilers`, `release-pack`, `release-test`; `flake.nix` with `nix/release.json`;
+  `.github/workflows/release.yml` on a `v*` tag (hosts on Linux and macOS, packs, smoke on macOS
+  and bare Alpine arm64 and x86_64, publish). The release's smoke test installs from its own
+  archives and takes a newcomer's first app from `rocx new` to signed in.
+
+**Why.** The user's goal: the fastest way to a production-ready full-stack app. One download, one
+command for an app that signs people in and is safe by default, and one to deploy it.
+
+**Costs.** About 80 MB to download and 500 MB on disk (mostly the compiler). The `.rocx` link must
+be made on each machine (rocx does it). A release needs both a Mac (its host) and Linux runners.
+
+**Reversible:** yes: a clone still works as before; the install is files under `~/.rocx`.

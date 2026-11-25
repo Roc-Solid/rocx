@@ -122,12 +122,11 @@ view! = |_|
 
 			<Heading id="deploying">Deploying</Heading>
 			<p>
-				A release build is <code>rocx build</code>, the browser's wasm, then the server
-				(<a href={"${Paths.platform_}#build"}>building and running</a>). Building the server with
-				<code>node server/build.mjs app/main.roc out/app --target=arm64musl</code> (or <code>x64musl</code>)
-				cross-compiles a static Linux executable from macOS: Rust's own musl target supplies the C library
-				and the unwinder, and Zig compiles the host's C code. The migrations are inside the executable. To
-				deploy:
+				A release build is one command: <code>rocx build . --release dist</code> writes
+				<code>dist/server</code> and <code>dist/static</code> (<a href={"${Paths.tooling}#commands"}>rocx</a>).
+				<code>--target arm64musl</code> (or <code>x64musl</code>) makes a static Linux executable, from
+				macOS too: the platform's prebuilt host carries musl's C library and unwinder. The migrations are
+				inside the executable. To deploy:
 			</p>
 			<ul>
 				<li>Copy it into a container with the app's static files (<code>--static</code>).</li>
