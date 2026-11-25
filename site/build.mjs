@@ -64,10 +64,14 @@ const routeDefinitions = () => {
 	return routeDefs;
 };
 
-/** The pages a static build writes: those with no params, and none behind middleware of its own,
- * which answers each request as it comes (`/members`: who is asking?). */
+/** Whether a page runs behind middleware: its own, or, when it names none, the one its directory's
+ * `+server.roc` names (D-079). */
+const guarded = (file) => Boolean(routeDefinitions().get(file).middleware || routeDefinitions().get(file.replace(/\+page\.rocx$/, "+server.roc"))?.middleware);
+
+/** The pages a static build writes: those with no params, and none behind middleware, which
+ * answers each request as it comes (`/members`: who is asking?). */
 export const ROUTES = pages()
-	.filter((page) => !page.params.length && !routeDefinitions().get(page.file).middleware)
+	.filter((page) => !page.params.length && !guarded(page.file))
 	.map((page) => page.path);
 
 
