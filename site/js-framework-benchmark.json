@@ -1,0 +1,1856 @@
+{
+ "measured": "2026-11-25",
+ "commit": "beb7be7",
+ "chrome": "158.0.8127.88",
+ "benchmark": "krausest/js-framework-benchmark 0f4e789",
+ "headless": true,
+ "rounds": 2,
+ "count": 15,
+ "minutes": 75.2,
+ "machine": {
+  "model": "MacBook Pro (Mac17,2)",
+  "cpu": "Apple M5",
+  "cores": "10 (4 performance, 6 efficiency)",
+  "memory": "32 GB",
+  "storage": "SSD, APFS",
+  "os": "macOS 27.0.1",
+  "arch": "arm64",
+  "power": "mains"
+ },
+ "load": "4.0 → 2.5",
+ "power": "mains",
+ "failures": [],
+ "unplugged": [],
+ "frameworks": [
+  {
+   "entry": "keyed/roc-solid",
+   "name": "Roc Solid (keyed)",
+   "version": "roc-solid-vbeb7be7-keyed"
+  },
+  {
+   "entry": "non-keyed/roc-solid",
+   "name": "Roc Solid (non-keyed)",
+   "version": "roc-solid-vbeb7be7-non-keyed"
+  },
+  {
+   "entry": "keyed/vanillajs",
+   "name": "vanillajs (keyed)",
+   "version": "vanillajs-keyed"
+  },
+  {
+   "entry": "non-keyed/vanillajs",
+   "name": "vanillajs (non-keyed)",
+   "version": "vanillajs-non-keyed"
+  },
+  {
+   "entry": "keyed/solid",
+   "name": "Solid (keyed)",
+   "version": "solid-v1.9.3-keyed"
+  },
+  {
+   "entry": "keyed/leptos",
+   "name": "Leptos (keyed)",
+   "version": "leptos-v0.7.0-keyed"
+  },
+  {
+   "entry": "keyed/joy",
+   "name": "Joy (keyed)",
+   "version": "joy-v0.35.0-keyed"
+  },
+  {
+   "entry": "non-keyed/joy",
+   "name": "Joy (non-keyed)",
+   "version": "joy-v0.35.0-non-keyed"
+  },
+  {
+   "entry": "keyed/react-hooks",
+   "name": "React (keyed)",
+   "version": "react-hooks-v19.2.0-keyed"
+  }
+ ],
+ "benchmarks": [
+  {
+   "id": "01_run1k",
+   "label": "create rows"
+  },
+  {
+   "id": "02_replace1k",
+   "label": "replace all rows"
+  },
+  {
+   "id": "03_update10th1k_x16",
+   "label": "partial update"
+  },
+  {
+   "id": "04_select1k",
+   "label": "select row"
+  },
+  {
+   "id": "05_swap1k",
+   "label": "swap rows"
+  },
+  {
+   "id": "06_remove-one-1k",
+   "label": "remove row"
+  },
+  {
+   "id": "07_create10k",
+   "label": "create many rows"
+  },
+  {
+   "id": "08_create1k-after1k_x2",
+   "label": "append rows to large table"
+  },
+  {
+   "id": "09_clear1k_x8",
+   "label": "clear rows"
+  },
+  {
+   "id": "21_ready-memory",
+   "label": "ready memory"
+  },
+  {
+   "id": "22_run-memory",
+   "label": "run memory"
+  },
+  {
+   "id": "25_run-clear-memory",
+   "label": "creating/clearing 1k rows (5 cycles)"
+  },
+  {
+   "id": "41_size-uncompressed",
+   "label": "uncompressed size"
+  },
+  {
+   "id": "42_size-compressed",
+   "label": "compressed size"
+  },
+  {
+   "id": "43_first-paint",
+   "label": "first paint"
+  }
+ ],
+ "results": {
+  "keyed/roc-solid": {
+   "01_run1k": {
+    "mean": 45.75,
+    "median": 45.75,
+    "min": 44.8,
+    "max": 46.9,
+    "stddev": 0.58,
+    "n": 30,
+    "rounds": [
+     45.5,
+     46
+    ]
+   },
+   "02_replace1k": {
+    "mean": 49.63,
+    "median": 49.75,
+    "min": 48.5,
+    "max": 50.4,
+    "stddev": 0.44,
+    "n": 30,
+    "rounds": [
+     49.5,
+     49.9
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 22.34,
+    "median": 22.3,
+    "min": 20.7,
+    "max": 23.6,
+    "stddev": 0.71,
+    "n": 30,
+    "rounds": [
+     22.6,
+     21.9
+    ]
+   },
+   "04_select1k": {
+    "mean": 11.83,
+    "median": 10.8,
+    "min": 9.8,
+    "max": 19.3,
+    "stddev": 2.56,
+    "n": 50,
+    "rounds": [
+     10.7,
+     10.8
+    ]
+   },
+   "05_swap1k": {
+    "mean": 22.76,
+    "median": 22.55,
+    "min": 20.7,
+    "max": 26.1,
+    "stddev": 1.06,
+    "n": 30,
+    "rounds": [
+     22.6,
+     22.4
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 16.27,
+    "median": 16.35,
+    "min": 13.8,
+    "max": 23.2,
+    "stddev": 2,
+    "n": 30,
+    "rounds": [
+     16.3,
+     16.4
+    ]
+   },
+   "07_create10k": {
+    "mean": 474.08,
+    "median": 470.75,
+    "min": 465.1,
+    "max": 509,
+    "stddev": 9.13,
+    "n": 30,
+    "rounds": [
+     470.8,
+     470.7
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 52.48,
+    "median": 51.55,
+    "min": 50,
+    "max": 80.1,
+    "stddev": 5.18,
+    "n": 30,
+    "rounds": [
+     51,
+     52
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 17.42,
+    "median": 17.3,
+    "min": 16.2,
+    "max": 19.6,
+    "stddev": 0.81,
+    "n": 30,
+    "rounds": [
+     17.3,
+     17.4
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 1.17,
+    "median": 1.17,
+    "min": 1.15,
+    "max": 1.19,
+    "stddev": 0.02,
+    "n": 2,
+    "rounds": [
+     1.15,
+     1.19
+    ]
+   },
+   "22_run-memory": {
+    "mean": 4.6,
+    "median": 4.6,
+    "min": 4.59,
+    "max": 4.62,
+    "stddev": 0.01,
+    "n": 2,
+    "rounds": [
+     4.62,
+     4.59
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 1.6,
+    "median": 1.6,
+    "min": 1.59,
+    "max": 1.6,
+    "stddev": 0.01,
+    "n": 2,
+    "rounds": [
+     1.59,
+     1.6
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 291.8,
+    "median": 291.8,
+    "min": 291.8,
+    "max": 291.8,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     291.8,
+     291.8
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 73.4,
+    "median": 73.4,
+    "min": 73.4,
+    "max": 73.4,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     73.4,
+     73.4
+    ]
+   },
+   "43_first-paint": {
+    "mean": 29,
+    "median": 29,
+    "min": 25.9,
+    "max": 32.1,
+    "stddev": 3.1,
+    "n": 2,
+    "rounds": [
+     25.9,
+     32.1
+    ]
+   }
+  },
+  "non-keyed/roc-solid": {
+   "01_run1k": {
+    "mean": 45.67,
+    "median": 45.6,
+    "min": 44.7,
+    "max": 46.8,
+    "stddev": 0.43,
+    "n": 30,
+    "rounds": [
+     45.6,
+     45.7
+    ]
+   },
+   "02_replace1k": {
+    "mean": 16.37,
+    "median": 15.45,
+    "min": 15,
+    "max": 22,
+    "stddev": 2.01,
+    "n": 30,
+    "rounds": [
+     15.3,
+     15.6
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 21.99,
+    "median": 21,
+    "min": 19.3,
+    "max": 48.4,
+    "stddev": 5.05,
+    "n": 30,
+    "rounds": [
+     21.3,
+     20.5
+    ]
+   },
+   "04_select1k": {
+    "mean": 11.33,
+    "median": 10.9,
+    "min": 9.7,
+    "max": 16.5,
+    "stddev": 1.41,
+    "n": 50,
+    "rounds": [
+     11.1,
+     10.9
+    ]
+   },
+   "05_swap1k": {
+    "mean": 20.39,
+    "median": 15.15,
+    "min": 14.5,
+    "max": 47.6,
+    "stddev": 11.09,
+    "n": 30,
+    "rounds": [
+     15.7,
+     15
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 28.02,
+    "median": 27.9,
+    "min": 26.9,
+    "max": 29.5,
+    "stddev": 0.68,
+    "n": 30,
+    "rounds": [
+     28.4,
+     27.6
+    ]
+   },
+   "07_create10k": {
+    "mean": 462.03,
+    "median": 460.25,
+    "min": 450.1,
+    "max": 474.2,
+    "stddev": 6.38,
+    "n": 30,
+    "rounds": [
+     458.3,
+     461.6
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 51.76,
+    "median": 51.7,
+    "min": 50.9,
+    "max": 53.7,
+    "stddev": 0.66,
+    "n": 30,
+    "rounds": [
+     51.7,
+     51.7
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 17.12,
+    "median": 17.05,
+    "min": 16,
+    "max": 18.8,
+    "stddev": 0.63,
+    "n": 30,
+    "rounds": [
+     17.3,
+     16.9
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 1.16,
+    "median": 1.16,
+    "min": 1.15,
+    "max": 1.18,
+    "stddev": 0.01,
+    "n": 2,
+    "rounds": [
+     1.18,
+     1.15
+    ]
+   },
+   "22_run-memory": {
+    "mean": 4.59,
+    "median": 4.59,
+    "min": 4.58,
+    "max": 4.6,
+    "stddev": 0.01,
+    "n": 2,
+    "rounds": [
+     4.58,
+     4.6
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 1.57,
+    "median": 1.57,
+    "min": 1.57,
+    "max": 1.57,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     1.57,
+     1.57
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 275.5,
+    "median": 275.5,
+    "min": 275.5,
+    "max": 275.5,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     275.5,
+     275.5
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 68.8,
+    "median": 68.8,
+    "min": 68.8,
+    "max": 68.8,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     68.8,
+     68.8
+    ]
+   },
+   "43_first-paint": {
+    "mean": 32.3,
+    "median": 32.3,
+    "min": 30.6,
+    "max": 34,
+    "stddev": 1.7,
+    "n": 2,
+    "rounds": [
+     30.6,
+     34
+    ]
+   }
+  },
+  "keyed/vanillajs": {
+   "01_run1k": {
+    "mean": 18.65,
+    "median": 18.9,
+    "min": 17.5,
+    "max": 19.5,
+    "stddev": 0.6,
+    "n": 30,
+    "rounds": [
+     18.9,
+     18.9
+    ]
+   },
+   "02_replace1k": {
+    "mean": 19.87,
+    "median": 19.7,
+    "min": 18.8,
+    "max": 22.7,
+    "stddev": 0.73,
+    "n": 30,
+    "rounds": [
+     19.8,
+     19.6
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 14.63,
+    "median": 11.6,
+    "min": 9.4,
+    "max": 23.6,
+    "stddev": 5.23,
+    "n": 30,
+    "rounds": [
+     11.7,
+     11.5
+    ]
+   },
+   "04_select1k": {
+    "mean": 7.2,
+    "median": 6.55,
+    "min": 2.2,
+    "max": 18.1,
+    "stddev": 4.54,
+    "n": 50,
+    "rounds": [
+     10.2,
+     5.2
+    ]
+   },
+   "05_swap1k": {
+    "mean": 16.75,
+    "median": 12.65,
+    "min": 11.2,
+    "max": 28.9,
+    "stddev": 5.91,
+    "n": 30,
+    "rounds": [
+     12.7,
+     12.4
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 11.64,
+    "median": 10.2,
+    "min": 9.4,
+    "max": 21.9,
+    "stddev": 3.35,
+    "n": 30,
+    "rounds": [
+     10.2,
+     10.1
+    ]
+   },
+   "07_create10k": {
+    "mean": 201.43,
+    "median": 201.05,
+    "min": 195.1,
+    "max": 211,
+    "stddev": 4.58,
+    "n": 30,
+    "rounds": [
+     203.8,
+     198.4
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 22.47,
+    "median": 20.85,
+    "min": 20.3,
+    "max": 31,
+    "stddev": 3.68,
+    "n": 30,
+    "rounds": [
+     21.2,
+     20.8
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 10.65,
+    "median": 9.25,
+    "min": 7.4,
+    "max": 17.6,
+    "stddev": 2.99,
+    "n": 30,
+    "rounds": [
+     10.1,
+     8.7
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 0.53,
+    "median": 0.53,
+    "min": 0.49,
+    "max": 0.58,
+    "stddev": 0.04,
+    "n": 2,
+    "rounds": [
+     0.49,
+     0.58
+    ]
+   },
+   "22_run-memory": {
+    "mean": 1.85,
+    "median": 1.85,
+    "min": 1.83,
+    "max": 1.87,
+    "stddev": 0.02,
+    "n": 2,
+    "rounds": [
+     1.83,
+     1.87
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 0.64,
+    "median": 0.64,
+    "min": 0.62,
+    "max": 0.67,
+    "stddev": 0.02,
+    "n": 2,
+    "rounds": [
+     0.62,
+     0.67
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 11.3,
+    "median": 11.3,
+    "min": 11.3,
+    "max": 11.3,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     11.3,
+     11.3
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 2.5,
+    "median": 2.5,
+    "min": 2.5,
+    "max": 2.5,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     2.5,
+     2.5
+    ]
+   },
+   "43_first-paint": {
+    "mean": 32.55,
+    "median": 32.55,
+    "min": 30.5,
+    "max": 34.6,
+    "stddev": 2.05,
+    "n": 2,
+    "rounds": [
+     34.6,
+     30.5
+    ]
+   }
+  },
+  "non-keyed/vanillajs": {
+   "01_run1k": {
+    "mean": 19.07,
+    "median": 19.3,
+    "min": 17.8,
+    "max": 20.2,
+    "stddev": 0.68,
+    "n": 30,
+    "rounds": [
+     19.2,
+     19.4
+    ]
+   },
+   "02_replace1k": {
+    "mean": 13.31,
+    "median": 13.15,
+    "min": 8.6,
+    "max": 20.1,
+    "stddev": 3.6,
+    "n": 30,
+    "rounds": [
+     13.2,
+     12.5
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 16.77,
+    "median": 14.9,
+    "min": 10.3,
+    "max": 25.3,
+    "stddev": 5.11,
+    "n": 30,
+    "rounds": [
+     15.1,
+     14.7
+    ]
+   },
+   "04_select1k": {
+    "mean": 6.51,
+    "median": 6.7,
+    "min": 2.2,
+    "max": 17.8,
+    "stddev": 4.02,
+    "n": 50,
+    "rounds": [
+     2.9,
+     8.4
+    ]
+   },
+   "05_swap1k": {
+    "mean": 17.35,
+    "median": 20.3,
+    "min": 7.9,
+    "max": 24.7,
+    "stddev": 6.01,
+    "n": 30,
+    "rounds": [
+     21.2,
+     20
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 17.84,
+    "median": 17.85,
+    "min": 16.5,
+    "max": 19.4,
+    "stddev": 0.67,
+    "n": 30,
+    "rounds": [
+     17.7,
+     18
+    ]
+   },
+   "07_create10k": {
+    "mean": 203.68,
+    "median": 202.3,
+    "min": 197,
+    "max": 211,
+    "stddev": 3.9,
+    "n": 30,
+    "rounds": [
+     201.1,
+     204
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 22.77,
+    "median": 21.3,
+    "min": 20.4,
+    "max": 31.2,
+    "stddev": 3.61,
+    "n": 30,
+    "rounds": [
+     21.3,
+     21.3
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 9.39,
+    "median": 8.2,
+    "min": 6.5,
+    "max": 16.2,
+    "stddev": 2.68,
+    "n": 30,
+    "rounds": [
+     8.2,
+     10.9
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 0.57,
+    "median": 0.57,
+    "min": 0.57,
+    "max": 0.57,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     0.57,
+     0.57
+    ]
+   },
+   "22_run-memory": {
+    "mean": 1.81,
+    "median": 1.81,
+    "min": 1.79,
+    "max": 1.83,
+    "stddev": 0.02,
+    "n": 2,
+    "rounds": [
+     1.79,
+     1.83
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 0.65,
+    "median": 0.65,
+    "min": 0.65,
+    "max": 0.65,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     0.65,
+     0.65
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 12,
+    "median": 12,
+    "min": 12,
+    "max": 12,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     12,
+     12
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 2.4,
+    "median": 2.4,
+    "min": 2.4,
+    "max": 2.4,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     2.4,
+     2.4
+    ]
+   },
+   "43_first-paint": {
+    "mean": 36.55,
+    "median": 36.55,
+    "min": 30.5,
+    "max": 42.6,
+    "stddev": 6.05,
+    "n": 2,
+    "rounds": [
+     30.5,
+     42.6
+    ]
+   }
+  },
+  "keyed/solid": {
+   "01_run1k": {
+    "mean": 19.54,
+    "median": 19.55,
+    "min": 18.7,
+    "max": 20.2,
+    "stddev": 0.43,
+    "n": 30,
+    "rounds": [
+     19.6,
+     19.5
+    ]
+   },
+   "02_replace1k": {
+    "mean": 21.48,
+    "median": 21.4,
+    "min": 21.1,
+    "max": 22.2,
+    "stddev": 0.28,
+    "n": 30,
+    "rounds": [
+     21.5,
+     21.3
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 16.31,
+    "median": 12.15,
+    "min": 10,
+    "max": 26.1,
+    "stddev": 5.97,
+    "n": 30,
+    "rounds": [
+     11.8,
+     21.4
+    ]
+   },
+   "04_select1k": {
+    "mean": 7.78,
+    "median": 5.4,
+    "min": 2.8,
+    "max": 17.8,
+    "stddev": 4.97,
+    "n": 50,
+    "rounds": [
+     9,
+     3.8
+    ]
+   },
+   "05_swap1k": {
+    "mean": 18.61,
+    "median": 15.05,
+    "min": 12.1,
+    "max": 31.3,
+    "stddev": 6,
+    "n": 30,
+    "rounds": [
+     24,
+     14.6
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 11.37,
+    "median": 10.3,
+    "min": 9.7,
+    "max": 22,
+    "stddev": 3.03,
+    "n": 30,
+    "rounds": [
+     10.4,
+     10.2
+    ]
+   },
+   "07_create10k": {
+    "mean": 213.07,
+    "median": 212.2,
+    "min": 205.7,
+    "max": 224.9,
+    "stddev": 5.27,
+    "n": 30,
+    "rounds": [
+     211.6,
+     214.4
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 21.89,
+    "median": 21.85,
+    "min": 21.1,
+    "max": 22.7,
+    "stddev": 0.35,
+    "n": 30,
+    "rounds": [
+     22,
+     21.8
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 10.89,
+    "median": 10.1,
+    "min": 8.1,
+    "max": 18.9,
+    "stddev": 2.61,
+    "n": 30,
+    "rounds": [
+     9.6,
+     10.1
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 0.6,
+    "median": 0.6,
+    "min": 0.6,
+    "max": 0.6,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     0.6,
+     0.6
+    ]
+   },
+   "22_run-memory": {
+    "mean": 2.66,
+    "median": 2.66,
+    "min": 2.64,
+    "max": 2.67,
+    "stddev": 0.02,
+    "n": 2,
+    "rounds": [
+     2.64,
+     2.67
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 0.76,
+    "median": 0.76,
+    "min": 0.75,
+    "max": 0.78,
+    "stddev": 0.01,
+    "n": 2,
+    "rounds": [
+     0.75,
+     0.78
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 11.5,
+    "median": 11.5,
+    "min": 11.5,
+    "max": 11.5,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     11.5,
+     11.5
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 4.5,
+    "median": 4.5,
+    "min": 4.5,
+    "max": 4.5,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     4.5,
+     4.5
+    ]
+   },
+   "43_first-paint": {
+    "mean": 46.45,
+    "median": 46.45,
+    "min": 45,
+    "max": 47.9,
+    "stddev": 1.45,
+    "n": 2,
+    "rounds": [
+     47.9,
+     45
+    ]
+   }
+  },
+  "keyed/leptos": {
+   "01_run1k": {
+    "mean": 22.09,
+    "median": 22.05,
+    "min": 21.4,
+    "max": 22.8,
+    "stddev": 0.35,
+    "n": 30,
+    "rounds": [
+     22.3,
+     21.9
+    ]
+   },
+   "02_replace1k": {
+    "mean": 25.94,
+    "median": 25.75,
+    "min": 25.1,
+    "max": 27.1,
+    "stddev": 0.54,
+    "n": 30,
+    "rounds": [
+     26.1,
+     25.6
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 16.62,
+    "median": 12.8,
+    "min": 10.8,
+    "max": 29.3,
+    "stddev": 6.27,
+    "n": 30,
+    "rounds": [
+     13.2,
+     12.5
+    ]
+   },
+   "04_select1k": {
+    "mean": 5.97,
+    "median": 4.15,
+    "min": 2.6,
+    "max": 15.1,
+    "stddev": 3.58,
+    "n": 50,
+    "rounds": [
+     3.8,
+     4.2
+    ]
+   },
+   "05_swap1k": {
+    "mean": 15.6,
+    "median": 13.35,
+    "min": 11.8,
+    "max": 25.1,
+    "stddev": 4.86,
+    "n": 30,
+    "rounds": [
+     13.7,
+     12.5
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 12.92,
+    "median": 10.45,
+    "min": 9.8,
+    "max": 22.7,
+    "stddev": 4.08,
+    "n": 30,
+    "rounds": [
+     10.5,
+     10.4
+    ]
+   },
+   "07_create10k": {
+    "mean": 250.91,
+    "median": 248.95,
+    "min": 241.4,
+    "max": 278.3,
+    "stddev": 7.78,
+    "n": 30,
+    "rounds": [
+     252.9,
+     248.6
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 24.71,
+    "median": 24.6,
+    "min": 23.9,
+    "max": 26.6,
+    "stddev": 0.59,
+    "n": 30,
+    "rounds": [
+     24.6,
+     24.6
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 13.93,
+    "median": 13.6,
+    "min": 11.6,
+    "max": 19.2,
+    "stddev": 1.65,
+    "n": 30,
+    "rounds": [
+     13.5,
+     13.8
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 0.63,
+    "median": 0.63,
+    "min": 0.62,
+    "max": 0.64,
+    "stddev": 0.01,
+    "n": 2,
+    "rounds": [
+     0.64,
+     0.62
+    ]
+   },
+   "22_run-memory": {
+    "mean": 2.65,
+    "median": 2.65,
+    "min": 2.65,
+    "max": 2.65,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     2.65,
+     2.65
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 0.98,
+    "median": 0.98,
+    "min": 0.96,
+    "max": 1,
+    "stddev": 0.02,
+    "n": 2,
+    "rounds": [
+     0.96,
+     1
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 189.6,
+    "median": 189.6,
+    "min": 189.6,
+    "max": 189.6,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     189.6,
+     189.6
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 48.8,
+    "median": 48.8,
+    "min": 48.8,
+    "max": 48.8,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     48.8,
+     48.8
+    ]
+   },
+   "43_first-paint": {
+    "mean": 212.8,
+    "median": 212.8,
+    "min": 210.7,
+    "max": 214.9,
+    "stddev": 2.1,
+    "n": 2,
+    "rounds": [
+     214.9,
+     210.7
+    ]
+   }
+  },
+  "keyed/joy": {
+   "01_run1k": {
+    "mean": 23.68,
+    "median": 23.5,
+    "min": 22.6,
+    "max": 25.6,
+    "stddev": 0.74,
+    "n": 30,
+    "rounds": [
+     23.4,
+     23.5
+    ]
+   },
+   "02_replace1k": {
+    "mean": 25.03,
+    "median": 25,
+    "min": 24.2,
+    "max": 26.1,
+    "stddev": 0.4,
+    "n": 30,
+    "rounds": [
+     25,
+     25
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 16.27,
+    "median": 13.35,
+    "min": 11.5,
+    "max": 27,
+    "stddev": 5.34,
+    "n": 30,
+    "rounds": [
+     13.4,
+     12.9
+    ]
+   },
+   "04_select1k": {
+    "mean": 7.41,
+    "median": 6.6,
+    "min": 3.4,
+    "max": 15.8,
+    "stddev": 3.63,
+    "n": 50,
+    "rounds": [
+     7.2,
+     5.4
+    ]
+   },
+   "05_swap1k": {
+    "mean": 16,
+    "median": 14.5,
+    "min": 13.1,
+    "max": 26.8,
+    "stddev": 3.97,
+    "n": 30,
+    "rounds": [
+     14.5,
+     14.6
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 14.11,
+    "median": 12,
+    "min": 10.1,
+    "max": 22.9,
+    "stddev": 4.12,
+    "n": 30,
+    "rounds": [
+     13.7,
+     11.3
+    ]
+   },
+   "07_create10k": {
+    "mean": 260.11,
+    "median": 259.55,
+    "min": 253.5,
+    "max": 268,
+    "stddev": 3.91,
+    "n": 30,
+    "rounds": [
+     260.3,
+     259.3
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 26.09,
+    "median": 26,
+    "min": 25.5,
+    "max": 27.1,
+    "stddev": 0.42,
+    "n": 30,
+    "rounds": [
+     26,
+     26.1
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 10.86,
+    "median": 9.5,
+    "min": 8,
+    "max": 17.6,
+    "stddev": 3.14,
+    "n": 30,
+    "rounds": [
+     9.5,
+     9.4
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 0.68,
+    "median": 0.68,
+    "min": 0.63,
+    "max": 0.72,
+    "stddev": 0.04,
+    "n": 2,
+    "rounds": [
+     0.63,
+     0.72
+    ]
+   },
+   "22_run-memory": {
+    "mean": 2.29,
+    "median": 2.29,
+    "min": 2.23,
+    "max": 2.35,
+    "stddev": 0.06,
+    "n": 2,
+    "rounds": [
+     2.23,
+     2.35
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 0.85,
+    "median": 0.85,
+    "min": 0.8,
+    "max": 0.91,
+    "stddev": 0.06,
+    "n": 2,
+    "rounds": [
+     0.91,
+     0.8
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 148.1,
+    "median": 148.1,
+    "min": 148.1,
+    "max": 148.1,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     148.1,
+     148.1
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 47.4,
+    "median": 47.4,
+    "min": 47.4,
+    "max": 47.4,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     47.4,
+     47.4
+    ]
+   },
+   "43_first-paint": {
+    "mean": 160.65,
+    "median": 160.65,
+    "min": 156.6,
+    "max": 164.7,
+    "stddev": 4.05,
+    "n": 2,
+    "rounds": [
+     164.7,
+     156.6
+    ]
+   }
+  },
+  "non-keyed/joy": {
+   "01_run1k": {
+    "mean": 23.3,
+    "median": 23.3,
+    "min": 22.3,
+    "max": 25.3,
+    "stddev": 0.65,
+    "n": 30,
+    "rounds": [
+     23.3,
+     23.1
+    ]
+   },
+   "02_replace1k": {
+    "mean": 12.18,
+    "median": 11.45,
+    "min": 10.3,
+    "max": 17,
+    "stddev": 2.09,
+    "n": 30,
+    "rounds": [
+     10.9,
+     11.8
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 17.84,
+    "median": 15.05,
+    "min": 12.2,
+    "max": 27.8,
+    "stddev": 5.25,
+    "n": 30,
+    "rounds": [
+     14.9,
+     23.2
+    ]
+   },
+   "04_select1k": {
+    "mean": 8.18,
+    "median": 8.15,
+    "min": 2.6,
+    "max": 17.7,
+    "stddev": 4.37,
+    "n": 50,
+    "rounds": [
+     8.4,
+     7.9
+    ]
+   },
+   "05_swap1k": {
+    "mean": 15.86,
+    "median": 11.9,
+    "min": 8.5,
+    "max": 24.1,
+    "stddev": 6.13,
+    "n": 30,
+    "rounds": [
+     12.5,
+     10.8
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 18.58,
+    "median": 18.3,
+    "min": 17.4,
+    "max": 21.5,
+    "stddev": 1,
+    "n": 30,
+    "rounds": [
+     18.5,
+     18.3
+    ]
+   },
+   "07_create10k": {
+    "mean": 260.32,
+    "median": 259.6,
+    "min": 254.7,
+    "max": 270,
+    "stddev": 3.66,
+    "n": 30,
+    "rounds": [
+     259.6,
+     259.3
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 25.91,
+    "median": 25.8,
+    "min": 25.1,
+    "max": 27,
+    "stddev": 0.55,
+    "n": 30,
+    "rounds": [
+     25.7,
+     26
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 9.97,
+    "median": 9.3,
+    "min": 7.9,
+    "max": 20.5,
+    "stddev": 2.42,
+    "n": 30,
+    "rounds": [
+     9.3,
+     9.3
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 0.72,
+    "median": 0.72,
+    "min": 0.71,
+    "max": 0.72,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     0.72,
+     0.71
+    ]
+   },
+   "22_run-memory": {
+    "mean": 2.28,
+    "median": 2.28,
+    "min": 2.25,
+    "max": 2.31,
+    "stddev": 0.03,
+    "n": 2,
+    "rounds": [
+     2.25,
+     2.31
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 0.83,
+    "median": 0.83,
+    "min": 0.78,
+    "max": 0.88,
+    "stddev": 0.05,
+    "n": 2,
+    "rounds": [
+     0.78,
+     0.88
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 147.9,
+    "median": 147.9,
+    "min": 147.9,
+    "max": 147.9,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     147.9,
+     147.9
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 47.4,
+    "median": 47.4,
+    "min": 47.4,
+    "max": 47.4,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     47.4,
+     47.4
+    ]
+   },
+   "43_first-paint": {
+    "mean": 167.65,
+    "median": 167.65,
+    "min": 162.5,
+    "max": 172.8,
+    "stddev": 5.15,
+    "n": 2,
+    "rounds": [
+     172.8,
+     162.5
+    ]
+   }
+  },
+  "keyed/react-hooks": {
+   "01_run1k": {
+    "mean": 22.62,
+    "median": 22.3,
+    "min": 21.5,
+    "max": 30.4,
+    "stddev": 1.6,
+    "n": 30,
+    "rounds": [
+     22.4,
+     21.9
+    ]
+   },
+   "02_replace1k": {
+    "mean": 26.68,
+    "median": 26.65,
+    "min": 25.7,
+    "max": 28.3,
+    "stddev": 0.62,
+    "n": 30,
+    "rounds": [
+     26.7,
+     26.4
+    ]
+   },
+   "03_update10th1k_x16": {
+    "mean": 15.82,
+    "median": 15.2,
+    "min": 13.6,
+    "max": 25,
+    "stddev": 2.03,
+    "n": 30,
+    "rounds": [
+     15.7,
+     14.9
+    ]
+   },
+   "04_select1k": {
+    "mean": 7.41,
+    "median": 6.45,
+    "min": 5,
+    "max": 15.7,
+    "stddev": 2.14,
+    "n": 50,
+    "rounds": [
+     7,
+     6.3
+    ]
+   },
+   "05_swap1k": {
+    "mean": 88.99,
+    "median": 88.05,
+    "min": 85.8,
+    "max": 98.1,
+    "stddev": 2.61,
+    "n": 30,
+    "rounds": [
+     87.8,
+     88.9
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 14.44,
+    "median": 14.4,
+    "min": 11,
+    "max": 24.1,
+    "stddev": 2.52,
+    "n": 30,
+    "rounds": [
+     14,
+     15.1
+    ]
+   },
+   "07_create10k": {
+    "mean": 329.32,
+    "median": 322.4,
+    "min": 313.1,
+    "max": 396.9,
+    "stddev": 20.78,
+    "n": 30,
+    "rounds": [
+     322.2,
+     322.6
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 25.74,
+    "median": 25.5,
+    "min": 24.7,
+    "max": 27.4,
+    "stddev": 0.73,
+    "n": 30,
+    "rounds": [
+     25.5,
+     25.7
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 15.74,
+    "median": 15.7,
+    "min": 14.2,
+    "max": 20.6,
+    "stddev": 1.39,
+    "n": 30,
+    "rounds": [
+     15.7,
+     15.7
+    ]
+   },
+   "21_ready-memory": {
+    "mean": 1.13,
+    "median": 1.13,
+    "min": 1.1,
+    "max": 1.16,
+    "stddev": 0.03,
+    "n": 2,
+    "rounds": [
+     1.1,
+     1.16
+    ]
+   },
+   "22_run-memory": {
+    "mean": 4.35,
+    "median": 4.35,
+    "min": 4.31,
+    "max": 4.39,
+    "stddev": 0.04,
+    "n": 2,
+    "rounds": [
+     4.31,
+     4.39
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 1.94,
+    "median": 1.94,
+    "min": 1.91,
+    "max": 1.96,
+    "stddev": 0.02,
+    "n": 2,
+    "rounds": [
+     1.91,
+     1.96
+    ]
+   },
+   "41_size-uncompressed": {
+    "mean": 190.3,
+    "median": 190.3,
+    "min": 190.3,
+    "max": 190.3,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     190.3,
+     190.3
+    ]
+   },
+   "42_size-compressed": {
+    "mean": 51.4,
+    "median": 51.4,
+    "min": 51.4,
+    "max": 51.4,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     51.4,
+     51.4
+    ]
+   },
+   "43_first-paint": {
+    "mean": 204.55,
+    "median": 204.55,
+    "min": 199.6,
+    "max": 209.5,
+    "stddev": 4.95,
+    "n": 2,
+    "rounds": [
+     209.5,
+     199.6
+    ]
+   }
+  }
+ },
+ "summary": {
+  "keyed/roc-solid": {
+   "cpu_geomean_ms": 35.79,
+   "slowdown": 2.06,
+   "ready_memory_mb": 1.17,
+   "run_memory_mb": 4.6,
+   "compressed_kb": 73.4,
+   "uncompressed_kb": 291.8,
+   "first_paint_ms": 29
+  },
+  "non-keyed/roc-solid": {
+   "cpu_geomean_ms": 32.77,
+   "slowdown": 1.88,
+   "ready_memory_mb": 1.16,
+   "run_memory_mb": 4.59,
+   "compressed_kb": 68.8,
+   "uncompressed_kb": 275.5,
+   "first_paint_ms": 32.3
+  },
+  "keyed/vanillajs": {
+   "cpu_geomean_ms": 19.27,
+   "slowdown": 1.11,
+   "ready_memory_mb": 0.53,
+   "run_memory_mb": 1.85,
+   "compressed_kb": 2.5,
+   "uncompressed_kb": 11.3,
+   "first_paint_ms": 32.55
+  },
+  "non-keyed/vanillajs": {
+   "cpu_geomean_ms": 19.31,
+   "slowdown": 1.11,
+   "ready_memory_mb": 0.57,
+   "run_memory_mb": 1.81,
+   "compressed_kb": 2.4,
+   "uncompressed_kb": 12,
+   "first_paint_ms": 36.55
+  },
+  "keyed/solid": {
+   "cpu_geomean_ms": 20.25,
+   "slowdown": 1.16,
+   "ready_memory_mb": 0.6,
+   "run_memory_mb": 2.66,
+   "compressed_kb": 4.5,
+   "uncompressed_kb": 11.5,
+   "first_paint_ms": 46.45
+  },
+  "keyed/leptos": {
+   "cpu_geomean_ms": 21.52,
+   "slowdown": 1.24,
+   "ready_memory_mb": 0.63,
+   "run_memory_mb": 2.65,
+   "compressed_kb": 48.8,
+   "uncompressed_kb": 189.6,
+   "first_paint_ms": 212.8
+  },
+  "keyed/joy": {
+   "cpu_geomean_ms": 21.96,
+   "slowdown": 1.26,
+   "ready_memory_mb": 0.68,
+   "run_memory_mb": 2.29,
+   "compressed_kb": 47.4,
+   "uncompressed_kb": 148.1,
+   "first_paint_ms": 160.65
+  },
+  "non-keyed/joy": {
+   "cpu_geomean_ms": 21.08,
+   "slowdown": 1.21,
+   "ready_memory_mb": 0.72,
+   "run_memory_mb": 2.28,
+   "compressed_kb": 47.4,
+   "uncompressed_kb": 147.9,
+   "first_paint_ms": 167.65
+  },
+  "keyed/react-hooks": {
+   "cpu_geomean_ms": 28.43,
+   "slowdown": 1.63,
+   "ready_memory_mb": 1.13,
+   "run_memory_mb": 4.35,
+   "compressed_kb": 51.4,
+   "uncompressed_kb": 190.3,
+   "first_paint_ms": 204.55
+  }
+ }
+}

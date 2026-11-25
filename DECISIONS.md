@@ -4572,6 +4572,14 @@ memory the page holds and what it downloads. An entry is a folder of files, whic
   row between two swapped ones (fixed: the longest run already in order stays). Both have counting
   tests, not timing ones. And the runtime is minified (D-075).
 
+- **The run after the fixes** (beb7be7, 2026-11-25, on mains, two rounds of 15, nothing failed;
+  `site/js-framework-benchmark.json`), keyed, the runner's means, before → after: create 1,000 rows
+  217 → 45.8 ms (vanillajs 18.6, Solid 19.5); replace all 798 → 49.6; partial update 58.6 → 22.3;
+  swap 111 → 22.8; remove 22.4 → 16.3; create 10,000 637 → 474; append 69.6 → 52.5; CPU geomean
+  86.8 ms, 4.99× the fastest → 35.8 ms, 2.06× (Solid 1.16×, Leptos 1.24×, Joy 1.26×, React 1.63×);
+  run memory 6.1 → 4.6 MB (React 4.3); download 102 → 73 KB compressed. First paint is the best of
+  them, 29 ms (vanillajs 32.5, Solid 46.5, Joy 161, React 205): the page is HTML before its wasm loads.
+
 **Why.** A yardstick others use: where Roc Solid stands, and what to fix, from the same clicks
 every framework gets.
 
