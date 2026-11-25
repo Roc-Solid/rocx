@@ -283,6 +283,13 @@ Host := [].{
 
 	## The memo's value, or the failure it failed with.
 	memo_get! : U64 => Box(() -> a)
+
+	## A selector (`Solid.create_selector!`): its computation, run once (the server renders final
+	## values), answers its source's key; its id.
+	selector_new! : Box(() => Str) => U64
+
+	## Whether `key` is the selector's key.
+	selector_is! : U64, Str => Bool
 	refresh! : Box(() => Str) => {}
 
 	## False: the server renders final values, so nothing it renders is computed again.

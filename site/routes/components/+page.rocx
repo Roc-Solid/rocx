@@ -545,6 +545,20 @@ view! = |_|
 					the paths written.
 				</p>
 
+				<Heading id="selectors">Selectors</Heading>
+				<p>
+					In a list where one row is picked (the selected one, the open one), each row compares its own
+					id with the picked one. With a plain signal every row reads it, so every pick runs every row's
+					hole. A <em>selector</em>, Solid's <code>createSelector</code>, answers whether a key is the
+					picked one and tracks each key on its own: a pick runs the hole of the row it leaves and of the
+					row it comes to, and no other.
+				</p>
+				<Code source={"import pf.Solid exposing [create_selector!, create_signal!]\n\n(picked!, set_picked!) = create_signal!(0)\nis_picked! = create_selector!(picked!)\n\n<ul>\n\t{...rows!().map(|row|\n\t\t<li key={row.id} class:picked={is_picked!(row.id)} on:click={|| set_picked!(row.id)}>{row.label}</li>\n\t)}\n</ul>"} numbers={Bool.False} />
+				<p>
+					Its source is any accessor (a signal, a memo, a store's part), and a key is a value of the same
+					type. On the server it is computed once, as a memo is.
+				</p>
+
 				<Heading id="contexts">Contexts</Heading>
 				<p>
 					A context gives a value to every component under its provider, however deep, without passing it
@@ -1250,6 +1264,7 @@ view! = |_|
 						<tr><td><code>{"const [state, setState] = createStore(init)"}</code></td><td><code>{"(state, set_state!) = create_store!(init)"}</code></td></tr>
 						<tr><td><code>{"state.user.name"}</code></td><td><code>{"state.get!(|s| s.user.name)"}</code></td></tr>
 						<tr><td><code>{"setState((s) => { s.filter = \"done\" })"}</code></td><td><code>{"set_state!(|s| { ..s, filter: Done })"}</code></td></tr>
+						<tr><td><code>{"const isPicked = createSelector(picked)"}</code>, <code>{"isPicked(row.id)"}</code></td><td><code>{"is_picked! = create_selector!(picked!)"}</code>, <code>{"is_picked!(row.id)"}</code></td></tr>
 						<tr><td><code>{"const PicksContext = createContext()"}</code></td><td><code>{"picks_context = create_context()"}</code></td></tr>
 						<tr><td><code>{"<PicksContext value={store}>"}</code></td><td>the same</td></tr>
 						<tr><td><code>{"useContext(PicksContext)"}</code></td><td><code>{"use_context!(picks_context)"}</code></td></tr>

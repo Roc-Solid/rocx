@@ -192,6 +192,13 @@ When an item lands, delete its line here in the same commit.
   new stream's `channel opened` (the async writer's) can be later: `['channel opened', 'channel
   closed']` against three (seen once in a full run with Postgres on 2026-11-24; passes alone). Wait
   for the second `channel opened` too.
+- **The channels "an open stream holds no thread" test hangs under load**
+  (`server/test/server.test.mjs`, 40 streams on `--roc-threads 2`): twice on 2026-11-25 it never
+  finished (12 minutes, the server idle), once in a full run just after `just check` (load 11 to
+  14), once alone beside the site's tests (load about 4); alone on a quiet machine it passes in 1.5
+  to 2.7 s, on master and on the perf branch. node's test runner has no timeout here, so the run
+  waits for good. Find which `await` it waits at (a stream's `next()` that never comes, or a request
+  a busy Roc thread never answers), and give the test a timeout so a hang fails it.
 - **`test/check-sql.test.mjs`'s Postgres test writes in the server test app's counts**
   ("42 statements checked on Postgres (the rows of 21 against their records): 6 problems"): a
   statement added to `server/test/app` fails it until the numbers are changed. Its problems' lines

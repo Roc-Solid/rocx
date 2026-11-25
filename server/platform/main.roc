@@ -204,6 +204,8 @@ platform ""
 		"roc_row_last": Host.row_last!,
 		"roc_row_set": Host.row_set!,
 		"roc_say": Host.say!,
+		"roc_selector_is": Host.selector_is!,
+		"roc_selector_new": Host.selector_new!,
 		"roc_signal_get": Host.signal_get!,
 		"roc_signal_latest": Host.signal_latest!,
 		"roc_signal_new": Host.signal_new!,

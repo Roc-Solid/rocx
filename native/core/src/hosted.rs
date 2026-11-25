@@ -89,6 +89,19 @@ pub extern "C" fn roc_memo_get(id: u64) -> Callable {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn roc_selector_new(runner: Callable) -> u64 {
+    engine::selector_new(runner)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_selector_is(id: u64, key: RocStr) -> bool {
+    match engine::selector_is(id, taken(key)) {
+        Ok(answer) => answer,
+        Err(why) => roc::abort(why),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn roc_refresh(probe: Callable) {
     engine::refresh_probe(probe)
 }

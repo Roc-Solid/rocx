@@ -1,5 +1,5 @@
 import pf.Html
-import pf.Solid exposing [create_signal!]
+import pf.Solid exposing [create_selector!, create_signal!]
 import ../Rows
 
 ## The benchmark's table, with the vanillajs entry's markup (the runner finds the buttons by id
@@ -9,6 +9,9 @@ import ../Rows
 view! = |_| {
 	(rows!, set_rows!) = create_signal!([])
 	(selected!, set_selected!) = create_signal!(0)
+	# Selecting a row runs the class holes of the row it leaves and the row it comes to, not every
+	# row's (Solid's createSelector, as its entry does).
+	is_selected! = create_selector!(selected!)
 	(made!, set_made!) = create_signal!(Rows.start)
 	more! = |count| {
 		built = Rows.build(made!(), count)
@@ -35,7 +38,7 @@ view! = |_| {
 			<table class="table table-hover table-striped test-data">
 				<tbody id="tbody">
 					{...rows!().map_with_index(|row, i|
-						<tr key={i} class:danger={selected!() == row.id}>
+						<tr key={i} class:danger={is_selected!(row.id)}>
 							<td class="col-md-1">{row.id.to_str()}</td>
 							<td class="col-md-4"><a class="lbl" on:click={|| set_selected!(row.id)}>{row.label}</a></td>
 							<td class="col-md-1"><a class="remove" on:click={|| set_rows!(Rows.removed(rows!(), row.id))}><span class="remove glyphicon glyphicon-remove" aria-hidden="true"></span></a></td>

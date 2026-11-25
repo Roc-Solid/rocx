@@ -965,6 +965,8 @@ export class Runtime {
 		this.kept = new Map();
 		this.signals = new Map();
 		this.memos = new Map();
+		/** Selectors (`create_selector!`), by id: each its key now and a source each key read. */
+		this.selectors = new Map();
 		/** Each `.map`'s rows (a "for" node), by key; its rows' indexes; and, by position, its items. */
 		this.lists = new Map();
 		this.boundaries = new Map();
@@ -1234,6 +1236,27 @@ export class Runtime {
 				const writes = this.current?.kind === "handler" ? this.current.writes : [];
 				for (let at = writes.length - 1; at >= 0; at--) if (writes[at].signal === signal) return writes[at].value;
 				return signal.value;
+			},
+			// A selector (`create_selector!`): a computation answering its source's key, and a source a
+			// key, so a reader of a key runs again only when the answer for it changes (`settle`).
+			js_selector_new: (ptr) => {
+				this.touch();
+				const selector = new Computation(this, { kind: "selector", runner: ptr, owner: this.current, scope: this.current?.scope ?? {} });
+				selector.key = null;
+				selector.keys = new Map();
+				this.selectors.set(selector.id, selector);
+				this.run(selector);
+				return selector.id;
+			},
+			js_selector_is: (id, ptr, len) => {
+				const selector = this.selectors.get(id);
+				if (!selector) throw new Error("rocx: a selector was read after the part that made it went away");
+				const key = text(ptr, len);
+				let source = selector.keys.get(key);
+				if (!source) selector.keys.set(key, (source = { observers: null }));
+				this.track(source);
+				if (selector.key === null) throw new NotReady(selector.settled ??= new Promise((resolve) => (selector.settle = resolve)));
+				return selector.key === key ? 1 : 0;
 			},
 			js_memo_get: (id) => {
 				const memo = this.memos.get(id);
@@ -3379,6 +3402,24 @@ export class Runtime {
 	/** A complete run's answer, applied: the node patched, or the memo's value set. */
 	settle(computation, out) {
 		const { kind, target, name } = computation;
+		if (kind === "selector") {
+			// Its key, as Roc wrote it. When it changes, the readers of the key it was and of the key it
+			// is run again, and no other: the rows a selection leaves and comes to. Keys no reader reads
+			// any more go, swept once there are twice as many as the last sweep left (rows cleared and
+			// made again with new keys), so a change costs the same however many rows there are.
+			const was = computation.key;
+			computation.key = out;
+			computation.settle?.();
+			computation.settled = computation.settle = null;
+			if (was !== null && was !== out) {
+				for (const key of [was, out]) for (const observer of computation.keys.get(key)?.observers ?? NONE) this.schedule(observer);
+				if (computation.keys.size > 2 * (computation.swept ?? 0) + 64) {
+					for (const [key, source] of computation.keys) if (!source.observers?.size) computation.keys.delete(key);
+					computation.swept = computation.keys.size;
+				}
+			}
+			return;
+		}
 		if (kind === "memo") {
 			// A store's selection whose part is the one it had, an answer it had (D-053), keeps quiet: its
 			// readers aren't told. It keeps the newest value all the same.
@@ -3599,6 +3640,11 @@ export class Runtime {
 		// What it shows (an `if`'s part, a `.map`'s rows) is its own, not its last run's.
 		if (computation.part) this.dispose(computation.part);
 		if (computation.list) this.dropList(computation.list);
+		if (computation.kind === "selector") {
+			this.selectors.delete(computation.id);
+			// Its computation is its own box, as a memo's is.
+			this.ex.release(computation.runner);
+		}
 		if (computation.kind === "memo") {
 			this.memos.delete(computation.id);
 			if (computation.value) this.ex.release(computation.value);

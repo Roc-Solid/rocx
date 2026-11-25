@@ -21,6 +21,8 @@ const js = struct {
     extern "env" fn js_memo_new(run: usize) u32;
     extern "env" fn js_memo_done(value: usize, same: u32) void;
     extern "env" fn js_memo_get(id: u32) usize;
+    extern "env" fn js_selector_new(run: usize) u32;
+    extern "env" fn js_selector_is(id: u32, ptr: [*]const u8, len: usize) u32;
     extern "env" fn js_refresh(probe: usize) void;
     extern "env" fn js_is_pending(probe: usize) u32;
     extern "env" fn js_fail(ptr: [*]const u8, len: usize) void;
@@ -480,6 +482,16 @@ fn hostedMemoGet(id: u64) callconv(.c) Callable {
     return value;
 }
 
+fn hostedSelectorNew(run_it: Callable) callconv(.c) u64 {
+    return js.js_selector_new(address(run_it));
+}
+
+fn hostedSelectorIs(id: u64, key: RocStr) callconv(.c) bool {
+    defer key.decref(host());
+    const text = key.asSlice();
+    return js.js_selector_is(@intCast(id), text.ptr, text.len) != 0;
+}
+
 fn hostedRefresh(probe: Callable) callconv(.c) void {
     js.js_refresh(address(probe));
 }
@@ -894,6 +906,8 @@ comptime {
     @export(&hostedMemoNew, .{ .name = "roc_memo_new", .visibility = hidden });
     @export(&hostedMemoDone, .{ .name = "roc_memo_done", .visibility = hidden });
     @export(&hostedMemoGet, .{ .name = "roc_memo_get", .visibility = hidden });
+    @export(&hostedSelectorNew, .{ .name = "roc_selector_new", .visibility = hidden });
+    @export(&hostedSelectorIs, .{ .name = "roc_selector_is", .visibility = hidden });
     @export(&hostedRefresh, .{ .name = "roc_refresh", .visibility = hidden });
     @export(&hostedIsPending, .{ .name = "roc_is_pending", .visibility = hidden });
     @export(&hostedFail, .{ .name = "roc_fail", .visibility = hidden });

@@ -1582,6 +1582,25 @@ pub struct HostSayArgs {
     pub arg1: RocStr,
 }
 
+/// Arguments for Host.selector_is!
+/// Roc signature: U64, Str => Bool
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostSelectorIsArgs {
+    pub arg0: u64,
+    pub arg1: RocStr,
+}
+
+/// Arguments for Host.selector_new!
+/// Roc signature: Box({} => Str) => U64
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostSelectorNewArgs {
+    pub arg0: RocErasedCallable,
+}
+
 /// Arguments for Host.signal_get!
 /// Roc signature: U64 => Box({} -> rigid)
 /// Refcounted fields are owned by the hosted function.
@@ -2094,6 +2113,20 @@ unsafe extern "C" {
     ///     unsafe { arg0.decref(roc_host); }
     ///     unsafe { arg1.decref(roc_host); }
     pub fn roc_say(arg0: RocStr, arg1: RocStr);
+
+    /// Hosted symbol for Host.selector_is!
+    /// Roc signature: U64, Str => Bool
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg1.decref(roc_host); }
+    pub fn roc_selector_is(arg0: u64, arg1: RocStr) -> bool;
+
+    /// Hosted symbol for Host.selector_new!
+    /// Roc signature: Box({} => Str) => U64
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { decref_erased_callable(arg0, roc_host); }
+    pub fn roc_selector_new(arg0: RocErasedCallable) -> u64;
 
     /// Hosted symbol for Host.signal_get!
     /// Roc signature: U64 => Box({} -> rigid)

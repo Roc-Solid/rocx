@@ -20,6 +20,14 @@ Host := [].{
 	## Aborts the caller while the memo waits, or fails it when the memo failed.
 	memo_get! : U64 => Box(() -> a)
 
+	## A selector (`Solid.create_selector!`): its computation answers its source's key (the value as
+	## `Str.inspect` writes it), run now and again when what it reads changes; its id.
+	selector_new! : Box(() => Str) => U64
+
+	## Whether `key` is the selector's key now, tracked by that key alone: a reader runs again only
+	## when the answer for its own key changes. Waits while the selector does.
+	selector_is! : U64, Str => Bool
+
 	## Runs it once, noting the memos it reads, and computes those again, asking the server again.
 	refresh! : Box(() => Str) => {}
 

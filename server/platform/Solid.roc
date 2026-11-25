@@ -7,7 +7,7 @@ import Store
 ## changes. The browser's timers are here too (`set_interval!`, `set_timeout!`), each stopped by
 ## the `clear!` it answers, or when what started it goes.
 ##
-##     import pf.Solid exposing [create_signal!, create_memo!, create_optimistic!, create_store!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
+##     import pf.Solid exposing [create_signal!, create_memo!, create_selector!, create_optimistic!, create_store!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
@@ -62,6 +62,21 @@ Solid := [].{
 			value = Box.unbox(Host.memo_get!(id))
 			value()
 		}
+	}
+
+	## Whether a key is the source's value now (Solid's `createSelector`), for many readers at once:
+	## a list's rows. Each reader is told only when the answer for its own key changes, so a
+	## selection moving from one row to another runs those two rows' readers again, not every row's.
+	## Keys are compared as `Str.inspect` writes them (the source's value, and each key asked about).
+	##
+	##     (selected!, set_selected!) = create_signal!(0.U64)
+	##     is_selected! = create_selector!(selected!)
+	##
+	##     {...rows!().map(|row| <tr key={row.id} class:danger={is_selected!(row.id)}>…</tr>)}
+	create_selector! : (() => a) => (a => Bool)
+	create_selector! = |source| {
+		id = Host.selector_new!(Box.box(|| Str.inspect(source())))
+		|key| Host.selector_is!(id, Str.inspect(key))
 	}
 
 	## A value the page shows ahead of the server (Solid 2.0's `createOptimistic`): its accessor and

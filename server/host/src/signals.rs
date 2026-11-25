@@ -105,6 +105,7 @@ enum Made {
     Kept(u64),
     Signal(u64),
     Memo(u64),
+    Selector(u64),
     List(u64),
     Item(u64, String),
 }
@@ -128,6 +129,8 @@ struct Render {
     kept: HashMap<u64, Callable>,
     signals: HashMap<u64, Callable>,
     memos: HashMap<u64, Memo>,
+    /// Each selector's key (`Solid.create_selector!`), or why its computation failed.
+    selectors: HashMap<u64, Result<String, String>>,
     lists: HashMap<u64, List>,
     made: Vec<Made>,
     frames: Vec<Frame>,
@@ -167,6 +170,7 @@ impl Render {
                 Made::Kept(id) => drop(self.kept.remove(&id)),
                 Made::Signal(id) => drop(self.signals.remove(&id)),
                 Made::Memo(id) => drop(self.memos.remove(&id)),
+                Made::Selector(id) => drop(self.selectors.remove(&id)),
                 Made::List(id) => drop(self.lists.remove(&id)),
                 Made::Item(list, key) => {
                     if let Some(list) = self.lists.get_mut(&list) {
@@ -820,6 +824,45 @@ pub extern "C" fn roc_memo_get(id: u64) -> Callable {
         Some(Read::Value(value)) => roc::retain(value),
         Some(Read::Failed(why)) => roc::fail(why),
         _ => roc::fail("rocx: a memo was read before its value was in".into()),
+    }
+}
+
+/// A selector (`Solid.create_selector!`): its computation run now, once (on the server nothing
+/// changes after), its key kept for `roc_selector_is`.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_selector_new(runner: Callable) -> u64 {
+    let _host = crate::preempt::host();
+    touched(false);
+    let made = with(|render| {
+        let id = render.id();
+        render.made.push(Made::Selector(id));
+        (id, render.frames.last().map(|frame| frame.scope.clone()).unwrap_or_default())
+    });
+    let Some((id, scope)) = made else {
+        roc::release(runner);
+        roc::fail(OUTSIDE.into())
+    };
+    let computed = guarded(Frame::of(scope, None, None), || roc::run(runner));
+    roc::release(runner);
+    let key = match computed {
+        Ok(key) => Ok(key),
+        Err(Stop::Failed(why)) => Err(why),
+        Err(Stop::Crashed(why)) => roc::crash_outward(why),
+    };
+    with(|render| render.selectors.insert(id, key));
+    id
+}
+
+/// Whether `key` is the selector's key.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_selector_is(id: u64, key: RocStr) -> bool {
+    let _host = crate::preempt::host();
+    touched(true);
+    let key = taken(key);
+    match with(|render| render.selectors.get(&id).cloned()).flatten() {
+        Some(Ok(selected)) => selected == key,
+        Some(Err(why)) => roc::fail(why),
+        None => roc::fail("rocx: a selector was read after the part that made it went away".into()),
     }
 }
 

@@ -4772,3 +4772,33 @@ command for an app that signs people in and is safe by default, and one to deplo
 be made on each machine (rocx does it). A release needs both a Mac (its host) and Linux runners.
 
 **Reversible:** yes: a clone still works as before; the install is files under `~/.rocx`.
+
+
+## D-083 `create_selector!`
+
+**Status.** Built (2026-11-25), the user's go, the first of the steps that close js-framework-benchmark's
+gap (D-074).
+
+**Context.** A list where one row is picked (the selected one, the open one) compares each row's id
+with the picked one: `class:danger={selected!() == row.id}`. Every row's hole reads `selected!`,
+so every pick runs every row's hole: a thousand runs to change two classes. Solid has
+`createSelector` for this, and its benchmark entry uses it; ours couldn't.
+
+**Decision.** `create_selector! : (() => a) => (a => Bool)` in `pf.Solid`:
+`is_picked! = create_selector!(picked!)`, then `class:picked={is_picked!(row.id)}`. The selector is a
+computation that answers its source's key (as `Str.inspect` writes it), run now and again when what
+it reads changes. `is_picked!(key)` answers whether `key` is it, and is tracked by that key alone
+(`Host.selector_new!`, `Host.selector_is!`): when the key changes, the readers of the key it was and
+of the key it is run again, and no other. The browser's runtime keeps a source per key read, swept
+of keys no reader reads once there are twice as many as the last sweep left, so a pick costs the same
+however many rows there are. The server computes it once (nothing changes after); the native engine
+has the same (`CompKind::Selector`, `Source::Selector(id, key)`). The benchmark's entries use it, as
+Solid's does.
+
+**Why.** It is Solid's answer to the same problem, and the pattern is common (a selected row, an open
+item, the current tab): a pick costs two rows' holes, not the list's.
+
+**Costs.** Keys are compared as text (`Str.inspect`), so a key is written once per read; a key type
+whose inspection isn't unique (none of Roc's data types) would compare wrongly.
+
+**Reversible:** yes: a reader can compare with the signal again.

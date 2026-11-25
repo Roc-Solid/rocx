@@ -34,13 +34,15 @@ pub enum CompKind {
     Show,
     For,
     Memo,
+    /// `create_selector!`: its run answers its source's key, kept in `holds`.
+    Selector,
     Reaction,
     Component,
     Boundary,
 }
 
 /// What a computation reads: a signal, a memo, a memo's pending state (`is_pending!`), a row's
-/// index or item, an endpoint's submissions.
+/// index or item, an endpoint's submissions, whether a selector's key is one key.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Source {
     Signal(u64),
@@ -49,6 +51,7 @@ pub enum Source {
     Index(u64, String),
     Item(u64, String),
     Submission(String),
+    Selector(u64, String),
 }
 
 /// The contexts provided above, and the boundaries around: what a computation is made in.
@@ -927,6 +930,21 @@ fn settle(id: u64, out: String) {
             });
             wake(waiters.unwrap_or_default());
         }
+        CompKind::Selector => {
+            // Only the readers of the key it had and of the key it has run again.
+            let waiters = with(|engine| {
+                let comp = engine.comp(id)?;
+                let was = comp.holds.replace(out.clone());
+                if let Some(was) = was
+                    && was != out
+                {
+                    engine.schedule_observers(&Source::Selector(id, was));
+                    engine.schedule_observers(&Source::Selector(id, out));
+                }
+                engine.waiters.remove(&Wait::Memo(id))
+            });
+            wake(waiters.unwrap_or_default());
+        }
         CompKind::Reaction => {
             let render = with(|engine| {
                 let comp = engine.comp(id)?;
@@ -1163,8 +1181,9 @@ pub fn dispose(id: u64) {
     }
     with(|engine| {
         if let Some(comp) = engine.comps.remove(&id) {
-            // A memo's and an effect's computation is its own box (not one kept for markup).
-            if matches!(comp.kind, CompKind::Memo | CompKind::Reaction) {
+            // A memo's, a selector's and an effect's computation is its own box (not one kept for
+            // markup).
+            if matches!(comp.kind, CompKind::Memo | CompKind::Selector | CompKind::Reaction) {
                 roc::release(comp.runner);
             }
             roc::release(comp.value);
@@ -2755,6 +2774,32 @@ pub fn memo_new(runner: Callable) -> u64 {
     });
     run(id);
     id
+}
+
+/// A selector (`create_selector!`): its computation, run now and again when what it reads changes.
+pub fn selector_new(runner: Callable) -> u64 {
+    let id = with(|engine| {
+        engine.touch(false);
+        let owner = match engine.current {
+            Some(Current::Comp(id)) => Some(id),
+            _ => None,
+        };
+        let scope = engine.current_scope();
+        engine.new_comp(CompKind::Selector, runner, owner, scope, Target::None, "")
+    });
+    run(id);
+    id
+}
+
+/// Whether `key` is the selector's key, tracked by that key alone; waits while the selector does.
+pub fn selector_is(id: u64, key: String) -> Result<bool, Abort> {
+    with(|engine| {
+        engine.touch(true);
+        let Some(selector) = engine.comps.get(&id) else { return Err(Abort::Failed("rocx: a selector was read after the part that made it went away".into(), None)) };
+        let answer = selector.holds.as_ref().map(|held| *held == key);
+        engine.track(Source::Selector(id, key));
+        answer.ok_or(Abort::Wait(Wait::Memo(id)))
+    })
 }
 
 /// The running memo's new value; `same`: a store's selection whose part is what it was (D-053), so

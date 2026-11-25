@@ -798,7 +798,7 @@ test("stores (D-053): a store's parts, each read by its own hole, run again only
 	}
 });
 
-test("a .map's rows (D-071), compared as D-053's <For compared> was: a list read again tells only the rows whose item isn't == the one they had, so one changed item of a thousand runs one row's holes; with every item changed, every row's", { skip }, async () => {
+test("a .map's rows (D-071), compared as D-053's <For compared> was: a list read again tells only the rows whose item isn't == the one they had, so one changed item of a thousand runs one row's holes; with every item changed, every row's; a selector (create_selector!) runs only the rows a pick leaves and comes to", { skip }, async () => {
 	const { tab, site } = await hydrated("rows");
 	try {
 		assert.deepEqual(tab.console, [], "hydrated strictly");
@@ -809,9 +809,9 @@ test("a .map's rows (D-071), compared as D-053's <For compared> was: a list read
 		};
 		const one = await median("button.one");
 		const all = await median("button.all");
-		assert.equal(one.runs, 3, "the list, and the changed row's two holes");
+		assert.equal(one.runs, 4, "the list, and the changed row's three holes");
 		assert.equal(one.patched.length, 1);
-		assert.equal(all.runs, 2001, "every item changed: the list, and every row's two holes");
+		assert.equal(all.runs, 3001, "every item changed: the list, and every row's three holes");
 		assert.equal(all.patched.length, 1000);
 		assert.ok(one.allocations < all.allocations, `fewer allocations for one: ${one.allocations} against ${all.allocations}`);
 		for (const step of [one, all]) assert.equal(step.live, 0);
@@ -830,6 +830,18 @@ test("a .map's rows (D-071), compared as D-053's <For compared> was: a list read
 		assert.deepEqual(back.rows, ["moved 2", "moved 999"]);
 		assert.deepEqual(await titles(), before);
 		assert.equal(back.live, 0);
+		// A pick: the selector runs, and the class hole of the row it comes to; the next pick, that of
+		// the row it leaves too. No other row's. Counted, not timed.
+		const picked = () => tab.eval("[...document.querySelectorAll('.rows li.picked')].map((li) => li.textContent)");
+		const first = await tab.eval("window.step('button.pick')");
+		assert.deepEqual([first.runs, first.patched.length], [2, 1], "the selector, and row 1's hole");
+		assert.deepEqual(await picked(), ["Row 1"]);
+		for (let i = 0; i < 5; i++) {
+			const next = await tab.eval("window.step('button.pick')");
+			assert.deepEqual([next.runs, next.patched.length], [3, 2], "the selector, and the holes of the row left and the row picked");
+			assert.equal(next.live, 0);
+		}
+		assert.deepEqual(await picked(), ["Row 6"]);
 		assert.deepEqual(tab.errors, []);
 	} finally {
 		await site.close();
