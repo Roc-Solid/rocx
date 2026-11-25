@@ -516,6 +516,14 @@ example-apps *args:
 db-bench *args:
     ROC={{ roc }} node site/sqlite-vs-turso.mjs {{ args }}
 
+# Roc Solid in js-framework-benchmark (benchmarks/jsframework/README.md): `just js-bench entries`
+# builds our two entries into the benchmark's clone (~/jsfb/js-framework-benchmark), `just js-bench
+# bench` measures them beside vanillajs, Solid, Leptos, Joy and React (two rounds, about an hour and
+# a half, headless, the benchmark's server on 8089) into site/js-framework-benchmark.json. Commit
+# the file. Only on the user's go, on mains, with nothing else running (ROCX_GATE_EXCLUSIVE=1).
+js-bench *args:
+    ROC={{ roc }} node benchmarks/jsframework/run.mjs {{ args }}
+
 # Takes the example apps' screenshots for their docs pages (/examples/<app>) into
 # site/static/shots/<app>/, as site/AppNotes.roc names them: each app built and started as its tests
 # start it (DATABASE_URL for those on Postgres), given something to show, and each scene taken in

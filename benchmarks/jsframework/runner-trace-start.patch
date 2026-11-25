@@ -1,0 +1,37 @@
+diff --git a/webdriver-ts/src/timeline.ts b/webdriver-ts/src/timeline.ts
+index 2cde25b..423d4b9 100644
+--- a/webdriver-ts/src/timeline.ts
++++ b/webdriver-ts/src/timeline.ts
+@@ -73,10 +73,22 @@ export function extractRelevantEvents(entries: any[], startLogicEvent: string) {
+     return filteredEvents;
+   }
+   
++/**
++ * A trace's events from when tracing started on: a trace may hold events from before it, the
++ * warmup's clicks among them, when the page's renderer (shared by same-site tabs) still traced from
++ * an earlier iteration; those aren't the measured run's. (Local patch for Roc Solid's runs: its
++ * pages' traces held them, and failed "at most one mousedown event is expected".)
++ */
++function sinceTracingStarted(entries: any[]): any[] {
++  const started = entries.find((e: any) => e.name === "TracingStartedInBrowser");
++  if (!started) return entries;
++  return entries.filter((e: any) => e.ph === "M" || !(+e.ts > 0) || +e.ts >= +started.ts);
++}
++
+ async function fetchEventsFromPerformanceLog(fileName: string, startLogicEventName: string): Promise<TimingResult[]> {
+   let contents = await readFile(fileName, { encoding: "utf8" });
+   let json = JSON.parse(contents);
+-  let entries = json["traceEvents"];
++  let entries = sinceTracingStarted(json["traceEvents"]);
+   return extractRelevantEvents(entries, startLogicEventName);
+ }
+   
+@@ -128,7 +140,7 @@ async function fetchEventsFromTraceLog(
+ ): Promise<TimingResult[]> {
+   let contents = await readFile(fileName, { encoding: "utf8" });
+   let json = JSON.parse(contents);
+-  let entries = json["traceEvents"];
++  let entries = sinceTracingStarted(json["traceEvents"]);
+   return extractRelevantTraceEvents(config, relevantTraceEvents, entries, includeClick);
+ }
+ 

@@ -149,6 +149,12 @@ async function server() {
 	};
 }
 
+/** Where the power comes from now: "mains", "battery", or "" (not a Mac, or pmset said nothing). */
+function power() {
+	const battery = said("pmset", ["-g", "batt"]);
+	return /'AC Power'/.test(battery) ? "mains" : /'Battery Power'/.test(battery) ? "battery" : "";
+}
+
 const elapsed = (started) => `${((Date.now() - started) / 60_000).toFixed(1)} min`;
 
 /** Entries, then `rounds` rounds of the runner, then the report. Each round runs the benchmarks
@@ -161,6 +167,11 @@ export async function bench(args) {
 	const benchmarks = option(args, "benchmarks", BENCHMARKS.join(",")).split(",");
 	const frameworks = option(args, "frameworks", FRAMEWORKS.join(",")).split(",");
 	const binary = chrome();
+	// The runner, patched (runner-trace-start.patch): a trace's events from before it started aren't
+	// the measured run's. Without it, Roc Solid's create benchmarks fail ("at most one mousedown").
+	if (!readFileSync(join(clone, "webdriver-ts", "dist", "timeline.js"), "utf8").includes("sinceTracingStarted")) {
+		throw new Error(`the runner isn't patched: git apply ${relative(clone, join(here, "runner-trace-start.patch"))} in the clone, then npx tsc in webdriver-ts (README.md)`);
+	}
 	const version = entries();
 	const stop = await server();
 	const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
@@ -173,6 +184,9 @@ export async function bench(args) {
 		const before = { machine: machine(), load: loadavg()[0], at: new Date().toISOString() };
 		const results = join(clone, "webdriver-ts", "results");
 		const failures = [];
+		// Each benchmark's power source: a laptop on its battery may run slower, so the report says
+		// which steps weren't on mains.
+		const unplugged = [];
 		for (let round = 1; round <= rounds; round++) {
 			const order = round % 2 === 1 ? frameworks : [...frameworks].reverse();
 			const kept = join(run, "rounds", String(round));
@@ -180,7 +194,9 @@ export async function bench(args) {
 			rmSync(results, { recursive: true, force: true });
 			mkdirSync(results, { recursive: true });
 			for (const benchmark of benchmarks) {
-				console.error(`round ${round}/${rounds}, ${benchmark}: ${order.length} entries (${elapsed(started)} so far)`);
+				const source = power();
+				if (source !== "mains") unplugged.push(`round ${round}, ${benchmark}: ${source || "unknown power"}`);
+				console.error(`round ${round}/${rounds}, ${benchmark}: ${order.length} entries (${elapsed(started)} so far${source === "mains" ? "" : `, on ${source || "unknown power"}`})`);
 				const flags = ["run", "bench", "--", "--headless", "--chromeBinary", binary, ...(count ? ["--count", count] : []), "--benchmark", benchmark, "--framework", ...order];
 				const ran = spawnSync("npm", flags, { cwd: join(clone, "webdriver-ts"), env: { ...process.env, PORT: port }, encoding: "utf8", maxBuffer: 1 << 28 });
 				writeFileSync(join(kept, `${benchmark}.log`), `${ran.stdout}\n${ran.stderr}`);
@@ -190,7 +206,7 @@ export async function bench(args) {
 		}
 		const after = { machine: machine(), load: loadavg()[0], at: new Date().toISOString() };
 		const chromeVersion = said(binary, ["--version"]).replace(/^Google Chrome for Testing\s*/, "");
-		const meta = { version, rounds, count: count ? Number(count) : 15, frameworks, chrome: chromeVersion, clone: said("git", ["rev-parse", "--short", "HEAD"], { cwd: clone }), before, after, failures, minutes: Number(((Date.now() - started) / 60_000).toFixed(1)) };
+		const meta = { version, rounds, count: count ? Number(count) : 15, frameworks, chrome: chromeVersion, clone: said("git", ["rev-parse", "--short", "HEAD"], { cwd: clone }), before, after, failures, unplugged, minutes: Number(((Date.now() - started) / 60_000).toFixed(1)) };
 		writeFileSync(join(run, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
 		console.error(`ran in ${elapsed(started)}${failures.length ? `; ${failures.length} failed:\n${failures.join("\n")}` : ""}`);
 	} finally {
@@ -287,6 +303,7 @@ export function report(run) {
 		load: `${meta.before.load.toFixed(1)} → ${meta.after.load.toFixed(1)}`,
 		power: meta.before.machine.power === meta.after.machine.power ? meta.before.machine.power : `${meta.before.machine.power} → ${meta.after.machine.power}`,
 		failures: meta.failures,
+		unplugged: meta.unplugged ?? [],
 		frameworks: meta.frameworks.map((entry) => ({ entry, name: label(entry), version: versions[entry] ?? "" })),
 		benchmarks: ids.map((id) => ({ id, label: LABELS[id] })),
 		results,
@@ -316,6 +333,7 @@ export function report(run) {
 		}).join(" | ")} |`),
 		"",
 		...(meta.failures.length ? ["## Failures", "", ...meta.failures.map((failure) => `- ${failure}`), ""] : []),
+		...(meta.unplugged?.length ? ["## Not on mains", "", ...meta.unplugged.map((step) => `- ${step}`), ""] : []),
 	];
 	writeFileSync(join(run, "report.md"), `${lines.join("\n")}\n`);
 	console.log(lines.join("\n"));
