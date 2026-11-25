@@ -30,7 +30,7 @@ Repeat := [].{
 			var $index = first
 			while $index < end {
 				at = $index
-				$rows = $rows.append({ key: at.to_str(), row: || children(at) })
+				$rows = $rows.append({ key: at.to_str(), row: || children(at), known: Bool.False })
 				$index = $index + 1
 			}
 			$rows

@@ -155,8 +155,10 @@ pub extern "C" fn roc_row_index(list: u64, key: RocStr) -> u64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable, same: bool) {
-    engine::row_set(list, taken(key), value, same)
+pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable, same: bool) -> bool {
+    engine::row_set(list, taken(key), value, same);
+    // The engine makes each row from its box: none is kept.
+    false
 }
 
 #[unsafe(no_mangle)]

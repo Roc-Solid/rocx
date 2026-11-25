@@ -4150,7 +4150,7 @@ pub struct HostRowLastArgs {
 }
 
 /// Arguments for Host.row_set!
-/// Roc signature: U64, Str, Box({} -> rigid), Bool => {}
+/// Roc signature: U64, Str, Box({} -> rigid), Bool => Bool
 /// Refcounted fields are owned by the hosted function.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -6288,12 +6288,12 @@ unsafe extern "C" {
     pub fn roc_row_last(arg0: u64, arg1: RocStr, arg2: RocErasedCallable) -> RocErasedCallable;
 
     /// Hosted symbol for Host.row_set!
-    /// Roc signature: U64, Str, Box({} -> rigid), Bool => {}
+    /// Roc signature: U64, Str, Box({} -> rigid), Bool => Bool
     /// Owned arguments. Release each exactly once before returning, unless it is
     /// moved into storage or into the result:
     ///     unsafe { arg1.decref(roc_host); }
     ///     unsafe { decref_erased_callable(arg2, roc_host); }
-    pub fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable, arg3: bool);
+    pub fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable, arg3: bool) -> bool;
 
     /// Hosted symbol for Host.say!
     /// Roc signature: Str, Str => {}

@@ -1058,7 +1058,7 @@ pub const HostRow_lastArgs = extern struct {
 };
 
 /// Arguments for Host.row_set!
-/// Roc signature: U64, Str, Box({} -> rigid), Bool => {}
+/// Roc signature: U64, Str, Box({} -> rigid), Bool => Bool
 /// Refcounted fields are owned by the hosted function.
 pub const HostRow_setArgs = extern struct {
     arg0: u64,
@@ -1529,12 +1529,12 @@ pub extern fn roc_row_index(arg0: u64, arg1: RocStr) callconv(.c) u64;
 pub extern fn roc_row_last(arg0: u64, arg1: RocStr, arg2: RocErasedCallable) callconv(.c) RocErasedCallable;
 
 /// Hosted symbol for Host.row_set!
-/// Roc signature: U64, Str, Box({} -> rigid), Bool => {}
+/// Roc signature: U64, Str, Box({} -> rigid), Bool => Bool
 /// Owned arguments. Release each exactly once before returning, unless it is
 /// moved into storage or into the result:
 ///     arg1.decref(roc_host);
 ///     decrefErasedCallable(arg2, roc_host);
-pub extern fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable, arg3: bool) callconv(.c) void;
+pub extern fn roc_row_set(arg0: u64, arg1: RocStr, arg2: RocErasedCallable, arg3: bool) callconv(.c) bool;
 
 /// Hosted symbol for Host.say!
 /// Roc signature: Str, Str => {}

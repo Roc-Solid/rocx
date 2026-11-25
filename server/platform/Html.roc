@@ -20,7 +20,7 @@ Html :: [
 	Errored((Str, (() => {}) -> Html), List(Html)),
 	Switched(() => Try(Str, [None]), () => Html, Html),
 	Branched(() => Try(Str, [None]), () => Html),
-	Each(U64 => List({ key : Str, row : () => Html }), Html),
+	Each(U64 => List({ key : Str, row : () => Html, known : Bool }), Html),
 	Component(() => Html),
 	Provided(Str, U64, List(Html)),
 	NoHydration(List(Html)),
@@ -417,8 +417,9 @@ Html :: [
 	branched = |case!, made!| Branched(case!, made!)
 
 	## Rows, by key (`rows!`, `rows_at!`): `rows!`, given the list's id, says which rows there are
-	## now, and how to make each; the runtime keeps a row while its key is there, and moves it.
-	each : (U64 => List({ key : Str, row : () => Html })), Html -> Html
+	## now, and how to make each (unless `known`: the page shows it already); the runtime keeps a row
+	## while its key is there, and moves it.
+	each : (U64 => List({ key : Str, row : () => Html, known : Bool })), Html -> Html
 	each = |made!, fallback| Each(made!, fallback)
 
 	## What rocx writes for a hole's `.map` whose list reads what changes (D-071):
@@ -470,17 +471,17 @@ Html :: [
 	}
 
 	## A row: its item kept by the host under its key (so the row's name reads the item there now),
-	## and how to make the row.
-	row! : U64, Str, a, ((() => a) => Html) => { key : Str, row : () => Html } where [a.is_eq : a, a -> Bool]
+	## how to make the row, and whether the page shows it already (`known`: the runtime keeps it).
+	row! : U64, Str, a, ((() => a) => Html) => { key : Str, row : () => Html, known : Bool } where [a.is_eq : a, a -> Bool]
 	row! = |id, row_key, item, make| {
 		boxed = Box.box(|| item)
 		last = Box.unbox(Host.row_last!(id, row_key, boxed))
-		Host.row_set!(id, row_key, boxed, last() == item)
+		known = Host.row_set!(id, row_key, boxed, last() == item)
 		item! = || {
 			current = Box.unbox(Host.row_get!(id, row_key))
 			current()
 		}
-		{ key: row_key, row: || make(item!) }
+		{ key: row_key, row: || make(item!), known }
 	}
 
 	## The keys, each once: the second of two equal keys is another row (`#1`), and so on. How many of
@@ -627,7 +628,8 @@ Html :: [
 					var $out = []
 					for entry in made_rows!(id) {
 						row = entry.row
-						$out = $out.append("{\"k\":${json_str(entry.key)},\"r\":${keep!(|| serialize!(row()))}}")
+						# A row the page shows already is kept: no box to make it again (`known`).
+						$out = $out.append(if (entry.known) "{\"k\":${json_str(entry.key)}}" else "{\"k\":${json_str(entry.key)},\"r\":${keep!(|| serialize!(row()))}}")
 					}
 					"[${Str.join_with($out, ",")}]"
 				}

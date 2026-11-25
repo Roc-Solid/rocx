@@ -54,10 +54,11 @@ Host := [].{
 	## A `.map`'s rows (`Html.rows!`, D-071): its id; a row's index (tracked: it changes as the row
 	## moves); and a row's item, by its key (tracked: it changes as the list does). `row_set!`'s
 	## `same`: the item is `==` the one the row had (D-053's comparison, every list's), so the row isn't
-	## told. `row_last!`: the row's item, untracked, or `fallback` for a new row.
+	## told; it answers whether the page shows a row of that key already (the runtime keeps it, and
+	## needs no box to make it). `row_last!`: the row's item, untracked, or `fallback` for a new row.
 	for_new! : {} => U64
 	row_index! : U64, Str => U64
-	row_set! : U64, Str, Box(() -> a), Bool => {}
+	row_set! : U64, Str, Box(() -> a), Bool => Bool
 	row_get! : U64, Str => Box(() -> a)
 	row_last! : U64, Str, Box(() -> a) => Box(() -> a)
 

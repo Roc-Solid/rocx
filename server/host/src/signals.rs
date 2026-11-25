@@ -1099,7 +1099,7 @@ pub extern "C" fn roc_row_index(list: u64, key: RocStr) -> u64 {
 /// A row's item. `_same` (a `<For compared>`'s item equal to what it was) means nothing here: a
 /// list is read once.
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable, _same: bool) {
+pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable, _same: bool) -> bool {
     let _host = crate::preempt::host();
     let key = taken(key);
     let replaced = with(|render| {
@@ -1116,6 +1116,8 @@ pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable, _same: bo
             roc::fail("rocx: a row of a list that isn't there".into())
         }
     }
+    // Every row is new: the server renders the list once.
+    false
 }
 
 /// A row's item, untracked, for a `<For compared>` to compare its new one with (D-053), or the

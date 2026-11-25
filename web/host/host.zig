@@ -34,7 +34,7 @@ const js = struct {
     extern "env" fn js_request() usize;
     extern "env" fn js_for_new() u32;
     extern "env" fn js_row_index(id: u32, key_ptr: [*]const u8, key_len: usize) u32;
-    extern "env" fn js_row_set(id: u32, key_ptr: [*]const u8, key_len: usize, value: usize, same: u32) void;
+    extern "env" fn js_row_set(id: u32, key_ptr: [*]const u8, key_len: usize, value: usize, same: u32) u32;
     extern "env" fn js_row_last(id: u32, key_ptr: [*]const u8, key_len: usize) usize;
     extern "env" fn js_row_get(id: u32, key_ptr: [*]const u8, key_len: usize) usize;
     extern "env" fn js_context_value(value: usize) u32;
@@ -650,10 +650,10 @@ fn hostedRowIndex(id: u64, key: RocStr) callconv(.c) u64 {
     return js.js_row_index(@intCast(id), text.ptr, text.len);
 }
 
-fn hostedRowSet(id: u64, key: RocStr, value: Callable, same: bool) callconv(.c) void {
+fn hostedRowSet(id: u64, key: RocStr, value: Callable, same: bool) callconv(.c) bool {
     defer key.decref(host());
     const text = key.asSlice();
-    js.js_row_set(@intCast(id), text.ptr, text.len, address(value), @intFromBool(same));
+    return js.js_row_set(@intCast(id), text.ptr, text.len, address(value), @intFromBool(same)) != 0;
 }
 
 // A row's item, a new reference, or `fallback` (given back) for a row not there yet (D-053).

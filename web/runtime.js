@@ -452,6 +452,12 @@ function plainName(name, attribute) {
 	return length > 0 && !(attribute && length >= 2 && (name.charCodeAt(0) | 32) === 111 && (name.charCodeAt(1) | 32) === 110);
 }
 
+/** The events an element's handler for is delegated (`delegate`): common ones that bubble. */
+const DELEGATED = new Set(["click", "dblclick", "input", "change", "keydown", "keyup", "submit", "pointerdown", "pointerup", "mousedown", "mouseup", "contextmenu"]);
+/** An element's delegated handlers, by event; the events the root element listens for. */
+const HANDLERS = Symbol("rocx handlers");
+const LISTENED = Symbol("rocx listened");
+
 /** Attributes that name themselves (the others are handlers, keys, classes and styles). */
 const NAMED = new Set(["v", "o", "vo", "oo", "f", "fo"]);
 /** The names refused, each said once. */
@@ -1005,12 +1011,17 @@ export class Runtime {
 	 * not there is looked for on `window.rocxEffects` too, for a page start.js wakes up.
 	 */
 	static async load(source, { base = "/", effects = {} } = {}) {
-		let runtime;
-		const env = new Proxy({}, { get: (_, name) => (...args) => runtime.imports[name](...args) });
+		// The runtime first: its imports are what the wasm calls, each given as it is (a call from Roc
+		// goes straight to it, through no wrapper). One the runtime hasn't fails at the call that needs it.
+		const runtime = new Runtime(null, base);
+		const env = new Proxy(runtime.imports, { get: (imports, name) => imports[name] ?? (() => { throw new Error(`rocx: the runtime has no import ${String(name)}`); }) });
 		const resolved = await source;
-		const bytes = resolved instanceof Response ? await resolved.arrayBuffer() : resolved;
-		const { instance } = await WebAssembly.instantiate(bytes, { env });
-		runtime = new Runtime(instance.exports, base);
+		// Compiled as it downloads, when the server says it is wasm.
+		const { instance } =
+			resolved instanceof Response && typeof WebAssembly.instantiateStreaming === "function" && resolved.headers.get("content-type")?.startsWith("application/wasm")
+				? await WebAssembly.instantiateStreaming(resolved, { env })
+				: await WebAssembly.instantiate(resolved instanceof Response ? await resolved.arrayBuffer() : resolved, { env });
+		runtime.ex = instance.exports;
 		runtime.effects = effects;
 		return runtime;
 	}
@@ -1402,16 +1413,20 @@ export class Runtime {
 				this.track(index);
 				return index.value;
 			},
+			// A row's item; and whether the page shows its row already (kept: it needs no box).
 			js_row_set: (id, keyPtr, keyLen, ptr, same) => {
-				const items = this.lists.get(id).items;
+				const list = this.lists.get(id);
 				const at = text(keyPtr, keyLen);
-				const item = items.get(at);
-				if (!item) return items.set(at, { value: ptr, observers: null });
+				const item = list.items.get(at);
+				if (!item) {
+					list.items.set(at, { value: ptr, observers: null });
+					return list.rows.has(at) ? 1 : 0;
+				}
 				this.ex.release(item.value);
 				item.value = ptr;
 				// A <For compared>'s item `==` the one the row had (D-053): the row isn't told; it keeps the newest.
-				if (same) return;
-				for (const observer of item.observers ?? NONE) this.schedule(observer);
+				if (!same) for (const observer of item.observers ?? NONE) this.schedule(observer);
+				return list.rows.has(at) ? 1 : 0;
 			},
 			// A row's item, untracked, for a <For compared> to compare its new one with: 0 for a new row.
 			js_row_last: (id, keyPtr, keyLen) => this.lists.get(id).items.get(text(keyPtr, keyLen))?.value ?? 0,
@@ -4075,7 +4090,9 @@ export class Runtime {
 		// The rows' boxes aren't the run's to let go of: each is its row's, or let go of here. Taken out
 		// of what the run keeps in one pass (one search a row was quadratic in the rows).
 		const kept = computation.making.kept;
-		const runners = new Set(entries.map(({ r }) => r));
+		// (A row the page shows already comes with none: `Host.row_set!` said it is kept.)
+		const runners = new Set();
+		for (const { r } of entries) if (r) runners.add(r);
 		let left = 0;
 		for (const id of kept) if (!runners.has(id)) kept[left++] = id;
 		kept.length = left;
@@ -4085,9 +4102,11 @@ export class Runtime {
 		entries.forEach(({ k, r }, index) => {
 			let row = list.rows.get(k);
 			if (row) {
-				// Still there: the box this run made for it isn't needed.
-				this.ex.release(this.kept.get(r));
-				this.kept.delete(r);
+				// Still there: the box this run made for it, if it made one, isn't needed.
+				if (r) {
+					this.ex.release(this.kept.get(r));
+					this.kept.delete(r);
+				}
 				const at = list.indexes.get(k);
 				if (!detached(row.range)) was[index] = at.value;
 				if (at.value !== index) {
@@ -5346,6 +5365,7 @@ export class Runtime {
 				const handler = this.listener(kind, name, value, wanted, scope, owner);
 				if (drag && name === "dragenter") drag.enter.push(handler);
 				else if (drag && name === "dragleave") drag.leave.push(handler);
+				else if (DELEGATED.has(name)) this.delegate(element, name, handler);
 				else element.addEventListener(name, handler);
 			} else if (kind === "k") this.keys.set(element, name);
 			else if (kind === "ko") this.run(new Computation(this, { kind: "key", runner: this.kept.get(name), owner, scope, target: element }));
@@ -5383,6 +5403,30 @@ export class Runtime {
 			}
 		}
 		if (drag) this.dragAndDrop(element, drag);
+	}
+
+	/**
+	 * An element's handler for an event that bubbles and is common (`DELEGATED`), kept on the element,
+	 * and one listener for the event on the document's root element, which runs the handlers of the
+	 * elements the event passes, from where it happened up, as their own listeners would (Solid's
+	 * delegation): a row costs no listener of its own. The runtime's own listeners (a link's click, a
+	 * form's submit) are the document's, so these run before them, as an element's did.
+	 */
+	delegate(element, name, handler) {
+		const own = (element[HANDLERS] ??= {});
+		(own[name] ??= []).push(handler);
+		const root = element.ownerDocument?.documentElement;
+		if (!root) return;
+		const listened = (root[LISTENED] ??= new Set());
+		if (listened.has(name)) return;
+		listened.add(name);
+		root.addEventListener(name, (event) => {
+			for (const node of event.composedPath()) {
+				const handlers = node[HANDLERS]?.[name];
+				if (handlers) for (const run of handlers) run(event);
+				if (node === root || event.cancelBubble) break;
+			}
+		});
 	}
 
 	/**
