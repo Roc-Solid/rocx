@@ -19,16 +19,29 @@ import { buildForTests, links, startServer, testDatabase, testSqlite } from "../
 
 const example = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** The route the tests add: an app's own way in (`Auth.sign_in!`), for the user the body names. */
+/** The routes the tests add: an app's own way in (`Auth.sign_in!`, going on to `Auth.path!(then)`), and switching person (`Auth.switch!`), for the user the body names. */
 const asRoute = `import pf.Server
 import pf.Endpoint
 import auth.Auth
 
 ## POST /test/as: signed in as \`user\`, as an app that checked a password of its own would sign
-## someone in. Written by packages/auth's tests into the app they build; the example has none.
-post! : { request : Server.Request, params : {}, context : {}, body : { user : Str } } => Try(Str, Endpoint.Refusal)
+## someone in, going on to \`then\` (a path of this site, else home). Written by packages/auth's
+## tests into the app they build; the example has none.
+post! : { request : Server.Request, params : {}, context : {}, body : { user : Str, then : Str } } => Try(Str, Endpoint.Refusal)
 post! = |{ body, .. }|
-	match Auth.sign_in!(Server.redirect("/private"), body.user) {
+	match Auth.sign_in!(Server.redirect(Auth.path!(body.then)), body.user) {
+		Ok(answer) => Err(Answer(answer))
+		Err(DbErr(why)) => Err(Status(503, why))
+	}
+`;
+const switchRoute = `import pf.Server
+import pf.Endpoint
+import auth.Auth
+
+## POST /test/switch: the request's session ended and one for \`user\` started, in one step.
+post! : { request : Server.Request, params : {}, context : {}, body : { user : Str } } => Try(Str, Endpoint.Refusal)
+post! = |{ request, body, .. }|
+	match Auth.switch!(request, Server.redirect("/"), body.user) {
 		Ok(answer) => Err(Answer(answer))
 		Err(DbErr(why)) => Err(Status(503, why))
 	}
@@ -92,7 +105,7 @@ function app(database, fake) {
 	const dir = join(example, "build", database, "app");
 	rmSync(dir, { recursive: true, force: true });
 	mkdirSync(dir, { recursive: true });
-	for (const each of ["routes", "migrations", "Accounts.roc", "Middlewares.roc", "Problem.roc"]) cpSync(join(example, each), join(dir, each), { recursive: true });
+	for (const each of ["routes", "migrations", "Accounts.roc", "Middlewares.roc"]) cpSync(join(example, each), join(dir, each), { recursive: true });
 	const providers = [
 		"Auth.google",
 		"Auth.github",
@@ -107,10 +120,12 @@ function app(database, fake) {
 	writeFileSync(join(dir, "main.roc"), main);
 	mkdirSync(join(dir, "routes", "test", "as"), { recursive: true });
 	writeFileSync(join(dir, "routes", "test", "as", "+server.roc"), asRoute);
+	mkdirSync(join(dir, "routes", "test", "switch"), { recursive: true });
+	writeFileSync(join(dir, "routes", "test", "switch", "+server.roc"), switchRoute);
 	return dir;
 }
 
-const env = { TEST_CLIENT_ID: "test-client", TEST_CLIENT_SECRET: "test-secret", HUB_CLIENT_ID: "test-client", HUB_CLIENT_SECRET: "test-secret", GOOGLE_CLIENT_ID: "", GITHUB_CLIENT_ID: "" };
+const env = { TEST_CLIENT_ID: "test-client", TEST_CLIENT_SECRET: "test-secret", HUB_CLIENT_ID: "test-client", HUB_CLIENT_SECRET: "test-secret", GOOGLE_CLIENT_ID: "", GITHUB_CLIENT_ID: "", ADMIN_EMAILS: "boss@example.com" };
 
 const databases = ["sqlite", ...(process.env.DATABASE_URL ? ["postgres"] : [])];
 
@@ -171,12 +186,13 @@ for (const database of databases) {
 
 		test("signed out: the optional middleware says so, the required one sends a page to sign in and refuses the rest", async () => {
 			const client = server.client();
-			assert.deepEqual(await client.read("/me"), { signed_in: false, user: "", email: "", identities: [] });
+			assert.deepEqual(await client.read("/me"), { signed_in: false, user: "", email: "", identities: [], real_user: "", impersonating: false });
 			const page = await client.get("/private");
 			assert.equal(page.status, 303);
 			assert.equal(page.location, "/sign-in?then=%2Fprivate");
 			const api = await client.request("/private", { headers: { accept: "application/json" } });
 			assert.equal(api.status, 401);
+			assert.equal(api.text, "Sign in first, at /sign-in.", "the plugin's refusal");
 		});
 
 		test("a mailed link signs in once, its address lower-cased, and goes where it was asked to", async () => {
@@ -216,6 +232,11 @@ for (const database of databases) {
 			assert.equal((await straight.read("/me")).email, "grace@example.com");
 			const forged = await server.client().get("/auth/link?token=not-a-token");
 			assert.equal(forged.location, "/sign-in?error=link");
+			// An expired link still says where it was going.
+			const late = server.client();
+			const token = await mailedLink(late, "grace@example.com", "/private");
+			await db.query("update auth_links set expires_at = 0");
+			assert.equal((await late.post("/auth/link", { token })).location, "/sign-in?error=link&then=%2Fprivate");
 			const bad = await server.client().json("/sign-in", { email: "not an address", then: "/" });
 			assert.equal(bad.status, 400);
 		});
@@ -234,13 +255,56 @@ for (const database of databases) {
 			);
 		});
 
-		test("an app's own way in (Auth.sign_in!): a session for the user it names, which the middleware reads", async () => {
+		test("an app's own way in (Auth.sign_in!, Auth.path!), switching person in one step (Auth.switch!), and a session whose user is gone (Auth.required_with)", async () => {
+			const ann = await signedIn("ann@example.com");
+			const annId = (await ann.read("/me")).user;
 			const client = server.client();
-			const signed = await client.json("/test/as", { user: "user-from-a-password" });
+			const signed = await client.json("/test/as", { user: annId, then: "/private" });
 			assert.equal(signed.status, 303, signed.text);
 			assert.equal(signed.location, "/private");
-			assert.deepEqual(await client.read("/private"), { user: "user-from-a-password" });
-			assert.equal((await client.read("/sessions")).length, 1);
+			assert.equal((await client.read("/private")).user, annId);
+			assert.equal((await client.json("/test/as", { user: annId, then: "//elsewhere.example" })).location, "/", "Auth.path! keeps it on the site");
+			// Switching: one Set-Cookie, the old session gone.
+			const bea = await signedIn("bea@example.com");
+			const beaId = (await bea.read("/me")).user;
+			const before = await client.read("/sessions");
+			const switched = await client.json("/test/switch", { user: beaId });
+			assert.equal(switched.headers.getSetCookie().filter((line) => line.startsWith("session=")).length, 1);
+			assert.equal((await client.read("/me")).user, beaId);
+			const old = before.find((session) => session.current).id;
+			assert.equal((await db.query(`select count(*) as n from auth_sessions where id = '${old}'`))[0].n == 0, true, "the old session ended");
+			// A session whose user is gone ends, and is answered as signed out.
+			await db.query(`delete from auth_identities where user_id = '${beaId}'`);
+			await db.query(`delete from users where id = '${beaId}'`);
+			const gone = await client.request("/private", { headers: { accept: "application/json" } });
+			assert.equal(gone.status, 401);
+			assert.ok(!client.cookies.has("session"), "its cookie cleared");
+			assert.equal((await bea.read("/me")).signed_in, true, "optional doesn't read the user's row");
+		});
+
+		test("an admin impersonates someone (Auth.impersonate!): the routes see them, the session stays the admin's, until it is stopped or runs out", async () => {
+			const boss = await signedIn("boss@example.com");
+			const bossId = (await boss.read("/me")).user;
+			const cal = await signedIn("cal@example.com");
+			const calId = (await cal.read("/me")).user;
+			assert.equal((await cal.json("/impersonate", { email: "boss@example.com" })).status, 403, "only an admin may");
+			const acting = await boss.json("/impersonate", { email: "cal@example.com" });
+			assert.equal(acting.status, 200, acting.text);
+			const me = await boss.read("/me");
+			assert.deepEqual([me.user, me.real_user, me.impersonating, me.email], [calId, bossId, true, "cal@example.com"]);
+			assert.equal((await boss.read("/private")).user, calId);
+			assert.deepEqual(
+				(await boss.read("/sessions")).length,
+				(await cal.read("/sessions")).length,
+				"/sessions lists the user acted as's sessions (the routes see them)",
+			);
+			assert.equal((await boss.json("/impersonate/stop", {})).status, 200);
+			assert.deepEqual([(await boss.read("/me")).user, (await boss.read("/me")).impersonating], [bossId, false]);
+			// It runs out.
+			await boss.json("/impersonate", { email: "cal@example.com" });
+			assert.equal((await boss.read("/me")).user, calId);
+			await db.query("update auth_sessions set acting_until = 0 where acting_as is not null");
+			assert.equal((await boss.read("/me")).user, bossId, "back to the admin once its time is up");
 		});
 
 		test("signing out ends the session: its cookie gone, and the old cookie signs no one in", async () => {

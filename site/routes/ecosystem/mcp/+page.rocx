@@ -155,14 +155,14 @@ view! = |_|
 		</p>
 		<p>
 			MCP's own way is OAuth: a client without a good token gets a 401 that says where to learn how to
-			get one. The <code>Auth</code> module builds those answers:
+			get one. The <code>Bearer</code> module builds those answers:
 		</p>
 		<ul>
-			<li><code>Auth.bearer(headers)</code>: the token a request carries (<code>Authorization: Bearer …</code>).</li>
-			<li><code>Auth.challenge</code>: the 401, with a <code>WWW-Authenticate</code> header.</li>
-			<li><code>Auth.insufficient</code>: the 403 for a good token that lacks a scope.</li>
+			<li><code>Bearer.token(headers)</code>: the token a request carries (<code>Authorization: Bearer …</code>).</li>
+			<li><code>Bearer.challenge</code>: the 401, with a <code>WWW-Authenticate</code> header.</li>
+			<li><code>Bearer.insufficient</code>: the 403 for a good token that lacks a scope.</li>
 			<li>
-				<code>Auth.metadata</code>: the document a server serves at
+				<code>Bearer.metadata</code>: the document a server serves at
 				<code>/.well-known/oauth-protected-resource</code>.
 			</li>
 		</ul>
@@ -243,7 +243,7 @@ view! = |_|
 					<tr><td><code>Template</code></td><td><code>Template.new(pattern, name, read!)</code>: a family of resources. <code>read!</code> gets the values the URI gave the pattern's names.</td></tr>
 					<tr><td><code>Prompt</code></td><td><code>Prompt.new(name, description, arguments, get!)</code>: messages made from string arguments (<code>Prompt.argument</code>, <code>Prompt.optional</code>, <code>Prompt.user</code>, <code>Prompt.assistant</code>).</td></tr>
 					<tr><td><code>Content</code></td><td>What a tool answers with: text, an image or a sound (bytes, sent as Base64), a link to a resource, or a resource's contents.</td></tr>
-					<tr><td><code>Auth</code></td><td>The pieces of OAuth's answers, for the app's middleware (<a href="#access">above</a>).</td></tr>
+					<tr><td><code>Bearer</code></td><td>The pieces of OAuth's answers, for the app's middleware (<a href="#access">above</a>).</td></tr>
 					<tr><td><code>JsonValue</code></td><td>Any JSON, read a field at a time. <code>decode</code> turns it into a Roc type and <code>encode</code> makes one from a Roc value. A number keeps the text it came as, so an id goes back exactly.</td></tr>
 					<tr><td><code>Rpc</code></td><td>JSON-RPC 2.0: <code>read</code> one message; write a <code>result</code>, an <code>error</code> or a <code>notification</code>.</td></tr>
 				</tbody>

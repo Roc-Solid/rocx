@@ -2,7 +2,7 @@ import pf.Html
 import pf.Endpoint
 import pf.Router
 import pf.Server
-import ../../../Problem
+import auth.SignInError
 import ../../../Generated/Api
 
 ## Where a mailed link lands: whom it signs in, and a button that does. Opening the link signs
@@ -14,7 +14,7 @@ link! : Str => Try({ email : Str }, Server.Problem)
 link! = |token| Endpoint.read!(Api.get_sign_in_link({}).with_query("token=${Server.encode_segment(token)}"))
 
 view! = |_| {
-	token = Problem.field(Router.location!({}).query, "token")
+	token = SignInError.field(Router.location!({}).query, "token")
 	<main>
 		{match link!(token) {
 			Ok(found) =>

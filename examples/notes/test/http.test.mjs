@@ -105,7 +105,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		assert.equal(reused.status, 303);
 		assert.equal(reused.location, linkRefused);
 		assert.equal(again.cookies.has(sessionCookie), false);
-		assert.equal((await reused.follow()).dom.getByRole("alert").text, "That sign-in link has been used, or it has expired. Ask for another below.");
+		assert.equal((await reused.follow()).dom.getByRole("alert").text, "That sign-in link has been used or has expired. Ask for another.");
 		// A token never mailed, or not a token at all.
 		for (const made of ["x".repeat(43), ""]) {
 			const refused = await again.post("/auth/link", { token: made });
@@ -132,7 +132,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 	test("a sign-in that didn't work comes back to the sign-in page, which says why", async () => {
 		const visitor = app.client();
 		const said = async (query) => (await visitor.get(`/sign-in?${query}`)).dom.getByRole("alert").text;
-		assert.equal(await said("error=link"), "That sign-in link has been used, or it has expired. Ask for another below.");
+		assert.equal(await said("error=link"), "That sign-in link has been used or has expired. Ask for another.");
 		assert.equal(await said("error=refused&reason=Not%20this%20one."), "Not this one.");
 		assert.equal(await said("error=unavailable"), "Signing in didn't work just now. Try again in a minute.");
 		assert.equal((await visitor.get("/sign-in")).dom.queryByRole("alert"), null);
@@ -143,7 +143,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const orphan = app.client();
 		orphan.cookies.set(sessionCookie, token);
 		const page = await orphan.get("/");
-		assert.deepEqual([page.status, page.location], [303, "/sign-in"]);
+		assert.deepEqual([page.status, page.location], [303, "/sign-in?then=%2F"]);
 		assert.equal(orphan.cookies.has(sessionCookie), false);
 		assert.equal((await db.sql`select count(*) as n from auth_sessions where id = ${kept(token)}`)[0].n, 0);
 	});

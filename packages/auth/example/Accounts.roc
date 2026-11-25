@@ -1,4 +1,5 @@
 import pf.Db
+import pf.Env
 import pf.Random
 import pf.Time
 import crypto.Base64
@@ -35,6 +36,26 @@ Accounts := [].{
 					}
 			}
 		}
+
+	## Whether user `id` may act as others (`/impersonate`): their address is on `ADMIN_EMAILS`
+	## (commas between).
+	admin! : Str => Bool
+	admin! = |id|
+		match Accounts.user!(id) {
+			Ok(Found(user)) => (Env.var!("ADMIN_EMAILS") ?? "").split_on(",").map(|each| each.trim().with_ascii_lowercased()).contains(user.email)
+			_ => Bool.False
+		}
+
+	## The user with address `email`, if there is one.
+	by_email! : Str => Try([Found(Accounts.User), Missing], [DbErr(Str), BadRow(Str)])
+	by_email! = |email| {
+		rows : List(Accounts.User)
+		rows = Db.all!("select id, email, name from users where email = $1", [Text(email.trim().with_ascii_lowercased())])?
+		match rows.get(0) {
+			Ok(found) => Ok(Found(found))
+			Err(_) => Ok(Missing)
+		}
+	}
 
 	## The user with id `id`.
 	user! : Str => Try([Found(Accounts.User), Missing], [DbErr(Str), BadRow(Str)])

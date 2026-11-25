@@ -158,7 +158,7 @@ resource metadata (RFC 9728), finds the authorization server, registers (a Clien
 Document; dynamic registration is deprecated), sends the user through the authorization code flow
 with PKCE and `resource` (RFC 8707), and calls the server with `Authorization: Bearer …`. The server
 checks each token: issued for it (audience), not expired, the scopes the call needs (403
-`insufficient_scope` if not). v1 leaves that to the app's middleware, with `Auth`'s answers.
+`insufficient_scope` if not). v1 leaves that to the app's middleware, with `Bearer`'s answers.
 
 **Options considered.**
 
@@ -176,7 +176,7 @@ checks each token: issued for it (audience), not expired, the scopes the call ne
 
 **Recommended: c, built in this order.** First, in this package: `McpHttp.guarded(check!, { resource_metadata, scopes })`, a middleware
 that reads the bearer token, calls the app's `check!`, hands on `{ ..context, token }`, and answers
-`Auth.challenge` / `Auth.insufficient` (the pieces exist: `Auth`). Then `packages/oauth` (b), its own
+`Bearer.challenge` / `Bearer.insufficient` (the pieces exist: `Bearer`). Then `packages/oauth` (b), its own
 package and its own proposal, since every API an agent signs in to wants it, not only MCP. A host
 primitive for RS256/ES256 verification only if an app needs (a) with JWTs.
 

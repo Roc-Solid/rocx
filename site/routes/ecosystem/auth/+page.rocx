@@ -18,6 +18,7 @@ meta = {
 		{ id: "how", label: "How signing in goes" },
 		{ id: "admit", label: "Who gets in" },
 		{ id: "sessions", label: "Sessions and middleware" },
+		{ id: "impersonation", label: "Impersonation" },
 		{ id: "providers", label: "Providers" },
 		{ id: "failed", label: "When it fails" },
 		{ id: "tables", label: "The tables" },
@@ -144,7 +145,13 @@ view! = |_|
 			<ul>
 				<li>
 					<code>Auth.required</code> lets a signed-in request through. A signed-out page goes to your sign-in
-					page and comes back after (<code>?then=</code>); anything else gets a 401.
+					page and comes back after (<code>?then=</code>); anything else gets a 401 with the plugin's
+					<code>refusal</code>.
+				</li>
+				<li>
+					<code>Auth.required_with</code> does the same, with a step that reads your user's row: a session
+					whose user is gone ends, and answers as signed out. The example's <code>Middlewares.roc</code>
+					above uses it.
 				</li>
 				<li><code>Auth.optional</code> hands on <code>SignedIn(session)</code> or <code>SignedOut</code>.</li>
 				<li>
@@ -152,7 +159,23 @@ view! = |_|
 					<code>Auth.sign_out_everywhere!</code> ends them all.
 				</li>
 				<li>A form that posts to <code>/auth/sign-out</code> signs out.</li>
+				<li>
+					Your own way in: <code>{"Auth.sign_in!(answer, user)"}</code> after a password you checked,
+					<code>{"Auth.switch!(request, answer, user)"}</code> when someone picks another person, and
+					<code>{"Auth.path!(then)"}</code> for where they may go after.
+				</li>
 			</ul>
+
+			<Heading id="impersonation">Impersonation</Heading>
+			<p>
+				An admin helping someone can see the app as they see it.
+				<code>{"Auth.impersonate!(request, user, ms)"}</code> makes the admin's session act as that user for a
+				while: every route sees them. The session stays the admin's: <code>session.real_user</code> is the
+				admin, it goes back when its time runs out or on <code>Auth.stop_impersonating!</code>, and each
+				start and stop is on the log with both users. Who may impersonate is yours to decide before you
+				call it; the example lets the addresses on <code>ADMIN_EMAILS</code>. Record who did what, and guard
+				what only a person may change themselves, by <code>real_user</code>.
+			</p>
 
 			<Heading id="providers">Providers</Heading>
 			<p>
@@ -192,7 +215,7 @@ view! = |_|
 				<table>
 					<thead><tr><th><code>error</code></th><th>Means</th></tr></thead>
 					<tbody>
-						<tr><td><code>link</code></td><td>the link has been used or has expired</td></tr>
+						<tr><td><code>link</code></td><td>the link has been used or has expired (an expired one still says where it was going)</td></tr>
 						<tr><td><code>refused</code></td><td><code>admit!</code> said no; <code>{"&reason="}</code> is what it said, <code>{"&email="}</code> the address it turned away</td></tr>
 						<tr><td><code>provider</code></td><td>the provider refused, couldn't be reached, or isn't set up; <code>{"&reason="}</code> says which</td></tr>
 						<tr><td><code>state</code></td><td>back from a provider too late, or in another browser</td></tr>
@@ -200,6 +223,11 @@ view! = |_|
 					</tbody>
 				</table>
 			</TableWrap>
+			<p>
+				<code>auth.SignInError</code> has these sentences: <code>SignInError.message(query)</code> gives the one
+				for a sign-in page's query, and <code>SignInError.field(query, "then")</code> reads a field. It names no
+				platform, so your page uses it in the browser too.
+			</p>
 
 			<Heading id="tables">The tables</Heading>
 			<p>
@@ -232,8 +260,8 @@ view! = |_|
 
 			<Heading id="status">Status</Heading>
 			<p>
-				Links, the link page, Google, GitHub, OpenID Connect, the dev sign-in, sessions and the middleware
-				are built and tested. Passwords come next: they need a slow hash (Argon2) that the server's host
+				Links, the link page, Google, GitHub, OpenID Connect, the dev sign-in, sessions, the middleware and
+				impersonation are built and tested. Passwords come next: they need a slow hash (Argon2) that the server's host
 				will compute. Passkeys come later, as they need P-256 in the host too. The package's
 				<code>PROPOSALS.md</code> has both.
 			</p>

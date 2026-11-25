@@ -66,6 +66,7 @@ Auth.Options := {
     link_ms : U64 ?? 900_000,                  # how long a mailed link is good for (15 minutes)
     link_page : Str ?? "",                     # the app's page a mailed link opens ("": /auth/link)
     cookie : Str ?? "session",                 # the session cookie's name
+    refusal : Str ?? "Sign in first.",         # the words of required's 401
 }
 ```
 
@@ -131,25 +132,60 @@ sign-in page).
 ## Sessions and middleware
 
 ```roc
-Auth.Session : { user : Str, id : Str, expires_ms : I64 }
+Auth.Session : { user : Str, id : Str, expires_ms : I64, real_user : Str }
 Auth.Signed : [SignedOut, SignedIn(Auth.Session)]
 
 Auth.required : (ctx, Auth.Session -> out) -> Middleware(ctx, out)
+Auth.required_with : (ctx, Auth.Session => Try(out, [SignedOut, Answer(Server.Response)])) -> Middleware(ctx, out)
 Auth.optional : (ctx, Auth.Signed -> out) -> Middleware(ctx, out)
 Auth.session! : Server.Request => Try(Auth.Session, [SignedOut])
+Auth.signed_out! : Server.Request => Server.Response
+Auth.renew! : Server.Request, Auth.Session, Server.Response => Server.Response
 ```
 
 - `required` lets a signed-in request through, handing its session on (the function puts it in
-  the context). A signed-out page's GET goes to the sign-in page, `?then=` the page; anything else
-  is a 401.
+  the context). A signed-out request is answered as `signed_out!` says: a page's GET goes to the
+  sign-in page, `?then=` the page; anything else is a 401 with the plugin's `refusal`.
+- `required_with` does the same with a step that may read the database: it turns the session into
+  what the routes are handed (the app's user's row). `SignedOut` from it (the user is gone) ends the
+  session and answers as a signed-out request; `Answer(response)` answers that and keeps the
+  session (the database couldn't be read just then).
 - `optional` hands on whether the request is signed in.
-- Both keep a session used in its second half for as long again: its row and its cookie, at most
-  once a half, so a request doesn't write.
+- All three keep a session used in its second half for as long again: its row and its cookie, at
+  most once a half, so a request doesn't write. An app's own middleware that reads `session!` keeps
+  it going with `renew!`, and answers a request it finds signed out after all with `signed_out!`.
+- `user` is whom the session acts as, `real_user` who signed in: the same, but while an admin
+  impersonates someone (below).
 
 The cookie holds a random token (32 bytes). The table holds its SHA-256, so the table alone signs no
 one in. It is `HttpOnly`, `SameSite=Lax`, for the whole site, and on HTTPS (the server's public URL)
 `Secure` and named `__Host-session`, so no other site under the same domain can set it.
 
+An app's own way in: `Auth.sign_in!(answer, user)` starts a session for a user it decided on (a
+password it checked, a person picked from a list); `Auth.path!(then)` is where it may go after (a
+path of this site, else `home`); `Auth.switch!(request, answer, user)` ends the request's session as
+it starts the new one, in one `Set-Cookie` (a person picked anew). `sign_out_everywhere!(user)` ends
+a user's sessions but leaves this browser's cookie, holding one that is gone: answer with
+`sign_out!` too.
+
+## Impersonation
+
+An admin sees the app as someone sees it, to help them:
+
+```roc
+Auth.impersonate! : Server.Request, Str, U64 => Try({}, [SignedOut, DbErr(Str), ..])
+Auth.stop_impersonating! : Server.Request => Try({}, [SignedOut, DbErr(Str), ..])
+Auth.impersonating : Auth.Session -> Bool
+```
+
+`impersonate!(request, user, ms)` makes the request's session act as `user` for `ms`: from then on
+its `user` is theirs, and every route sees them. The session stays the admin's: `real_user` is the
+admin, signing out ends it, `sessions!` lists it under the admin with `acting_as`, and it goes back
+to the admin when its time runs out or on `stop_impersonating!`. Each start and stop is on the log
+with both users. Who may impersonate is the app's to decide before it calls (an admin's route, as
+the example's `/impersonate`, which checks `real_user` against `ADMIN_EMAILS`). Use `real_user` to
+record who did what, and to guard what only the person themselves may change (their sessions, their
+address).
 ## Providers
 
 ```roc
@@ -207,11 +243,16 @@ A sign-in that fails goes to the app's sign-in page with why, and where it was g
 | `link! : Str, Str => Try(Str, [NotAnAddress, DbErr(Str), ..])` | a sign-in link for an address, going on to `then`: the URL to mail |
 | `link_for! : Str => Try({ email, then }, [Gone])` | whom a link signs in, without using it |
 | `session! : Server.Request => Try(Session, [SignedOut])` | the request's session |
-| `required`, `optional` | the middleware |
+| `required`, `required_with`, `optional` | the middleware |
+| `signed_out! : Server.Request => Server.Response` | what `required` answers a signed-out request |
+| `renew! : Server.Request, Session, Server.Response => Server.Response` | a session in its second half kept for as long again |
 | `sign_in! : Server.Response, Str => Try(Server.Response, [DbErr(Str), ..])` | a new session for a user on an answer (the app's own way in) |
+| `switch! : Server.Request, Server.Response, Str => Try(Server.Response, [DbErr(Str), ..])` | the request's session ended and one for a user started, in one step |
+| `path! : Str => Str` | where a sign-in may go after: the path, or `home` |
+| `impersonate!`, `stop_impersonating!`, `impersonating` | an admin acting as someone (above) |
 | `sign_out! : Server.Request, Server.Response => Server.Response` | the request's session ended, its cookie gone |
 | `sign_out_everywhere! : Str => Try(U64, [DbErr(Str), ..])` | every session of a user ended |
-| `sessions! : Str => Try(List({ id, created_ms, expires_ms }), …)` | a user's sessions, the newest first |
+| `sessions! : Str => Try(List({ id, created_ms, expires_ms, acting_as }), …)` | a user's sessions, the newest first |
 | `revoke! : Str, Str => Try(U64, [DbErr(Str), ..])` | one of a user's sessions ended |
 | `identities! : Str => Try(List({ provider, subject, email }), …)` | the identities a user signs in with |
 | `providers! : {} => List({ name, label, path })` | the providers set up, for the sign-in page's buttons |
@@ -221,12 +262,17 @@ A sign-in that fails goes to the app's sign-in page with why, and where it was g
 `Rules` holds what is plain Roc, with its `expect`s: where a sign-in may go after (`path`), a token's
 shape and hash, the cookies' names, an address as it is kept, the state cookie, PKCE's challenge,
 the URL to a provider, an ID token's claims, GitHub's answers. `AuthStore` holds the statements.
+`SignInError` names no platform (`browser.roc` lists it), so a sign-in page reads it in the browser:
+`SignInError.message(query)` is the sentence for `?error=` (and its `reason`), `SignInError.field`
+a field of the query (`then`, `email`).
 
 ## The tables
 
-`auth/0001_auth`, the same on SQLite and on Postgres (times are milliseconds, given by the package):
+`auth/0001_auth` and `auth/0002_impersonation`, the same on SQLite and on Postgres (times are
+milliseconds, given by the package):
 
-- `auth_sessions`: `id` (the token's hash), `user_id`, `created_at`, `expires_at`;
+- `auth_sessions`: `id` (the token's hash), `user_id`, `created_at`, `expires_at`, and while
+  impersonating `acting_as` and `acting_until`;
 - `auth_links`: `id` (the token's hash), `email`, `return_to`, `expires_at`;
 - `auth_identities`: `provider`, `subject`, `user_id`, `email`, `created_at`.
 
@@ -252,6 +298,6 @@ Expired sessions and links are swept as sessions start.
 
 ## Status
 
-Built and tested (D-072): links, the link page, Google, GitHub, OpenID Connect, the dev sign-in,
-sessions, the middleware. Not yet: passwords (they need a slow hash, Argon2, from the host), passkeys
+Built and tested (D-072, D-077): links, the link page, Google, GitHub, OpenID Connect, the dev
+sign-in, sessions, the middleware, impersonation. Not yet: passwords (they need a slow hash, Argon2, from the host), passkeys
 (P-256 from the host), discovery of a provider's endpoints from its issuer. PROPOSALS.md has them.

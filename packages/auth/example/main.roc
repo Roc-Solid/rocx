@@ -4,6 +4,8 @@
 ## middleware `Middlewares` names. Its pages are its own: a home page that says who is signed in,
 ## a sign-in page (an address, the providers set up, and the dev sign-in under `--dev`), and the page
 ## a mailed link opens, whose button signs in (so a mail scanner that opens the link can't use it).
+## An admin (`ADMIN_EMAILS`) may act as anyone for half an hour (`/impersonate`), to see the app as
+## they do.
 app [program] { auth: "../main.roc", crypto: "../../crypto/main.roc", email: "../../email/main.roc", pf: platform "../../../server/platform/main.roc" }
 
 import auth.Auth
@@ -17,7 +19,7 @@ program = App.program({
 	middleware: Middlewares.default,
 	plugins: [
 		Email.plugin({ from: "Example <example@example.com>" }),
-		Auth.plugin({ admit!: Accounts.admit!, providers: [Auth.google, Auth.github], link_page: "/sign-in/link" }),
+		Auth.plugin({ admit!: Accounts.admit!, providers: [Auth.google, Auth.github], link_page: "/sign-in/link", refusal: "Sign in first, at /sign-in." }),
 	],
 	database: Sqlite("data/auth.db"),
 })

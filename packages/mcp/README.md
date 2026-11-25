@@ -86,7 +86,7 @@ effects of its own: tools, resources and prompts are functions the app gives it.
 | `Template` | `Template.new("notes://note/{id}", name, read!)`: a family of resources; `read!` gets the values the URI gave the template's names, and the URI. `titled`, `described`, `typed(mime)`. `Template.matching(pattern, uri)`. |
 | `Prompt` | `Prompt.new(name, description, arguments, get!)`: messages made from string arguments. `Prompt.argument` (required), `Prompt.optional`; `Prompt.user`, `Prompt.assistant`; `titled`. |
 | `Content` | What a tool answers with: `Text`, `Image` and `Audio` (bytes, sent as Base64), `Link` (to a resource), `Embedded` (a resource's contents). Helpers: `Content.text`, `Content.image`, `Content.link`. |
-| `Auth` | The pieces of OAuth's answers, for the app's middleware: `bearer`, `challenge`, `insufficient`, `metadata` ([below](#who-may-ask)). |
+| `Bearer` | The pieces of OAuth's answers, for the app's middleware: `token`, `challenge`, `insufficient`, `metadata` ([below](#who-may-ask)). |
 | `JsonValue` | Any JSON, read a field at a time (`parse`, `get`, `to_text`, `is_object`, `to_str`). `decode` into a Roc type and `encode` from one, through `Json`. A number keeps the text it came as, so an id or an `I64` goes back exactly. |
 | `Rpc` | JSON-RPC 2.0: `read` one message; write a `result`, an `error` or a `notification`; the error codes, MCP's own among them (`header_mismatch`, `missing_capability`, `unsupported_version`). |
 
@@ -107,7 +107,7 @@ copying unnecessary is proposal 1 in PROPOSALS.md, "Server-only modules in packa
 | `tool(about, handler!, McpHttp.openapi({}))` | A handler written for the tool, `arg, Caller(c) => Try(result, Str)`, its schemas written from its types. |
 | `Caller(c)` | What a tool is given: `{ request, context, progress! }`. `context` is what the middleware passed on, such as who is asking. |
 | `About` | `{ name, description }`, and optionally `title` and `tags` (the names of the tags in its types' unions, for their schemas). |
-| `response(answer)` | One of the protocol's answers (`Auth.challenge(…)`) as a `Server.Response`. |
+| `response(answer)` | One of the protocol's answers (`Bearer.challenge(…)`) as a `Server.Response`. |
 | `openapi({})` | The platform's schema writers (`OpenApi`'s), as a record. |
 
 `McpHttp.openapi({})` is always the same argument. It exists because of a compiler limit: a generic
@@ -183,20 +183,20 @@ prompts: [Prompt.new("summarize", "Summarizes a note", [Prompt.argument("id", "T
 
 The middleware in front of the MCP route decides, as it does for any route: a session cookie, an API
 key, an OAuth access token. examples/notes takes a personal access token (`Middlewares.agent`) and
-limits how often each token may ask. For OAuth, `Auth` has the answers the spec wants:
+limits how often each token may ask. For OAuth, `Bearer` has the answers the spec wants:
 
-- `Auth.bearer(headers)`: the token a request carries (`Authorization: Bearer …`), or `NoToken`.
-- `Auth.challenge({ resource_metadata, scope })`: a 401 with `WWW-Authenticate`, which says where
+- `Bearer.token(headers)`: the token a request carries (`Authorization: Bearer …`), or `NoToken`.
+- `Bearer.challenge({ resource_metadata, scope })`: a 401 with `WWW-Authenticate`, which says where
   the client learns how to get a token.
-- `Auth.insufficient({ resource_metadata, scope })`: a 403 for a good token without the scope.
-- `Auth.metadata({ resource, authorization_servers, scopes })`: the protected resource metadata
+- `Bearer.insufficient({ resource_metadata, scope })`: a 403 for a good token without the scope.
+- `Bearer.metadata({ resource, authorization_servers, scopes })`: the protected resource metadata
   document (RFC 9728), to serve at `routes/.well-known/oauth-protected-resource/+server.roc`.
 
 ```roc
 bearer = Middleware.make(|request, context, next!|
-    match Auth.bearer(request.headers) {
+    match Bearer.token(request.headers) {
         Ok(token) if Tokens.good!(token) => next!(request, context)
-        _ => McpHttp.response(Auth.challenge({ resource_metadata: "https://notes.example/.well-known/oauth-protected-resource", scope: "notes" }))
+        _ => McpHttp.response(Bearer.challenge({ resource_metadata: "https://notes.example/.well-known/oauth-protected-resource", scope: "notes" }))
     })
 ```
 

@@ -17,7 +17,7 @@ get! = |_|
 ## person now, and on to `then`. A name someone has already is theirs: you are them now, in the
 ## colour you picked. Who you are is a session (packages/auth): `Auth.sign_in!` starts one for the
 ## person and sets its cookie, `board_session`, which holds a random token (the person's id stays on
-## the server). The session you had is ended first (`Auth.sign_out!`), so a browser has one.
+## the server). The session you had ends as it starts (`Auth.switch!`), so a browser has one.
 post! : { request : Server.Request, params : {}, context : {}, body : { name : Str, color : Str, then : Str } } => Try(Str, Endpoint.Refusal)
 post! = |{ request, body, .. }|
 	match Board.person_name_of(body.name) {
@@ -28,7 +28,7 @@ post! = |{ request, body, .. }|
 			} else {
 				match Store.join!(name, body.color) {
 					Ok(me) =>
-						match Auth.sign_in!(Auth.sign_out!(request, Server.redirect(Board.after_join(body.then))), me.id) {
+						match Auth.switch!(request, Server.redirect(Board.after_join(body.then)), me.id) {
 							Ok(answer) => Err(Answer(answer))
 							Err(DbErr(why)) => Err(Store.refused!(DbErr(why)))
 						}

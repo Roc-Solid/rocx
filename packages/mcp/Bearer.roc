@@ -7,21 +7,21 @@ import JsonValue
 ## answers with. (An authorization server of the platform's own is a proposal: PROPOSALS.md.)
 ##
 ##     bearer = Middleware.make(|request, context, next!|
-##         match Auth.bearer(request.headers) {
+##         match Bearer.token(request.headers) {
 ##             Ok(token) if Tokens.good!(token) => next!(request, context)
-##             _ => McpHttp.response(Auth.challenge({ resource_metadata: "${origin}/.well-known/oauth-protected-resource", scope: "notes" }))
+##             _ => McpHttp.response(Bearer.challenge({ resource_metadata: "${origin}/.well-known/oauth-protected-resource", scope: "notes" }))
 ##         })
-Auth := [].{
+Bearer := [].{
 
 	## The token a request carries (`Authorization: Bearer …`), if it carries one.
-	bearer : List({ name : Str, value : Str }) -> Try(Str, [NoToken])
-	bearer = |headers|
+	token : List({ name : Str, value : Str }) -> Try(Str, [NoToken])
+	token = |headers|
 		match headers.find_first(|each| each.name.with_ascii_lowercased() == "authorization") {
 			Ok(found) => {
 				value = found.value.trim()
 				if value.with_ascii_lowercased().starts_with("bearer ") {
-					token = Str.from_utf8_lossy(value.to_utf8().drop_first(7)).trim()
-					if (token.is_empty()) Err(NoToken) else Ok(token)
+					given = Str.from_utf8_lossy(value.to_utf8().drop_first(7)).trim()
+					if (given.is_empty()) Err(NoToken) else Ok(given)
 				} else {
 					Err(NoToken)
 				}
@@ -70,19 +70,19 @@ Auth := [].{
 quoted : Str -> Str
 quoted = |text| "\"${text.replace_each("\\", "\\\\").replace_each("\"", "\\\"")}\""
 
-expect Auth.bearer([{ name: "Authorization", value: "Bearer abc.def" }]) == Ok("abc.def")
-expect Auth.bearer([{ name: "authorization", value: "bearer  abc " }]) == Ok("abc")
-expect Auth.bearer([{ name: "authorization", value: "Basic YWxhZGRpbjpvcGVu" }]) == Err(NoToken)
-expect Auth.bearer([{ name: "authorization", value: "Bearer " }]) == Err(NoToken)
-expect Auth.bearer([]) == Err(NoToken)
+expect Bearer.token([{ name: "Authorization", value: "Bearer abc.def" }]) == Ok("abc.def")
+expect Bearer.token([{ name: "authorization", value: "bearer  abc " }]) == Ok("abc")
+expect Bearer.token([{ name: "authorization", value: "Basic YWxhZGRpbjpvcGVu" }]) == Err(NoToken)
+expect Bearer.token([{ name: "authorization", value: "Bearer " }]) == Err(NoToken)
+expect Bearer.token([]) == Err(NoToken)
 
 ## The spec's example challenge.
 expect
-	(Auth.challenge({ resource_metadata: "https://mcp.example.com/.well-known/oauth-protected-resource", scope: "files:read" })).headers.first()
+	(Bearer.challenge({ resource_metadata: "https://mcp.example.com/.well-known/oauth-protected-resource", scope: "files:read" })).headers.first()
 		== Ok({ name: "www-authenticate", value: "Bearer resource_metadata=\"https://mcp.example.com/.well-known/oauth-protected-resource\", scope=\"files:read\"" })
-expect (Auth.challenge({ resource_metadata: "https://a.example/m", scope: "" })).headers.first() == Ok({ name: "www-authenticate", value: "Bearer resource_metadata=\"https://a.example/m\"" })
-expect (Auth.insufficient({ resource_metadata: "https://a.example/m", scope: "notes:write" })).status == 403
+expect (Bearer.challenge({ resource_metadata: "https://a.example/m", scope: "" })).headers.first() == Ok({ name: "www-authenticate", value: "Bearer resource_metadata=\"https://a.example/m\"" })
+expect (Bearer.insufficient({ resource_metadata: "https://a.example/m", scope: "notes:write" })).status == 403
 
 expect
-	Auth.metadata({ resource: "https://mcp.example.com/mcp", authorization_servers: ["https://auth.example.com"], scopes: ["notes"] })
+	Bearer.metadata({ resource: "https://mcp.example.com/mcp", authorization_servers: ["https://auth.example.com"], scopes: ["notes"] })
 		== "{\"resource\":\"https://mcp.example.com/mcp\",\"authorization_servers\":[\"https://auth.example.com\"],\"scopes_supported\":[\"notes\"],\"bearer_methods_supported\":[\"header\"]}"

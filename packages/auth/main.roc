@@ -4,4 +4,4 @@
 ## after, tokens and their hashes, the cookies, the OAuth state, PKCE, an ID token's claims,
 ## GitHub's answers). It names the server platform, so only the server's half of an app sees it.
 ## README.md is the reference; PROPOSALS.md says what comes next.
-package [Auth, AuthStore, Rules] { crypto: "../crypto/main.roc", pf: platform "../../server/platform/main.roc" }
+package [Auth, AuthStore, Rules, SignInError] { crypto: "../crypto/main.roc", pf: platform "../../server/platform/main.roc" }

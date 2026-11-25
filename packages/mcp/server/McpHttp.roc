@@ -18,7 +18,7 @@ import mcp.Tool
 ##     # main.roc
 ##     middleware: Middlewares.default.then(McpHttp.middleware("/mcp", Agents.server)),
 ##
-## The middleware in front of it decides who may ask, as for any route (`Auth` has the pieces of
+## The middleware in front of it decides who may ask, as for any route (`Bearer` has the pieces of
 ## OAuth's answers).
 McpHttp := [].{
 
@@ -66,7 +66,7 @@ McpHttp := [].{
 		}
 	}
 
-	## An answer of the protocol's (`Mcp.Answer`, `Auth.challenge`) as the server sends it.
+	## An answer of the protocol's (`Mcp.Answer`, `Bearer.challenge`) as the server sends it.
 	response : { status : U16, headers : List({ name : Str, value : Str }), body : Str } -> Server.Response
 	response = |answer| Server.response(answer.status, answer.headers, answer.body)
 

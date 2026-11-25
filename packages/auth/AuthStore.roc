@@ -6,8 +6,9 @@ import pf.Db
 ## the transaction. Errors are open unions, so a body can `?` them beside the app's own.
 AuthStore := [].{
 
-	## A session as its row has it: its id (the token's hash), whose it is, and until when.
-	Row : { id : Str, user_id : Str, created_at : I64, expires_at : I64 }
+	## A session as its row has it: its id (the token's hash), whose it is, and until when; and,
+	## while an admin acts as someone else, as whom and until when (`Null` otherwise).
+	Row : { id : Str, user_id : Str, created_at : I64, expires_at : I64, acting_as : Db.Nullable(Str), acting_until : Db.Nullable(I64) }
 
 	## Starts a session for `user`, kept by `id` (its token's hash) until `expires`; and sweeps out
 	## the sessions and links that have expired, so the tables don't grow without end.
@@ -23,7 +24,7 @@ AuthStore := [].{
 	find! : Str, I64 => Try([Found(AuthStore.Row), Missing], [DbErr(Str), BadRow(Str), ..others])
 	find! = |id, now| {
 		rows : List(AuthStore.Row)
-		rows = Db.all!("select id, user_id, created_at, expires_at from auth_sessions where id = $1 and expires_at > $2", [Text(id), Int(now)])?
+		rows = Db.all!("select id, user_id, created_at, expires_at, acting_as, acting_until from auth_sessions where id = $1 and expires_at > $2", [Text(id), Int(now)])?
 		match rows.get(0) {
 			Ok(row) => Ok(Found(row))
 			Err(_) => Ok(Missing)
@@ -48,7 +49,12 @@ AuthStore := [].{
 
 	## `user`'s sessions that haven't expired by `now`, the newest first.
 	of_user! : Str, I64 => Try(List(AuthStore.Row), [DbErr(Str), BadRow(Str), ..others])
-	of_user! = |user, now| Db.all!("select id, user_id, created_at, expires_at from auth_sessions where user_id = $1 and expires_at > $2 order by created_at desc", [Text(user), Int(now)])
+	of_user! = |user, now| Db.all!("select id, user_id, created_at, expires_at, acting_as, acting_until from auth_sessions where user_id = $1 and expires_at > $2 order by created_at desc", [Text(user), Int(now)])
+
+	## The session kept by `id` acts as `user` until `until` (impersonation), or, with `Null`, as
+	## its own user again: how many changed (0 or 1).
+	act! : Str, Db.Value, Db.Value => Try(U64, [DbErr(Str), ..others])
+	act! = |id, user, until| Db.run!("update auth_sessions set acting_as = $2, acting_until = $3 where id = $1", [Text(id), user, until])
 
 	## Keeps a sign-in link on its way, by its token's hash (`id`): whose address it signs in, where
 	## it goes after, until when.
@@ -66,6 +72,18 @@ AuthStore := [].{
 		rows = Db.all!("select email, return_to from auth_links where id = $1 and expires_at > $2", [Text(id), Int(now)])?
 		match rows.get(0) {
 			Ok(row) => Ok(Found(row))
+			Err(_) => Ok(Missing)
+		}
+	}
+
+	## Where the link kept by `id` was going, expired or not (a link that has gone by keeps its row
+	## until the next sweep): for the sign-in page a failed link goes to.
+	return_to! : Str => Try([Found(Str), Missing], [DbErr(Str), BadRow(Str), ..others])
+	return_to! = |id| {
+		rows : List({ return_to : Str })
+		rows = Db.all!("select return_to from auth_links where id = $1", [Text(id)])?
+		match rows.get(0) {
+			Ok(row) => Ok(Found(row.return_to))
 			Err(_) => Ok(Missing)
 		}
 	}

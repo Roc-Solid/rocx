@@ -4,7 +4,7 @@ import pf.Server
 import auth.Auth
 import guard.RateLimit
 import guard.Security
-import mcp.Auth as McpAuth
+import mcp.Bearer
 import Account
 import Address
 import guard.Guard
@@ -18,7 +18,7 @@ import Store
 ## - `api`, for the JSON API under /api: a personal access token, or the session;
 ## - `agent`, for MCP (Agents.roc mounts it at /mcp): a personal access token, nothing else.
 ##
-## packages/mcp's `Auth` (`McpAuth` here) reads a bearer token; packages/auth's `Auth` is sign-in.
+## packages/mcp's `Bearer` reads a bearer token; packages/auth's `Auth` is sign-in.
 Middlewares := [].{
 
 	## Who is asking, as a signed-in route is handed it: the person, and how they came. `token` is
@@ -49,27 +49,21 @@ Middlewares := [].{
 	## A browser asking for a page is sent to sign in, and back here after; anything else is refused
 	## (401). Then the session's person, which a session whose person isn't there ends.
 	signed_in : Middleware({}, Middlewares.Me)
-	signed_in = Auth.required(|{}, session| session).then(Middlewares.person)
+	signed_in = Auth.required_with(Middlewares.person!)
 
-	## The person a session signs in, handed on as `Me`. A session whose person isn't there is ended,
-	## and the request is answered as a signed-out one.
-	person : Middleware(Auth.Session, Middlewares.Me)
-	person = Middleware.make(
-		|request, session, next!|
-			match Store.person!(session.user) {
-				Ok(found) => next!(request, { person: found, token: "", read_only: Bool.False })
-				Err(NotFound) =>
-					if Server.wants_html(request) and request.method == "GET" {
-						Auth.sign_out!(request, Server.redirect("/sign-in"))
-					} else {
-						Auth.sign_out!(request, Server.refused(401, "Sign in first."))
-					}
-				Err(problem) => {
-					_ = Store.refused!(problem)
-					Server.refused(500, "Your notes couldn't be read just now; try again.")
-				}
-			},
-	)
+	## The person a session signs in, handed on as `Me`: a session whose person isn't there is ended,
+	## and the request answered as a signed-out one (`Auth.required_with`); one whose person can't be
+	## read just now is a 500, the session kept.
+	person! : {}, Auth.Session => Try(Middlewares.Me, [SignedOut, Answer(Server.Response)])
+	person! = |{}, session|
+		match Store.person!(session.user) {
+			Ok(found) => Ok({ person: found, token: "", read_only: Bool.False })
+			Err(NotFound) => Err(SignedOut)
+			Err(problem) => {
+				_ = Store.refused!(problem)
+				Err(Answer(Server.refused(500, "Your notes couldn't be read just now; try again.")))
+			}
+		}
 
 	## The JSON API: a personal access token (`Authorization: Bearer acme_pat_…`), or the session
 	## (the API is the app's own too). Neither: 401, saying how to send one. A token that isn't good
@@ -77,7 +71,7 @@ Middlewares := [].{
 	api : Middleware({}, Middlewares.Me)
 	api = Middleware.make(
 		|request, {}, next!|
-			match McpAuth.bearer(request.headers) {
+			match Bearer.token(request.headers) {
 				Ok(token) =>
 					match Account.bearer!(token) {
 						Ok(found) => next!(request, found)
@@ -96,7 +90,7 @@ Middlewares := [].{
 	agent : Middleware({}, Middlewares.Me)
 	agent = Middleware.make(
 		|request, {}, next!|
-			match McpAuth.bearer(request.headers) {
+			match Bearer.token(request.headers) {
 				Ok(token) =>
 					match Account.bearer!(token) {
 						Ok(found) => next!(request, found)

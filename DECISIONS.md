@@ -4615,3 +4615,45 @@ every machine, nothing generated to keep in step with the source.
 run it in the site's and the static build's tests).
 
 **Reversible:** yes: copy the runtime as it is.
+
+## D-077 packages/auth, round two: impersonation, and what moving the apps found
+
+**Status.** Built (2026-11-25). The user, on the friction the moves found (packages/auth's
+PROPOSALS.md §4): "I want all of them", and "it would be nice if the auth package tackled
+impersonation".
+
+**Context.** Moving notes, uptime, plate, tasks, board and the private app onto packages/auth
+(D-072) worked, each with a workaround: a second middleware to load the app's user, a copy of what
+`required` answers a signed-out request, `auth.Rules` imported for where a sign-in may go after,
+two `Set-Cookie`s to switch person, the sentences for `?error=` written again in each app (the
+package names the server platform, so a page in the browser couldn't use it), two modules named
+`Auth`, and helpers that couldn't open a transaction inside `admit!` (D-076).
+
+**Decision.**
+
+- **Middleware**: `required_with(load!)`, where `load!` turns the session into what routes are handed
+  and may answer `SignedOut` (the user is gone: the session ends) or `Answer(response)` (the database
+  couldn't be read: the session stays); `signed_out!(request)`, what `required` answers; the
+  `refusal` option, the words of its 401; `renew!` for an app's own middleware.
+- **An app's own way in**: `path!(then)` (a path of this site, else `home`) and `switch!(request,
+  answer, user)` (the request's session ended as the new one starts, one `Set-Cookie`).
+- **`SignInError`**, a module on no platform (`browser.roc` lists it): `message(query)` for
+  `?error=` and its `reason`, `field(query, name)`. An expired link's redirect keeps its `then`.
+- **Impersonation**: `impersonate!(request, user, ms)` makes the request's session act as `user`
+  until `ms` from now (`acting_as`, `acting_until` on its row: migration `auth/0002_impersonation`);
+  `Session` gains `real_user`, the one who signed in; `stop_impersonating!`, the time running out or
+  signing out end it; `sessions!` shows `acting_as`; each start and stop is on the log with both
+  users. Who may is the app's to decide (the example: `ADMIN_EMAILS`, by `real_user`).
+- **packages/mcp's `Auth` is `Bearer`** (`Bearer.token(headers)` for `Auth.bearer`), so an app with
+  both packages needs no alias.
+- The apps use them: board's and notes' middleware are `required_with`, tasks and board switch with
+  `switch!`, uptime and plate go on with `path!`, notes' and the example's sign-in pages read
+  `SignInError`.
+
+**Why.** Each workaround was the same code in several apps; impersonation is what an admin of a real
+app needs to help someone, and done outside the package it would need the session's internals.
+
+**Costs.** `Session` has a field more (`real_user`), and `sessions!` one more (`acting_as`); a route
+that checks permissions must use `user`, and one that records who did what `real_user`.
+
+**Reversible:** yes: additions to a package, but for packages/mcp's rename.

@@ -10,6 +10,7 @@ import pf.Time
 import AuthStore
 import Rules
 import "migrations/0001_auth.sql" as table : Str
+import "migrations/0002_impersonation.sql" as impersonation : Str
 
 ## Sign-in for Roc Solid apps, as a plugin (D-072): by a link mailed to an address, or at a
 ## provider (Google, GitHub, any OpenID Connect one); sessions kept as their token's hash in the
@@ -35,9 +36,12 @@ Auth := [].{
 	## after (`then`: an invite's page, say, which `admit!` may act on).
 	Identity : { provider : Str, subject : Str, email : Str, name : Str, user : [New, Known(Str)], then : Str }
 
-	## A signed-in session: the app's id for its user, the session's own id (for `revoke!`), and
-	## when it ends (milliseconds since 1970).
-	Session : { user : Str, id : Str, expires_ms : I64 }
+	## A signed-in session: the app's id for the user it acts as, the session's own id (for
+	## `revoke!`), when it ends (milliseconds since 1970), and who really signed in (`real_user`: the
+	## same as `user`, but while an admin impersonates someone, `impersonate!`). Check permissions
+	## with `user`; record who did what, and guard what only the person themselves may change (their
+	## password, their sessions), with `real_user`.
+	Session : { user : Str, id : Str, expires_ms : I64, real_user : Str }
 
 	## Whether a request is signed in, as `optional` hands it on.
 	Signed : [SignedOut, SignedIn(Auth.Session)]
@@ -82,6 +86,8 @@ Auth := [].{
 	##   follows every link in a message then can't use one up. "" (the default): the link goes
 	##   straight to `<at>/link`, and opening it signs in.
 	## - `cookie`: the session cookie's name (`session`, `__Host-session` on HTTPS).
+	## - `refusal`: the words of the 401 `required` answers a signed-out request that isn't a page's
+	##   GET ("Sign in first.").
 	Options := {
 		admit! : (Auth.Identity => Try(Str, Str)) ?? nobody!,
 		at : Str ?? "/auth",
@@ -92,6 +98,7 @@ Auth := [].{
 		link_ms : U64 ?? 900_000,
 		link_page : Str ?? "",
 		cookie : Str ?? "session",
+		refusal : Str ?? "Sign in first.",
 	}
 
 	## What the plugin keeps for the functions and middleware an app calls (`Plugin.keep!`).
@@ -103,6 +110,7 @@ Auth := [].{
 		link_ms : I64,
 		link_page : Str,
 		cookie : Str,
+		refusal : Str,
 		providers : List({ name : Str, label : Str, client_id_env : Str }),
 	}
 
@@ -126,9 +134,9 @@ Auth := [].{
 				{ method: "GET", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
 				{ method: "POST", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
 				{ method: "POST", path: "${at}/dev", kind: Endpoint, answer!: |request, _| dev!(settings, admit!, request) },
-				{ method: "POST", path: "${at}/sign-out", kind: Endpoint, answer!: |request, _| signed_out!(settings, request) },
+				{ method: "POST", path: "${at}/sign-out", kind: Endpoint, answer!: |request, _| left!(settings, request) },
 			].concat(List.join(away)),
-			migrations: [{ name: "0001_auth", sql: table }],
+			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }],
 			starts: [
 				|_context| {
 					Plugin.keep!("auth:settings", Json.to_str(settings))
@@ -221,14 +229,17 @@ Auth := [].{
 			Err(Gone)
 		}
 
-	## The session a request's cookie holds, if it holds one that hasn't ended.
+	## The session a request's cookie holds, if it holds one that hasn't ended. While an admin
+	## impersonates someone (`impersonate!`, until its time is up), its `user` is theirs and its
+	## `real_user` the admin's.
 	session! : Server.Request => Try(Auth.Session, [SignedOut])
 	session! = |request| {
 		settings = settings!({})
+		now = now!({})
 		match Server.cookie(request, Rules.cookie(settings.cookie, https!({}))) {
 			Ok(token) if Rules.is_token(token) =>
-				match AuthStore.find!(Rules.hash(token), now!({})) {
-					Ok(Found(row)) => Ok({ user: row.user_id, id: row.id, expires_ms: row.expires_at })
+				match AuthStore.find!(Rules.hash(token), now) {
+					Ok(Found(row)) => Ok({ user: acting(row, now), id: row.id, expires_ms: row.expires_at, real_user: row.user_id })
 					Ok(Missing) => Err(SignedOut)
 					Err(DbErr(why)) => unread!(why)
 					Err(BadRow(why)) => unread!(why)
@@ -250,22 +261,58 @@ Auth := [].{
 		)
 
 	## Middleware that lets a signed-in request through, handing on its session (`add` puts it in
-	## the context); a signed-out one goes to the sign-in page (a page's GET, with `?then=` to come
-	## back), or is refused with a 401.
+	## the context); a signed-out one is answered as `signed_out!` says.
 	required : (ctx, Auth.Session -> out) -> Middleware(ctx, out)
 	required = |add|
 		Middleware.make(
 			|request, given, next!|
 				match Auth.session!(request) {
 					Ok(session) => kept!(request, session, next!(request, add(given, session)))
-					Err(SignedOut) =>
-						if Server.wants_html(request) and request.method == "GET" {
-							Server.redirect(Rules.url(settings!({}).sign_in, [("then", here(request))]))
-						} else {
-							Server.refused(401, "Sign in first.")
-						}
+					Err(SignedOut) => Auth.signed_out!(request)
 				},
 		)
+
+	## `required`, with a step that may read the database: `load!` turns the session into what the
+	## routes are handed (the app's user's row, say). `SignedOut` from it (the user is gone) ends the
+	## session and answers as a signed-out request; `Answer(response)` answers with that and keeps
+	## the session (the database couldn't be read just then).
+	required_with : (ctx, Auth.Session => Try(out, [SignedOut, Answer(Server.Response)])) -> Middleware(ctx, out)
+	required_with = |load!|
+		Middleware.make(
+			|request, given, next!|
+				match Auth.session!(request) {
+					Ok(session) =>
+						match load!(given, session) {
+							Ok(handed) => kept!(request, session, next!(request, handed))
+							Err(SignedOut) => Auth.sign_out!(request, Auth.signed_out!(request))
+							Err(Answer(answer)) => answer
+						}
+					Err(SignedOut) => Auth.signed_out!(request)
+				},
+		)
+
+	## What `required` answers a signed-out request: a page's GET goes to the sign-in page, with
+	## `?then=` to come back; anything else is a 401 with the plugin's `refusal`. For an app's own
+	## middleware that finds the request signed out after all.
+	signed_out! : Server.Request => Server.Response
+	signed_out! = |request| {
+		settings = settings!({})
+		if Server.wants_html(request) and request.method == "GET" {
+			Server.redirect(Rules.url(settings.sign_in, [("then", here(request))]))
+		} else {
+			Server.refused(401, settings.refusal)
+		}
+	}
+
+	## `answer`, with `session` (the request's) kept for as long again when it is in its second half,
+	## as `required` and `optional` keep it: for an app's own middleware that reads `session!`.
+	renew! : Server.Request, Auth.Session, Server.Response => Server.Response
+	renew! = |request, session, answer| kept!(request, session, answer)
+
+	## Where a sign-in may go after: `then` if it is a path of this site, else the plugin's `home`.
+	## For an app's own way in (`sign_in!` after a password it checked).
+	path! : Str => Str
+	path! = |then| Rules.path(then, settings!({}).home)
 
 	## `answer`, with a new session for `user` (the app's id for them) in its cookie: for an app's
 	## own way in (a sign-up form that signs in at once, a test).
@@ -277,6 +324,49 @@ Auth := [].{
 		AuthStore.start!({ id: Rules.hash(token), user: user, now: now, expires: now + settings.session_ms })?
 		Ok(with_session(answer, settings, https!({}), token))
 	}
+
+	## `answer`, with the request's session (if any) ended and a new one for `user` in its cookie: a
+	## person picked anew, in one step (one `Set-Cookie`).
+	switch! : Server.Request, Server.Response, Str => Try(Server.Response, [DbErr(Str), ..others])
+	switch! = |request, answer, user| {
+		settings = settings!({})
+		match Server.cookie(request, Rules.cookie(settings.cookie, https!({}))) {
+			Ok(token) if Rules.is_token(token) => {
+				_ = AuthStore.end!(Rules.hash(token))?
+				{}
+			}
+			_ => {}
+		}
+		Auth.sign_in!(answer, user)
+	}
+
+	## The request's session acts as `user` for `ms` (impersonation: an admin seeing the app as
+	## someone sees it, to help them). Who may do it is the app's to check first. The session stays
+	## the admin's (`real_user`): signing out, or `stop_impersonating!`, or the time running out ends
+	## it. On the log, with both users.
+	impersonate! : Server.Request, Str, U64 => Try({}, [SignedOut, DbErr(Str), ..others])
+	impersonate! = |request, user, ms| {
+		session = Auth.session!(request)?
+		until = now!({}) + ms.to_i64_wrap()
+		_ = AuthStore.act!(session.id, Text(user), Int(until))?
+		Log.info!("auth: impersonating", { real_user: session.real_user, acting_as: user, until_ms: until })
+		Ok({})
+	}
+
+	## The request's session acts as its own user again.
+	stop_impersonating! : Server.Request => Try({}, [SignedOut, DbErr(Str), ..others])
+	stop_impersonating! = |request| {
+		session = Auth.session!(request)?
+		_ = AuthStore.act!(session.id, Null, Null)?
+		if Auth.impersonating(session) {
+			Log.info!("auth: impersonating ended", { real_user: session.real_user, acting_as: session.user })
+		}
+		Ok({})
+	}
+
+	## Whether a session is an admin's acting as someone else.
+	impersonating : Auth.Session -> Bool
+	impersonating = |session| session.user != session.real_user
 
 	## `answer`, with the request's session ended and its cookie gone.
 	sign_out! : Server.Request, Server.Response => Server.Response
@@ -296,16 +386,18 @@ Auth := [].{
 	}
 
 	## Ends every session of `user` (signing out everywhere, or after their password or address
-	## changed): how many ended.
+	## changed): how many ended. The request's own cookie stays on the browser, holding a session
+	## that is gone: answer with `sign_out!` too, to clear it.
 	sign_out_everywhere! : Str => Try(U64, [DbErr(Str), ..others])
 	sign_out_everywhere! = |user| AuthStore.end_all!(user)
 
 	## `user`'s sessions that haven't ended, the newest first: each one's id (for `revoke!`), when
-	## it began and when it ends.
-	sessions! : Str => Try(List({ id : Str, created_ms : I64, expires_ms : I64 }), [DbErr(Str), BadRow(Str), ..others])
+	## it began and when it ends, and whom it acts as while impersonating (`""` otherwise).
+	sessions! : Str => Try(List({ id : Str, created_ms : I64, expires_ms : I64, acting_as : Str }), [DbErr(Str), BadRow(Str), ..others])
 	sessions! = |user| {
-		rows = AuthStore.of_user!(user, now!({}))?
-		Ok(rows.map(|row| { id: row.id, created_ms: row.created_at, expires_ms: row.expires_at }))
+		now = now!({})
+		rows = AuthStore.of_user!(user, now)?
+		Ok(rows.map(|row| { id: row.id, created_ms: row.created_at, expires_ms: row.expires_at, acting_as: if (acting(row, now) == row.user_id) "" else acting(row, now) }))
 	}
 
 	## Ends `user`'s session `id` (one of `sessions!`), and no one else's: how many ended (0 or 1).
@@ -345,6 +437,7 @@ settings_of = |options| {
 	link_ms: options.link_ms.to_i64_wrap(),
 	link_page: options.link_page,
 	cookie: options.cookie,
+	refusal: options.refusal,
 	providers: options.providers.map(|provider| { name: provider.name, label: provider.label, client_id_env: provider.client_id_env }),
 }
 
@@ -354,7 +447,15 @@ nobody! = |_| Err("Signing in this way isn't open here.")
 
 ## The settings when the plugin isn't listed (or hasn't started): its options' defaults.
 defaults : Auth.Settings
-defaults = { at: "/auth", sign_in: "/sign-in", home: "/", session_ms: 30 * 86_400_000, link_ms: 15 * 60_000, link_page: "", cookie: "session", providers: [] }
+defaults = { at: "/auth", sign_in: "/sign-in", home: "/", session_ms: 30 * 86_400_000, link_ms: 15 * 60_000, link_page: "", cookie: "session", refusal: "Sign in first.", providers: [] }
+
+## Whom a session's row acts as at `now`: the user it impersonates, while that lasts; else its own.
+acting : AuthStore.Row, I64 -> Str
+acting = |row, now|
+	match (row.acting_as, row.acting_until) {
+		(Some(user), Some(until)) if until > now => user
+		_ => row.user_id
+	}
 
 ## The settings the plugin kept at start.
 settings! : {} => Auth.Settings
@@ -462,7 +563,15 @@ linked! = |settings, admit!, request| {
 	if Rules.is_token(token) {
 		match AuthStore.use_link!(Rules.hash(token), now!({})) {
 			Ok(Found(link)) => signed_in!(settings, admit!, { provider: "email", subject: link.email, email: link.email, name: "" }, link.return_to)
-			Ok(Missing) => Server.redirect(Rules.failed(settings.sign_in, { code: "link", reason: "", email: "", then: "" }))
+			Ok(Missing) => {
+				# An expired link still has its row until the next sweep: where it was going.
+				then =
+					match AuthStore.return_to!(Rules.hash(token)) {
+						Ok(Found(path)) => path
+						_ => ""
+					}
+				Server.redirect(Rules.failed(settings.sign_in, { code: "link", reason: "", email: "", then: then }))
+			}
 			Err(DbErr(why)) => unavailable!(settings, why)
 			Err(BadRow(why)) => unavailable!(settings, why)
 		}
@@ -487,8 +596,8 @@ dev! = |settings, admit!, request|
 	}
 
 ## `<at>/sign-out`: the session ended, its cookie gone, and on to `then` (a form's field), else home.
-signed_out! : Auth.Settings, Server.Request => Server.Response
-signed_out! = |settings, request| Auth.sign_out!(request, Server.redirect(Rules.path(Rules.query(Server.text_of(request), "then"), settings.home)))
+left! : Auth.Settings, Server.Request => Server.Response
+left! = |settings, request| Auth.sign_out!(request, Server.redirect(Rules.path(Rules.query(Server.text_of(request), "then"), settings.home)))
 
 ## Where a provider sends the browser back to.
 callback! : Auth.Settings, Auth.Provider => Str

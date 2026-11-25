@@ -3,7 +3,7 @@ import pf.Endpoint
 import pf.Router
 import pf.Server
 import pf.Router exposing [use_submission!]
-import ../../Problem
+import auth.SignInError
 import ../../Generated/Api
 
 ## Signing in: an address, and a link mailed to it; or a provider's button; or, under `--dev`, any
@@ -16,8 +16,8 @@ offered! = |{}| Endpoint.get!(Api.get_sign_in({}))
 
 view! = |_| {
 	query = Router.location!({}).query
-	then = Problem.field(query, "then")
-	problem = Problem.of(query)
+	then = SignInError.field(query, "then")
+	problem = SignInError.message(query)
 	sending = use_submission!(Api.post_sign_in({}))
 	offers = offered!({})
 	<main>

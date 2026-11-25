@@ -3,6 +3,7 @@ import pf.Endpoint
 import pf.Router
 import pf.Server
 import pf.Router exposing [use_submission!]
+import auth.SignInError
 import ../../Query
 import ../../Generated/Api
 import ../../Ui/Brand
@@ -13,24 +14,10 @@ import ../../Ui/Brand
 ## why.
 meta = { title: "Sign in · Notes" }
 
-## What the page says when a sign-in came back with `?error=` (packages/auth's codes): a link used
-## or expired (`link`), an address turned away (`refused`, with the reason given), or the database
-## unable to take it just then (`unavailable`, and anything else). `""` when nothing went wrong.
-problem_of : Str -> Str
-problem_of = |query| {
-	reason = Query.value(query, "reason")
-	match Query.value(query, "error") {
-		"" => ""
-		"link" => "That sign-in link has been used, or it has expired. Ask for another below."
-		"refused" => if (reason.is_empty()) "That address can't sign in here." else reason
-		_ => "Signing in didn't work just now. Try again in a minute."
-	}
-}
-
 view! = |_| {
 	query = Router.location!({}).query
 	then = Query.value(query, "then")
-	failed = problem_of(query)
+	failed = SignInError.message(query)
 	sending = use_submission!(Api.post_sign_in({}))
 	<main id="main" class="sign-in">
 		<div class="card">

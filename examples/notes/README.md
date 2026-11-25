@@ -304,8 +304,6 @@ unticked checkbox, the app's public address, a plain form's flash, guard's refus
    `Middlewares.security` leaves `/openapi.html` out.
 5. **Roc gotchas met on the way:**
    - `{ ttl_ms }` alone is a block, not a record: write `{ ttl_ms: ttl_ms }`.
-   - packages/auth and packages/mcp each have a module named `Auth`. `Middlewares.roc` needs both,
-     so it imports one under another name: `import mcp.Auth as McpAuth`.
    - A tag isn't a function: write `map_err(|why| BadRequest(why))`, not `map_err(BadRequest)`.
    - A list's `keep_if` takes a pure function, so a page reads its endpoint once before filtering.
 6. **SQLite has no regular expressions, and no search engine's syntax.** The app moved from

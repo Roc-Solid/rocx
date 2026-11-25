@@ -2,7 +2,6 @@ import pf.Env
 import pf.Kv
 import pf.Server
 import auth.Auth
-import auth.Rules
 import crypto.Hmac
 
 ## Who may use the admin: whoever knows `ADMIN_PASSWORD`. The password is checked here; the session
@@ -30,7 +29,7 @@ Session := [].{
 			Ok(_) if tries > 10 => Err(TooMany)
 			Ok(wanted) =>
 				if Hmac.equal(wanted.to_utf8(), password.to_utf8()) {
-					Auth.sign_in!(Server.redirect(Rules.path(then, "/admin")), Session.admin)
+					Auth.sign_in!(Server.redirect(Auth.path!(then)), Session.admin)
 				} else {
 					Err(Wrong)
 				}

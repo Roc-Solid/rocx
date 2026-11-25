@@ -2,7 +2,6 @@ import pf.Env
 import pf.Kv
 import pf.Server
 import auth.Auth
-import auth.Rules
 import crypto.Hmac
 
 ## Who may use the diary. Without `PLATE_PASSWORD` set it is open, as an app on your own machine
@@ -39,7 +38,7 @@ Session := [].{
 			Ok(_) if tries > 10 => Err(TooMany)
 			Ok(wanted) =>
 				if Hmac.equal(wanted.to_utf8(), password.to_utf8()) {
-					Auth.sign_in!(Server.redirect(Rules.path(then, "/")), Session.me)
+					Auth.sign_in!(Server.redirect(Auth.path!(then)), Session.me)
 				} else {
 					Err(Wrong)
 				}
