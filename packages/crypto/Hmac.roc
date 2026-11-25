@@ -1,9 +1,11 @@
 import Hex
+import Sha1
 import Sha256
 
-## HMAC-SHA256 (RFC 2104), in pure Roc on `Sha256`: no effect, so it runs anywhere, `expect`s
-## included. Signs an app's links, and is under `Hkdf` and S3's signatures. Checked against
-## every test case of RFC 4231.
+## HMAC (RFC 2104), in pure Roc on `Sha256` and `Sha1`: no effect, so it runs anywhere, `expect`s
+## included. HMAC-SHA256 signs an app's links, and is under `Hkdf` and S3's signatures; HMAC-SHA1
+## is under an authenticator app's codes (TOTP, packages/auth). Checked against every test case
+## of RFC 4231 (SHA-256) and RFC 2202 (SHA-1).
 Hmac := [].{
 
 	## The 32-byte HMAC-SHA256 of `message` under `key`.
@@ -18,6 +20,20 @@ Hmac := [].{
 	## Whether `signature` is `sha256(key, message)`, compared with `equal`.
 	verify_sha256 : List(U8), List(U8), List(U8) -> Bool
 	verify_sha256 = |key, message, signature| Hmac.equal(Hmac.sha256(key, message), signature)
+
+	## The 20-byte HMAC-SHA1 of `message` under `key`: what TOTP and HOTP (RFC 6238, RFC 4226) are
+	## made of. For anything else, `sha256`.
+	sha1 : List(U8), List(U8) -> List(U8)
+	sha1 = |key, message| {
+		short_key = if (key.len() > Sha1.block_size) Sha1.hash(key) else key
+		padded = short_key.concat(List.repeat(0, Sha1.block_size - short_key.len()))
+		inner = Sha1.hash(padded.map(|each| each.bitwise_xor(0x36)).concat(message))
+		Sha1.hash(padded.map(|each| each.bitwise_xor(0x5c)).concat(inner))
+	}
+
+	## Whether `signature` is `sha1(key, message)`, compared with `equal`.
+	verify_sha1 : List(U8), List(U8), List(U8) -> Bool
+	verify_sha1 = |key, message, signature| Hmac.equal(Hmac.sha1(key, message), signature)
 
 	## Whether two byte lists are the same. Lists of the same length are compared to the end
 	## whatever their first difference, so the time taken doesn't tell a forger how much of a
@@ -60,7 +76,26 @@ expect Hex.encode(Hmac.sha256(List.repeat(0xaa, 65), "x".to_utf8())) == "c2b9a0a
 expect Hex.encode(Hmac.sha256([], [])) == "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"
 expect Hmac.sha256(List.repeat(0xaa, 131), "m".to_utf8()) == Hmac.sha256(Sha256.hash(List.repeat(0xaa, 131)), "m".to_utf8())
 
+# RFC 2202, section 3 (HMAC-SHA-1), test cases 1 to 7. Case 5's output is truncated to 96 bits;
+# cases 6 and 7 have a key longer than a block (80 bytes), hashed first.
+expect Hex.encode(Hmac.sha1(List.repeat(0x0b, 20), "Hi There".to_utf8())) == "b617318655057264e28bc0b6fb378c8ef146be00"
+expect Hex.encode(Hmac.sha1("Jefe".to_utf8(), "what do ya want for nothing?".to_utf8())) == "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79"
+expect Hex.encode(Hmac.sha1(List.repeat(0xaa, 20), List.repeat(0xdd, 50))) == "125d7342b9ac11cd91a39af48aa17b4f63f175d3"
+expect Hex.encode(Hmac.sha1(hex_of("0102030405060708090a0b0c0d0e0f10111213141516171819"), List.repeat(0xcd, 50))) == "4c9007f4026250c6bc8414f9bf50c86c2d7235da"
+expect Hex.encode(Hmac.sha1(List.repeat(0x0c, 20), "Test With Truncation".to_utf8()).take_first(12)) == "4c1a03424b55e07fe7f27be1"
+expect Hex.encode(Hmac.sha1(List.repeat(0xaa, 80), "Test Using Larger Than Block-Size Key - Hash Key First".to_utf8())) == "aa4ae5e15272d00e95705637ce8a3b55ed402112"
+expect Hex.encode(Hmac.sha1(List.repeat(0xaa, 80), "Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data".to_utf8())) == "e8e99d0f45237d786d6bbaa7965c7808bbff1a91"
+
+# HMAC-SHA1's keys at the block's edge (64 bytes used as is, 65 hashed) and empty ones, as Node's
+# crypto gives them.
+expect Hex.encode(Hmac.sha1(List.repeat(0xaa, 64), "x".to_utf8())) == "9c6d8ea88eaae0dda58c8f4a0f8e9a190edc28e4"
+expect Hex.encode(Hmac.sha1(List.repeat(0xaa, 65), "x".to_utf8())) == "349e9189de217e47242c1aaa2acfe9084d584f3f"
+expect Hex.encode(Hmac.sha1([], [])) == "fbdb1d1b18aa6c08324b7d64b71fb76370690e1d"
+
 # Verifying, and comparing.
+expect Hmac.verify_sha1("Jefe".to_utf8(), "hi".to_utf8(), Hmac.sha1("Jefe".to_utf8(), "hi".to_utf8()))
+expect !Hmac.verify_sha1("Jefe".to_utf8(), "hi".to_utf8(), Hmac.sha1("Jeff".to_utf8(), "hi".to_utf8()))
+expect !Hmac.verify_sha1("Jefe".to_utf8(), "hi".to_utf8(), Hmac.sha256("Jefe".to_utf8(), "hi".to_utf8()))
 expect Hmac.verify_sha256("Jefe".to_utf8(), "hi".to_utf8(), Hmac.sha256("Jefe".to_utf8(), "hi".to_utf8()))
 expect !Hmac.verify_sha256("Jefe".to_utf8(), "hi".to_utf8(), Hmac.sha256("Jeff".to_utf8(), "hi".to_utf8()))
 expect !Hmac.verify_sha256("Jefe".to_utf8(), "hi".to_utf8(), Hmac.sha256("Jefe".to_utf8(), "ho".to_utf8()))

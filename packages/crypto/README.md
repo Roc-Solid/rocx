@@ -1,8 +1,9 @@
 # crypto
 
 Hashes, MACs, key derivation and the encodings their bytes travel in, for Roc Solid apps: SHA-256,
-HMAC-SHA256, HKDF-SHA256, Base64 and hexadecimal. It is plain Roc on no platform, so the server, a
-page in the browser and an `expect` all run the same code.
+HMAC-SHA256, HKDF-SHA256, Base64 and hexadecimal; and SHA-1, HMAC-SHA1 and Base32, for
+authenticator apps' codes (TOTP, which packages/auth's two-factor sign-in uses). It is plain Roc on
+no platform, so the server, a page in the browser and an `expect` all run the same code.
 
 The user guide is the docs site's [Crypto page](https://roc-solid.github.io/ecosystem/crypto); the
 server platform's [crypto page](https://roc-solid.github.io/platform/crypto) shows it with the
@@ -38,8 +39,13 @@ Hmac.verify_sha256(key, message, Base64.url_decode(given) ?? [])    # compared i
 | | `hex : List(U8) -> Str` | The digest as 64 lowercase hex digits, as `sha256sum` and AWS SigV4 write it. |
 | | `chunks : List(List(U8)) -> List(U8)` | The digest of the pieces one after another, without joining them first. |
 | | `block_size : U64` | 64, the bytes SHA-256 works on at a time (HMAC pads its key to this). |
+| `Sha1` | `hash : List(U8) -> List(U8)` | The 20-byte SHA-1 digest, for HMAC-SHA1 (TOTP) alone: SHA-1 is broken for collisions, so never sign with it or keep a token's digest in it. |
+| | `hex : List(U8) -> Str` | The digest as 40 lowercase hex digits, as `sha1sum` writes it. |
+| | `block_size : U64` | 64. |
 | `Hmac` | `sha256 : List(U8), List(U8) -> List(U8)` | The 32-byte HMAC-SHA256 of a message (second) under a key (first). |
 | | `verify_sha256 : List(U8), List(U8), List(U8) -> Bool` | Whether a signature (third) is the HMAC of the message under the key, compared with `equal`. |
+| | `sha1 : List(U8), List(U8) -> List(U8)` | The 20-byte HMAC-SHA1: what TOTP and HOTP codes are made of (RFC 6238, RFC 4226). HMAC-SHA1 doesn't rest on SHA-1's collisions (RFC 6194), but use `sha256` for anything new. |
+| | `verify_sha1 : List(U8), List(U8), List(U8) -> Bool` | As `verify_sha256`, for HMAC-SHA1. |
 | | `equal : List(U8), List(U8) -> Bool` | Whether two byte lists are the same, in constant time (see below). |
 | `Hkdf` | `sha256 : List(U8), List(U8), List(U8), U64 -> Try(List(U8), [TooLong])` | `length` bytes of key material from a key, a salt and an `info` (the key's purpose): `expand(extract(key, salt), info, length)`. At most 255 × 32 = 8160 bytes; more is `TooLong`. |
 | | `extract : List(U8), List(U8) -> List(U8)` | The 32-byte pseudorandom key of a key and a salt. An empty salt means 32 zero bytes, as the RFC says. |
@@ -51,6 +57,9 @@ Hmac.verify_sha256(key, message, Base64.url_decode(given) ?? [])    # compared i
 | | `decode : Str -> Try(List(U8), [InvalidBase64])` | Standard Base64, padded or not. |
 | | `url_decode : Str -> Try(List(U8), [InvalidBase64])` | URL-alphabet Base64, padded or not. |
 | | `lines : List(U8) -> Str` | `encode`, in lines of 76 characters split by CRLF, as MIME wants a body. |
+| `Base32` | `encode : List(U8) -> Str` | RFC 4648's Base32 (`A`–`Z`, `2`–`7`), padded with `=`. |
+| | `encode_unpadded : List(U8) -> Str` | Without padding: an `otpauth://` URI's secret. |
+| | `decode : Str -> Try(List(U8), [InvalidBase32])` | Either case (a person may type a secret in lowercase), padded or not. |
 | `Hex` | `encode : List(U8) -> Str` | Two lowercase digits per byte. |
 | | `decode : Str -> Try(List(U8), [InvalidHex])` | Either case; nothing else (no `0x`, no spaces). |
 
@@ -60,20 +69,25 @@ Lists of different lengths are unequal at once: a signature's length is no secre
 
 **Strict decoding.** Each value has exactly one text: only the alphabet asked for, no spaces or line
 breaks, padding either left out or exactly right, and the unused bits of the last character zero.
+Base32 and hex take either case, as people type them.
 
 ## How it is tested
 
-Each module's `expect`s check it against published test vectors: NIST's SHA-256 examples (FIPS
-180-4), every test case of RFC 4231 (HMAC), RFC 5869's SHA-256 cases (HKDF), and RFC 4648's (Base64,
-hex). `roc test packages/crypto/main.roc` runs them (`just test-rocx` runs every package's). The
-server platform's tests (`server/test/server.test.mjs`) also compare each module with Node's
-`crypto`, through a running server. `Sha256` wraps Roc's builtin `Crypto.SHA256`.
+Each module's `expect`s check it against published test vectors: NIST's SHA-256 and SHA-1 examples
+(FIPS 180-4), every test case of RFC 4231 (HMAC-SHA256) and RFC 2202 (HMAC-SHA1), RFC 5869's
+SHA-256 cases (HKDF), and RFC 4648's (Base64, Base32, hex). `roc test packages/crypto/main.roc`
+runs them (`just test-rocx` runs every package's). The server platform's tests
+(`server/test/server.test.mjs`) also compare SHA-256, HMAC-SHA256, HKDF, Base64 and hex with Node's
+`crypto`, through a running server, and packages/auth's example compares the authenticator codes
+made of `Sha1`, `Hmac.sha1` and `Base32` with codes Node makes. `Sha256` wraps Roc's builtin
+`Crypto.SHA256`; `Sha1` is Roc of its own (no builtin has it).
 
 ## Used by
 
 `packages/storage` (S3's signatures, and the app's signed URLs), `packages/push` (Web Push's HKDF and
-base64url keys), `packages/email` (Base64 for SMTP sign-in and MIME bodies) and `packages/mcp`
-(images, audio and blobs as Base64). Each names this package in its own header, so an app that uses
+base64url keys), `packages/auth` (tokens' SHA-256, PKCE, and two-factor sign-in's TOTP on
+HMAC-SHA1, Base32 secrets and HKDF's sealing key), `packages/email` (Base64 for SMTP sign-in and
+MIME bodies) and `packages/mcp` (images, audio and blobs as Base64). Each names this package in its own header, so an app that uses
 one of them doesn't have to name this one too.
 
 ## What isn't here

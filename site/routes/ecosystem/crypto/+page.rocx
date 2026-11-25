@@ -11,7 +11,7 @@ import ../../../Ui/TableWrap
 ## which the server's tests run.
 meta = {
 	title: "Crypto",
-	description: "The crypto package for Roc Solid apps: SHA-256, HMAC-SHA256, HKDF-SHA256, Base64 and hex, in plain Roc on no platform, each checked against its RFC's test vectors.",
+	description: "The crypto package for Roc Solid apps: SHA-256, HMAC-SHA256, HKDF-SHA256, Base64 and hex, and SHA-1, HMAC-SHA1 and Base32 for authenticator apps' codes, in plain Roc on no platform, each checked against its RFC's test vectors.",
 	toc: [
 		{ id: "install", label: "Installing it" },
 		{ id: "links", label: "A signed link" },
@@ -29,7 +29,8 @@ view! = |_|
 				title="Hashes, signatures and keys, in Roc"
 			>
 				SHA-256, HMAC, HKDF, Base64 and hex. You use them to store a token as its digest, sign a link so
-				nobody can forge it, and derive separate keys from one secret. The package is plain Roc on no
+				nobody can forge it, and derive separate keys from one secret. SHA-1 and Base32 are here too, for
+				authenticator apps' codes. The package is plain Roc on no
 				platform, so the server, a page in the browser and an <code>expect</code> all run the same code.
 			</PageHero>
 
@@ -68,9 +69,11 @@ view! = |_|
 					<thead><tr><th>Module</th><th>What it has</th></tr></thead>
 					<tbody>
 						<tr><td><code>Sha256</code></td><td><code>hash</code> (the 32-byte digest), <code>hex</code> (the digest as 64 lowercase hex digits), <code>chunks</code> (the digest of several pieces, without joining them first)</td></tr>
-						<tr><td><code>Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code>; <code>equal</code>, a constant-time comparison of two byte lists</td></tr>
+						<tr><td><code>Sha1</code></td><td><code>hash</code> (the 20-byte digest) and <code>hex</code>: for authenticator apps' codes alone (below)</td></tr>
+						<tr><td><code>Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code>; <code>sha1</code> and <code>verify_sha1</code>, the same over SHA-1; <code>equal</code>, a constant-time comparison of two byte lists</td></tr>
 						<tr><td><code>Hkdf</code></td><td><code>sha256(key, salt, info, length)</code>, which fails with <code>TooLong</code> past 8160 bytes; its two steps, <code>extract</code> and <code>expand</code></td></tr>
 						<tr><td><code>Base64</code></td><td><code>encode</code> and <code>decode</code> (standard alphabet, padded); <code>url_encode</code> (URL alphabet, unpadded) and <code>url_decode</code>; <code>encode_unpadded</code>, <code>url_encode_padded</code>; <code>lines</code> (76-character lines, as MIME wants)</td></tr>
+						<tr><td><code>Base32</code></td><td><code>encode</code> (padded), <code>encode_unpadded</code>, <code>decode</code> (either case, padded or not): how an authenticator app's secret is written</td></tr>
 						<tr><td><code>Hex</code></td><td><code>encode</code> (lowercase), <code>decode</code> (either case)</td></tr>
 					</tbody>
 				</table>
@@ -78,17 +81,25 @@ view! = |_|
 			<p>
 				Decoding is strict, so each value has exactly one text: only the alphabet asked for, no spaces or
 				line breaks, padding either left out or exactly right, and the unused bits of the last character
-				zero. Anything else is an error (<code>InvalidBase64</code>, <code>InvalidHex</code>). The
-				package's <code>README.md</code> (<code>packages/crypto/</code>) lists every function's type.
+				zero. Anything else is an error (<code>InvalidBase64</code>, <code>InvalidBase32</code>,
+				<code>InvalidHex</code>). The package's <code>README.md</code> (<code>packages/crypto/</code>) lists
+				every function's type.
+			</p>
+			<p>
+				SHA-1, HMAC-SHA1 and Base32 are here for one job: the six-digit codes of an authenticator app
+				(TOTP, RFC 6238), which <a href={"${Paths.ecosystem_auth}#two-factor"}>the auth package's two-factor sign-in</a> checks.
+				SHA-1 is broken for collisions, so don't sign with it or keep a token's digest in it; HMAC-SHA1
+				doesn't rest on collisions, but for anything new use HMAC-SHA256.
 			</p>
 
 			<Heading id="checked">How it is tested</Heading>
 			<p>
-				Each module's <code>expect</code>s check it against published test vectors: NIST's SHA-256
-				examples, every test case of RFC 4231 (HMAC), RFC 5869's SHA-256 cases (HKDF), and RFC 4648's
-				(Base64 and hex). <code>Sha256</code> wraps Roc's builtin <code>Crypto.SHA256</code>. The server
-				platform's tests also compare each module with Node's <code>crypto</code>, through a running
-				server.
+				Each module's <code>expect</code>s check it against published test vectors: NIST's SHA-256 and
+				SHA-1 examples, every test case of RFC 4231 (HMAC-SHA256) and RFC 2202 (HMAC-SHA1), RFC 5869's
+				SHA-256 cases (HKDF), and RFC 4648's (Base64, Base32 and hex). <code>Sha256</code> wraps Roc's
+				builtin <code>Crypto.SHA256</code>; <code>Sha1</code> is Roc of its own. The server platform's
+				tests also compare SHA-256, HMAC, HKDF, Base64 and hex with Node's <code>crypto</code>, through a
+				running server, and the auth package's tests compare authenticator codes with Node's.
 			</p>
 
 			<Heading id="limits">What isn't here</Heading>
