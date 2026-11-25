@@ -126,7 +126,7 @@ for archive in "${archives[@]}"; do
 done
 need "$hosts/wasm32/host.wasm" "just release-hosts wasm32"
 built_at "$hosts/wasm32"
-if [ -f LICENSE ]; then license=LICENSE; else strict "no LICENSE at the repo's root (package.json says MIT): the release needs its text"; license=""; fi
+if [ -f LICENSE ]; then license=LICENSE; else strict "no LICENSE at the repo's root: the release needs its text"; license=""; fi
 if [ -z "$(git ls-files templates/app)" ]; then
 	strict "no templates/app/ in git: the archives have no template for rocx new"
 fi
@@ -160,7 +160,7 @@ for archive in "${archives[@]}"; do
 	if [ -n "$license" ]; then
 		cp "$license" "$stage/LICENSE"
 	else
-		echo "(draft) No LICENSE yet: the repository's package.json says MIT." > "$stage/LICENSE"
+		echo "(draft) No LICENSE yet: the repository has none." > "$stage/LICENSE"
 	fi
 	cp "$tmp/NOTICES" "$stage/NOTICES"
 	cp "$hosts/$(rocx_target "$archive")/rocx" "$stage/bin/rocx"

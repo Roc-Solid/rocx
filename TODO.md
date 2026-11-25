@@ -136,8 +136,8 @@ When an item lands, delete its line here in the same commit.
 ## Tooling and distribution
 
 - **The first release (D-078), waiting on the user:** a `LICENSE` at the repository's root (its
-  text is the user's call: package.json says MIT, and `just release-pack` refuses a real release
-  without the file); the x86_64 Linux fork compiler published and pinned (`just roc-fork-linux
+  text is the user's call: the repository states none, and `just release-pack` refuses a real
+  release without the file); the x86_64 Linux fork compiler published and pinned (`just roc-fork-linux
   x86_64`, then `just publish-roc-fork`, from the Mac with the fork); then a `v<date>` tag, which
   runs `.github/workflows/release.yml` (hosts, packs, smoke on macOS and Alpine arm64/x86_64,
   publish). Once it is out: drop "the first release isn't out yet" from README.md's Getting
