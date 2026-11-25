@@ -1,0 +1,183 @@
+# A release of rocx (spike/install/DESIGN.md §3 and §6), from a tag the user pushes (v2026.11.25),
+# or by hand (workflow_dispatch) as a dry run that builds and tests everything and publishes
+# nothing. What is built per target (`just release-hosts`) on Linux (arm64musl and x64musl, cross,
+# and host.wasm) and on a Mac (arm64mac); then the archives (`just release-compilers`, `just
+# release-pack`); then each installed from them and checked (`release/test-install.sh`) on macOS
+# and in bare Alpine on arm64 and x86_64, with curl, xz and tar alone; then, on a tag, the GitHub
+# release (a full one: releases/latest/download/install.sh skips pre-releases) and the
+# nix/release.json that names it, committed to master.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version to pack, a date (2026.11.25); today's when empty. A dry run: nothing is published."
+        required: false
+        default: ""
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: version
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        env:
+          INPUT: ${{ github.event.inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version=${GITHUB_REF_NAME#v}; else version=${INPUT:-$(date -u +%Y.%m.%d)}; fi
+          if ! echo "$version" | grep -qE '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?$'; then
+            echo "::error::The version is a date (2026.11.25, or 2026.11.25.2), not $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # The Linux targets, both cross-built on arm64 (Zig compiles the C, rustup has both musl
+  # targets), and the browser's host.
+  hosts-linux:
+    name: hosts (Linux)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - name: Rust's x86_64 musl target, and llvm-strip
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          rustup component add llvm-tools
+      - run: just release-hosts arm64musl x64musl wasm32
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hosts-linux
+          path: release/out/hosts/
+          retention-days: 7
+
+  hosts-macos:
+    name: hosts (macOS)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - name: llvm-strip
+        run: rustup component add llvm-tools
+      - run: just release-hosts arm64mac
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hosts-macos
+          path: release/out/hosts/
+          retention-days: 7
+
+  # The archives, SHA256SUMS, install.sh and nix/release.json, from the hosts above and the
+  # fork's compilers its pins name. The toolchain is for NOTICES (the crates' licenses, musl's,
+  # Zig's, Roc's).
+  pack:
+    name: pack
+    needs: [version, hosts-linux, hosts-macos]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: hosts-*
+          path: release/out/hosts/
+          merge-multiple: true
+      - run: just release-compilers
+      - run: just release-pack ${{ needs.version.outputs.version }} --targets macos_arm64,linux_arm64,linux_x86_64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: |
+            release/out/dist/
+            release/out/nix/release.json
+          retention-days: 30
+
+  # Each archive installed by install.sh from the job's own files, as a user installs it, and
+  # checked: rocx --version, the compiler, a server built against the installed platform and
+  # answering. Alpine has curl, xz and tar alone (no python3: file:// URLs). An app from `rocx new`
+  # on each database (check, test, check --sql, build --static and --release, signing in under
+  # --dev) joins this once rocx has them.
+  smoke:
+    name: smoke (${{ matrix.name }})
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            runs-on: macos-15
+            alpine: false
+          - name: Alpine arm64
+            runs-on: ubuntu-24.04-arm
+            alpine: true
+          - name: Alpine x86_64
+            runs-on: ubuntu-24.04
+            alpine: true
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: release
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release/out/
+      - if: ${{ !matrix.alpine }}
+        run: release/test-install.sh release/out/dist
+      - if: ${{ matrix.alpine }}
+        run: |
+          docker run --rm -v "$PWD:/rocx" -w /rocx alpine:3.22 \
+            sh -c 'apk add --no-cache curl xz tar >/dev/null && release/test-install.sh release/out/dist'
+
+  # Only for a tag: the release, then nix/release.json on master naming it.
+  publish:
+    name: publish
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    needs: [version, pack, smoke]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release/out/
+      - name: The GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" release/out/dist/* \
+            --verify-tag \
+            --latest \
+            --title "rocx $VERSION" \
+            --notes "Roc Solid's rocx $VERSION. Install: \`curl -fsSL https://github.com/Roc-Solid/rocx/releases/latest/download/install.sh | sh\` (this version: \`| sh -s -- $VERSION\`). The archives' SHA-256s are in SHA256SUMS and in install.sh."
+      - name: nix/release.json
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp release/out/nix/release.json nix/release.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add nix/release.json
+          git commit -m "nix/release.json: rocx $VERSION, the release the flake installs."
+          git pull --rebase origin master
+          git push origin HEAD:master

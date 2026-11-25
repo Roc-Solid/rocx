@@ -24,10 +24,13 @@ roc_fork_commit := "4674b5973d4cea3875c2d33c6a63c95ff1d26843"
 # Where there is no fork to build it from (CI's machine, a newcomer's), `just setup` downloads the
 # fork's compiler prebuilt instead: a release of this repository, roc-fork-<the commit's first 10>,
 # the binary alone (not the fork's source), for macOS on Apple silicon and for Linux on arm64 (CI's
-# runners), each checked against its SHA-256 here. `just roc-fork-linux` cross-builds Linux's on
-# the machine with the fork; `just publish-roc-fork` uploads what is built and prints the SHA-256s.
+# runners) and x86_64, each checked against its SHA-256 here (empty: not published yet). `just
+# roc-fork-linux [arm64|x86_64]` cross-builds Linux's on the machine with the fork; `just
+# publish-roc-fork` uploads what is built and prints the SHA-256s. A release of rocx (`just
+# release-compilers`) carries the same three.
 roc_fork_sha256_macos_apple_silicon := "1753ae2a7b0810b1ff063dd4b15be1e2800d2b48af29545c32b4cf63b954b563"
 roc_fork_sha256_linux_arm64 := "833b8432b2fd23e69830b3b1477c9d54f4d7cb0456668d3ab5f342db45ffaf81"
+roc_fork_sha256_linux_x86_64 := ""
 
 # Variables are worked out when a recipe uses them: `just setup` needs no compiler yet.
 set lazy
@@ -109,10 +112,11 @@ setup:
         case "$roc_os" in
             macos_apple_silicon) sha={{ roc_fork_sha256_macos_apple_silicon }} ;;
             linux_arm64) sha={{ roc_fork_sha256_linux_arm64 }} ;;
+            linux_x86_64) sha={{ roc_fork_sha256_linux_x86_64 }} ;;
             *) sha="" ;;
         esac
         if [ -z "$sha" ]; then
-            echo "rocx builds with a fork of Roc: no commit $commit in {{ roc_fork }} (ROC_FORK), and it is prebuilt only for macOS on Apple silicon and Linux on arm64" >&2
+            echo "rocx builds with a fork of Roc: no commit $commit in {{ roc_fork }} (ROC_FORK), and no prebuilt one for $roc_os is pinned (roc_fork_sha256_$roc_os)" >&2
             exit 1
         fi
         mkdir -p .tools/download/roc-fork
@@ -145,29 +149,35 @@ setup:
     # app, and every script here.
     { test -x bin/rocx && bin/rocx self-build; } || { just rocx-bootstrap && bin/rocx self-build; }
 
-# The fork's compiler for Linux on arm64 (CI's runners), cross-compiled here by Zig from the fork's
-# commit (`roc_fork_commit`) as `just setup` builds this machine's, into
-# .tools/roc-fork/<commit>-linux_arm64/, for `just publish-roc-fork`: 10 to 20 minutes.
-roc-fork-linux:
+# The fork's compiler for Linux, on arm64 (CI's runners; the default) or x86_64, cross-compiled
+# here by Zig from the fork's commit (`roc_fork_commit`) as `just setup` builds this machine's, a
+# static musl binary, into .tools/roc-fork/<commit>-linux_<arch>/, for `just publish-roc-fork`: 10
+# to 20 minutes.
+roc-fork-linux arch="arm64":
     #!/usr/bin/env bash
     set -euo pipefail
+    case "{{ arch }}" in
+        arm64) zig_target=aarch64-linux-musl ;;
+        x86_64) zig_target=x86_64-linux-musl ;;
+        *) echo "No Linux compiler for {{ arch }}: arm64 or x86_64" >&2; exit 2 ;;
+    esac
     commit={{ roc_fork_commit }}
-    out=".tools/roc-fork/$commit-linux_arm64"
+    out=".tools/roc-fork/$commit-linux_{{ arch }}"
     if [ -x "$out/bin/roc" ]; then echo "$out/bin/roc: built already"; exit 0; fi
     if ! git -C "{{ roc_fork }}" cat-file -e "$commit^{commit}" 2>/dev/null; then
         echo "No commit $commit in {{ roc_fork }} (ROC_FORK) to build Linux's compiler from" >&2
         exit 1
     fi
-    src=.tools/roc-fork/src-linux_arm64
+    src=".tools/roc-fork/src-linux_{{ arch }}"
     rm -rf "$src"
     git clone -q --shared --no-checkout "{{ roc_fork }}" "$src"
     git -C "$src" checkout -q "$commit"
-    (cd "$src" && "{{ zig }}" build build-release -Dtarget=aarch64-linux-musl -Dcompiler-version="rocx-fork-${commit:0:10}" --prefix "$OLDPWD/$out")
+    (cd "$src" && "{{ zig }}" build build-release -Dtarget=$zig_target -Dcompiler-version="rocx-fork-${commit:0:10}" --prefix "$OLDPWD/$out")
     rm -rf "$src"
     echo "$out/bin/roc"
 
-# Publishes the fork's compilers built here, this Mac's (`just setup`) and Linux's on arm64 (`just
-# roc-fork-linux`), as a release of this repository, roc-fork-<the commit's first 10>, one asset
+# Publishes the fork's compilers built here, this Mac's (`just setup`) and Linux's on arm64 and
+# x86_64 (`just roc-fork-linux [arch]`), as a release of this repository, roc-fork-<the commit's first 10>, one asset
 # each, for `just setup` where there is no fork (CI's machine, a newcomer's): the binaries alone,
 # never the fork's source. Nothing is uploaded if a binary holds this machine's home directory or a
 # word of .git/info/private-words (as whole words: Apple's and Microsoft's API names have some
@@ -180,9 +190,11 @@ publish-roc-fork:
     release="roc-fork-${commit:0:10}"
     built=()
     if [ "$(uname -sm)" = "Darwin arm64" ] && [ -x ".tools/roc-fork/$commit/bin/roc" ]; then built+=("macos_apple_silicon:.tools/roc-fork/$commit"); fi
-    if [ -x ".tools/roc-fork/$commit-linux_arm64/bin/roc" ]; then built+=("linux_arm64:.tools/roc-fork/$commit-linux_arm64"); fi
+    for arch in arm64 x86_64; do
+        if [ -x ".tools/roc-fork/$commit-linux_$arch/bin/roc" ]; then built+=("linux_$arch:.tools/roc-fork/$commit-linux_$arch"); fi
+    done
     if [ ${#built[@]} -eq 0 ]; then
-        echo "Not published: no compiler built here (just setup builds this Mac's from the fork, just roc-fork-linux Linux's)." >&2
+        echo "Not published: no compiler built here (just setup builds this Mac's from the fork, just roc-fork-linux [arm64|x86_64] Linux's)." >&2
         exit 1
     fi
     if have=$(gh release view "$release" --repo Roc-Solid/rocx --json assets --jq '.assets[].name' 2>/dev/null); then exists=1; else exists=0; have=""; fi
@@ -209,7 +221,7 @@ publish-roc-fork:
     done
     if [ ${#assets[@]} -eq 0 ]; then exit 0; fi
     title="Roc compiler: rocx's fork at ${commit:0:10}"
-    notes="The Roc compiler rocx builds with, prebuilt for macOS on Apple silicon and Linux on arm64: Roc's {{ roc_nightly }} with the compiler fixes rocx needs until they are upstream, at the fork's commit $commit. \`just setup\` downloads the one for its machine where there is no fork to build it from (CI's machine, a newcomer's), and checks it against the Justfile's roc_fork_sha256_<platform>. The binaries alone: the fork's source isn't published."
+    notes="The Roc compiler rocx builds with, prebuilt for macOS on Apple silicon and Linux on arm64 and x86_64: Roc's {{ roc_nightly }} with the compiler fixes rocx needs until they are upstream, at the fork's commit $commit. \`just setup\` downloads the one for its machine where there is no fork to build it from (CI's machine, a newcomer's), and checks it against the Justfile's roc_fork_sha256_<platform>. The binaries alone: the fork's source isn't published."
     if [ "$exists" = 1 ]; then
         gh release upload "$release" "${assets[@]}" --repo Roc-Solid/rocx
         gh release edit "$release" --repo Roc-Solid/rocx --title "$title" --notes "$notes"
@@ -542,3 +554,62 @@ glue:
     {{ roc }} glue .tools/glue/src/RustGlue.roc server/host/src/ server/platform/main.roc
     {{ roc }} glue .tools/glue/src/RustGlue.roc cli/host/src/ cli/platform/main.roc
     {{ roc }} glue .tools/glue/src/RustGlue.roc native/core/src/ web/platform/main.roc
+
+# A release of rocx (spike/install/DESIGN.md §3; .github/workflows/release.yml runs these), all in
+# release/out/ (gitignored): what is built per target (`release-hosts`), the fork's pinned
+# compilers (`release-compilers`), the archives with SHA256SUMS, install.sh and a candidate
+# nix/release.json (`release-pack`), and an install of them, tested (`release-test`). Publishing is
+# the workflow's, on a tag the user pushes.
+
+# What a release carries that is built per target (release/hosts.sh), into release/out/hosts/: the
+# ones named, or what this machine builds (a Mac: arm64mac, arm64musl, x64musl and wasm32; Linux:
+# arm64musl, x64musl and wasm32). A musl target needs rustup's target and llvm-strip
+# (`rustup component add llvm-tools`).
+release-hosts *targets:
+    ROC={{ roc }} ZIG={{ zig }} release/hosts.sh {{ targets }}
+
+# The fork's compilers a release carries, each downloaded from this repository's release of it
+# (roc-fork-<the commit's first 10>) and checked against its pin, into
+# release/out/compilers/<os>/bin/roc: all three, or those named (macos_apple_silicon, linux_arm64,
+# linux_x86_64). One with no pin yet fails: `just roc-fork-linux x86_64`, then `just
+# publish-roc-fork`, on the machine with the fork.
+release-compilers *oses:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    commit={{ roc_fork_commit }}
+    release="roc-fork-${commit:0:10}"
+    for os in {{ if oses == "" { "macos_apple_silicon linux_arm64 linux_x86_64" } else { oses } }}; do
+        case "$os" in
+            macos_apple_silicon) sha={{ roc_fork_sha256_macos_apple_silicon }} ;;
+            linux_arm64) sha={{ roc_fork_sha256_linux_arm64 }} ;;
+            linux_x86_64) sha={{ roc_fork_sha256_linux_x86_64 }} ;;
+            *) echo "No compiler for $os: macos_apple_silicon, linux_arm64 or linux_x86_64" >&2; exit 2 ;;
+        esac
+        if [ -z "$sha" ]; then
+            echo "No prebuilt compiler pinned for $os (roc_fork_sha256_$os is empty): just roc-fork-linux ${os#linux_}, then just publish-roc-fork, on the machine with the fork" >&2
+            exit 1
+        fi
+        dir="release/out/compilers/$os"
+        if [ "$(cat "$dir/.sha256" 2>/dev/null)" = "$sha" ] && [ -x "$dir/bin/roc" ]; then echo "$dir: downloaded already"; continue; fi
+        rm -rf "$dir" "$dir.tar.xz"
+        mkdir -p "$dir"
+        curl -fsSL -o "$dir.tar.xz" "https://github.com/Roc-Solid/rocx/releases/download/$release/$release-$os.tar.xz"
+        got=$({ sha256sum "$dir.tar.xz" 2>/dev/null || shasum -a 256 "$dir.tar.xz"; } | cut -c1-64)
+        if [ "$got" != "$sha" ]; then echo "$release-$os.tar.xz: SHA-256 $got, not the pinned $sha" >&2; exit 1; fi
+        tar -xJf "$dir.tar.xz" -C "$dir"
+        rm "$dir.tar.xz"
+        echo "$sha" > "$dir/.sha256"
+        echo "$dir/bin/roc"
+    done
+
+# The archives, SHA256SUMS, install.sh and a candidate nix/release.json (release/pack.sh), from
+# release/out/hosts and the compilers: `just release-pack 2026.11.25`, or `just release-pack
+# 0.0.0-test --draft` to try it with changes in the tree. `--targets macos_arm64,linux_arm64,...`
+# names the archives (by default, each whose rocx and compiler are here).
+release-pack *args:
+    ROC_FORK_COMMIT={{ roc_fork_commit }} release/pack.sh {{ args }}
+
+# Installs what `release-pack` made into a temporary home, from a local server, and checks it
+# (release/test-install.sh): the release workflow's smoke test.
+release-test *args:
+    release/test-install.sh {{ args }}

@@ -65,3 +65,6 @@ native/android/build/
 
 # The editor packages, put together by `just vscode-extension` and `just orca-plugin`
 editors/build/
+
+# A release of rocx, made here (just release-hosts, release-pack): hosts, compilers, archives
+release/out/

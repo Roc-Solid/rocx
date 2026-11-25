@@ -1,0 +1,209 @@
+#!/bin/sh
+# Installs rocx, Roc Solid's command, version @VERSION@ (spike/install/DESIGN.md §3):
+#
+#   curl -fsSL https://github.com/Roc-Solid/rocx/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/Roc-Solid/rocx/releases/latest/download/install.sh | sh -s -- 2026.11.25
+#
+# Downloads this machine's archive of the release, checks it against the SHA-256 written in here,
+# and unpacks it into ~/.rocx/versions/<version> (read-only). ~/.rocx/current points at it, and
+# ~/.rocx/bin/rocx at its rocx; ~/.rocx/bin goes on PATH in bash's, zsh's and fish's start-up
+# files, unless --no-modify-path. Installing a version that is there already only points current
+# at it. Another version (`sh -s -- <version>`) is installed by that release's install.sh.
+# --no-current installs the version beside the others and leaves current as it is (unless there is
+# none yet): what rocx runs for an app whose .rocx-version names a version not installed.
+#
+# ROCX_HOME: where to install (~/.rocx by default). ROCX_RELEASES: where releases are, as GitHub
+# has them, each asset at <releases>/download/v<version>/<asset>: GitHub's by default; a URL, or a
+# folder (a test's). rocx itself runs `sh install.sh --no-modify-path` with ROCX_HOME set to install
+# the version an app names.
+set -eu
+
+version=@VERSION@
+sha256_macos_arm64=@SHA256_MACOS_ARM64@
+sha256_linux_arm64=@SHA256_LINUX_ARM64@
+sha256_linux_x86_64=@SHA256_LINUX_X86_64@
+
+releases=${ROCX_RELEASES:-https://github.com/Roc-Solid/rocx/releases}
+releases=${releases%/}
+
+# An asset of a release: downloaded from a URL, copied from a folder.
+case "$releases" in
+	http://* | https://* | file://*) remote=1 ;;
+	*) remote=0 ;;
+esac
+fetch() {
+	if [ "$remote" = 1 ]; then
+		curl -fL "$3" --retry 3 -o "$2" "$releases/download/$1"
+	else
+		cp "$releases/download/$1" "$2"
+	fi
+}
+
+say() { printf '%s\n' "$*"; }
+fail() {
+	printf 'rocx install: %s\n' "$*" >&2
+	exit 1
+}
+
+modify_path=1
+move_current=1
+wanted=""
+for arg in "$@"; do
+	case "$arg" in
+		--no-modify-path) modify_path=0 ;;
+		--no-current) move_current=0 ;;
+		-h | --help)
+			say "usage: install.sh [--no-modify-path] [--no-current] [<version>]"
+			say "Installs rocx $version (or <version>) into \${ROCX_HOME:-~/.rocx}."
+			exit 0
+			;;
+		-*) fail "no option $arg (--no-modify-path, --no-current, or a version)" ;;
+		*) wanted=${arg#v} ;;
+	esac
+done
+
+# Another version: its own install.sh installs it (it has that version's SHA-256s).
+if [ -n "$wanted" ] && [ "$wanted" != "$version" ]; then
+	[ -z "${ROCX_INSTALL_REDIRECTED:-}" ] || fail "asked for $wanted, but its install.sh is $version's"
+	[ "$remote" = 0 ] || command -v curl >/dev/null 2>&1 || fail "needs curl"
+	script=$(mktemp)
+	trap 'rm -f "$script"' EXIT
+	fetch "v$wanted/install.sh" "$script" -sS 2>/dev/null || fail "no release $wanted ($releases/download/v$wanted/install.sh)"
+	flags=""
+	if [ "$modify_path" = 0 ]; then flags="$flags --no-modify-path"; fi
+	if [ "$move_current" = 0 ]; then flags="$flags --no-current"; fi
+	# shellcheck disable=SC2086 # the flags, each a word
+	ROCX_INSTALL_REDIRECTED=1 sh "$script" $flags "$wanted"
+	exit $?
+fi
+
+[ -n "${HOME:-}" ] || [ -n "${ROCX_HOME:-}" ] || fail "neither HOME nor ROCX_HOME is set"
+home=${ROCX_HOME:-$HOME/.rocx}
+
+# This machine's archive. An Apple silicon Mac's shell may run under Rosetta, saying x86_64.
+os=$(uname -s)
+cpu=$(uname -m)
+case "$os" in
+	Darwin)
+		if [ "$cpu" = x86_64 ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = 1 ]; then cpu=arm64; fi
+		[ "$cpu" = arm64 ] || fail "rocx runs on Macs with Apple silicon, not Intel ones"
+		major=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
+		[ "${major:-0}" -ge 15 ] || fail "rocx needs macOS 15 or newer (this is $(sw_vers -productVersion 2>/dev/null || echo older))"
+		archive=macos_arm64
+		sha=$sha256_macos_arm64
+		;;
+	Linux)
+		case "$cpu" in
+			aarch64 | arm64) archive=linux_arm64 sha=$sha256_linux_arm64 ;;
+			x86_64 | amd64) archive=linux_x86_64 sha=$sha256_linux_x86_64 ;;
+			*) fail "rocx runs on Linux on arm64 and x86_64, not $cpu" ;;
+		esac
+		;;
+	*) fail "rocx runs on macOS (Apple silicon) and Linux (arm64, x86_64), not $os" ;;
+esac
+[ -n "$sha" ] || fail "rocx $version has no archive for $archive"
+
+# What it takes: curl, tar that reads xz (a Mac's does; on Linux, with xz), a SHA-256 tool.
+[ "$remote" = 0 ] || command -v curl >/dev/null 2>&1 || fail "needs curl"
+command -v tar >/dev/null 2>&1 || fail "needs tar"
+if [ "$os" = Linux ]; then command -v xz >/dev/null 2>&1 || fail "needs xz (apk add xz, apt-get install xz-utils, dnf install xz)"; fi
+if command -v sha256sum >/dev/null 2>&1; then
+	sha256() { sha256sum "$1" | cut -c1-64; }
+elif command -v shasum >/dev/null 2>&1; then
+	sha256() { shasum -a 256 "$1" | cut -c1-64; }
+elif command -v openssl >/dev/null 2>&1; then
+	sha256() { openssl dgst -sha256 "$1" | sed 's/.*= *//'; }
+else
+	fail "needs sha256sum, shasum or openssl to check the download"
+fi
+
+versions=$home/versions
+target=$versions/$version
+mkdir -p "$versions" "$home/bin"
+
+if [ -f "$target/VERSION" ] && [ -x "$target/bin/rocx" ]; then
+	say "rocx $version is installed already, in $target"
+else
+	tmp=$(mktemp -d)
+	trap 'rm -rf "$tmp"' EXIT
+	asset="v$version/rocx-$archive.tar.xz"
+	say "Downloading rocx $version for $archive: $releases/download/$asset"
+	if [ -t 2 ]; then progress=--progress-bar; else progress=-sS; fi
+	fetch "$asset" "$tmp/rocx.tar.xz" "$progress" || fail "couldn't download $releases/download/$asset"
+	got=$(sha256 "$tmp/rocx.tar.xz")
+	[ "$got" = "$sha" ] || fail "the download's SHA-256 is $got, not $sha: not installed"
+
+	# Unpacked beside where it goes, then renamed into place: a version is there whole or not at all.
+	partial=$target.partial
+	if [ -e "$partial" ]; then chmod -R u+w "$partial" && rm -rf "$partial"; fi
+	mkdir -p "$partial"
+	tar -xJf "$tmp/rocx.tar.xz" -C "$partial" || fail "couldn't unpack the archive"
+	[ -f "$partial/rocx-$version/VERSION" ] || fail "the archive has no rocx-$version/VERSION"
+	if [ -e "$target" ]; then chmod -R u+w "$target" && rm -rf "$target"; fi
+	mv "$partial/rocx-$version" "$target"
+	rmdir "$partial"
+	chmod -R a-w "$target"
+	say "Installed rocx $version in $target"
+fi
+
+if [ "$move_current" = 1 ] || [ ! -e "$home/current" ]; then
+	ln -sfn "versions/$version" "$home/current"
+fi
+ln -sfn ../current/bin/rocx "$home/bin/rocx"
+bin=$home/bin
+
+# PATH: a line in each start-up file of bash, zsh and fish that is there or is the user's shell's.
+case "$bin" in
+	"$HOME"/*) shown_bin="\$HOME/${bin#"$HOME"/}" ;;
+	*) shown_bin=$bin ;;
+esac
+shell=$(basename "${SHELL:-sh}")
+posix_line="export PATH=\"$shown_bin:\$PATH\""
+fish_line="contains -- \"$shown_bin\" \$PATH; or set -gx PATH \"$shown_bin\" \$PATH"
+add_line() {
+	file=$1 line=$2
+	if [ -f "$file" ] && grep -qF "$line" "$file"; then return; fi
+	mkdir -p "$(dirname "$file")"
+	printf '\n# rocx\n%s\n' "$line" >> "$file"
+	changed="$changed $file"
+}
+changed=""
+if [ "$modify_path" = 1 ]; then
+	if [ -f "$HOME/.bashrc" ] || [ "$shell" = bash ]; then add_line "$HOME/.bashrc" "$posix_line"; fi
+	if [ -f "$HOME/.bash_profile" ]; then add_line "$HOME/.bash_profile" "$posix_line"; fi
+	zshrc=${ZDOTDIR:-$HOME}/.zshrc
+	if [ -f "$zshrc" ] || [ "$shell" = zsh ]; then add_line "$zshrc" "$posix_line"; fi
+	fish_dir=${XDG_CONFIG_HOME:-$HOME/.config}/fish
+	if [ -d "$fish_dir" ] || [ "$shell" = fish ]; then add_line "$fish_dir/conf.d/rocx.fish" "$fish_line"; fi
+fi
+
+say ""
+"$bin/rocx" --version && status=0 || status=$?
+if [ "$status" -ge 126 ]; then
+	fail "rocx doesn't run on this machine ($bin/rocx exited $status)"
+elif [ "$status" -ne 0 ]; then
+	say "rocx install: rocx --version exited $status" >&2
+fi
+
+say ""
+case ":${PATH:-}:" in
+	*":$bin:"*) say "rocx is on your PATH: run rocx." ;;
+	*)
+		if [ -n "$changed" ]; then
+			say "Added $shown_bin to PATH in:$changed"
+			say "Open a new terminal, or run: export PATH=\"$bin:\$PATH\""
+		else
+			say "Put $shown_bin on your PATH, for example:"
+			say "  sh, bash, zsh:  $posix_line"
+			say "  fish:           fish_add_path \"$bin\""
+			say "  nushell:        \$env.PATH = (\$env.PATH | prepend '$bin')   (in env.nu)"
+		fi
+		case "$shell" in
+			bash | zsh | fish | sh | dash) ;;
+			nu) [ -z "$changed" ] || say "For nushell, add to env.nu: \$env.PATH = (\$env.PATH | prepend '$bin')" ;;
+			*) [ -z "$changed" ] || say "For $shell, put $bin on PATH as it does." ;;
+		esac
+		;;
+esac
+say ""
+say "To uninstall: chmod -R u+w \"$home\" && rm -rf \"$home\", and remove the PATH line (# rocx) from your shell's start-up file."
