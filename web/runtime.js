@@ -5940,6 +5940,12 @@ export class Runtime {
 		return Number(this.ex.live_allocations());
 	}
 
+	/** For the tests: the host's notes of what runs allocate (`made` in web/host/host.zig), as counts:
+	 * its entries, its slots of removed entries (tombstones) and its slots in all. */
+	notes() {
+		return { entries: this.ex.made_entries(), tombstones: this.ex.made_tombstones(), capacity: this.ex.made_capacity() };
+	}
+
 	/** How many allocations Roc has made so far: the tests' measure of what a change costs. */
 	allocations() {
 		return Number(this.ex.allocations());

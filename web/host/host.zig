@@ -170,7 +170,22 @@ fn track(ptr: usize, alignment: usize) void {
     if (innermost()) |frame| keepIn(frame, ptr, alignment);
 }
 
+/// Entries put in `made` since its tombstones were last cleared (`clean`).
+var made_puts: usize = 0;
+
+/// `made`'s removed entries cleared, once no frame is open: a hash map that is filled and emptied
+/// again and again keeps a tombstone for every entry removed (Zig's map only drops them when it
+/// grows), and a lookup probes past them all, so every allocation would cost more each time, without
+/// end (the js-framework-benchmark's create and clear, run again and again, slowed by 25 to 40 ms a
+/// cycle). Amortized: at most once per half the map's capacity of entries put.
+fn clean() void {
+    if (frames.items.len != 0 or made_puts < made.capacity() / 2) return;
+    if (made.count() == 0) made.clearRetainingCapacity() else made.rehash(std.hash_map.AutoContext(usize){});
+    made_puts = 0;
+}
+
 fn keepIn(frame: *Frame, ptr: usize, alignment: usize) void {
+    made_puts += 1;
     made.put(memory, ptr, .{ .frame = frame.id, .alignment = @intCast(alignment) }) catch {
         frame.noted = false;
         return;
@@ -273,8 +288,9 @@ export fn frame_end(id: u32) void {
         var frame = popped;
         takeWaiting(&frame);
         handOn(&frame);
-        if (frame.id == id) return;
+        if (frame.id == id) break;
     }
+    clean();
 }
 
 /// It unwound (a JS throw): its notes wait for `reclaim`.
@@ -330,10 +346,21 @@ fn setResult(text: RocStr) void {
     has_result = true;
     // The host holds it: never freed with the frame it was made in.
     if (!text.isSmallStr()) {
-        if (innermost()) |frame| if (ownAllocationHolding(frame, @intFromPtr(text.asSlice().ptr))) |ptr| {
+        if (innermost()) |frame| if (ownStringAllocation(frame, text)) |ptr| {
             _ = made.remove(ptr);
         };
     }
+}
+
+/// The frame's own allocation a (big) string's bytes are in, if it is one, found at once rather
+/// than looked for among everything the frame made (`ownAllocationHolding`, which a result per
+/// call made quadratic): Roc puts a string's bytes a word after its allocation's start (the
+/// reference count is between), and a seamless slice names the bytes of the allocation it is in.
+fn ownStringAllocation(frame: *const Frame, text: RocStr) ?usize {
+    const bytes: usize = if (text.isSeamlessSlice()) text.capacity_or_alloc_ptr & ~@as(usize, 1) else @intFromPtr(text.bytes);
+    const ptr = bytes -% @sizeOf(usize);
+    const entry = made.get(ptr) orelse return null;
+    return if (entry.frame == frame.id) ptr else null;
 }
 
 /// The text the last import answered with, `len` bytes, as a Roc string.
@@ -390,6 +417,26 @@ export fn live_allocations() i64 {
     // count of what is left over shouldn't change with which run came last.
     const held: i64 = if (has_result and !result.isSmallStr()) 1 else 0;
     return live - held;
+}
+
+/// For the tests: the host's notes of what runs allocate (`made`), as counts that don't vary with the
+/// machine: its entries (0 between runs, unless an unwound run waits for `reclaim`), the slots of
+/// entries removed (tombstones, which `clean` keeps to under half the map), and its slots in all.
+export fn made_entries() u32 {
+    return made.count();
+}
+
+export fn made_tombstones() u32 {
+    const metadata = made.metadata orelse return 0;
+    var n: u32 = 0;
+    for (metadata[0..made.capacity()]) |slot| {
+        if (slot.isTombstone()) n += 1;
+    }
+    return n;
+}
+
+export fn made_capacity() u32 {
+    return made.capacity();
 }
 
 /// How many allocations Roc has made since the module started: the tests' measure of what a change
