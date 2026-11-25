@@ -5,9 +5,12 @@ import Machine
 import TableWrap
 
 ## js-framework-benchmark's results (`JsBench`, from site/js-framework-benchmark.json, `just js-bench
-## bench`): each entry's summary, then each benchmark, an entry a column, Roc Solid's marked and the
-## best of each column or row in bold; then when, how and on what it was measured. Lower is better
-## everywhere. Pure: the data is the build's.
+## bench`), from the gist to every number: a scorecard (each entry's six categories and the official
+## measure, as times the best or as values, a switch in its corner), Roc Solid against each other entry
+## in words, a bar chart a category, then every benchmark's numbers, folded away; then when, how and on
+## what it was measured. Lower is better everywhere. Roc Solid's are marked; colours go from the best
+## (green) to many times it (red). Pure, with no script: the switch and the tabs are a checkbox and
+## radio buttons the scoped style reads (`:has`, `:checked`), as the database results' are.
 JsBenchResults := [].{
 	view : {} -> Html
 	view = |_| JsBenchResults.results(JsBench.entries)
@@ -17,39 +20,37 @@ JsBenchResults := [].{
 	results = |entries|
 		if entries.is_empty() {
 			<>
-				<Heading id="results">The results</Heading>
+				<Heading id="glance">At a glance</Heading>
 				<p class="missing">Not measured yet: run <code>just js-bench bench</code>.</p>
 			</>
 		} else {
 			m = JsBench.measured
 			<div class="js-bench">
-				<Heading id="results">The results</Heading>
+				<Heading id="glance">At a glance</Heading>
 				<p>
-					{"Each entry's CPU time is the geometric mean of the nine CPU benchmarks below, each from the click to the end of the paint it causes; the slowdown is the geometric mean of each benchmark's time against the fastest entry's, the measure the official table ranks by. Memory is the page's with 1,000 rows; the download, everything the page loads, compressed as the benchmark's server sends it. Lower is better, and the best of each column is in bold."}
+					{"Each entry in six categories, as times the best entry in it (1× is the best), and the official ranking's measure: the CPU benchmarks' slowdown against each one's fastest. The switch in the corner shows the values instead. Lower is better; green is close to the best, red many times it."}
 				</p>
-				<TableWrap>
-					<table>
-						<thead>
-							<tr>
-								<th scope="col">Entry</th>
-								<th scope="col" class="num">CPU, geometric mean</th>
-								<th scope="col" class="num">Slowdown</th>
-								<th scope="col" class="num">Memory, 1,000 rows</th>
-								<th scope="col" class="num">Download</th>
-								<th scope="col" class="num">First paint</th>
-							</tr>
-						</thead>
-						<tbody>{...JsBench.entries.map_with_index(|entry, i| JsBenchResults.summary_row(entry, i))}</tbody>
-					</table>
-				</TableWrap>
-				<Heading id="each">Each benchmark</Heading>
-				<p>
-					{"Each cell is the mean of every iteration of both rounds (${m.rounds.to_str()} rounds of ${m.count.to_str()}), with its standard deviation under it. The runner slows the CPU down for three of them, as its id says ("}
-					<code>_x16</code>{" is sixteen times slower), so small differences show."}
+				{JsBenchResults.scorecard(entries)}
+				<p class="note">
+					<strong>First paint and ready to use.</strong>
+					{" The runner times the first paint alone. Roc Solid's page is HTML the server rendered, so the browser paints it at once, the best of them; its buttons answer once the runtime and the wasm have come and hydrated the page, the last of them here. The benchmark's server compresses each file as it sends it (brotli, at its slowest), one at a time, which costs by the raw byte, and Roc Solid's page has the most of them: from a server that sends files compressed beforehand, as a deployment does, the wait is much shorter. Ready to use is measured here, beside the runner: a cold load, five times, until the buttons answer."}
 				</p>
-				{JsBenchResults.table("CPU, milliseconds", |id| !id.starts_with("2") and !id.starts_with("4"), "ms")}
-				{JsBenchResults.table("Memory, megabytes", |id| id.starts_with("2"), "MB")}
-				{JsBenchResults.table("What the page loads, kilobytes, and its first paint, milliseconds", |id| id.starts_with("4"), "")}
+				<Heading id="versus">Roc Solid against each</Heading>
+				<p>Each other entry against Roc Solid's of the same kind (keyed or not), in words.</p>
+				{JsBenchResults.versus(entries)}
+				<Heading id="charts">Each category</Heading>
+				{JsBenchResults.charts(entries)}
+				<Heading id="numbers">All the numbers</Heading>
+				<details class="all">
+					<summary>{"Every benchmark, in milliseconds, megabytes and kilobytes: each mean over ${m.rounds.to_str()} rounds of ${m.count.to_str()}, with its standard deviation"}</summary>
+					<p>
+						{"Each cell is the mean of every iteration of both rounds, its standard deviation under it, coloured by how many times the row's best it is. The runner slows the CPU down for three of them, as its id says ("}
+						<code>_x16</code>{" is sixteen times slower), so small differences show."}
+					</p>
+					{JsBenchResults.table("CPU, milliseconds", |id| !id.starts_with("2") and !id.starts_with("4"), "")}
+					{JsBenchResults.table("Memory, megabytes", |id| id.starts_with("2"), "")}
+					{JsBenchResults.table("What the page loads, kilobytes, and its first paint, milliseconds", |id| id.starts_with("4"), "size")}
+				</details>
 				<p class="when">
 					{"Measured on ${m.date}: Roc Solid at commit "}<code>{m.commit}</code>{", ${m.benchmark}, Chrome ${m.chrome} headless, in ${m.minutes.to_str()} minutes, the machine's load average ${m.load} meanwhile, on ${m.power}. Compare the entries with each other rather than with another machine's numbers, or the official table's."}
 				</p>
@@ -57,26 +58,203 @@ JsBenchResults := [].{
 			</div>
 		}
 
-	## An entry's row of the summary: its name, then each figure, the column's best in bold.
-	summary_row : JsBench.Entry, U64 -> Html
-	summary_row = |entry, i| {
-		none = { cpu: 0, slowdown: 0, ready_memory: 0, run_memory: 0, compressed: 0, uncompressed: 0, first_paint: 0 }
-		s = JsBench.summaries.get(i) ?? none
-		column = |pick| JsBenchResults.best(JsBench.summaries.map(pick))
-		<tr class:ours={JsBenchResults.ours(entry)}>
-			<th scope="row">{entry.name}</th>
-			{JsBenchResults.cell(JsBenchResults.one(s.cpu, " ms"), s.cpu == column(|x| x.cpu))}
-			{JsBenchResults.cell(JsBenchResults.times(s.slowdown), s.slowdown == column(|x| x.slowdown))}
-			{JsBenchResults.cell(JsBenchResults.one(s.run_memory, " MB"), s.run_memory == column(|x| x.run_memory))}
-			{JsBenchResults.cell(JsBenchResults.one(s.compressed, " KB"), s.compressed == column(|x| x.compressed))}
-			{JsBenchResults.cell(JsBenchResults.one(s.first_paint, " ms"), s.first_paint == column(|x| x.first_paint))}
-		</tr>
+	# ---- The scorecard ----
+
+	## The entries, best first by the official measure (the slowdown), each with its place in `entries`.
+	ranked : List(JsBench.Entry) -> List({ entry : JsBench.Entry, at : U64 })
+	ranked = |entries|
+		entries.map_with_index(|entry, at| { entry, at }).sort_with(
+			|a, b| {
+				x = JsBenchResults.slowdown(a.at)
+				y = JsBenchResults.slowdown(b.at)
+				if (x < y) Before else if (x > y) After else Same
+			},
+		)
+
+	slowdown : U64 -> U64
+	slowdown = |at| (JsBench.summaries.get(at) ?? JsBenchResults.no_summary).slowdown
+
+	cpu : U64 -> U64
+	cpu = |at| (JsBench.summaries.get(at) ?? JsBenchResults.no_summary).cpu
+
+	no_summary : JsBench.Summary
+	no_summary = { cpu: 0, slowdown: 0, ready_memory: 0, run_memory: 0, compressed: 0, uncompressed: 0, first_paint: 0 }
+
+	## A row an entry, a column a category and the official measure; in the corner, the switch.
+	scorecard : List(JsBench.Entry) -> Html
+	scorecard = |entries|
+		<TableWrap>
+			<table class="scorecard">
+				<thead>
+					<tr>
+						<th scope="col" class="corner">
+							<label class="mode">
+								<input type="checkbox" class="values" aria-label="Show the values instead of times the best" />
+								<span class="as-ratio">× best</span>
+								<span class="as-value">values</span>
+							</label>
+						</th>
+						{...JsBench.categories.map(|c| <th scope="col" class="num">{c.label}<span class="unit">{c.unit}</span></th>)}
+						<th scope="col" class="num official">Overall<span class="unit">CPU, official</span></th>
+					</tr>
+				</thead>
+				<tbody>
+					{...JsBenchResults.ranked(entries).map(
+						|each|
+							<tr class:ours={JsBenchResults.ours(each.entry)}>
+								<th scope="row">{JsBenchResults.framework(each.entry.name)}<span class="kind">{JsBenchResults.kind(each.entry.name)}</span></th>
+								{...JsBench.categories.map(|c| JsBenchResults.score(c.ratios.get(each.at) ?? 0, JsBenchResults.one(c.values.get(each.at) ?? 0, " ${c.unit}")))}
+								{JsBenchResults.score(JsBenchResults.slowdown(each.at), JsBenchResults.one(JsBenchResults.cpu(each.at), " ms"))}
+							</tr>,
+					)}
+				</tbody>
+			</table>
+		</TableWrap>
+
+	## A scorecard's cell: times the best (shown), and the value (shown by the switch), coloured.
+	score : U64, Str -> Html
+	score = |ratio, value|
+		<td class={"num ${JsBenchResults.heat(ratio)}"}>
+			<span class="r">{JsBenchResults.times(ratio)}</span>
+			<span class="v">{value}</span>
+		</td>
+
+	## The colour of a ratio to the best, in hundredths: h1 within 10% of it, then up to 1.5×, 2.5×,
+	## 6×, and beyond.
+	heat : U64 -> Str
+	heat = |ratio|
+		if ratio == 0 {
+			""
+		} else if ratio <= 110 {
+			"h1"
+		} else if ratio <= 150 {
+			"h2"
+		} else if ratio <= 250 {
+			"h3"
+		} else if ratio <= 600 {
+			"h4"
+		} else {
+			"h5"
+		}
+
+	# ---- Roc Solid against each ----
+
+	## A tab each other entry (Solid's first chosen), each a list: Roc Solid's entry of its kind against
+	## it, a line a category and the official measure. Radio buttons, each before its label and its
+	## panel: the checked one's panel shows.
+	versus : List(JsBench.Entry) -> Html
+	versus = |entries| {
+		others = entries.map_with_index(|entry, at| { entry, at }).keep_if(|each| !JsBenchResults.ours(each.entry))
+		<div class="versus">
+			{...others.map(
+				|each| {
+					id = "versus-${each.entry.entry.replace_each("/", "-")}"
+					<>
+						<input type="radio" name="versus" class="pick" id={id} checked?={each.entry.entry == "keyed/solid"} />
+						<label for={id}>{each.entry.name}</label>
+						<div class="panel">{JsBenchResults.against(entries, each.at)}</div>
+					</>
+				},
+			)}
+		</div>
 	}
 
-	## A table of the benchmarks whose ids `shown` keeps: a row each, an entry a column, the row's
-	## best in bold.
+	## Roc Solid's entry of the same kind as the one at `at`, against it, in words.
+	against : List(JsBench.Entry), U64 -> Html
+	against = |entries, at| {
+		theirs = entries.get(at) ?? { entry: "", name: "", version: "" }
+		their_kind = theirs.entry.split_on("/").first() ?? "keyed"
+		ours_at = entries.find_first_index(|entry| entry.entry == "${their_kind}/roc-solid") ?? 0
+		mine = entries.get(ours_at) ?? theirs
+		<>
+			<p class="whom"><strong>{mine.name}</strong>{" against "}<strong>{theirs.name}</strong></p>
+			<ul class="lines">
+				{...JsBench.categories.map(
+					|c| {
+						our_value = c.values.get(ours_at) ?? 0
+						other = c.values.get(at) ?? 0
+						<li>
+							<span class="what">{c.label}</span>
+							<span class={"how ${if (our_value <= other) "better" else "worse"}"}>{JsBenchResults.compared(our_value, other, JsBenchResults.words(c.id))}</span>
+							<span class="detail">{"${JsBenchResults.one(our_value, " ${c.unit}")} against ${JsBenchResults.one(other, " ${c.unit}")}"}</span>
+						</li>
+					},
+				)}
+				<li>
+					<span class="what">Overall (CPU)</span>
+					<span class={"how ${if (JsBenchResults.slowdown(ours_at) <= JsBenchResults.slowdown(at)) "better" else "worse"}"}>{JsBenchResults.compared(JsBenchResults.cpu(ours_at), JsBenchResults.cpu(at), ("faster", "slower"))}</span>
+					<span class="detail">{"${JsBenchResults.times(JsBenchResults.slowdown(ours_at))} against ${JsBenchResults.times(JsBenchResults.slowdown(at))} the fastest"}</span>
+				</li>
+			</ul>
+		</>
+	}
+
+	## What a category's better and worse are called: sooner or later, faster or slower, less or more.
+	words : Str -> (Str, Str)
+	words = |id|
+		match id {
+			"ready" | "paint" => ("sooner", "later")
+			"memory" => ("less", "more")
+			"download" => ("smaller", "larger")
+			_ => ("faster", "slower")
+		}
+
+	## `mine` against `theirs` (lower is better), as a factor and a word: "2.3× slower", "1.6× sooner",
+	## "about the same" within 5%.
+	compared : U64, U64, (Str, Str) -> Str
+	compared = |mine, theirs, (better, worse)|
+		if mine == 0 or theirs == 0 {
+			"–"
+		} else if mine * 100 <= theirs * 105 and theirs * 100 <= mine * 105 {
+			"about the same"
+		} else if mine < theirs {
+			"${JsBenchResults.factor(theirs * 100 // mine)} ${better}"
+		} else {
+			"${JsBenchResults.factor(mine * 100 // theirs)} ${worse}"
+		}
+
+	## A factor in hundredths, as it reads best: "2.3×", "16×".
+	factor : U64 -> Str
+	factor = |hundredths|
+		if hundredths >= 1000 {
+			"${((hundredths + 50) // 100).to_str()}×"
+		} else {
+			tenths = (hundredths + 5) // 10
+			"${(tenths // 10).to_str()}.${(tenths % 10).to_str()}×"
+		}
+
+	# ---- A chart a category ----
+
+	## Each category's entries as bars, best first, the longest the worst; two side by side.
+	charts : List(JsBench.Entry) -> Html
+	charts = |entries|
+		<div class="charts">{...JsBench.categories.map(|c| JsBenchResults.chart(entries, c))}</div>
+
+	chart : List(JsBench.Entry), JsBench.Category -> Html
+	chart = |entries, c| {
+		bars = entries.map_with_index(|entry, at| { entry, value: c.values.get(at) ?? 0 }).keep_if(|bar| bar.value > 0).sort_with(|a, b| if (a.value < b.value) Before else if (a.value > b.value) After else Same)
+		most = bars.fold(1, |top, bar| if (bar.value > top) bar.value else top)
+		<figure class="chart">
+			<figcaption><strong>{c.label}</strong>{", ${c.unit}: ${c.what}"}</figcaption>
+			<ol>
+				{...bars.map(
+					|bar|
+						<li class:ours={JsBenchResults.ours(bar.entry)}>
+							<span class="name">{bar.entry.name}</span>
+							<span class="track"><span class="fill" style:width={"${(bar.value * 100 // most).to_str()}%"}></span></span>
+							<span class="value">{JsBenchResults.one(bar.value, "")}</span>
+						</li>,
+				)}
+			</ol>
+		</figure>
+	}
+
+	# ---- Every number ----
+
+	## A table of the benchmarks whose ids `shown` keeps: a row each, an entry a column, each cell
+	## coloured by how many times the row's best it is.
 	table : Str, (Str -> Bool), Str -> Html
-	table = |caption, shown, unit|
+	table = |caption, shown, sizes|
 		<TableWrap>
 			<table class="each">
 				<caption>{caption}</caption>
@@ -86,25 +264,23 @@ JsBenchResults := [].{
 						{...JsBench.entries.map(|entry| <th scope="col" class="num" class:ours={JsBenchResults.ours(entry)}>{JsBenchResults.framework(entry.name)}<span class="kind">{JsBenchResults.kind(entry.name)}</span></th>)}
 					</tr>
 				</thead>
-				<tbody>{...JsBench.rows.keep_if(|bench| shown(bench.id)).map(|bench| JsBenchResults.bench_row(bench, unit))}</tbody>
+				<tbody>{...JsBench.rows.keep_if(|bench| shown(bench.id)).map(|bench| JsBenchResults.bench_row(bench, sizes))}</tbody>
 			</table>
 		</TableWrap>
 
 	## A benchmark's row: its label and id, then each entry's mean and spread.
 	bench_row : JsBench.Row, Str -> Html
-	bench_row = |r, unit| {
+	bench_row = |r, sizes| {
 		fastest = JsBenchResults.best(r.means)
 		cells = r.means.map_with_index(|mean, i| { mean, spread: r.spreads.get(i) ?? 0, ours: JsBenchResults.ours(JsBench.entries.get(i) ?? { entry: "", name: "", version: "" }) })
-		suffix = if (unit.is_empty()) (if (r.id.starts_with("43")) " ms" else " KB") else ""
+		suffix = if (sizes.is_empty()) "" else if (r.id.starts_with("43")) " ms" else " KB"
 		<tr>
 			<th scope="row">{r.label}<code class="id">{r.id}</code></th>
-			{...cells.map(|c| <td class="num" class:best={c.mean > 0 and c.mean == fastest} class:ours={c.ours}>{JsBenchResults.one(c.mean, suffix)}<span class="spread">{if (c.mean == 0 or c.spread == 0) "" else "± ${JsBenchResults.one(c.spread, "")}"}</span></td>)}
+			{...cells.map(|c| <td class={"num ${if (fastest == 0) "" else JsBenchResults.heat(c.mean * 100 // fastest)}"} class:ours={c.ours}>{JsBenchResults.one(c.mean, suffix)}<span class="spread">{if (c.mean == 0 or c.spread == 0) "" else "± ${JsBenchResults.one(c.spread, "")}"}</span></td>)}
 		</tr>
 	}
 
-	## A figure's cell, in bold when it is the best.
-	cell : Str, Bool -> Html
-	cell = |text, is_best| <td class="num" class:best={is_best}>{text}</td>
+	# ---- Helpers ----
 
 	## An entry's framework and its kind, apart, for a column's head: "Roc Solid (keyed)" is
 	## "Roc Solid", then "keyed" under it.
@@ -142,7 +318,7 @@ JsBenchResults := [].{
 		}
 
 	<story name="The numbers' formats">
-		<p>{JsBenchResults.one(4575, " ms")} · {JsBenchResults.one(5, " MB")} · {JsBenchResults.times(206)} · {JsBenchResults.times(107)} · {JsBenchResults.one(0, "")}</p>
+		<p>{JsBenchResults.one(4575, " ms")} · {JsBenchResults.times(206)} · {JsBenchResults.factor(231)} · {JsBenchResults.factor(1600)} · {JsBenchResults.compared(3115, 1931, ("sooner", "later"))}</p>
 	</story>
 
 	<style>
@@ -169,6 +345,15 @@ JsBenchResults := [].{
 			letter-spacing: normal;
 			font-weight: normal;
 			color: var(--text);
+			white-space: nowrap;
+		}
+
+		.js-bench .unit,
+		.js-bench .kind {
+			display: block;
+			font-weight: normal;
+			text-transform: none;
+			letter-spacing: normal;
 		}
 
 		.js-bench .id {
@@ -177,45 +362,302 @@ JsBenchResults := [].{
 			color: var(--text-muted);
 		}
 
-		.js-bench .kind {
-			display: block;
-			font-weight: normal;
-			text-transform: none;
-			letter-spacing: normal;
-		}
-
 		.js-bench .spread {
 			display: block;
 			font-size: var(--size-xs);
 			color: var(--text-muted);
 		}
 
+		.js-bench .ours th[scope="row"],
+		.js-bench thead .ours {
+			color: var(--accent-strong);
+			font-weight: 600;
+		}
+
+		.js-bench tr.ours {
+			outline: 1px solid var(--accent);
+			outline-offset: -1px;
+		}
+
+		/* The scorecard: eight columns that fit beside each other. */
+		.js-bench .scorecard th,
+		.js-bench .scorecard td {
+			padding: var(--space-2);
+		}
+
+		.js-bench .scorecard thead th {
+			white-space: normal;
+		}
+
+		.js-bench .scorecard .kind {
+			font-size: var(--size-xs);
+			color: var(--text-muted);
+		}
+
+		/* Heat: how many times the best, from green to red. */
+		.js-bench .h1 {
+			background: color-mix(in srgb, var(--good) 16%, transparent);
+		}
+
+		.js-bench .h2 {
+			background: color-mix(in srgb, var(--good) 7%, transparent);
+		}
+
+		.js-bench .h3 {
+			background: color-mix(in srgb, var(--warn) 10%, transparent);
+		}
+
+		.js-bench .h4 {
+			background: color-mix(in srgb, var(--bad) 12%, transparent);
+		}
+
+		.js-bench .h5 {
+			background: color-mix(in srgb, var(--bad) 24%, transparent);
+		}
+
+		/* The scorecard's switch: a checkbox inside its label, the label two halves, the one shown lit. */
+		.js-bench .corner {
+			vertical-align: bottom;
+		}
+
+		.js-bench .mode {
+			position: relative;
+			display: inline-flex;
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--pill);
+			overflow: hidden;
+			cursor: pointer;
+			text-transform: none;
+			letter-spacing: normal;
+			font-size: var(--size-xs);
+		}
+
+		.js-bench .mode input {
+			position: absolute;
+			opacity: 0;
+			width: 1px;
+			height: 1px;
+		}
+
+		.js-bench .mode span {
+			padding: var(--space-1) var(--space-2);
+			white-space: nowrap;
+			color: var(--text-muted);
+		}
+
+		.js-bench .mode .as-ratio,
+		.js-bench .scorecard:has(.values:checked) .mode .as-value {
+			background: var(--accent-soft);
+			color: var(--accent-strong);
+		}
+
+		.js-bench .scorecard:has(.values:checked) .mode .as-ratio {
+			background: none;
+			color: var(--text-muted);
+		}
+
+		.js-bench .mode:has(input:focus-visible) {
+			outline: 2px solid var(--accent);
+			outline-offset: 2px;
+		}
+
+		.js-bench .scorecard .v,
+		.js-bench .scorecard:has(.values:checked) .r {
+			display: none;
+		}
+
+		.js-bench .scorecard:has(.values:checked) .v {
+			display: inline;
+		}
+
+		.js-bench .official,
+		.js-bench .scorecard td:last-child {
+			border-left: 1px solid var(--rule-strong);
+		}
+
+		.js-bench .note,
 		.js-bench .when {
 			font-size: var(--size-sm);
 			color: var(--text-muted);
 		}
 
-		.js-bench .best {
-			font-weight: 700;
+		.js-bench .note strong {
 			color: var(--text);
 		}
 
-		.js-bench .ours {
-			background: var(--accent-soft);
+		/* Roc Solid against each: radio buttons, hidden but focusable, each before its tab and its panel;
+		   the tabs in a row, the checked one's panel under them. */
+		.js-bench .versus {
+			display: flex;
+			flex-wrap: wrap;
+			gap: var(--space-2);
+			margin: var(--space-4) 0;
 		}
 
-		.js-bench thead .ours {
+		.js-bench .versus .pick {
+			position: absolute;
+			opacity: 0;
+			width: 1px;
+			height: 1px;
+		}
+
+		.js-bench .versus label {
+			order: 0;
+			padding: var(--space-1) var(--space-3);
+			border: 1px solid var(--rule-strong);
+			border-radius: var(--pill);
+			font-size: var(--size-sm);
+			color: var(--text-muted);
+			cursor: pointer;
+		}
+
+		.js-bench .versus .pick:checked + label {
+			background: var(--accent-soft);
+			border-color: var(--accent);
 			color: var(--accent-strong);
+		}
+
+		.js-bench .versus .pick:focus-visible + label {
+			outline: 2px solid var(--accent);
+			outline-offset: 2px;
+		}
+
+		.js-bench .versus .panel {
+			display: none;
+			order: 1;
+			width: 100%;
+		}
+
+		.js-bench .versus .pick:checked + label + .panel {
+			display: block;
+		}
+
+		.js-bench .lines {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
+
+		.js-bench .lines li {
+			display: grid;
+			grid-template-columns: 9rem 10rem 1fr;
+			gap: var(--space-3);
+			padding: var(--space-2) 0;
+			border-bottom: 1px solid var(--rule);
+		}
+
+		.js-bench .lines .what {
+			color: var(--text-muted);
+		}
+
+		.js-bench .lines .better {
+			color: var(--good);
+			font-weight: 600;
+		}
+
+		.js-bench .lines .worse {
+			color: var(--bad);
+			font-weight: 600;
+		}
+
+		.js-bench .lines .detail {
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+			font-variant-numeric: tabular-nums;
+		}
+
+		/* A chart a category, two side by side. */
+		.js-bench .charts {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: var(--space-5);
+			margin: var(--space-4) 0;
+		}
+
+		.js-bench .chart {
+			margin: 0;
+		}
+
+		.js-bench .chart figcaption {
+			margin-bottom: var(--space-2);
+			font-size: var(--size-sm);
+			color: var(--text-muted);
+		}
+
+		.js-bench .chart figcaption strong {
+			color: var(--text);
+		}
+
+		.js-bench .chart ol {
+			list-style: none;
+			margin: 0;
+			padding: 0;
+		}
+
+		.js-bench .chart li {
+			display: grid;
+			grid-template-columns: 9.5rem 1fr 3.5rem;
+			align-items: center;
+			gap: var(--space-2);
+			font-size: var(--size-xs);
+			color: var(--text-muted);
+		}
+
+		.js-bench .chart .track {
+			height: 0.6rem;
+			border-radius: var(--pill);
+			background: var(--fill);
+			overflow: hidden;
+		}
+
+		.js-bench .chart .fill {
+			display: block;
+			height: 100%;
+			background: var(--rule-strong);
+		}
+
+		.js-bench .chart .ours {
+			color: var(--accent-strong);
+			font-weight: 600;
+		}
+
+		.js-bench .chart .ours .fill {
+			background: var(--accent);
+		}
+
+		.js-bench .chart .value {
+			text-align: right;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.js-bench .all summary {
+			margin: var(--space-2) 0;
+		}
+
+		@media (max-width: 720px) {
+			.js-bench .charts {
+				grid-template-columns: minmax(0, 1fr);
+			}
+
+			.js-bench .lines li {
+				grid-template-columns: 1fr 1fr;
+			}
+
+			.js-bench .lines .detail {
+				grid-column: 1 / -1;
+			}
 		}
 	</style>
 }
 
 expect JsBenchResults.one(4575, " ms") == "45.8 ms"
-expect JsBenchResults.one(5, "") == "0.1"
 expect JsBenchResults.one(0, " ms") == "–"
 expect JsBenchResults.times(206) == "2.06×"
 expect JsBenchResults.times(107) == "1.07×"
-expect JsBenchResults.times(1000) == "10.00×"
 expect JsBenchResults.best([0, 300, 200, 0, 250]) == 200
 expect JsBenchResults.framework("Roc Solid (non-keyed)") == "Roc Solid" and JsBenchResults.kind("Roc Solid (non-keyed)") == "non-keyed"
-expect JsBenchResults.framework("React") == "React" and JsBenchResults.kind("React") == ""
+expect JsBenchResults.heat(100) == "h1" and JsBenchResults.heat(140) == "h2" and JsBenchResults.heat(230) == "h3" and JsBenchResults.heat(500) == "h4" and JsBenchResults.heat(1700) == "h5" and JsBenchResults.heat(0) == ""
+expect JsBenchResults.factor(231) == "2.3×" and JsBenchResults.factor(1600) == "16×" and JsBenchResults.factor(105) == "1.1×"
+expect JsBenchResults.compared(3115, 1931, ("sooner", "later")) == "1.6× later"
+expect JsBenchResults.compared(2900, 4645, ("sooner", "later")) == "1.6× sooner"
+expect JsBenchResults.compared(1000, 1030, ("faster", "slower")) == "about the same"

@@ -1853,6 +1853,176 @@
    "first_paint_ms": 204.55
   }
  },
+ "categories": [
+  {
+   "id": "ready",
+   "label": "Ready to use",
+   "unit": "ms",
+   "what": "a cold load until the buttons answer",
+   "values": {
+    "keyed/roc-solid": 311.55,
+    "non-keyed/roc-solid": 295.7,
+    "keyed/vanillajs": 17.63,
+    "non-keyed/vanillajs": 20.37,
+    "keyed/solid": 42.03,
+    "keyed/leptos": 232.82,
+    "keyed/joy": 193.14,
+    "non-keyed/joy": 179.5,
+    "keyed/react-hooks": 211.63
+   },
+   "ratios": {
+    "keyed/roc-solid": 17.67,
+    "non-keyed/roc-solid": 16.77,
+    "keyed/vanillajs": 1,
+    "non-keyed/vanillajs": 1.16,
+    "keyed/solid": 2.38,
+    "keyed/leptos": 13.21,
+    "keyed/joy": 10.96,
+    "non-keyed/joy": 10.18,
+    "keyed/react-hooks": 12
+   }
+  },
+  {
+   "id": "paint",
+   "label": "First paint",
+   "unit": "ms",
+   "what": "a cold load until the browser first paints",
+   "values": {
+    "keyed/roc-solid": 29,
+    "non-keyed/roc-solid": 32.3,
+    "keyed/vanillajs": 32.55,
+    "non-keyed/vanillajs": 36.55,
+    "keyed/solid": 46.45,
+    "keyed/leptos": 212.8,
+    "keyed/joy": 160.65,
+    "non-keyed/joy": 167.65,
+    "keyed/react-hooks": 204.55
+   },
+   "ratios": {
+    "keyed/roc-solid": 1,
+    "non-keyed/roc-solid": 1.11,
+    "keyed/vanillajs": 1.12,
+    "non-keyed/vanillajs": 1.26,
+    "keyed/solid": 1.6,
+    "keyed/leptos": 7.34,
+    "keyed/joy": 5.54,
+    "non-keyed/joy": 5.78,
+    "keyed/react-hooks": 7.05
+   }
+  },
+  {
+   "id": "making",
+   "label": "Making rows",
+   "unit": "ms",
+   "what": "create, replace, create 10,000, append",
+   "values": {
+    "keyed/roc-solid": 86.7,
+    "non-keyed/roc-solid": 65.03,
+    "keyed/vanillajs": 35.99,
+    "non-keyed/vanillajs": 32.94,
+    "keyed/solid": 37.41,
+    "keyed/leptos": 43.41,
+    "keyed/joy": 44.78,
+    "non-keyed/joy": 37.2,
+    "keyed/react-hooks": 47.56
+   },
+   "ratios": {
+    "keyed/roc-solid": 2.63,
+    "non-keyed/roc-solid": 1.97,
+    "keyed/vanillajs": 1.09,
+    "non-keyed/vanillajs": 1,
+    "keyed/solid": 1.14,
+    "keyed/leptos": 1.32,
+    "keyed/joy": 1.36,
+    "non-keyed/joy": 1.13,
+    "keyed/react-hooks": 1.44
+   }
+  },
+  {
+   "id": "updating",
+   "label": "Updating rows",
+   "unit": "ms",
+   "what": "update, select, swap, remove, clear",
+   "values": {
+    "keyed/roc-solid": 17.63,
+    "non-keyed/roc-solid": 18.94,
+    "keyed/vanillajs": 11.69,
+    "non-keyed/vanillajs": 12.6,
+    "keyed/solid": 12.39,
+    "keyed/leptos": 12.27,
+    "keyed/joy": 12.42,
+    "non-keyed/joy": 13.38,
+    "keyed/react-hooks": 18.84
+   },
+   "ratios": {
+    "keyed/roc-solid": 1.51,
+    "non-keyed/roc-solid": 1.62,
+    "keyed/vanillajs": 1,
+    "non-keyed/vanillajs": 1.08,
+    "keyed/solid": 1.06,
+    "keyed/leptos": 1.05,
+    "keyed/joy": 1.06,
+    "non-keyed/joy": 1.14,
+    "keyed/react-hooks": 1.61
+   }
+  },
+  {
+   "id": "memory",
+   "label": "Memory",
+   "unit": "MB",
+   "what": "ready, with 1,000 rows, after creating and clearing",
+   "values": {
+    "keyed/roc-solid": 2.05,
+    "non-keyed/roc-solid": 2.03,
+    "keyed/vanillajs": 0.86,
+    "non-keyed/vanillajs": 0.88,
+    "keyed/solid": 1.07,
+    "keyed/leptos": 1.18,
+    "keyed/joy": 1.1,
+    "non-keyed/joy": 1.11,
+    "keyed/react-hooks": 2.12
+   },
+   "ratios": {
+    "keyed/roc-solid": 2.39,
+    "non-keyed/roc-solid": 2.37,
+    "keyed/vanillajs": 1,
+    "non-keyed/vanillajs": 1.02,
+    "keyed/solid": 1.25,
+    "keyed/leptos": 1.38,
+    "keyed/joy": 1.28,
+    "non-keyed/joy": 1.29,
+    "keyed/react-hooks": 2.48
+   }
+  },
+  {
+   "id": "download",
+   "label": "Download",
+   "unit": "KB",
+   "what": "everything the page loads, compressed",
+   "values": {
+    "keyed/roc-solid": 73.4,
+    "non-keyed/roc-solid": 68.8,
+    "keyed/vanillajs": 2.5,
+    "non-keyed/vanillajs": 2.4,
+    "keyed/solid": 4.5,
+    "keyed/leptos": 48.8,
+    "keyed/joy": 47.4,
+    "non-keyed/joy": 47.4,
+    "keyed/react-hooks": 51.4
+   },
+   "ratios": {
+    "keyed/roc-solid": 30.58,
+    "non-keyed/roc-solid": 28.67,
+    "keyed/vanillajs": 1.04,
+    "non-keyed/vanillajs": 1,
+    "keyed/solid": 1.88,
+    "keyed/leptos": 20.33,
+    "keyed/joy": 19.75,
+    "non-keyed/joy": 19.75,
+    "keyed/react-hooks": 21.42
+   }
+  }
+ ],
  "hundredths": {
   "results": {
    "keyed/roc-solid": {
@@ -2496,6 +2666,158 @@
     "uncompressed_kb": 19030,
     "first_paint_ms": 20455
    }
-  }
+  },
+  "categories": [
+   {
+    "id": "ready",
+    "values": [
+     31155,
+     29570,
+     1763,
+     2037,
+     4203,
+     23282,
+     19314,
+     17950,
+     21163
+    ],
+    "ratios": [
+     1767,
+     1677,
+     100,
+     116,
+     238,
+     1321,
+     1096,
+     1018,
+     1200
+    ]
+   },
+   {
+    "id": "paint",
+    "values": [
+     2900,
+     3230,
+     3255,
+     3655,
+     4645,
+     21280,
+     16065,
+     16765,
+     20455
+    ],
+    "ratios": [
+     100,
+     111,
+     112,
+     126,
+     160,
+     734,
+     554,
+     578,
+     705
+    ]
+   },
+   {
+    "id": "making",
+    "values": [
+     8670,
+     6503,
+     3599,
+     3294,
+     3741,
+     4341,
+     4478,
+     3720,
+     4756
+    ],
+    "ratios": [
+     263,
+     197,
+     109,
+     100,
+     114,
+     132,
+     136,
+     113,
+     144
+    ]
+   },
+   {
+    "id": "updating",
+    "values": [
+     1763,
+     1894,
+     1169,
+     1260,
+     1239,
+     1227,
+     1242,
+     1338,
+     1884
+    ],
+    "ratios": [
+     151,
+     162,
+     100,
+     108,
+     106,
+     105,
+     106,
+     114,
+     161
+    ]
+   },
+   {
+    "id": "memory",
+    "values": [
+     205,
+     203,
+     86,
+     88,
+     107,
+     118,
+     110,
+     111,
+     212
+    ],
+    "ratios": [
+     239,
+     237,
+     100,
+     102,
+     125,
+     138,
+     128,
+     129,
+     248
+    ]
+   },
+   {
+    "id": "download",
+    "values": [
+     7340,
+     6880,
+     250,
+     240,
+     450,
+     4880,
+     4740,
+     4740,
+     5140
+    ],
+    "ratios": [
+     3058,
+     2867,
+     104,
+     100,
+     188,
+     2033,
+     1975,
+     1975,
+     2142
+    ]
+   }
+  ]
  }
 }

@@ -12,8 +12,10 @@ meta = {
 	title: "js-framework-benchmark · Examples",
 	description: "Roc Solid in js-framework-benchmark, measured beside vanillajs, Solid, Leptos, Joy and React: CPU time, memory, download and first paint, each benchmark's numbers, what they say, and how to run it.",
 	toc: [
-		{ id: "results", label: "The results" },
-		{ id: "each", label: "Each benchmark" },
+		{ id: "glance", label: "At a glance" },
+		{ id: "versus", label: "Roc Solid against each" },
+		{ id: "charts", label: "Each category" },
+		{ id: "numbers", label: "All the numbers" },
 		{ id: "reading", label: "What they say" },
 		{ id: "entries", label: "The entries" },
 		{ id: "run", label: "Run it" },
@@ -39,9 +41,13 @@ view! = |_|
 		<Heading id="reading">What they say</Heading>
 		<p>
 			The first paint is the best of them: the page is HTML the server rendered (here, written as
-			files by <code>rocx build --static</code>), shown before its wasm has loaded. Updating rows that
-			are there is close to the others: a row's holes run again only when its data changed (compared
-			with <code>==</code>), selecting one patches a class, and a swap moves the two rows that moved.
+			files by <code>rocx build --static</code>), shown before its wasm has loaded. Being ready to use
+			is the other way round: the page answers a click once the runtime and the wasm have come and
+			hydrated it, and on the benchmark's server, which compresses each file slowly as it sends it,
+			that is the last of them. The runtime's raw size is most of that: shortening its names, as a
+			full minifier would, makes it a third smaller. Updating rows that are there is close to the
+			others: a row's holes run again only when its data changed (compared with <code>==</code>),
+			selecting one patches a class, and a swap moves the two rows that moved.
 		</p>
 		<p>
 			Making rows is where Roc Solid is slower: about two and a half times vanillajs for 1,000 rows,

@@ -393,6 +393,12 @@ Site := [].{
 			of = |key| Str.join_with(names.map(|name| Site.int(field(field(field(field(hundredths, "results"), name), id), key))), ", ")
 			"\t\t{ id: ${q(id)}, label: ${q(Value.str(field(b, "label")))}, means: [${of("mean")}], spreads: [${of("stddev")}] },"
 		}
+		category = |c, i| {
+			numbers = field(Value.items(field(hundredths, "categories")).get(i) ?? Null, "values")
+			ratios = field(Value.items(field(hundredths, "categories")).get(i) ?? Null, "ratios")
+			whole = |list| Str.join_with(Value.items(list).map(Site.int), ", ")
+			"\t\t{ id: ${q(Value.str(field(c, "id")))}, label: ${q(Value.str(field(c, "label")))}, unit: ${q(Value.str(field(c, "unit")))}, what: ${q(Value.str(field(c, "what")))}, values: [${whole(numbers)}], ratios: [${whole(ratios)}] },"
+		}
 		summary = |name| {
 			s = field(field(hundredths, "summary"), name)
 			n = |key| Site.int(field(s, key))
@@ -424,10 +430,21 @@ Site := [].{
 				"\tentries : List(Entry)",
 				"\tentries = [${Str.join_with(frameworks.map(entry), ", ")}]",
 				"",
-				"\t## Each benchmark, in the runner's order.",
-				"\trows : List(Row)",
-				"\trows = [",
+				"\t## What the page leads with: a figure each (`what` it is made of, in `unit`), each entry's value and its ratio to the best entry's, in hundredths, in `entries`' order (0 where there is none). Lower is better.",
+				"\tCategory : { id : Str, label : Str, unit : Str, what : Str, values : List(U64), ratios : List(U64) }",
+				"",
+				"\t## Ready to use, first paint, making rows, updating rows, memory, download.",
+				"\tcategories : List(Category)",
+				"\tcategories = [",
 			]
+				.concat(Value.items(field(results, "categories")).map_with_index(category))
+				.concat([
+					"\t]",
+					"",
+					"\t## Each benchmark, in the runner's order.",
+					"\trows : List(Row)",
+					"\trows = [",
+				])
 				.concat(Value.items(field(results, "benchmarks")).map(row))
 				.concat(["\t]", "", "\t## Each entry's summary, in `entries`' order.", "\tsummaries : List(Summary)", "\tsummaries = ["])
 				.concat(names.map(summary))

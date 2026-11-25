@@ -7,6 +7,7 @@
 //   node benchmarks/jsframework/run.mjs entries           our two entries, built into the clone
 //   node benchmarks/jsframework/run.mjs bench [options]   entries, then the runner, then report
 //   node benchmarks/jsframework/run.mjs report <run dir>  a run's results, pooled, into the report
+//   node benchmarks/jsframework/run.mjs ready <run dir>   the cold loads (ready to use) alone, for a run
 //
 //   --rounds=2              how many times the whole suite runs; the second round walks the
 //                           frameworks in reverse order, and the report pools all rounds
@@ -204,15 +205,49 @@ export async function bench(args) {
 			}
 			cpSync(results, kept, { recursive: true });
 		}
+		console.error("ready: cold loads, every entry");
+		const readyMs = await ready(frameworks, binary);
 		const after = { machine: machine(), load: loadavg()[0], at: new Date().toISOString() };
 		const chromeVersion = said(binary, ["--version"]).replace(/^Google Chrome for Testing\s*/, "");
-		const meta = { version, rounds, count: count ? Number(count) : 15, frameworks, chrome: chromeVersion, clone: said("git", ["rev-parse", "--short", "HEAD"], { cwd: clone }), before, after, failures, unplugged, minutes: Number(((Date.now() - started) / 60_000).toFixed(1)) };
+		const meta = { version, rounds, count: count ? Number(count) : 15, frameworks, chrome: chromeVersion, clone: said("git", ["rev-parse", "--short", "HEAD"], { cwd: clone }), before, after, failures, unplugged, ready: readyMs, minutes: Number(((Date.now() - started) / 60_000).toFixed(1)) };
 		writeFileSync(join(run, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
 		console.error(`ran in ${elapsed(started)}${failures.length ? `; ${failures.length} failed:\n${failures.join("\n")}` : ""}`);
 	} finally {
 		stop();
 	}
 	return report(run);
+}
+
+/** When each entry's page is ready to use, cold: a fresh browser (an empty cache) loads it from the
+ * benchmark's server with compression on, as the runner loads a page for its first paint, `loads`
+ * times; the median. Ready is when its buttons answer a click: Roc Solid's page is HTML that paints at
+ * once, ready once the runtime and the wasm have come and hydrated it (`rocx:ready`); the others draw
+ * their buttons with their script, ready when `#run` is there. The runner measures the first paint
+ * alone, which flatters a page the server rendered. */
+export async function ready(frameworks, binary, loads = 5) {
+	const { launch } = await import("../../web/test/browser.mjs");
+	const out = {};
+	for (const framework of frameworks) {
+		const times = [];
+		for (let i = 0; i < loads; i++) {
+			await fetch(`http://localhost:${port}/enableCompression`);
+			const browser = await launch(binary);
+			try {
+				const page = await browser.page();
+				await page.beforeEachDocument(`document.addEventListener("rocx:ready", () => { window.readyAt = performance.now(); });
+					new MutationObserver(() => { if (window.runAt === undefined && document.querySelector("#run")) window.runAt = performance.now(); }).observe(document, { childList: true, subtree: true });`);
+				await page.goto(`http://localhost:${port}/frameworks/${framework}/index.html`);
+				const rocx = await page.eval("document.querySelector('script[data-rocx]') !== null");
+				await page.wait(rocx ? "window.readyAt !== undefined" : "document.querySelector('#run') !== null", 20_000);
+				times.push(await page.eval(rocx ? "window.readyAt" : "window.runAt ?? performance.getEntriesByType('navigation')[0].domInteractive"));
+			} finally {
+				await browser.close();
+			}
+		}
+		out[framework] = round2(median(times));
+		console.error(`ready: ${framework} ${out[framework]} ms`);
+	}
+	return out;
 }
 
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -290,6 +325,25 @@ export function report(run) {
 		const [kind, directory] = entry.split("/");
 		return `${NAMES[directory] ?? directory} (${kind})`;
 	};
+	// The categories the docs' page leads with: a figure each (a geometric mean where it is several
+	// benchmarks), and each entry's against the best of them (1 for the best). Lower is better.
+	const readyMs = meta.ready ?? {};
+	const of = (entry, ids) => {
+		const values = ids.map((id) => results[entry][id]?.mean);
+		return values.every((value) => value > 0) ? geomean(values) : null;
+	};
+	const categories = [
+		{ id: "ready", label: "Ready to use", unit: "ms", what: "a cold load until the buttons answer", value: (entry) => readyMs[entry] ?? null },
+		{ id: "paint", label: "First paint", unit: "ms", what: "a cold load until the browser first paints", value: (entry) => of(entry, ["43_first-paint"]) },
+		{ id: "making", label: "Making rows", unit: "ms", what: "create, replace, create 10,000, append", value: (entry) => of(entry, ["01_run1k", "02_replace1k", "07_create10k", "08_create1k-after1k_x2"]) },
+		{ id: "updating", label: "Updating rows", unit: "ms", what: "update, select, swap, remove, clear", value: (entry) => of(entry, ["03_update10th1k_x16", "04_select1k", "05_swap1k", "06_remove-one-1k", "09_clear1k_x8"]) },
+		{ id: "memory", label: "Memory", unit: "MB", what: "ready, with 1,000 rows, after creating and clearing", value: (entry) => of(entry, ["21_ready-memory", "22_run-memory", "25_run-clear-memory"]) },
+		{ id: "download", label: "Download", unit: "KB", what: "everything the page loads, compressed", value: (entry) => of(entry, ["42_size-compressed"]) },
+	].map(({ value, ...category }) => {
+		const values = Object.fromEntries(meta.frameworks.map((entry) => [entry, value(entry)]));
+		const best = Math.min(...Object.values(values).filter((v) => v !== null));
+		return { ...category, values: Object.fromEntries(Object.entries(values).map(([entry, v]) => [entry, v === null ? null : round2(v)])), ratios: Object.fromEntries(Object.entries(values).map(([entry, v]) => [entry, v === null ? null : round2(v / best)])) };
+	});
 	const document = {
 		measured: meta.before.at.slice(0, 10),
 		commit: meta.version,
@@ -308,11 +362,13 @@ export function report(run) {
 		benchmarks: ids.map((id) => ({ id, label: LABELS[id] })),
 		results,
 		summary,
+		categories,
 		// The same numbers in hundredths, whole, for the docs' page (rocx site prepare writes
 		// site/Generated/JsBench.roc from them: rocx reads a JSON number whole).
 		hundredths: {
 			results: Object.fromEntries(meta.frameworks.map((entry) => [entry, Object.fromEntries(Object.entries(results[entry]).map(([id, r]) => [id, { mean: Math.round(r.mean * 100), stddev: Math.round(r.stddev * 100) }]))])),
 			summary: Object.fromEntries(meta.frameworks.map((entry) => [entry, Object.fromEntries(Object.entries(summary[entry]).map(([name, value]) => [name, value === null ? null : Math.round(value * 100)]))])),
+			categories: categories.map((category) => ({ id: category.id, values: meta.frameworks.map((entry) => Math.round((category.values[entry] ?? 0) * 100)), ratios: meta.frameworks.map((entry) => Math.round((category.ratios[entry] ?? 0) * 100)) })),
 		},
 	};
 	writeFileSync(resultsFile, `${JSON.stringify(document, null, 1)}\n`);
@@ -352,8 +408,21 @@ if (process.argv[1] === import.meta.filename) {
 	if (command === "entries") console.error(`entries built, version ${entries()}`);
 	else if (command === "bench") await bench(args);
 	else if (command === "report" && args[0]) report(args[0]);
+	else if (command === "ready" && args[0]) {
+		// The cold loads alone, for a run measured before they were (or again): into its meta.json, then the report.
+		const stop = await server();
+		try {
+			const file = join(args[0], "meta.json");
+			const meta = JSON.parse(readFileSync(file, "utf8"));
+			meta.ready = await ready(meta.frameworks, chrome());
+			writeFileSync(file, `${JSON.stringify(meta, null, 2)}\n`);
+		} finally {
+			stop();
+		}
+		report(args[0]);
+	}
 	else {
-		console.error("usage: node benchmarks/jsframework/run.mjs entries | bench [--rounds=2] [--count=15] [--benchmarks=01_,05_] [--frameworks=keyed/roc-solid,…] | report <run dir>");
+		console.error("usage: node benchmarks/jsframework/run.mjs entries | bench [--rounds=2] [--count=15] [--benchmarks=01_,05_] [--frameworks=keyed/roc-solid,…] | report <run dir> | ready <run dir>");
 		process.exit(2);
 	}
 }

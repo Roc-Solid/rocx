@@ -68,6 +68,7 @@ just js-bench entries     # our two entries, built from this checkout into the c
 just js-bench bench       # the entries, then two rounds of everything, then the report
 just js-bench bench --rounds=1 --count=3 --benchmarks=01_,05_   # a quick look
 just js-bench report benchmarks/jsframework/runs/<stamp>        # a run's report again
+just js-bench ready benchmarks/jsframework/runs/<stamp>         # its cold loads (ready to use) again
 ```
 
 `bench` starts the benchmark's server on 8089 (`JSFB_PORT`; never 8080, which is the user's dev
@@ -77,7 +78,13 @@ minutes apart rather than an hour; the second round walks the entries in reverse
 pools every iteration of every round: per benchmark the mean and its standard deviation, and each
 round's median (the noise band); per entry the geometric mean of the CPU benchmarks and its
 slowdown against the fastest entry of each benchmark (the official table's measure), memory, and
-what the page downloads (compressed, as the benchmark's server sends it). It writes
+what the page downloads (compressed, as the benchmark's server sends it). After the rounds it measures what the runner doesn't: when each page is ready to use, cold (a
+fresh browser loads it from the benchmark's server, compression on, five times; Roc Solid's when it
+has hydrated, the others' when their script has drawn the buttons). The runner's first paint
+flatters a page the server rendered, which paints before its runtime and wasm have come. The report
+then groups the benchmarks into the categories the docs' page leads with (ready to use, first
+paint, making rows, updating rows, memory, download), each a geometric mean and each entry's ratio
+to the best. It writes
 `site/js-framework-benchmark.json` (committed, with the machine, its load and power, Chrome's version
 and the commits measured) and `runs/<stamp>/report.md` (raw results and logs per round; not
 committed).

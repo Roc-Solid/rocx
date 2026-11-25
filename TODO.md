@@ -155,7 +155,9 @@ When an item lands, delete its line here in the same commit.
   parsing it and making the elements one by one, and comment markers around every row and hole. The
   JS heap with 1,000 rows is 2.75 MB against vanillajs's 0.66 (four computations a row, each with its
   sources' Set); the wasm memory grows to its high-water mark and stays. The download is ~72 KB
-  compressed against Joy's 47 (shortening names, as esbuild would, saves 4 KB more of the runtime).
+  compressed against Joy's 47. Ready to use, cold, is the last of them (312 ms against React's 212):
+  the benchmark's server compresses each file as it sends it (brotli at its slowest), which costs by
+  the raw byte, and the runtime is 162 KB raw; shortening its names, as esbuild would, makes it 112.
   The entries go upstream once the repository is public and its compiler can be downloaded.
 - **Prebuilt, stripped platform bundles for every target** (`roc bundle`), so a newcomer needs only
   `roc` and `rocx`: no Node, Rust or Zig. With the fork compiler's release (D-069) and `rocx`, one
