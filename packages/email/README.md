@@ -53,7 +53,7 @@ Email.Message : { to : Str, subject : Str, text : Str, html : Str }
 Email.send! : Email.Message => Try({}, [EmailErr(Str)])
 
 Email.Options := {
-    from : Str ?? "",                              # "": MAIL_FROM, or else "rocx <rocx@localhost>"
+    from : Str ?? "",                              # unless MAIL_FROM is set; "": "rocx <rocx@localhost>"
     smtp_url! : ({} => Str) ?? (reads SMTP_URL),   # "": no SMTP server; mail is kept for the mailbox
 }
 Email.plugin : Email.Options -> Plugin.Value(context, ctx)
@@ -70,7 +70,8 @@ With no SMTP server, `send!` keeps the message for the dev mailbox, logs
 
 **`plugin`** adds:
 
-- **Its settings, read once at start.** `from`, or else `MAIL_FROM`, or else `rocx <rocx@localhost>`;
+- **Its settings, read once at start.** `MAIL_FROM` when it is set (so a deploy names the sender),
+  or else `from`, or else `rocx <rocx@localhost>`;
   and the SMTP server's URL from `smtp_url!`, which reads `SMTP_URL` unless the app gives a function
   of its own (a secret kept in a vault).
 - **A check of the SMTP server** (`email.smtp`), once the server has started: it connects (TLS and

@@ -17,7 +17,7 @@ import Smtp
 ##
 ## ```roc
 ## plugins: [Email.plugin({})]                                   # SMTP_URL and MAIL_FROM, from the environment
-## plugins: [Email.plugin({ from: "Acme <hello@example.com>" })] # MAIL_FROM said here
+## plugins: [Email.plugin({ from: "Acme <hello@example.com>" })] # unless MAIL_FROM says otherwise
 ##
 ## Email.send!({ to: "ada@example.com", subject: "Welcome", text: "…", html: "" })
 ## ```
@@ -26,7 +26,8 @@ Email := [].{
 	## A message: `html` may be empty, for text alone.
 	Message : { to : Str, subject : Str, text : Str, html : Str }
 
-	## Who email is from (`from`; "" for `MAIL_FROM`, or else `rocx <rocx@localhost>`), and where it
+	## Who email is from (`MAIL_FROM` when it is set, so a deploy says it; else `from`; else
+	## `rocx <rocx@localhost>`), and where it
 	## goes: the SMTP server's URL, which `smtp_url!` finds when the server starts (`SMTP_URL`, from
 	## the environment, unless the app gives a function of its own: a secret it keeps elsewhere); ""
 	## for none, and mail is kept for the dev mailbox.
@@ -128,16 +129,13 @@ check! = |{}| {
 	}
 }
 
-## Who email is from: `given`, or else `MAIL_FROM`, or else `rocx <rocx@localhost>`.
+## Who email is from: `MAIL_FROM` when it is set (a deploy's say), or else `given`, or else
+## `rocx <rocx@localhost>`.
 sender! : Str => Str
 sender! = |given|
-	if !given.is_empty() {
-		given
-	} else {
-		match Env.var!("MAIL_FROM") {
-			Ok(from) if !from.is_empty() => from
-			_ => "rocx <rocx@localhost>"
-		}
+	match Env.var!("MAIL_FROM") {
+		Ok(from) if !from.trim().is_empty() => from.trim()
+		_ => if (given.is_empty()) "rocx <rocx@localhost>" else given
 	}
 
 ## An address as written, `Ada Lovelace <ada@example.com>` or `ada@example.com`: its name (perhaps

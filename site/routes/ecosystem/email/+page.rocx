@@ -52,7 +52,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Option</th><th>Default</th><th>What it is</th></tr></thead>
 					<tbody>
-						<tr><td><code>from : Str</code></td><td><code>MAIL_FROM</code> from the environment, or else <code>{"rocx <rocx@localhost>"}</code></td><td>who email is from: <code>{"\"Acme <hello@example.com>\""}</code></td></tr>
+						<tr><td><code>from : Str</code></td><td><code>MAIL_FROM</code> from the environment, or else <code>{"rocx <rocx@localhost>"}</code></td><td>who email is from: <code>{"\"Acme <hello@example.com>\""}</code>, unless <code>MAIL_FROM</code> is set, which wins, so a deploy names the sender</td></tr>
 						<tr><td><code>{"smtp_url! : {} => Str"}</code></td><td>reads <code>SMTP_URL</code> from the environment</td><td>where email goes, found once when the server starts; give your own function to read it from somewhere else, such as a secrets vault. <code>""</code> means no SMTP server.</td></tr>
 					</tbody>
 				</table>

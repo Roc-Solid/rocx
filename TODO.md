@@ -65,6 +65,12 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **A page doesn't take its route's middleware** (found writing `rocx new`'s template, 2026-11-25):
+  `routes/account/+server.roc` names `middleware = Middlewares.signed_in`, but its `+page.rocx`
+  must name it too, or a signed-out visit renders the page, whose own read gets the 401, and shows
+  the error page instead of going to sign in. A page could take its `+server.roc`'s middleware
+  when it names none, or a 401 from `Auth.signed_out!` during a render could become the redirect.
+
 - **D-070's leftovers.** `{=x}` is the same hole as `{x}`, kept for old files: `rocx fmt` could drop
   the `=` and rocx then refuse it. `{...x}` is still a list's own hole: a `List` encodes through a
   container protocol (`encode_list`) that a hole's format could join, which would make it `{x}` too.
