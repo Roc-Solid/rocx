@@ -24,6 +24,7 @@ import SiteDev
 import Static
 import Release
 import Versions
+import New
 import qr.Qr
 
 main! = |args| {
@@ -41,6 +42,7 @@ main! = |args| {
 			Ok({})
 		}
 		Ok("upgrade") => Versions.upgrade!(words.drop_first(1), home)
+		Ok("new") => New.run!(words.drop_first(1), home)
 		Ok("check") if words.get(1) == Ok("--sql") => CheckSql.run!(words.drop_first(2), home)
 		# `rocx check [dir]`: an app, checked from its sources; `rocx check -- <command>`, a command's
 		# reports pointed into .rocx files.
@@ -68,7 +70,7 @@ main! = |args| {
 }
 
 usage! = |{}| {
-	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…] | rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx test [dir] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text> | rocx upgrade [<version>] | rocx --version")?
+	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…] | rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx test [dir] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text> | rocx new <dir> [--db sqlite|postgres|turso] | rocx upgrade [<version>] | rocx --version")?
 	Err(Exit(2))
 }
 

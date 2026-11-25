@@ -39,7 +39,7 @@ function makeRelease(dir, version) {
 	copyFileSync(rocxBinary(), join(dir, "bin", "rocx"));
 	spawnSync("chmod", ["+x", join(dir, "bin", "rocx")]);
 	symlinkSync(compiler, join(dir, "bin", "roc"));
-	const files = spawnSync("git", ["ls-files", "web/start.js", "web/runtime.js", "web/platform", "server/platform", "packages"], { cwd: root, encoding: "utf8" }).stdout.split("\n");
+	const files = spawnSync("git", ["ls-files", "web/start.js", "web/runtime.js", "web/platform", "server/platform", "packages", "templates/app"], { cwd: root, encoding: "utf8" }).stdout.split("\n");
 	for (const file of files.filter((file) => file && !/\/(example|test)\/|\.mjs$/.test(file))) {
 		mkdirSync(dirname(join(dir, file)), { recursive: true });
 		copyFileSync(join(root, file), join(dir, file));
@@ -342,6 +342,30 @@ test("rocx upgrade: a version installed and made the default; an app moved onto 
 	assert.equal(readlinkSync(join(home, "current")), join("versions", VERSION));
 	assert.equal(readFileSync(join(app, ".rocx-version"), "utf8"), `${VERSION}\n`);
 	assert.equal(real(join(app, ".rocx")), real(release));
+});
+
+test("rocx new from an install: the template copied and filled in, its version pinned, its link made; it checks and tests with no roc on PATH", { skip }, () => {
+	const made = bare(rocx, ["new", "my-shop", "--db", "sqlite"], { cwd: work });
+	assert.equal(made.code, 0, made.said);
+	assert.match(made.said, /Made my-shop, on rocx 2026\.11\.25 \(\.rocx-version\), on SQLite/);
+	const app = join(work, "my-shop");
+	assert.equal(readFileSync(join(app, ".rocx-version"), "utf8").trim(), VERSION);
+	assert.equal(real(join(app, ".rocx")), real(release));
+	const main = readFileSync(join(app, "main.roc"), "utf8");
+	assert.match(main, /pf: platform "\.\/\.rocx\/server\/platform\/main\.roc"/);
+	assert.match(main, /database: Sqlite\("data\/app\.db"\),/);
+	assert.match(main, /"my_shop_session"/);
+	assert.ok(existsSync(join(app, ".gitignore")), "the template's dotfiles too");
+	assert.equal(spawnSync("grep", ["-rl", "{{", app, "--exclude-dir=.rocx"], { encoding: "utf8" }).stdout.trim(), "", "no placeholder left");
+	const checked = bare(rocx, ["check", "."], { cwd: app });
+	assert.equal(checked.code, 0, checked.said);
+	const tested = bare(rocx, ["test"], { cwd: app });
+	assert.equal(tested.code, 0, tested.said);
+	assert.match(tested.said, /All \(\d+\) tests passed/);
+	// Not into a directory with something in it.
+	const again = bare(rocx, ["new", "my-shop"], { cwd: work });
+	assert.equal(again.code, 1, again.said);
+	assert.match(again.said, /isn't empty/);
 });
 
 test("an installed rocx refuses the commands that work on rocx itself", { skip }, () => {
