@@ -59,7 +59,9 @@ for (const { database, name } of flavors) {
 			generate(dir, { database });
 			built = await buildForTests(dir, { client: browser, opt: process.env.ROCX_TEST_OPT ?? "dev" });
 			db = await own(database);
-			server = await startServer(built.server, { database: db.url, statics: built.statics });
+			// Two-factor sign-in seals its secrets under a key from APP_SECRET, without which the app
+			// starts only under --dev.
+			server = await startServer(built.server, { database: db.url, statics: built.statics, env: { APP_SECRET: "the template test's secret, 32 characters or more" } });
 		});
 
 		after(async () => {

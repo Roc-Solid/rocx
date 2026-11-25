@@ -5,7 +5,9 @@
 ## a sign-in page (an address, the providers set up, and the dev sign-in under `--dev`), and the page
 ## a mailed link opens, whose button signs in (so a mail scanner that opens the link can't use it).
 ## An admin (`ADMIN_EMAILS`) may act as anyone for half an hour (`/impersonate`), to see the app as
-## they do.
+## they do. Anyone may turn on two-factor sign-in (`/two-factor`: a code from an authenticator app
+## after the link or the provider, or a recovery code), which `/admin` asks its admins to have;
+## its secrets are sealed under a key from `APP_SECRET`.
 app [program] { auth: "../main.roc", crypto: "../../crypto/main.roc", email: "../../email/main.roc", pf: platform "../../../server/platform/main.roc" }
 
 import auth.Auth
@@ -19,7 +21,7 @@ program = App.program({
 	middleware: Middlewares.default,
 	plugins: [
 		Email.plugin({ from: "Example <example@example.com>" }),
-		Auth.plugin({ admit!: Accounts.admit!, providers: [Auth.google, Auth.github], link_page: "/sign-in/link", refusal: "Sign in first, at /sign-in." }),
+		Auth.plugin({ admit!: Accounts.admit!, providers: [Auth.google, Auth.github], link_page: "/sign-in/link", refusal: "Sign in first, at /sign-in.", two_factor: Bool.True, issuer: "Auth example" }),
 	],
 	database: Sqlite("data/auth.db"),
 })

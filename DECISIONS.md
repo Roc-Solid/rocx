@@ -4908,6 +4908,74 @@ until a browser's first notification.
 **Reversible:** yes: new functions nothing else calls; without them packages/push goes back to
 failing every delivery with a reason.
 
+## D-081 Two-factor sign-in: an authenticator app's codes, and recovery codes
+
+**Status.** Built (2026-11-25). The user asked for two-factor sign-in in packages/auth (TOTP
+authenticator apps, plus recovery codes), and for `rocx new`'s app to have it.
+
+**Context.** packages/auth (D-072, D-077) signs people in with one factor: a mailed link or a
+provider. Whoever holds someone's mailbox, or their provider account, is them. A second factor that
+every phone already has is an authenticator app's six-digit code; passkeys wait on the host
+verifying a P-256 signature (D-080 signs; PROPOSALS.md §2).
+
+**Decision.**
+
+- **TOTP as authenticator apps read it** (RFC 6238): HMAC-SHA1, 30-second steps, six digits, a
+  20-byte random secret given as an `otpauth://totp/<issuer>:<account>?secret=<Base32>&issuer=…`
+  URI (a QR code) and as its Base32 in groups of four. A code is accepted for the step now and one
+  either side, and only for a step later than the last one the user used (kept as `last_step`, taken
+  in one statement), so a code is good once. `auth.Totp` is the arithmetic, plain Roc, with RFC
+  6238's SHA-1 vectors and RFC 4226's as `expect`s.
+- **packages/crypto** gains `Sha1` (pure Roc; there is no builtin), `Hmac.sha1` and `verify_sha1`
+  beside the unchanged SHA-256 API, and `Base32` (RFC 4648; decoding takes either case, padded or
+  not, strict otherwise), with FIPS 180-4's, RFC 2202's and RFC 4648's vectors.
+- **The secret at rest** is sealed with the platform's `AesGcm`, the user's id sealed beside it (a
+  row moved to another user doesn't open), under a key derived with HKDF-SHA256 from the app's
+  secret: `APP_SECRET` (the plugin's `key_env`), at least 32 characters. The package had no key of
+  its own; `APP_SECRET` is the platform's documented app secret (D-004, D-006), and HKDF keeps this
+  key for this purpose alone. It is checked by the plugin's start, not its `needs`: `needs` would
+  stop `rocx dev` on every new app until one is set, so under `--dev` a development secret stands
+  in (said on the log), and without `--dev` the server doesn't start, saying why.
+- **Opt-in**, `Auth.plugin({ two_factor: Bool.True, code_page, issuer })`. Off (the default),
+  nobody is asked and no key is needed.
+- **Enrolment**: `two_factor_start!(user, account)` (a new secret, waiting for its first code; its
+  `secret` and `uri`), `two_factor_pending!` (the same again while it waits, so a page that reloads
+  or shows a wrong code keeps its QR code), `two_factor_confirm!(user, code)` (on, and ten recovery
+  codes), `two_factor_disable!(user, code)` and `two_factor_regenerate!(user, code)` (each a code
+  now or a recovery code), `two_factor!(user)` (`Off`, `Pending`, `On({ since_ms,
+  recovery_codes })`). Recovery codes are 80 random bits (`k7qx-m2pa-r4tz-b6wd`), kept as their
+  SHA-256, used up in one statement.
+- **Signing in** with it on, every way (a link, a provider, the dev sign-in, and the app's own
+  `sign_in!` and `switch!`) keeps a sign-in waiting for the code (`auth_waiting`: the token's hash,
+  the user, where it goes, wrong codes so far, ten minutes) in the session cookie, and goes to the
+  app's `code_page`. The middleware treats it as signed out, but `signed_out!` sends a page to the
+  code page. `POST /auth/code` takes a code or a recovery code: right, a session under a new token
+  (the waiting one signs no one in), on to `then`; wrong, back to the code page (`?error=code`);
+  the fifth wrong code ends the sign-in (`?error=attempts`); none waiting, `?error=timeout`.
+  `waiting!(request)` is the waiting sign-in, for the code page. `SignInError` has the sentences.
+- **Who must have it** is the app's: `two_factor!` answers, a route refuses (the example's
+  `/admin` asks its admins). Impersonation isn't asked for the target's code: no one signs in.
+- **Tables**: migration `auth/0003_two_factor`, the same on SQLite and Postgres (and Turso).
+- **`rocx new`'s app** has it on: its account page sets it up (`<QrCode>` and the key), turns it
+  on (the recovery codes shown once) and off, and `/sign-in/code` asks for the code; plain forms,
+  so all of it works before the page's script has loaded. Its README says to set `APP_SECRET`.
+- **Tests**: the `expect`s above; the auth example's suite (enrolment, a waiting sign-in, the code
+  page, a wrong code, a code used twice, a recovery code used once, too many tries, too long,
+  turning it off, new recovery codes, a provider's sign-in, impersonation, `/admin`, the start
+  without `APP_SECRET`), on SQLite and Postgres, with codes Node's crypto makes; the template's
+  suite on SQLite, Turso and Postgres, in Chromium too.
+
+**Why.** An authenticator app is the second factor people have, and the parts that are easy to get
+wrong (a secret in clear, a code that works twice, unlimited guesses, a waiting sign-in that already
+counts as signed in, a session token that survives the step up) belong in the package; the pages,
+and who must have it, stay the app's.
+
+**Costs.** The app needs `APP_SECRET` in production once two-factor is on, and keeps it: changed,
+every authenticator stops working and only recovery codes sign in. One more read at each sign-in
+(whether the user has it on), and at a signed-out page's GET with a cookie (whether it waits for a
+code). Wrong codes are counted per sign-in, not per user across sign-ins (PROPOSALS.md §5).
+
+**Reversible:** yes: an option, off by default; a migration that adds tables.
 
 ## D-082 Payments and subscriptions through Stripe: packages/stripe
 

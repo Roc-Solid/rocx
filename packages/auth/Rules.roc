@@ -1,13 +1,16 @@
 import pf.Server
+import crypto.Base32
 import crypto.Base64
+import crypto.Hkdf
 import crypto.Hmac
 import crypto.Sha256
 
 ## packages/auth's rules, plain Roc: no effect, so `expect`s check each. Where a sign-in may send
 ## the browser after (`path`), what a token looks like and how it is kept (`token`, `hash`), the
 ## cookies' names, an address as it is kept (`address`), the OAuth state cookie (`State`), the PKCE
-## challenge, the URL that sends the browser to a provider, and what an ID token or GitHub's answers
-## say about who signed in. `Auth` puts the effects around them.
+## challenge, the URL that sends the browser to a provider, what an ID token or GitHub's answers
+## say about who signed in, and two-factor sign-in's (recovery codes, the sealing key, how long a
+## sign-in waits for its code). `Auth` puts the effects around them; `Totp` is the codes' own.
 Rules := [].{
 
 	## A path of this site to go to: `then` if it is one (`/notes/4?x=1`), else `home`; never another
@@ -209,10 +212,72 @@ Rules := [].{
 		}
 	}
 
+	## How long a sign-in waits for its second factor: ten minutes.
+	code_ms : I64
+	code_ms = 600_000
+
+	## How many wrong codes a sign-in waiting for one may have: the fifth ends it.
+	code_tries : I64
+	code_tries = 5
+
+	## `page`, going on to `then` after (`?then=`, left out when it is "" or "/"): the code page a
+	## sign-in waiting for its code goes to.
+	onward : Str, Str -> Str
+	onward = |page, then| Rules.url(page, if (then.is_empty() or then == "/") [] else [("then", then)])
+
+	## A code as typed, as it is compared: trimmed, without the spaces and dashes a person or an app
+	## puts in it, lower-cased.
+	typed : Str -> Str
+	typed = |given| Str.from_utf8_lossy(given.trim().with_ascii_lowercased().to_utf8().drop_if(|byte| byte == ' ' or byte == '-'))
+
+	## A recovery code from random bytes (10 of them): 16 letters of Base32, lower-cased, in groups of
+	## four (`k7qx-m2pa-r4tz-b6wd`): 80 bits, so its SHA-256 alone keeps it.
+	recovery_code : List(U8) -> Str
+	recovery_code = |random| {
+		letters = Base32.encode_unpadded(random.take_first(10)).with_ascii_lowercased().to_utf8()
+		groups = [0, 4, 8, 12].map(|at| Str.from_utf8_lossy(letters.sublist({ start: at, len: 4 })))
+		Str.join_with(groups, "-")
+	}
+
+	## Whether a code as typed (`typed`'s) has a recovery code's shape: 16 letters of Base32.
+	is_recovery : Str -> Bool
+	is_recovery = |typed_code|
+		match Base32.decode(typed_code) {
+			Ok(bytes) => bytes.len() == 10
+			Err(_) => Bool.False
+		}
+
+	## The key that seals authenticators' secrets, from the app's secret (`APP_SECRET`): 32 bytes of
+	## HKDF-SHA256 with this package's own `info`, so the app's secret can key other things too.
+	sealing_key : Str -> List(U8)
+	sealing_key = |secret| Hkdf.sha256(secret.to_utf8(), [], "roc solid packages/auth: two-factor secrets".to_utf8(), 32) ?? []
+
+	## The secret a development server (`--dev`) seals with when the app gives none: never for
+	## production, where the plugin won't start without one.
+	dev_secret : Str
+	dev_secret = "packages/auth: the development secret, under --dev only"
+
+	## What is sealed of `user`'s authenticator: its secret, then their id, so a sealed secret moved
+	## onto another user's row doesn't open as theirs.
+	sealed_plain : List(U8), Str -> List(U8)
+	sealed_plain = |secret, user| secret.concat(user.to_utf8())
+
+	## The secret `sealed_plain` holds for `user`, if it is theirs.
+	secret_of : List(U8), Str -> Try(List(U8), [NotTheirs])
+	secret_of = |plain, user| {
+		owner = user.to_utf8()
+		if plain.len() > owner.len() and plain.take_last(owner.len()) == owner {
+			Ok(plain.take_first(plain.len() - owner.len()))
+		} else {
+			Err(NotTheirs)
+		}
+	}
+
 	## Where a sign-in that failed sends the browser: the app's sign-in page with why
-	## (`?error=link|refused|provider|state|unavailable` and, for `refused` and `provider`,
-	## `&reason=`), whose address it was when it is known (`&email=`: `admit!` turned it away), and
-	## where they were going (`&then=`).
+	## (`?error=link|refused|provider|state|unavailable|attempts|timeout` and, for `refused` and
+	## `provider`, `&reason=`), whose address it was when it is known (`&email=`: `admit!` turned it
+	## away), and where they were going (`&then=`); or the code page, after a wrong code
+	## (`?error=code`).
 	failed : Str, { code : Str, reason : Str, email : Str, then : Str } -> Str
 	failed = |sign_in, why| {
 		given = [("error", why.code), ("reason", why.reason), ("email", why.email)].keep_if(|(_, value)| !value.is_empty())
@@ -231,6 +296,23 @@ payload_of = |jwt|
 			}
 		_ => Err("the ID token isn't a JWT")
 	}
+
+# ---- two-factor ----
+expect Rules.onward("/sign-in/code", "/notes?x=1") == "/sign-in/code?then=%2Fnotes%3Fx%3D1"
+expect Rules.onward("/sign-in/code", "/") == "/sign-in/code"
+expect Rules.typed(" 123 456 ") == "123456"
+expect Rules.typed("K7QX-M2PA-R4TZ-B6WD") == "k7qxm2par4tzb6wd"
+expect Rules.recovery_code(List.repeat(0, 10)) == "aaaa-aaaa-aaaa-aaaa"
+expect Rules.recovery_code([0xff, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0]) == "7777-7777-aaaa-aaaa"
+expect Rules.is_recovery(Rules.typed(Rules.recovery_code(List.repeat(0xa5, 10))))
+expect !Rules.is_recovery("123456")
+expect !Rules.is_recovery("k7qxm2par4tzb6w")
+expect !Rules.is_recovery("k7qxm2par4tzb6w1")
+expect Rules.sealing_key("a secret of the app's, 32 characters or more").len() == 32
+expect Rules.sealing_key("one") != Rules.sealing_key("two")
+expect Rules.secret_of(Rules.sealed_plain([1, 2, 3], "user-1"), "user-1") == Ok([1, 2, 3])
+expect Rules.secret_of(Rules.sealed_plain([1, 2, 3], "user-1"), "user-2") == Err(NotTheirs)
+expect Rules.secret_of("user-1".to_utf8(), "user-1") == Err(NotTheirs)
 
 # ---- path ----
 expect Rules.path("/notes/4?x=1", "/") == "/notes/4?x=1"

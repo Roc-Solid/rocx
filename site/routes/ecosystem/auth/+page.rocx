@@ -8,17 +8,19 @@ import ../../../Generated/Sources
 import ../../../Generated/Paths
 
 ## The auth package, a plugin: the package's example app file by file, how signing in goes (a mailed
-## link, a provider, the dev sign-in), who gets in, sessions and the middleware, the providers, what
-## a failed sign-in says, the tables, safety, and what comes next. Static: signing in needs a server.
+## link, a provider, the dev sign-in), who gets in, sessions and the middleware, two-factor sign-in,
+## the providers, what a failed sign-in says, the tables, safety, and what comes next. Static:
+## signing in needs a server.
 meta = {
 	title: "Auth",
-	description: "Sign-in for Roc Solid apps, as a plugin: by a mailed link or at Google, GitHub and any OpenID Connect provider; sessions kept as hashed tokens in the app's database; middleware that hands the signed-in user on. No pages: the app's own.",
+	description: "Sign-in for Roc Solid apps, as a plugin: by a mailed link or at Google, GitHub and any OpenID Connect provider; two-factor sign-in with an authenticator app; sessions kept as hashed tokens in the app's database; middleware that hands the signed-in user on. No pages: the app's own.",
 	toc: [
 		{ id: "example", label: "A first app" },
 		{ id: "how", label: "How signing in goes" },
 		{ id: "admit", label: "Who gets in" },
 		{ id: "sessions", label: "Sessions and middleware" },
 		{ id: "impersonation", label: "Impersonation" },
+		{ id: "two-factor", label: "Two-factor sign-in" },
 		{ id: "providers", label: "Providers" },
 		{ id: "failed", label: "When it fails" },
 		{ id: "tables", label: "The tables" },
@@ -35,8 +37,9 @@ view! = |_|
 				title="Sign-in you don't write yourself"
 			>
 				People sign in by a link mailed to their address, or at Google, GitHub or any OpenID Connect
-				provider. Sessions live in your app's database. Middleware hands the signed-in user to your
-				routes. The package is a plugin, and has no pages: your sign-in page is yours.
+				provider, and with a code from an authenticator app too once they turn that on. Sessions live in
+				your app's database. Middleware hands the signed-in user to your routes. The package is a plugin,
+				and has no pages: your sign-in page is yours.
 			</PageHero>
 			<p>
 				Signing in is easy to write and easy to get wrong: tokens kept in plain text, links that work
@@ -174,8 +177,66 @@ view! = |_|
 				admin, it goes back when its time runs out or on <code>Auth.stop_impersonating!</code>, and each
 				start and stop is on the log with both users. Who may impersonate is yours to decide before you
 				call it; the example lets the addresses on <code>ADMIN_EMAILS</code>. Record who did what, and guard
-				what only a person may change themselves, by <code>real_user</code>.
+				what only a person may change themselves, by <code>real_user</code>. An admin acting as someone
+				with two-factor sign-in on isn't asked for their code: nobody signs in.
 			</p>
+
+			<Heading id="two-factor">Two-factor sign-in</Heading>
+			<p>
+				With <code>two_factor: Bool.True</code> in the plugin's options, your users may turn on two-factor
+				sign-in. From then on, after their link or their provider, they enter the six-digit code their
+				authenticator app shows (1Password, Google Authenticator, a phone's own passwords app), or one of
+				their recovery codes. The codes are TOTP's (RFC 6238), which every authenticator app makes.
+			</p>
+			<p>
+				<strong>Turning it on.</strong> <code>{"Auth.two_factor_start!(user, account)"}</code> makes a secret and
+				gives you its <code>otpauth://</code> URI, to show as a QR code (<a href={Paths.ecosystem_qr}>packages/qr</a>'s
+				<code>QrCode</code>), and the secret as text, for an app that can't scan. The first code the app
+				shows turns it on, and gives ten recovery codes, each good once in place of a code. Show them
+				once: only their hashes are kept. The example's endpoints:
+			</p>
+			<Code title={Sources.auth_example_two_factor.file} source={Sources.auth_example_two_factor.rocx} />
+			<Code title={Sources.auth_example_two_factor_confirm.file} source={Sources.auth_example_two_factor_confirm.rocx} />
+			<p>
+				<code>Auth.two_factor_disable!</code> turns it off and <code>Auth.two_factor_regenerate!</code> makes new
+				recovery codes, each given a code the app shows now, or a recovery code.
+			</p>
+			<p>
+				<strong>Signing in.</strong> A user with it on isn't signed in by their link or provider yet: the
+				sign-in waits ten minutes for their code, and the browser goes to your code page
+				(<code>code_page</code>, <code>/sign-in/code</code>). Meanwhile your middleware treats them as signed
+				out, but a page sends them to the code page, not the sign-in page. The code page posts the code to
+				<code>/auth/code</code>:
+			</p>
+			<Code title={Sources.auth_example_code_page.file} source={Sources.auth_example_code_page.rocx} />
+			<ul>
+				<li>
+					A code is the one the app shows now, or for the 30 seconds either side (a phone's clock a little
+					out), and works once: a code already used is refused, even in time.
+				</li>
+				<li>A recovery code works once, and its use is on the log.</li>
+				<li>
+					A right code starts the session under a new token, so the one the browser waited with signs no
+					one in. A wrong one comes back with <code>?error=code</code>; the fifth ends the sign-in.
+				</li>
+			</ul>
+			<p>
+				<strong>Who must have it.</strong> The package doesn't decide: <code>{"Auth.two_factor!(user)"}</code> says
+				whether it is on, and a route that wants it refuses those without it. The example's admins must
+				have it:
+			</p>
+			<Code title={Sources.auth_example_admin.file} source={Sources.auth_example_admin.rocx} />
+			<p>
+				<strong>The secret at rest</strong> is sealed with the platform's <code>AesGcm</code>, under a key derived
+				from your app's secret, <code>APP_SECRET</code> (32 characters or more: <code>openssl rand -hex 32</code>).
+				With two-factor on, the server won't start without it, but under <code>--dev</code>, where a
+				development secret stands in. Keep it: changed, every authenticator's codes stop working, and
+				only recovery codes sign in.
+			</p>
+			<Note>
+				The app <code>rocx new</code> makes has all of it: a section of its account page that sets it up with a
+				QR code and turns it on and off, and its code page.
+			</Note>
 
 			<Heading id="providers">Providers</Heading>
 			<p>
@@ -220,9 +281,12 @@ view! = |_|
 						<tr><td><code>provider</code></td><td>the provider refused, couldn't be reached, or isn't set up; <code>{"&reason="}</code> says which</td></tr>
 						<tr><td><code>state</code></td><td>back from a provider too late, or in another browser</td></tr>
 						<tr><td><code>unavailable</code></td><td>the database couldn't take it just then</td></tr>
+						<tr><td><code>attempts</code></td><td>the fifth wrong code ended a sign-in waiting for its code</td></tr>
+						<tr><td><code>timeout</code></td><td>no sign-in was waiting for a code in this browser: ten minutes went by</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
+			<p>A wrong code goes back to your code page with <code>?error=code</code>.</p>
 			<p>
 				<code>auth.SignInError</code> has these sentences: <code>SignInError.message(query)</code> gives the one
 				for a sign-in page's query, and <code>SignInError.field(query, "then")</code> reads a field. It names no
@@ -231,10 +295,12 @@ view! = |_|
 
 			<Heading id="tables">The tables</Heading>
 			<p>
-				The plugin's migration makes three tables, the same on SQLite and on Postgres:
-				<code>auth_sessions</code>, <code>auth_links</code> (links on their way) and
-				<code>auth_identities</code> (which of your users each identity signed in as). Your users stay in
-				your own table; the package knows them only by the id <code>admit!</code> gives.
+				The plugin's migrations make its tables, the same on SQLite and on Postgres:
+				<code>auth_sessions</code>, <code>auth_links</code> (links on their way),
+				<code>auth_identities</code> (which of your users each identity signed in as), and for two-factor
+				sign-in <code>auth_two_factor</code> (each sealed secret), <code>auth_recovery_codes</code> (their
+				hashes) and <code>auth_waiting</code> (sign-ins waiting for a code). Your users stay in your own
+				table; the package knows them only by the id <code>admit!</code> gives.
 			</p>
 
 			<Heading id="safety">Safety</Heading>
@@ -251,6 +317,10 @@ view! = |_|
 					address counts only if the provider says it is verified.
 				</li>
 				<li>Links in mail use the server's public URL, never a request's <code>Host</code>.</li>
+				<li>
+					An authenticator's secret is sealed (AES-256-GCM) and never kept in clear; recovery codes are 80
+					random bits, kept as their SHA-256.
+				</li>
 			</ul>
 			<Note>
 				List <code>Middleware.same_origin</code> in your app's middleware, so a form on another site can't
@@ -260,10 +330,10 @@ view! = |_|
 
 			<Heading id="status">Status</Heading>
 			<p>
-				Links, the link page, Google, GitHub, OpenID Connect, the dev sign-in, sessions, the middleware and
-				impersonation are built and tested. Passwords come next: they need a slow hash (Argon2) that the server's host
-				will compute. Passkeys come later: they need the host to verify a P-256 signature, which it can
-				make but not yet check. The package's
+				Links, the link page, Google, GitHub, OpenID Connect, the dev sign-in, sessions, the middleware,
+				impersonation and two-factor sign-in are built and tested. Passwords come next: they need a slow
+				hash (Argon2) that the server's host will compute. Passkeys come later: they need the host to
+				verify a P-256 signature, which it can make but not yet check. The package's
 				<code>PROPOSALS.md</code> has both.
 			</p>
 		</NoHydration>

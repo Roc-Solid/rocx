@@ -3,14 +3,20 @@
 // provider and at a GitHub-like one (both stood in for by a server of the test's own, which checks
 // PKCE's verifier, the client's secret and the redirect URI, and makes the ID token), what a state
 // that doesn't match does, `Auth.required` and `Auth.optional`, signing out, a user's sessions
-// listed and ended, the dev sign-in under `--dev` only, and the cookies' `__Host-` names on HTTPS.
+// listed and ended, the dev sign-in under `--dev` only, the cookies' `__Host-` names on HTTPS, and
+// two-factor sign-in (D-081): turning it on with an authenticator app's code (computed here with
+// Node's crypto, RFC 6238), a sign-in that waits for its code (not signed in meanwhile, the code
+// page, a wrong code, a code used twice, a recovery code used once, too many wrong codes, too
+// long), turning it off and new recovery codes (each needing a code), a provider's sign-in asking
+// too, impersonation not asking, an admin's route that wants it on, and the server refusing to
+// start without the app's secret (but under `--dev`).
 // The example is built for SQLite (always) and for Postgres (when DATABASE_URL is set), each in
 // build/<database>/app, its providers pointed at the stand-in.
 //
 //   node --test 'packages/auth/example/test/*.test.mjs'
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { createServer } from "node:http";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -125,7 +131,45 @@ function app(database, fake) {
 	return dir;
 }
 
-const env = { TEST_CLIENT_ID: "test-client", TEST_CLIENT_SECRET: "test-secret", HUB_CLIENT_ID: "test-client", HUB_CLIENT_SECRET: "test-secret", GOOGLE_CLIENT_ID: "", GITHUB_CLIENT_ID: "", ADMIN_EMAILS: "boss@example.com" };
+const env = {
+	TEST_CLIENT_ID: "test-client",
+	TEST_CLIENT_SECRET: "test-secret",
+	HUB_CLIENT_ID: "test-client",
+	HUB_CLIENT_SECRET: "test-secret",
+	GOOGLE_CLIENT_ID: "",
+	GITHUB_CLIENT_ID: "",
+	ADMIN_EMAILS: "boss@example.com, chief@example.com",
+	APP_SECRET: "a test secret of the example's, at least 32 characters long",
+};
+
+/** The bytes Base32 text (RFC 4648) stands for, its spaces left out. */
+function base32(text) {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+	let bits = "";
+	for (const char of text.replace(/[\s=]/g, "").toUpperCase()) bits += alphabet.indexOf(char).toString(2).padStart(5, "0");
+	return Buffer.from(bits.match(/.{8}/g).map((byte) => parseInt(byte, 2)));
+}
+
+/** The 30-second step now (RFC 6238's T). */
+const stepNow = () => Math.floor(Date.now() / 30_000);
+
+/** The six-digit code an authenticator app shows for `secret` (its bytes) at `step` (RFC 6238, SHA-1). */
+function totp(secret, step) {
+	const counter = Buffer.alloc(8);
+	counter.writeBigUInt64BE(BigInt(step));
+	const mac = createHmac("sha1", secret).update(counter).digest();
+	const at = mac[19] & 0x0f;
+	return String((mac.readUInt32BE(at) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
+
+/** Six digits that are no code of `secret`'s near now. */
+function wrongCode(secret) {
+	const near = [-1, 0, 1].map((offset) => totp(secret, stepNow() + offset));
+	for (let n = 0; ; n++) {
+		const code = String(n).padStart(6, "0");
+		if (!near.includes(code)) return code;
+	}
+}
 
 const databases = ["sqlite", ...(process.env.DATABASE_URL ? ["postgres"] : [])];
 
@@ -393,6 +437,194 @@ for (const database of databases) {
 			assert.equal(offered.dev, false);
 			const google = await server.client().get("/auth/google?then=/private");
 			assert.equal(google.location, "/sign-in?error=provider&reason=Signing%20in%20with%20Google%20isn%27t%20set%20up%3A%20GOOGLE_CLIENT_ID%20is%20empty.&then=%2Fprivate");
+		});
+
+		/**
+		 * Turns on two-factor sign-in for the signed-in `client`, its first code taken at the step
+		 * now: its secret's bytes, its recovery codes, and that step (the next code must be later).
+		 */
+		async function enrolled(client) {
+			const started = await client.json("/two-factor", {});
+			assert.equal(started.status, 200, started.text);
+			const { secret } = started.json();
+			const bytes = base32(secret);
+			const step = stepNow();
+			const confirmed = await client.json("/two-factor/confirm", { code: totp(bytes, step) });
+			assert.equal(confirmed.status, 200, confirmed.text);
+			return { secret: bytes, codes: confirmed.json().recovery_codes, step };
+		}
+
+		/** A new browser signed in by a link as `email`, going on to `then`, whose sign-in now waits for its code: it, and where it went. */
+		async function waiting(email, then = "/private") {
+			const client = server.client();
+			const opened = await used(client, await mailedLink(client, email, then));
+			assert.equal(opened.status, 303, opened.text);
+			return { client, location: opened.location };
+		}
+
+		test("two-factor: started (an otpauth URI for the app), a wrong first code refused, the right one turns it on with ten recovery codes; the secret and the codes aren't kept in clear", async () => {
+			const client = await signedIn("tf-ann@example.com");
+			const user = (await client.read("/me")).user;
+			assert.deepEqual(await client.read("/two-factor"), { state: "off", recovery_codes: 0, secret: "" });
+			const started = (await client.json("/two-factor", {})).json();
+			assert.match(started.secret, /^([A-Z2-7]{4} ){7}[A-Z2-7]{4}$/, "20 bytes of Base32, in groups of four");
+			const uri = new URL(started.uri);
+			assert.equal(uri.protocol, "otpauth:");
+			assert.equal(uri.host, "totp");
+			assert.equal(decodeURIComponent(uri.pathname), "/Auth example:tf-ann@example.com");
+			assert.equal(uri.searchParams.get("secret"), started.secret.replaceAll(" ", ""));
+			assert.equal(uri.searchParams.get("issuer"), "Auth example");
+			assert.deepEqual(await client.read("/two-factor"), { state: "pending", recovery_codes: 0, secret: started.secret }, "its secret again, while it waits");
+			// Starting again makes another secret: the first one's codes don't turn it on.
+			const again = (await client.json("/two-factor", {})).json();
+			assert.notEqual(again.secret, started.secret);
+			const secret = base32(again.secret);
+			assert.equal((await client.json("/two-factor/confirm", { code: totp(base32(started.secret), stepNow()) })).status, 400);
+			assert.equal((await client.json("/two-factor/confirm", { code: wrongCode(secret) })).status, 400);
+			const confirmed = await client.json("/two-factor/confirm", { code: totp(secret, stepNow()) });
+			assert.equal(confirmed.status, 200, confirmed.text);
+			const codes = confirmed.json().recovery_codes;
+			assert.equal(codes.length, 10);
+			assert.equal(new Set(codes).size, 10);
+			for (const code of codes) assert.match(code, /^[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}-[a-z2-7]{4}$/);
+			assert.deepEqual(await client.read("/two-factor"), { state: "on", recovery_codes: 10, secret: "" });
+			assert.equal((await client.json("/two-factor", {})).status, 409, "on already");
+			// Kept sealed, and as hashes.
+			const [row] = await db.query(`select secret, enabled_at, last_step from auth_two_factor where user_id = '${user}'`);
+			assert.ok(!row.secret.includes(again.secret.replaceAll(" ", "")));
+			assert.ok(!Buffer.from(row.secret, "base64url").includes(secret), "the secret's bytes aren't in what is kept");
+			assert.ok(Number(row.enabled_at) > 0 && Number(row.last_step) > 0);
+			const kept = (await db.query(`select id from auth_recovery_codes where user_id = '${user}'`)).map((each) => each.id);
+			assert.equal(kept.length, 10);
+			for (const code of codes) assert.ok(!kept.includes(code) && !kept.includes(code.replaceAll("-", "")));
+		});
+
+		test("two-factor: a sign-in waits for its code (not signed in meanwhile, a page goes to the code page), a wrong code says so, the right one signs in under a new token; a code is good once, and so is a recovery code", async () => {
+			const first = await signedIn("tf-bo@example.com");
+			const user = (await first.read("/me")).user;
+			const { secret, codes, step } = await enrolled(first);
+			const { client, location } = await waiting("tf-bo@example.com", "/private?tab=2");
+			assert.equal(location, "/sign-in/code?then=%2Fprivate%3Ftab%3D2");
+			const waitingToken = client.cookies.get("session");
+			assert.ok(waitingToken, "the cookie holds the waiting sign-in");
+			assert.equal((await client.read("/me")).signed_in, false, "not signed in while it waits");
+			const page = await client.get("/sessions");
+			assert.equal(page.status, 303);
+			assert.equal(page.location, "/sign-in/code?then=%2Fsessions", "a page goes to the code page");
+			assert.equal((await client.request("/private", { headers: { accept: "application/json" } })).status, 401);
+			assert.deepEqual(await client.read("/sign-in/code"), { email: "tf-bo@example.com", tries_left: 5 });
+			const shown = await client.get("/sign-in/code?then=%2Fprivate%3Ftab%3D2");
+			assert.equal(shown.status, 200);
+			assert.ok(shown.dom.getByRole("textbox", { name: "Code" }));
+			(await server.client().get("/sign-in/code")).dom.getByRole("heading", { level: 1, name: "Sign in again" });
+			// A wrong code: back to the code page, saying so.
+			const wrong = await client.post("/auth/code", { code: wrongCode(secret), then: "/private?tab=2" });
+			assert.equal(wrong.status, 303);
+			assert.equal(wrong.location, "/sign-in/code?error=code&then=%2Fprivate%3Ftab%3D2");
+			assert.equal((await client.read("/sign-in/code")).tries_left, 4);
+			// The code the first one was confirmed with is used: refused.
+			assert.equal((await client.post("/auth/code", { code: totp(secret, step), then: "/private?tab=2" })).location, "/sign-in/code?error=code&then=%2Fprivate%3Ftab%3D2");
+			// The next step's code (the window takes one either side), with an app's space in it.
+			const code = totp(secret, step + 1);
+			const right = await client.post("/auth/code", { code: `${code.slice(0, 3)} ${code.slice(3)}`, then: "/private?tab=2" });
+			assert.equal(right.status, 303, right.text);
+			assert.equal(right.location, "/private?tab=2");
+			assert.notEqual(client.cookies.get("session"), waitingToken, "a new token");
+			assert.deepEqual(await client.read("/private"), { user });
+			const stale = server.client();
+			stale.cookies.set("session", waitingToken);
+			assert.equal((await stale.read("/me")).signed_in, false, "the token it waited with signs no one in");
+			// The same code again, in another sign-in: refused.
+			const replay = await waiting("tf-bo@example.com");
+			assert.equal((await replay.client.post("/auth/code", { code, then: "/private" })).location, "/sign-in/code?error=code&then=%2Fprivate");
+			// A recovery code, once (typed in capitals, without its dashes).
+			const recovered = await replay.client.post("/auth/code", { code: codes[0].replaceAll("-", "").toUpperCase(), then: "/private" });
+			assert.equal(recovered.location, "/private");
+			assert.equal((await replay.client.read("/me")).user, user);
+			assert.deepEqual(await first.read("/two-factor"), { state: "on", recovery_codes: 9, secret: "" });
+			const twice = await waiting("tf-bo@example.com");
+			assert.equal((await twice.client.post("/auth/code", { code: codes[0], then: "/private" })).location, "/sign-in/code?error=code&then=%2Fprivate");
+			assert.ok(server.logs().some((line) => line.msg === "auth: signed in with a recovery code" && line.user === user));
+			// Cancelling (signing out) ends the waiting sign-in.
+			await twice.client.post("/auth/sign-out", {});
+			assert.ok(!twice.client.cookies.has("session"));
+			assert.equal(Number((await db.query(`select count(*) as n from auth_waiting where user_id = '${user}'`))[0].n), 0);
+		});
+
+		test("two-factor: the fifth wrong code ends the sign-in, and one that waited too long is gone", async () => {
+			const { secret, codes } = await enrolled(await signedIn("tf-cy@example.com"));
+			const { client } = await waiting("tf-cy@example.com", "/private");
+			for (let tries = 1; tries < 5; tries++) {
+				assert.equal((await client.post("/auth/code", { code: wrongCode(secret), then: "/private" })).location, "/sign-in/code?error=code&then=%2Fprivate", `try ${tries}`);
+			}
+			const ended = await client.post("/auth/code", { code: "not-a-code", then: "/private" });
+			assert.equal(ended.location, "/sign-in?error=attempts&then=%2Fprivate");
+			assert.ok(!client.cookies.has("session"), "its cookie cleared");
+			const after = server.client();
+			assert.equal((await after.post("/auth/code", { code: codes[0], then: "/private" })).location, "/sign-in?error=timeout&then=%2Fprivate", "no sign-in waits");
+			const slow = await waiting("tf-cy@example.com");
+			await db.query("update auth_waiting set expires_at = 0");
+			assert.equal((await slow.client.post("/auth/code", { code: codes[0], then: "/private" })).location, "/sign-in?error=timeout&then=%2Fprivate");
+			assert.equal((await slow.client.get("/private")).location, "/sign-in?then=%2Fprivate", "signed out once it has gone");
+		});
+
+		test("two-factor: new recovery codes and turning it off each need a code; off, signing in doesn't ask", async () => {
+			const client = await signedIn("tf-di@example.com");
+			const { secret, codes, step } = await enrolled(client);
+			assert.equal((await client.json("/two-factor/recovery-codes", { code: wrongCode(secret) })).status, 400);
+			const renewed = await client.json("/two-factor/recovery-codes", { code: totp(secret, step + 1) });
+			assert.equal(renewed.status, 200, renewed.text);
+			const fresh = renewed.json().recovery_codes;
+			assert.equal(fresh.length, 10);
+			assert.equal((await client.json("/two-factor/disable", { code: codes[1] })).status, 400, "the old codes are gone");
+			assert.equal((await client.json("/two-factor/disable", { code: "" })).status, 400);
+			assert.equal((await client.json("/two-factor/disable", { code: fresh[3] })).status, 200);
+			assert.deepEqual(await client.read("/two-factor"), { state: "off", recovery_codes: 0, secret: "" });
+			assert.equal((await client.json("/two-factor/disable", { code: fresh[4] })).status, 409, "off already");
+			const { location } = await waiting("tf-di@example.com", "/private");
+			assert.equal(location, "/private", "signed in at once");
+		});
+
+		test("two-factor: a provider's sign-in asks too; an admin impersonating them isn't asked; /admin wants its admins to have it on", async () => {
+			const user = server.client();
+			await atProvider(user, "test", { sub: "tf-subject", email: "tf-eve@example.com" });
+			const eve = (await user.read("/me")).user;
+			const { codes } = await enrolled(user);
+			const later = server.client();
+			const back = await atProvider(later, "test", { sub: "tf-subject", email: "tf-eve@example.com" }, "/private");
+			assert.equal(back.location, "/sign-in/code?then=%2Fprivate");
+			assert.equal((await later.post("/auth/code", { code: codes[0], then: "/private" })).location, "/private");
+			assert.equal((await later.read("/me")).user, eve);
+			// An admin acting as them sees the app as they do, with no code.
+			const chief = await signedIn("chief@example.com");
+			assert.equal((await chief.json("/impersonate", { email: "tf-eve@example.com" })).status, 200);
+			assert.equal((await chief.read("/private")).user, eve);
+			assert.equal((await chief.json("/two-factor", {})).status, 403, "nor may they change how the person signs in");
+			assert.equal((await chief.json("/impersonate/stop", {})).status, 200);
+			// /admin: its admins must have turned two-factor on.
+			const refused = await chief.request("/admin", { headers: { accept: "application/json" } });
+			assert.equal(refused.status, 403);
+			assert.match(refused.text, /Turn on two-factor sign-in first/);
+			assert.equal((await user.request("/admin", { headers: { accept: "application/json" } })).status, 403, "not an admin");
+			await enrolled(chief);
+			assert.deepEqual(await chief.read("/admin"), { admin: (await chief.read("/me")).user });
+		});
+
+		test("two-factor needs the app's secret: the server doesn't start without it, but under --dev", async () => {
+			await assert.rejects(startServer(built.server, { database: db.url, env: { ...env, APP_SECRET: "" } }), /two-factor sign-in needs APP_SECRET/);
+			await assert.rejects(startServer(built.server, { database: db.url, env: { ...env, APP_SECRET: "too short" } }), /APP_SECRET is too short/);
+			const dev = await startServer(built.server, { database: db.url, dev: true, env: { ...env, APP_SECRET: "" } });
+			try {
+				assert.ok(dev.logs().some((line) => /development key/.test(line.msg ?? "")));
+				const client = dev.client();
+				assert.equal((await client.post("/auth/dev", { email: "tf-dev@example.com", then: "/private" })).location, "/private");
+				const { codes } = await enrolled(client);
+				const again = dev.client();
+				assert.equal((await again.post("/auth/dev", { email: "tf-dev@example.com", then: "/private" })).location, "/sign-in/code?then=%2Fprivate", "the dev sign-in asks too");
+				assert.equal((await again.post("/auth/code", { code: codes[0] })).location, "/private");
+			} finally {
+				await dev.stop();
+			}
 		});
 
 		test("the dev sign-in is there under --dev only; on HTTPS the cookies are __Host- and Secure", async () => {

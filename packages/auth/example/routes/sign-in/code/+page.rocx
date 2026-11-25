@@ -1,0 +1,44 @@
+import pf.Html
+import pf.Endpoint
+import pf.Router
+import pf.Server
+import auth.SignInError
+import ../../../Generated/Api
+
+## The second step of signing in, for someone with two-factor sign-in on (the plugin's
+## `code_page`): the code their authenticator app shows, or a recovery code, posted to the plugin's
+## /auth/code. Plain forms, so it works before the page's JavaScript has loaded.
+meta = { title: "Enter your code" }
+
+## Whom the waiting sign-in is for, or why there is none (410).
+waiting! : {} => Try({ email : Str, tries_left : U64 }, Server.Problem)
+waiting! = |{}| Endpoint.read!(Api.get_sign_in_code({}))
+
+view! = |_| {
+	query = Router.location!({}).query
+	problem = SignInError.message(query)
+	<main>
+		{match waiting!({}) {
+			Ok(found) =>
+				<form method="post" action="/auth/code">
+					<h1>Enter your code</h1>
+					<p>Signing in as <strong>{found.email}</strong>: the code your authenticator app shows, or one of your recovery codes.</p>
+					{if !problem.is_empty() {
+						<p role="alert">{problem}</p>
+					}}
+					<input type="hidden" name="then" value={SignInError.field(query, "then")} />
+					<label for="code">Code</label>
+					<input id="code" name="code" required autocomplete="one-time-code" autocapitalize="off" spellcheck="false" />
+					<button type="submit">Sign in</button>
+				</form>
+			Err(_) =>
+				<div role="alert">
+					<h1>Sign in again</h1>
+					<p>{if (problem.is_empty()) "No sign-in is waiting for a code here." else problem} <a href="/sign-in">Sign in</a></p>
+				</div>
+		}}
+		<form method="post" action="/auth/sign-out">
+			<button type="submit">Cancel</button>
+		</form>
+	</main>
+}

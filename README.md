@@ -83,7 +83,8 @@ rocx dev                 # http://localhost:8080, rebuilt and reloaded as you sa
 ```
 
 The app signs people in from the start (packages/auth: a link by email, Google and GitHub once
-their keys are set, and under `rocx dev` any address at once), keeps its users in its own table,
+their keys are set, and under `rocx dev` any address at once; two-factor sign-in for those who turn
+it on), keeps its users in its own table,
 refuses other sites' posts, sends guard's security headers, and limits the sign-in mail. Its
 `README.md` says what to change first, and how to test it (`rocx test`), deploy it (`rocx build .
 --release dist`, behind a TLS proxy) and upgrade it (`rocx upgrade`). It names its version of rocx
@@ -1007,8 +1008,8 @@ browser runtime's engine. See `spike/native-apps/README.md` and `examples/pomodo
 | `packages/` | The ecosystem. Each package has a README, a `PROPOSALS.md` of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees |
 | `packages/charts` | Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: the arithmetic in plain Roc (scales, round ticks, SVG paths, in `Dec`), the components copied into each app |
 | `packages/forms` | Zod-like schemas: one for the page and the endpoint, issues shown in place, `LiveForm` |
-| `packages/auth`, `stripe`, `jobs`, `email`, `push`, `audio`, `vibrate` | Plugins: sign-in by mailed links and at providers, with sessions and middleware (`Auth.plugin`), payments and subscriptions through Stripe's Checkout and Customer Portal, its webhook kept in step (`Stripe.plugin`), jobs and cron in the app's database (`Job.plugin`), email over SMTP or the dev mailbox (`Email.plugin`), Web Push (`Push.plugin`, `<PushButton>`), sound files from a handler (`AudioPlayer.plugin`), the phone's vibration (`Vibrator.plugin`) |
-| `packages/storage`, `crypto`, `qr` | Files in a bucket whose URL says where (S3, a directory, memory) with signed URLs; SHA-256, HMAC, HKDF, Base64 and hex in plain Roc; QR codes and `<QrCode>` |
+| `packages/auth`, `stripe`, `jobs`, `email`, `push`, `audio`, `vibrate` | Plugins: sign-in by mailed links and at providers, with sessions, middleware and two-factor sign-in (`Auth.plugin`), payments and subscriptions through Stripe's Checkout and Customer Portal, its webhook kept in step (`Stripe.plugin`), jobs and cron in the app's database (`Job.plugin`), email over SMTP or the dev mailbox (`Email.plugin`), Web Push (`Push.plugin`, `<PushButton>`), sound files from a handler (`AudioPlayer.plugin`), the phone's vibration (`Vibrator.plugin`) |
+| `packages/storage`, `crypto`, `qr` | Files in a bucket whose URL says where (S3, a directory, memory) with signed URLs; SHA-256, HMAC, HKDF, Base64 and hex in plain Roc (and SHA-1 and Base32, for authenticator codes); QR codes and `<QrCode>` |
 | `packages/admin`, `guard`, `intl`, `markdown`, `mcp`, `otel`, `posthog`, `presence`, `testing`, `virtual` | A Django-style admin for the app's tables (and the jobs page); rate limits, feature flags and request guards; formatting and translations; Markdown with typed frontmatter; an MCP server; OpenTelemetry metrics and logs; PostHog error tracking; who is here; test helpers; virtual lists |
 | `packages/dbcheck` | What `rocx check --sql` checks rows with; apps don't import it |
 | `examples/` | Whole apps, each with its README and tests ([Examples](#examples)) |

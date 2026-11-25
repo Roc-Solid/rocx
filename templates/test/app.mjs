@@ -2,13 +2,15 @@
 // by a mailed link (its page, its button), the account page, signing out here and everywhere, a
 // sign-in that never sends the browser to another site, what a failed one says, the sign-in mail's
 // limits, a post from another site, the 404 page, the dev sign-in and a provider's button under
-// `--dev`; and, given a browser, the pages hydrated under the security headers' CSP. template.test.mjs
+// `--dev`, two-factor sign-in (set up on the account page, a sign-in waiting at the code page,
+// turned off); and, given a browser, the pages hydrated under the security headers' CSP. template.test.mjs
 // runs them on each database; any test may run them on an app `rocx new` made.
 //
 //   describeApp(() => ({ server, built, fresh }), { browser: true });
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { launchBrowser, links, startServer } from "../../packages/testing/index.mjs";
+import { createHmac } from "node:crypto";
+import { launchBrowser, links, startServer, within } from "../../packages/testing/index.mjs";
 
 let addresses = 0;
 
@@ -31,6 +33,22 @@ export async function mailedLink(server, client, email, then = "/") {
 	const url = new URL(links(message)[0]);
 	assert.equal(url.pathname, "/sign-in/link");
 	return url.searchParams.get("token");
+}
+
+/** The bytes Base32 text (RFC 4648) stands for, its spaces left out. */
+function base32(text) {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+	let bits = "";
+	for (const char of text.replace(/\s/g, "")) bits += alphabet.indexOf(char).toString(2).padStart(5, "0");
+	return Buffer.from(bits.match(/.{8}/g).map((byte) => parseInt(byte, 2)));
+}
+
+/** The six-digit code an authenticator app shows for `secret` (its bytes) at the 30-second `step` (RFC 6238). */
+function totp(secret, step) {
+	const counter = Buffer.alloc(8);
+	counter.writeBigUInt64BE(BigInt(step));
+	const mac = createHmac("sha1", secret).update(counter).digest();
+	return String((mac.readUInt32BE(mac[19] & 0x0f) & 0x7fffffff) % 1_000_000).padStart(6, "0");
 }
 
 /** A new browser, signed in as `email` by a mailed link. */
@@ -199,6 +217,51 @@ export function describeApp(app, { browser = false } = {}) {
 		assert.match(page.dom.getByRole("alert").text, /^Too many requests: try again in \d+ s\.$/);
 	});
 
+	test("two-factor sign-in: set up on the account page (a QR code, and its key), turned on with the app's code (the recovery codes shown once); a sign-in then waits at the code page; turned off with a code", async () => {
+		const { server } = app();
+		const client = await signedIn(server, "tf@example.com");
+		(await client.get("/account")).dom.getByRole("button", { name: "Set up" });
+		// The forms, posted as a browser without JavaScript posts them.
+		const setUp = await client.post("/account/two-factor", {});
+		assert.equal(setUp.status, 303, setUp.text);
+		const pending = await setUp.follow();
+		pending.dom.getByRole("img", { name: "A QR code for your authenticator app" });
+		const key = pending.dom.getByText(/^([A-Z2-7]{4} ){7}[A-Z2-7]{4}$/).text;
+		const secret = base32(key);
+		const step = Math.floor(Date.now() / 30_000);
+		const wrong = await (await client.post("/account/two-factor/confirm", { code: totp(secret, step + 5) })).follow();
+		assert.match(wrong.dom.getByRole("alert").text, /isn't the code your app shows/);
+		assert.equal(wrong.dom.getByText(/^([A-Z2-7]{4} ){7}[A-Z2-7]{4}$/).text, key, "the same key, after a wrong code");
+		const on = await (await client.post("/account/two-factor/confirm", { code: totp(secret, step) })).follow();
+		const codes = within(on.dom.getByRole("status"))
+			.getAllByRole("listitem")
+			.map((item) => item.text.trim());
+		assert.equal(codes.length, 10);
+		for (const code of codes) assert.match(code, /^[a-z2-7]{4}(-[a-z2-7]{4}){3}$/);
+		on.dom.getByText(/^On: signing in asks for the code/);
+		assert.equal((await client.get("/account")).dom.queryByRole("status"), null, "the recovery codes are shown once");
+		// Signing in again waits for a code.
+		const other = person(server);
+		const opened = await other.post("/auth/link", { token: await mailedLink(server, other, "tf@example.com", "/account") });
+		assert.equal(opened.location, "/sign-in/code?then=%2Faccount");
+		const codePage = await opened.follow();
+		codePage.dom.getByRole("heading", { level: 1, name: "Enter your code" });
+		assert.ok(codePage.text.includes("tf@example.com"));
+		assert.equal((await other.get("/account")).location, "/sign-in/code?then=%2Faccount", "not signed in while it waits");
+		const missed = await other.post("/auth/code", { code: totp(secret, step + 5), then: "/account" });
+		assert.equal(missed.location, "/sign-in/code?error=code&then=%2Faccount");
+		assert.match((await missed.follow()).dom.getByRole("alert").text, /^That code didn't work/);
+		const signed = await other.post("/auth/code", { code: totp(secret, step + 1), then: "/account" });
+		assert.equal(signed.location, "/account");
+		// Turned off with a recovery code: signing in asks no more.
+		await other.get("/account");
+		const off = await (await other.post("/account/two-factor/off", { code: codes[0] })).follow();
+		off.dom.getByRole("button", { name: "Set up" });
+		const later = person(server);
+		const straight = await later.post("/auth/link", { token: await mailedLink(server, later, "tf@example.com", "/account") });
+		assert.equal(straight.location, "/account");
+	});
+
 	test("a post from another site's page is refused", async () => {
 		const { server } = app();
 		const elsewhere = server.client({ origin: "https://elsewhere.example", headers: { "x-forwarded-for": "198.18.255.1" } });
@@ -246,7 +309,7 @@ export function describeApp(app, { browser = false } = {}) {
 		let chromium = null;
 		after(() => chromium?.close());
 
-		test("in a browser: the sign-in page hydrates under the CSP and sends the link without leaving; the account page hydrates", async (t) => {
+		test("in a browser: the sign-in page hydrates under the CSP and sends the link without leaving; the account page hydrates, and turns two-factor sign-in on", async (t) => {
 			const { server } = app();
 			chromium = await launchBrowser();
 			if (!chromium) return t.skip("no Chromium");
@@ -265,6 +328,14 @@ export function describeApp(app, { browser = false } = {}) {
 			const account = await chromium.open(`${server.url}/account`, { cookies: client.cookies });
 			await account.findByText("This browser");
 			await account.findByRole("link", { name: "tab@example.com" });
+			// Two-factor sign-in set up and turned on without leaving the page: its QR code drawn in the browser.
+			await (await account.getByRole("button", { name: "Set up" })).click();
+			await account.findByRole("img", { name: "A QR code for your authenticator app" });
+			const key = (await account.findByText(/^([A-Z2-7]{4} ){7}[A-Z2-7]{4}$/)).text;
+			await (await account.getByLabelText("The code your app shows")).fill(totp(base32(key), Math.floor(Date.now() / 30_000)));
+			await (await account.getByRole("button", { name: "Turn on" })).click();
+			await account.findByText(/^On: signing in asks for the code/);
+			assert.equal((await account.findAllByText(/^[a-z2-7]{4}(-[a-z2-7]{4}){3}$/)).length, 10, "the recovery codes");
 			assert.deepEqual(account.errors, []);
 			await account.close();
 		});

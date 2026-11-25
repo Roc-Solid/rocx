@@ -117,8 +117,9 @@ view! = |_| {
 						<h3>Make an app</h3>
 						<p>
 							<code>rocx new</code> makes an app in a folder of its own, ready to grow: people sign in by a
-							link mailed to them (or at Google and GitHub, once their keys are set), its users are in its
-							own table, other sites' posts are refused, and the sign-in mail is rate limited. It asks
+							link mailed to them (or at Google and GitHub, once their keys are set), with an authenticator
+							app's code too once they turn on two-factor sign-in, its users are in its own table, other
+							sites' posts are refused, and the sign-in mail is rate limited. It asks
 							which database: SQLite (the default, a file beside the server), Postgres, or Turso.
 						</p>
 						<Code source={"rocx new my-app\ncd my-app\nrocx dev"} numbers={Bool.False} plain />

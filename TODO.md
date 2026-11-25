@@ -32,6 +32,10 @@ When an item lands, delete its line here in the same commit.
   - heading ids;
   - whether the CommonMark/GFM spec examples (CC BY-SA 4.0) stay in a public repo.
 - **packages/guard:** a question in its `PROPOSALS.md`: the rate-limit headers.
+- **packages/auth:** two-factor sign-in's next steps (D-081), in its `PROPOSALS.md` §5: a user's
+  wrong codes counted across sign-ins (today five a sign-in, and a provider's sign-in can start
+  again uncounted), trusting a browser for a while, a session that says it passed a code. Passwords
+  (§1) and passkeys (§2) wait there too.
 - **packages/presence:** the questions at the end of its `PROPOSALS.md` (a room by the page's path,
   the timeout).
 - **Uploads straight to storage.** A file dropped or chosen (D-055) is kept through the app's

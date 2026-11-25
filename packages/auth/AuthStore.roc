@@ -1,8 +1,9 @@
 import pf.Db
 
 ## packages/auth's statements, the same on SQLite and on Postgres (its tables keep times as
-## milliseconds, given here, so no statement needs `now()`): sessions, sign-in links, and the
-## identities that signed in before. Each is a statement, so inside `Db.transaction!` it is part of
+## milliseconds, given here, so no statement needs `now()`): sessions, sign-in links, the
+## identities that signed in before, and two-factor sign-in (authenticators, recovery codes, and
+## sign-ins waiting for a code). Each is a statement, so inside `Db.transaction!` it is part of
 ## the transaction. Errors are open unions, so a body can `?` them beside the app's own.
 AuthStore := [].{
 
@@ -16,6 +17,7 @@ AuthStore := [].{
 	start! = |session| {
 		_ = Db.run!("delete from auth_sessions where expires_at <= $1", [Int(session.now)])?
 		_ = Db.run!("delete from auth_links where expires_at <= $1", [Int(session.now)])?
+		_ = Db.run!("delete from auth_waiting where expires_at <= $1", [Int(session.now)])?
 		_ = Db.run!("insert into auth_sessions (id, user_id, created_at, expires_at) values ($1, $2, $3, $4)", [Text(session.id), Text(session.user), Int(session.now), Int(session.expires)])?
 		Ok({})
 	}
@@ -43,9 +45,13 @@ AuthStore := [].{
 	revoke! : Str, Str => Try(U64, [DbErr(Str), ..others])
 	revoke! = |user, id| Db.run!("delete from auth_sessions where id = $1 and user_id = $2", [Text(id), Text(user)])
 
-	## Ends every session of `user`: how many ended.
+	## Ends every session of `user`, and every sign-in of theirs waiting for a code: how many
+	## sessions ended.
 	end_all! : Str => Try(U64, [DbErr(Str), ..others])
-	end_all! = |user| Db.run!("delete from auth_sessions where user_id = $1", [Text(user)])
+	end_all! = |user| {
+		_ = Db.run!("delete from auth_waiting where user_id = $1", [Text(user)])?
+		Db.run!("delete from auth_sessions where user_id = $1", [Text(user)])
+	}
 
 	## `user`'s sessions that haven't expired by `now`, the newest first.
 	of_user! : Str, I64 => Try(List(AuthStore.Row), [DbErr(Str), BadRow(Str), ..others])
@@ -124,4 +130,134 @@ AuthStore := [].{
 	## The identities `user` signs in with: each provider, and the address it gave.
 	identities! : Str => Try(List({ provider : Str, subject : Str, email : Str }), [DbErr(Str), BadRow(Str), ..others])
 	identities! = |user| Db.all!("select provider, subject, email from auth_identities where user_id = $1 order by provider, subject", [Text(user)])
+
+	## A user's authenticator, as its row has it: its secret, sealed; when it was turned on (`Null`
+	## while it waits for its first code); the last step a code was taken at.
+	Authenticator : { secret : Str, enabled_at : Db.Nullable(I64), last_step : I64 }
+
+	## `user`'s authenticator, on or waiting, if they have one.
+	authenticator! : Str => Try([Found(AuthStore.Authenticator), Missing], [DbErr(Str), BadRow(Str), ..others])
+	authenticator! = |user| {
+		rows : List(AuthStore.Authenticator)
+		rows = Db.all!("select secret, enabled_at, last_step from auth_two_factor where user_id = $1", [Text(user)])?
+		match rows.get(0) {
+			Ok(row) => Ok(Found(row))
+			Err(_) => Ok(Missing)
+		}
+	}
+
+	## Whether `user`'s two-factor sign-in is on (a row read wrongly is a database error, so a
+	## sign-in's errors stay `DbErr`).
+	two_factor_on! : Str => Try(Bool, [DbErr(Str), ..others])
+	two_factor_on! = |user| {
+		read : Try(List({ user_id : Str }), [DbErr(Str), BadRow(Str)])
+		read = Db.all!("select user_id from auth_two_factor where user_id = $1 and enabled_at is not null", [Text(user)])
+		match read {
+			Ok(rows) => Ok(!rows.is_empty())
+			Err(DbErr(why)) => Err(DbErr(why))
+			Err(BadRow(why)) => Err(DbErr(why))
+		}
+	}
+
+	## How many unused recovery codes `user` has.
+	recovery_left! : Str => Try(U64, [DbErr(Str), BadRow(Str), ..others])
+	recovery_left! = |user| {
+		rows : List({ n : I64 })
+		rows = Db.all!("select count(*) as n from auth_recovery_codes where user_id = $1", [Text(user)])?
+		Ok((rows.get(0).map_ok(|row| row.n) ?? 0).to_u64_wrap())
+	}
+
+	## Keeps a new authenticator for `user`, waiting for its first code, in place of one that was
+	## waiting: `Ok(0)` when theirs is on already, and nothing changes.
+	pending! : { user : Str, secret : Str, now : I64 } => Try(U64, [DbErr(Str), BadRow(Str), ..others])
+	pending! = |made| {
+		on = AuthStore.two_factor_on!(made.user)?
+		if on {
+			Ok(0)
+		} else {
+			_ = Db.run!("delete from auth_two_factor where user_id = $1", [Text(made.user)])?
+			Db.run!("insert into auth_two_factor (user_id, secret, enabled_at, last_step, created_at) values ($1, $2, null, 0, $3)", [Text(made.user), Text(made.secret), Int(made.now)])
+		}
+	}
+
+	## Turns on `user`'s waiting authenticator, its first code taken at `step`: how many changed (0
+	## or 1).
+	enable! : Str, I64, I64 => Try(U64, [DbErr(Str), ..others])
+	enable! = |user, now, step| Db.run!("update auth_two_factor set enabled_at = $2, last_step = $3 where user_id = $1 and enabled_at is null", [Text(user), Int(now), Int(step)])
+
+	## Takes a code of `user`'s at `step`, if no code has been taken at it or later, in one
+	## statement (two posts of one code at once: one is taken): how many changed (0 or 1).
+	used_step! : Str, I64 => Try(U64, [DbErr(Str), ..others])
+	used_step! = |user, step| Db.run!("update auth_two_factor set last_step = $2 where user_id = $1 and last_step < $2 and enabled_at is not null", [Text(user), Int(step)])
+
+	## Turns `user`'s two-factor sign-in off: their authenticator and recovery codes gone.
+	disable! : Str => Try({}, [DbErr(Str), ..others])
+	disable! = |user| {
+		_ = Db.run!("delete from auth_recovery_codes where user_id = $1", [Text(user)])?
+		_ = Db.run!("delete from auth_two_factor where user_id = $1", [Text(user)])?
+		Ok({})
+	}
+
+	## `user`'s recovery codes, by their hashes (`ids`), in place of any they had.
+	recovery_codes! : Str, List(Str), I64 => Try({}, [DbErr(Str), ..others])
+	recovery_codes! = |user, ids, now| {
+		_ = Db.run!("delete from auth_recovery_codes where user_id = $1", [Text(user)])?
+		for id in ids {
+			_ = Db.run!("insert into auth_recovery_codes (user_id, id, created_at) values ($1, $2, $3)", [Text(user), Text(id), Int(now)])?
+		}
+		Ok({})
+	}
+
+	## Uses `user`'s recovery code kept by `id` (its hash), deleting it in one statement, so it
+	## works once: how many were used (0 or 1).
+	use_recovery! : Str, Str => Try(U64, [DbErr(Str), ..others])
+	use_recovery! = |user, id| Db.run!("delete from auth_recovery_codes where user_id = $1 and id = $2", [Text(user), Text(id)])
+
+	## A sign-in waiting for its code, as its row has it: whose, where it goes after, how many wrong
+	## codes it has had.
+	Waiting : { user_id : Str, return_to : Str, attempts : I64 }
+
+	## Keeps a sign-in of `user`'s waiting for its code, by `id` (its token's hash), going on to
+	## `then`, until `expires`; and sweeps out those that have expired.
+	wait! : { id : Str, user : Str, then : Str, now : I64, expires : I64 } => Try({}, [DbErr(Str), ..others])
+	wait! = |waiting| {
+		_ = Db.run!("delete from auth_waiting where expires_at <= $1", [Int(waiting.now)])?
+		_ = Db.run!("insert into auth_waiting (id, user_id, return_to, attempts, expires_at) values ($1, $2, $3, 0, $4)", [Text(waiting.id), Text(waiting.user), Text(waiting.then), Int(waiting.expires)])?
+		Ok({})
+	}
+
+	## The sign-in waiting by `id`, if it hasn't expired by `now`.
+	waiting! : Str, I64 => Try([Found(AuthStore.Waiting), Missing], [DbErr(Str), BadRow(Str), ..others])
+	waiting! = |id, now| {
+		rows : List(AuthStore.Waiting)
+		rows = Db.all!("select user_id, return_to, attempts from auth_waiting where id = $1 and expires_at > $2", [Text(id), Int(now)])?
+		match rows.get(0) {
+			Ok(row) => Ok(Found(row))
+			Err(_) => Ok(Missing)
+		}
+	}
+
+	## A wrong code for the sign-in waiting by `id`: how many it has had now.
+	missed! : Str => Try(I64, [DbErr(Str), BadRow(Str), ..others])
+	missed! = |id| {
+		rows : List({ attempts : I64 })
+		rows = Db.all!("update auth_waiting set attempts = attempts + 1 where id = $1 returning attempts", [Text(id)])?
+		Ok(rows.get(0).map_ok(|row| row.attempts) ?? 0)
+	}
+
+	## Takes the sign-in waiting by `id` (a right code came), in one statement, so two posts at
+	## once can't both make a session: whose it was, and where it goes.
+	done_waiting! : Str => Try([Found({ user_id : Str, return_to : Str }), Missing], [DbErr(Str), BadRow(Str), ..others])
+	done_waiting! = |id| {
+		rows : List({ user_id : Str, return_to : Str })
+		rows = Db.all!("delete from auth_waiting where id = $1 returning user_id, return_to", [Text(id)])?
+		match rows.get(0) {
+			Ok(row) => Ok(Found(row))
+			Err(_) => Ok(Missing)
+		}
+	}
+
+	## Ends the sign-in waiting by `id`: how many ended (0 or 1).
+	end_waiting! : Str => Try(U64, [DbErr(Str), ..others])
+	end_waiting! = |id| Db.run!("delete from auth_waiting where id = $1", [Text(id)])
 }

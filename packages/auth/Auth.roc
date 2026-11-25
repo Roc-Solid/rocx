@@ -1,3 +1,4 @@
+import pf.AesGcm
 import pf.Db
 import pf.Env
 import pf.Http
@@ -7,15 +8,19 @@ import pf.Plugin
 import pf.Random
 import pf.Server
 import pf.Time
+import crypto.Base64
 import AuthStore
 import Rules
+import Totp
 import "migrations/0001_auth.sql" as table : Str
 import "migrations/0002_impersonation.sql" as impersonation : Str
+import "migrations/0003_two_factor.sql" as two_factor_tables : Str
 
 ## Sign-in for Roc Solid apps, as a plugin (D-072): by a link mailed to an address, or at a
 ## provider (Google, GitHub, any OpenID Connect one); sessions kept as their token's hash in the
 ## app's database; middleware that hands the signed-in user on. It has no pages: the app's sign-in
-## page posts to it and links to it, and its own `admit!` says who gets in.
+## page posts to it and links to it, and its own `admit!` says who gets in. With `two_factor`, a
+## user who turned it on gives a code from an authenticator app (or a recovery code) after that.
 ##
 ## ```roc
 ## plugins: [Auth.plugin({ admit!: Accounts.admit!, providers: [Auth.google, Auth.github] })]
@@ -23,10 +28,11 @@ import "migrations/0002_impersonation.sql" as impersonation : Str
 ##
 ## The plugin's endpoints, under `at` (`/auth`): `GET|POST <at>/link?token=…` (a mailed link,
 ## used once; with `link_page`, the link goes to the app's page, which posts its token here), `GET <at>/<provider>?then=…` (off to a provider) and `GET <at>/<provider>/callback`
-## (back from it), `POST <at>/sign-out`, and `POST <at>/dev` (any address, under `--dev` only).
-## Each answers with a redirect: where the browser was going, or the app's sign-in page with why
-## not (`?error=link|refused|provider|state|unavailable`, and `&reason=` for `refused` and
-## `provider`).
+## (back from it), `POST <at>/sign-out`, `POST <at>/dev` (any address, under `--dev` only), and
+## `POST <at>/code` (a sign-in's second factor, from the app's `code_page`). Each answers with a
+## redirect: where the browser was going, or the app's sign-in page with why not
+## (`?error=link|refused|provider|state|unavailable|attempts|timeout`, and `&reason=` for `refused`
+## and `provider`), or the code page after a wrong code (`?error=code`).
 Auth := [].{
 
 	## Who is signing in, as the plugin hands them to `admit!`: the provider ("email" for a link or
@@ -88,6 +94,17 @@ Auth := [].{
 	## - `cookie`: the session cookie's name (`session`, `__Host-session` on HTTPS).
 	## - `refusal`: the words of the 401 `required` answers a signed-out request that isn't a page's
 	##   GET ("Sign in first.").
+	## - `two_factor`: whether a user may turn on two-factor sign-in (`two_factor_start!`): then a
+	##   sign-in of theirs, every way, waits for a code from their authenticator app, or a recovery
+	##   code, at `code_page`. Off (the default), nobody is asked.
+	## - `code_page`: the app's page a sign-in waiting for its code goes to (`/sign-in/code`), which
+	##   posts `code` (and `then`) to `<at>/code`. It must not need a signed-in user.
+	## - `issuer`: the name authenticator apps show beside the account ("" (the default): the
+	##   public URL's host).
+	## - `key_env`: the environment variable with the app's secret (`APP_SECRET`), at least 32
+	##   characters (`openssl rand -hex 32`), from which the key that seals each authenticator's
+	##   secret is derived. With `two_factor`, the server doesn't start without it, but under `--dev`,
+	##   where a development secret stands in (on the log).
 	Options := {
 		admit! : (Auth.Identity => Try(Str, Str)) ?? nobody!,
 		at : Str ?? "/auth",
@@ -99,6 +116,10 @@ Auth := [].{
 		link_page : Str ?? "",
 		cookie : Str ?? "session",
 		refusal : Str ?? "Sign in first.",
+		two_factor : Bool ?? Bool.False,
+		code_page : Str ?? "/sign-in/code",
+		issuer : Str ?? "",
+		key_env : Str ?? "APP_SECRET",
 	}
 
 	## What the plugin keeps for the functions and middleware an app calls (`Plugin.keep!`).
@@ -112,11 +133,21 @@ Auth := [].{
 		cookie : Str,
 		refusal : Str,
 		providers : List({ name : Str, label : Str, client_id_env : Str }),
+		two_factor : Bool,
+		code_page : Str,
+		issuer : Str,
+		key_env : Str,
 	}
 
+	## Whether a user's two-factor sign-in is on: `Off`; `Pending` (an authenticator started, waiting
+	## for its first code: `two_factor_confirm!`); or `On`, since when (milliseconds since 1970), with
+	## how many unused recovery codes they have.
+	TwoFactor : [Off, Pending, On({ since_ms : I64, recovery_codes : U64 })]
+
 	## The auth plugin: its endpoints (behind the app's middleware), its tables
-	## (`auth/0001_auth`, the same on SQLite and Postgres), and its settings, kept at start. It
-	## needs a database.
+	## (`auth/0001_auth` to `auth/0003_two_factor`, the same on SQLite and Postgres), and its
+	## settings, kept at start. It needs a database; with `two_factor`, the app's secret too (it
+	## won't start without it, but under `--dev`).
 	plugin : Auth.Options -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		settings = settings_of(options)
@@ -135,11 +166,19 @@ Auth := [].{
 				{ method: "POST", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
 				{ method: "POST", path: "${at}/dev", kind: Endpoint, answer!: |request, _| dev!(settings, admit!, request) },
 				{ method: "POST", path: "${at}/sign-out", kind: Endpoint, answer!: |request, _| left!(settings, request) },
+				{ method: "POST", path: "${at}/code", kind: Endpoint, answer!: |request, _| coded!(settings, request) },
 			].concat(List.join(away)),
-			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }],
+			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }],
 			starts: [
 				|_context| {
 					Plugin.keep!("auth:settings", Json.to_str(settings))
+					if settings.two_factor {
+						# The key, checked now rather than at someone's first code.
+						_ = sealing_key!(settings)?
+						if Env.var!(settings.key_env).map_ok(|text| text.trim().is_empty()) ?? Bool.True {
+							Log.warn!("auth: two-factor secrets are sealed under a development key, as ${settings.key_env} isn't set (under --dev only)", { env: settings.key_env })
+						}
+					}
 					Ok({})
 				},
 			],
@@ -291,14 +330,16 @@ Auth := [].{
 				},
 		)
 
-	## What `required` answers a signed-out request: a page's GET goes to the sign-in page, with
-	## `?then=` to come back; anything else is a 401 with the plugin's `refusal`. For an app's own
-	## middleware that finds the request signed out after all.
+	## What `required` answers a signed-out request: a page's GET goes to the sign-in page (or to
+	## the code page, when this browser's sign-in waits for its code), with `?then=` to come back;
+	## anything else is a 401 with the plugin's `refusal`. For an app's own middleware that finds the
+	## request signed out after all.
 	signed_out! : Server.Request => Server.Response
 	signed_out! = |request| {
 		settings = settings!({})
 		if Server.wants_html(request) and request.method == "GET" {
-			Server.redirect(Rules.url(settings.sign_in, [("then", here(request))]))
+			waits = if (settings.two_factor) Auth.waiting!(request).is_ok() else Bool.False
+			Server.redirect(Rules.url(if (waits) settings.code_page else settings.sign_in, [("then", here(request))]))
 		} else {
 			Server.refused(401, settings.refusal)
 		}
@@ -315,14 +356,23 @@ Auth := [].{
 	path! = |then| Rules.path(then, settings!({}).home)
 
 	## `answer`, with a new session for `user` (the app's id for them) in its cookie: for an app's
-	## own way in (a sign-up form that signs in at once, a test).
+	## own way in (a sign-up form that signs in at once, a test). When `user` has two-factor sign-in
+	## on, the cookie holds a sign-in waiting for their code instead: the next page that needs them
+	## signed in goes to the code page.
 	sign_in! : Server.Response, Str => Try(Server.Response, [DbErr(Str), ..others])
 	sign_in! = |answer, user| {
 		settings = settings!({})
 		token = Rules.token(Random.bytes!(32))
 		now = now!({})
-		AuthStore.start!({ id: Rules.hash(token), user: user, now: now, expires: now + settings.session_ms })?
-		Ok(with_session(answer, settings, https!({}), token))
+		https = https!({})
+		asks = if (settings.two_factor) AuthStore.two_factor_on!(user)? else Bool.False
+		if asks {
+			AuthStore.wait!({ id: Rules.hash(token), user: user, then: settings.home, now: now, expires: now + Rules.code_ms })?
+			Ok(Server.set_cookie(answer, Rules.cookie(settings.cookie, https), token, cookie_opts(https, Rules.code_ms)))
+		} else {
+			AuthStore.start!({ id: Rules.hash(token), user: user, now: now, expires: now + settings.session_ms })?
+			Ok(with_session(answer, settings, https, token))
+		}
 	}
 
 	## `answer`, with the request's session (if any) ended and a new one for `user` in its cookie: a
@@ -376,9 +426,9 @@ Auth := [].{
 		name = Rules.cookie(settings.cookie, https)
 		match Server.cookie(request, name) {
 			Ok(token) if Rules.is_token(token) =>
-				match AuthStore.end!(Rules.hash(token)) {
-					Ok(_) => {}
-					Err(DbErr(why)) => Log.error!("auth: a session couldn't be ended", { error: why })
+				match (AuthStore.end!(Rules.hash(token)), AuthStore.end_waiting!(Rules.hash(token))) {
+					(Ok(_), Ok(_)) => {}
+					(Err(DbErr(why)), _) | (_, Err(DbErr(why))) => Log.error!("auth: a session couldn't be ended", { error: why })
 				}
 			_ => {}
 		}
@@ -386,7 +436,7 @@ Auth := [].{
 	}
 
 	## Ends every session of `user` (signing out everywhere, or after their password or address
-	## changed): how many ended. The request's own cookie stays on the browser, holding a session
+	## changed), and every sign-in of theirs waiting for a code: how many sessions ended. The request's own cookie stays on the browser, holding a session
 	## that is gone: answer with `sign_out!` too, to clear it.
 	sign_out_everywhere! : Str => Try(U64, [DbErr(Str), ..others])
 	sign_out_everywhere! = |user| AuthStore.end_all!(user)
@@ -425,6 +475,135 @@ Auth := [].{
 	## Whether the dev sign-in (`POST <at>/dev`, any address) is open: under `--dev` only.
 	dev_sign_in! : {} => Bool
 	dev_sign_in! = |{}| Env.dev!({})
+
+	## Whether `user`'s two-factor sign-in is on (`Auth.TwoFactor`): for the app's account page,
+	## and for a route only some users may use with it on (an admin's), which the app decides.
+	two_factor! : Str => Try(Auth.TwoFactor, [DbErr(Str), BadRow(Str), ..others])
+	two_factor! = |user|
+		match AuthStore.authenticator!(user)? {
+			Missing => Ok(Off)
+			Found(row) =>
+				match row.enabled_at {
+					Some(since) => Ok(On({ since_ms: since, recovery_codes: AuthStore.recovery_left!(user)? }))
+					Null => Ok(Pending)
+				}
+		}
+
+	## Starts turning on `user`'s two-factor sign-in: a new authenticator secret (20 random bytes),
+	## kept sealed, waiting for its first code (`two_factor_confirm!`), in place of one that was
+	## waiting. What the app shows them: the secret in Base32, in groups of four, for an app that
+	## can't scan, and the `otpauth://` URI, as a QR code, which names the plugin's `issuer` and
+	## `account` (their address, say). `AlreadyOn` when it is; `NotOffered` when the plugin's
+	## `two_factor` is off.
+	two_factor_start! : Str, Str => Try({ secret : Str, uri : Str }, [AlreadyOn, NotOffered, DbErr(Str), BadRow(Str), ..others])
+	two_factor_start! = |user, account| {
+		settings = settings!({})
+		key = sealing_key!(settings).map_err(|_| NotOffered)?
+		secret = Random.bytes!(20)
+		sealed = AesGcm.seal!(key, Rules.sealed_plain(secret, user)).map_err(|_| NotOffered)?
+		kept = Db.transaction!(|{}| AuthStore.pending!({ user: user, secret: Base64.url_encode(sealed), now: now!({}) }))?
+		if kept == 0 {
+			Err(AlreadyOn)
+		} else {
+			Ok({ secret: Totp.grouped(secret), uri: Totp.uri({ issuer: issuer!(settings), account: account, secret: secret }) })
+		}
+	}
+
+	## The authenticator `two_factor_start!` made for `user`, while it waits for its first code: its
+	## secret and URI again (`account` as there), for their page shown again (reloaded, or after a
+	## wrong code). Once it is on, never: `NotPending`.
+	two_factor_pending! : Str, Str => Try({ secret : Str, uri : Str }, [NotPending, DbErr(Str), BadRow(Str), ..others])
+	two_factor_pending! = |user, account| {
+		settings = settings!({})
+		match AuthStore.authenticator!(user)? {
+			Found(row) if row.enabled_at == Null =>
+				match opened!(settings, row.secret, user) {
+					Ok(secret) => Ok({ secret: Totp.grouped(secret), uri: Totp.uri({ issuer: issuer!(settings), account: account, secret: secret }) })
+					Err(Unopened) => Err(NotPending)
+				}
+			_ => Err(NotPending)
+		}
+	}
+
+	## Turns on `user`'s two-factor sign-in, given the first code their app shows for the secret
+	## `two_factor_start!` made: their ten recovery codes, each good once in place of a code (show
+	## them once: only their hashes are kept). `WrongCode` when it isn't the code now (or a step
+	## either side); `NotStarted` when nothing was started; `AlreadyOn` when it is.
+	two_factor_confirm! : Str, Str => Try(List(Str), [WrongCode, NotStarted, AlreadyOn, DbErr(Str), BadRow(Str), ..others])
+	two_factor_confirm! = |user, code| {
+		settings = settings!({})
+		now = now!({})
+		match AuthStore.authenticator!(user)? {
+			Missing => Err(NotStarted)
+			Found(row) =>
+				match row.enabled_at {
+					Some(_) => Err(AlreadyOn)
+					Null => {
+						secret = opened!(settings, row.secret, user).map_err(|_| NotStarted)?
+						step = Totp.matching(secret, Rules.typed(code), Totp.step(now), 0).map_err(|_| WrongCode)?
+						codes = recovery_codes!({})
+						enabled = Db.transaction!(
+							|{}| {
+								changed = AuthStore.enable!(user, now, step)?
+								if changed == 1 {
+									AuthStore.recovery_codes!(user, codes.map(|each| Rules.hash(Rules.typed(each))), now)?
+								}
+								Ok(changed)
+							},
+						)?
+						if enabled == 1 {
+							Log.info!("auth: two-factor sign-in turned on", { user: user })
+							Ok(codes)
+						} else {
+							Err(AlreadyOn)
+						}
+					}
+				}
+		}
+	}
+
+	## Turns `user`'s two-factor sign-in off, given a code their app shows now, or one of their
+	## recovery codes: their secret and recovery codes gone. `WrongCode` when it is neither;
+	## `NotOn` when it isn't on.
+	two_factor_disable! : Str, Str => Try({}, [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..others])
+	two_factor_disable! = |user, code| {
+		_ = checked!(settings!({}), user, code)?
+		AuthStore.disable!(user)?
+		Log.info!("auth: two-factor sign-in turned off", { user: user })
+		Ok({})
+	}
+
+	## New recovery codes for `user`, in place of those they had, given a code their app shows now
+	## (or a recovery code): ten more, each good once (show them once). `WrongCode`, `NotOn` as for
+	## `two_factor_disable!`.
+	two_factor_regenerate! : Str, Str => Try(List(Str), [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..others])
+	two_factor_regenerate! = |user, code| {
+		_ = checked!(settings!({}), user, code)?
+		codes = recovery_codes!({})
+		AuthStore.recovery_codes!(user, codes.map(|each| Rules.hash(Rules.typed(each))), now!({}))?
+		Log.info!("auth: recovery codes made anew", { user: user })
+		Ok(codes)
+	}
+
+	## The sign-in this browser has waiting for its code, if it has one that hasn't expired: whose
+	## it is, where it goes after, and how many more wrong codes it may have. For the app's
+	## `code_page` (which may show whom it signs in).
+	waiting! : Server.Request => Try({ user : Str, then : Str, tries_left : U64 }, [SignedOut])
+	waiting! = |request| {
+		settings = settings!({})
+		match Server.cookie(request, Rules.cookie(settings.cookie, https!({}))) {
+			Ok(token) if Rules.is_token(token) =>
+				match AuthStore.waiting!(Rules.hash(token), now!({})) {
+					Ok(Found(row)) => Ok({ user: row.user_id, then: row.return_to, tries_left: (Rules.code_tries - row.attempts).to_u64_wrap() })
+					Ok(Missing) => Err(SignedOut)
+					Err(DbErr(why)) | Err(BadRow(why)) => {
+						Log.error!("auth: a sign-in waiting for its code couldn't be read", { error: why })
+						Err(SignedOut)
+					}
+				}
+			_ => Err(SignedOut)
+		}
+	}
 }
 
 ## The settings an app's options make.
@@ -439,6 +618,10 @@ settings_of = |options| {
 	cookie: options.cookie,
 	refusal: options.refusal,
 	providers: options.providers.map(|provider| { name: provider.name, label: provider.label, client_id_env: provider.client_id_env }),
+	two_factor: options.two_factor,
+	code_page: options.code_page,
+	issuer: options.issuer,
+	key_env: options.key_env,
 }
 
 ## `admit!` when the app gives none: nobody signs in by a link, a provider or the dev sign-in.
@@ -447,7 +630,7 @@ nobody! = |_| Err("Signing in this way isn't open here.")
 
 ## The settings when the plugin isn't listed (or hasn't started): its options' defaults.
 defaults : Auth.Settings
-defaults = { at: "/auth", sign_in: "/sign-in", home: "/", session_ms: 30 * 86_400_000, link_ms: 15 * 60_000, link_page: "", cookie: "session", refusal: "Sign in first.", providers: [] }
+defaults = { at: "/auth", sign_in: "/sign-in", home: "/", session_ms: 30 * 86_400_000, link_ms: 15 * 60_000, link_page: "", cookie: "session", refusal: "Sign in first.", providers: [], two_factor: Bool.False, code_page: "/sign-in/code", issuer: "", key_env: "APP_SECRET" }
 
 ## Whom a session's row acts as at `now`: the user it impersonates, while that lasts; else its own.
 acting : AuthStore.Row, I64 -> Str
@@ -520,7 +703,8 @@ kept! = |request, session, answer| {
 }
 
 ## Signing in as `who` (at `provider`), going on to `then`: `admit!` asked, in a transaction with
-## the identity's row and the session's, and the session's cookie on the answer; or the sign-in
+## the identity's row and the session's, and the session's cookie on the answer; or, for a user
+## with two-factor sign-in on, a sign-in waiting for their code and the code page; or the sign-in
 ## page, with why not. A refusal commits too: what `admit!` wrote as it turned them away (a waiting
 ## list's row) stays.
 signed_in! : Auth.Settings, (Auth.Identity => Try(Str, Str)), { provider : Str, subject : Str, email : Str, name : Str }, Str => Server.Response
@@ -533,8 +717,14 @@ signed_in! = |settings, admit!, who, then| {
 			match admit!({ provider: who.provider, subject: who.subject, email: who.email, name: who.name, user: known, then: Rules.path(then, settings.home) }) {
 				Ok(user) => {
 					AuthStore.linked!({ provider: who.provider, subject: who.subject, user: user, email: who.email, now: now })?
-					AuthStore.start!({ id: Rules.hash(token), user: user, now: now, expires: now + settings.session_ms })?
-					Ok(Admitted)
+					asks = if (settings.two_factor) AuthStore.two_factor_on!(user)? else Bool.False
+					if asks {
+						AuthStore.wait!({ id: Rules.hash(token), user: user, then: Rules.path(then, settings.home), now: now, expires: now + Rules.code_ms })?
+						Ok(Waiting)
+					} else {
+						AuthStore.start!({ id: Rules.hash(token), user: user, now: now, expires: now + settings.session_ms })?
+						Ok(Admitted)
+					}
 				}
 				Err(why) => Ok(TurnedAway(why))
 			}
@@ -542,6 +732,10 @@ signed_in! = |settings, admit!, who, then| {
 	)
 	match started {
 		Ok(Admitted) => with_session(Server.redirect(Rules.path(then, settings.home)), settings, https!({}), token)
+		Ok(Waiting) => {
+			https = https!({})
+			Server.set_cookie(Server.redirect(Rules.onward(settings.code_page, Rules.path(then, settings.home))), Rules.cookie(settings.cookie, https), token, cookie_opts(https, Rules.code_ms))
+		}
 		Ok(TurnedAway(why)) => Server.redirect(Rules.failed(settings.sign_in, { code: "refused", reason: why, email: who.email, then: then }))
 		Err(DbErr(why)) => unavailable!(settings, why)
 		Err(BadRow(why)) => unavailable!(settings, why)
@@ -700,3 +894,165 @@ unreached = |problem|
 		TimedOut => "the provider didn't answer in time"
 		TooLarge => "the provider's answer was too large"
 	}
+
+## `<at>/code`: a sign-in's second factor, posted from the app's code page (`code`, and `then`):
+## the code from the user's authenticator app, or one of their recovery codes. Right: the sign-in
+## becomes a session, on to `then` (else where it was going). Wrong: back to the code page saying
+## so, but the fifth wrong code ends the sign-in. No sign-in waiting (it took over ten minutes, or
+## the browser has none): the sign-in page says so.
+coded! : Auth.Settings, Server.Request => Server.Response
+coded! = |settings, request| {
+	body = Server.text_of(request)
+	asked = Rules.query(body, "then")
+	timed_out = Server.redirect(Rules.failed(settings.sign_in, { code: "timeout", reason: "", email: "", then: asked }))
+	match Server.cookie(request, Rules.cookie(settings.cookie, https!({}))) {
+		Ok(token) if Rules.is_token(token) =>
+			match AuthStore.waiting!(Rules.hash(token), now!({})) {
+				Ok(Found(row)) => {
+					then = Rules.path(if (asked.is_empty()) row.return_to else asked, settings.home)
+					match checked!(settings, row.user_id, Rules.query(body, "code")) {
+						Ok(how) => finished!(settings, token, row.user_id, how, then)
+						Err(WrongCode) | Err(NotOn) => wrong!(settings, token, row.user_id, then)
+						Err(DbErr(why)) | Err(BadRow(why)) => unavailable!(settings, why)
+					}
+				}
+				Ok(Missing) => timed_out
+				Err(DbErr(why)) | Err(BadRow(why)) => unavailable!(settings, why)
+			}
+		_ => timed_out
+	}
+}
+
+## A right code: the sign-in waiting by `token` taken and a session started in its place, under a
+## new token, so the one the browser held while it waited signs no one in; on to `then`.
+finished! : Auth.Settings, Str, Str, [Code, Recovery], Str => Server.Response
+finished! = |settings, token, user, how, then| {
+	fresh = Rules.token(Random.bytes!(32))
+	now = now!({})
+	started = Db.transaction!(
+		|{}| {
+			match AuthStore.done_waiting!(Rules.hash(token))? {
+				Found(row) => {
+					AuthStore.start!({ id: Rules.hash(fresh), user: row.user_id, now: now, expires: now + settings.session_ms })?
+					Ok(Started)
+				}
+				Missing => Ok(Gone)
+			}
+		},
+	)
+	match started {
+		Ok(Started) => {
+			if how == Recovery {
+				Log.info!("auth: signed in with a recovery code", { user: user })
+			}
+			with_session(Server.redirect(then), settings, https!({}), fresh)
+		}
+		Ok(Gone) => Server.redirect(Rules.failed(settings.sign_in, { code: "timeout", reason: "", email: "", then: then }))
+		Err(DbErr(why)) | Err(BadRow(why)) => unavailable!(settings, why)
+	}
+}
+
+## A wrong code for the sign-in waiting by `token`: back to the code page, saying so; the fifth,
+## the sign-in ended (its cookie too), and the sign-in page saying why.
+wrong! : Auth.Settings, Str, Str, Str => Server.Response
+wrong! = |settings, token, user, then|
+	match AuthStore.missed!(Rules.hash(token)) {
+		Ok(attempts) if attempts < Rules.code_tries => Server.redirect(Rules.failed(settings.code_page, { code: "code", reason: "", email: "", then: then }))
+		Ok(_) => {
+			match AuthStore.end_waiting!(Rules.hash(token)) {
+				Ok(_) => {}
+				Err(DbErr(why)) => Log.error!("auth: a sign-in waiting for its code couldn't be ended", { error: why })
+			}
+			Log.warn!("auth: a sign-in ended after too many wrong codes", { user: user })
+			https = https!({})
+			Server.clear_cookie(Server.redirect(Rules.failed(settings.sign_in, { code: "attempts", reason: "", email: "", then: then })), Rules.cookie(settings.cookie, https), cookie_opts(https, 0))
+		}
+		Err(DbErr(why)) | Err(BadRow(why)) => unavailable!(settings, why)
+	}
+
+## Whether `given` is `user`'s code now (taken, so it works once) or one of their unused recovery
+## codes (used up): which it was. `NotOn` when their two-factor sign-in isn't on.
+checked! : Auth.Settings, Str, Str => Try([Code, Recovery], [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..others])
+checked! = |settings, user, given| {
+	typed = Rules.typed(given)
+	match AuthStore.authenticator!(user)? {
+		Missing => Err(NotOn)
+		Found(row) =>
+			match row.enabled_at {
+				Null => Err(NotOn)
+				Some(_) =>
+					if Totp.is_code(typed) {
+						match opened!(settings, row.secret, user) {
+							Ok(secret) =>
+								match Totp.matching(secret, typed, Totp.step(now!({})), row.last_step) {
+									Ok(step) => if (AuthStore.used_step!(user, step)? == 1) Ok(Code) else Err(WrongCode)
+									Err(NoMatch) => Err(WrongCode)
+								}
+							Err(Unopened) => Err(WrongCode)
+						}
+					} else if Rules.is_recovery(typed) {
+						if (AuthStore.use_recovery!(user, Rules.hash(typed))? == 1) Ok(Recovery) else Err(WrongCode)
+					} else {
+						Err(WrongCode)
+					}
+			}
+	}
+}
+
+## The secret `user`'s authenticator row keeps sealed. `Unopened` (on the log) when the app's
+## secret has changed since it was sealed, or the row isn't theirs.
+opened! : Auth.Settings, Str, Str => Try(List(U8), [Unopened])
+opened! = |settings, sealed, user|
+	match (sealing_key!(settings), Base64.url_decode(sealed)) {
+		(Ok(key), Ok(bytes)) =>
+			match AesGcm.open!(key, bytes).map_ok(|plain| Rules.secret_of(plain, user)) {
+				Ok(Ok(secret)) => Ok(secret)
+				_ => {
+					Log.error!("auth: an authenticator's secret couldn't be opened: was the app's secret changed?", { user: user, env: settings.key_env })
+					Err(Unopened)
+				}
+			}
+		_ => Err(Unopened)
+	}
+
+## The key that seals authenticators' secrets, derived from the app's secret (`key_env`), or under
+## `--dev` without one, from a development secret; or why there is none.
+sealing_key! : Auth.Settings => Try(List(U8), Str)
+sealing_key! = |settings|
+	if !settings.two_factor {
+		Err("auth: two-factor sign-in isn't on (the plugin's `two_factor` option)")
+	} else {
+		given = (Env.var!(settings.key_env) ?? "").trim()
+		if given.to_utf8().len() >= 32 {
+			Ok(Rules.sealing_key(given))
+		} else if !given.is_empty() {
+			Err("auth: ${settings.key_env} is too short for two-factor sign-in: give it 32 characters or more (openssl rand -hex 32)")
+		} else if Env.dev!({}) {
+			Ok(Rules.sealing_key(Rules.dev_secret))
+		} else {
+			Err("auth: two-factor sign-in needs ${settings.key_env}, a secret of 32 characters or more (openssl rand -hex 32), which seals each authenticator's secret")
+		}
+	}
+
+## The name authenticator apps show: the plugin's `issuer`, else the public URL's host.
+issuer! : Auth.Settings => Str
+issuer! = |settings|
+	if settings.issuer.is_empty() {
+		url = Env.public_url!({})
+		match url.split_first("://") {
+			Ok({ after, .. }) => after
+			Err(_) => url
+		}
+	} else {
+		settings.issuer
+	}
+
+## Ten new recovery codes.
+recovery_codes! : {} => List(Str)
+recovery_codes! = |{}| {
+	var $codes = []
+	while $codes.len() < 10 {
+		$codes = $codes.append(Rules.recovery_code(Random.bytes!(10)))
+	}
+	$codes
+}

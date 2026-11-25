@@ -1,7 +1,8 @@
 # packages/auth: what comes next
 
 What isn't built, each with what it needs. The user chose the order (2026-11-24): links and
-providers first, passwords next, passkeys later.
+providers first, passwords next, passkeys later. Two-factor sign-in with an authenticator app came
+in between (D-081, 2026-11-25).
 
 ## 1. Passwords
 
@@ -14,11 +15,13 @@ is known or not, and the guard's rate limit named in the README.
 
 ## 2. Passkeys (WebAuthn)
 
-Not built. A passkey's signature is ECDSA on P-256. The server platform has P-256 since D-080
-(`P256`, for packages/push), but only signing and ECDH: a passkey needs a signature verified, the
-next primitive (`P256.verify!`, on ring's `ECDSA_P256_SHA256_ASN1`, since WebAuthn writes its
-signatures in DER, not JWS's `r` and `s`). With it: a registration ceremony and a sign-in ceremony,
-each a challenge kept for a few minutes and a script the page loads (as push's is).
+Later (the user's order). A passkey's signature is ECDSA on P-256. The server platform has P-256
+since D-080 (`P256`, for packages/push), but only signing and ECDH: a passkey needs a signature
+verified, the next primitive (`P256.verify!`, on ring's `ECDSA_P256_SHA256_ASN1`, since WebAuthn
+writes its signatures in DER, not JWS's `r` and `s`). With it: a registration ceremony and a sign-in
+ceremony, each a challenge kept for a few minutes and a script the page loads (as push's is). A
+passkey could also be a second factor beside the authenticator app (§5), on the same waiting sign-in
+and code page.
 
 ## 3. A provider's endpoints from its issuer
 
@@ -37,6 +40,23 @@ middleware), `path!` (where a sign-in may go after), `switch!` (a person picked 
 a note on `sign_out_everywhere!` and this browser's cookie, packages/mcp's `Auth` renamed `Bearer`,
 and nested transactions (D-076). And one more the user asked for: impersonation
 (`impersonate!`, `stop_impersonating!`, `Session.real_user`).
+
+## 5. Two-factor sign-in's next steps (D-081 built the first)
+
+- **A user's wrong codes counted across sign-ins.** Five wrong codes end a sign-in, and each new
+  one needs the first factor again: a new mailed link (which guard's limit on the sign-in mail
+  counts), or a provider's round trip, which nothing counts. Someone who holds the provider account
+  could try five codes a round trip, each a 3 in a million chance: about 46,000 round trips for
+  even odds. A count per user (in `auth_two_factor`: wrong codes since the last right one, and a
+  pause after, say, 10 in 15 minutes) would close that; it adds a way to lock a user out by
+  guessing, which is why it waits.
+- **"Trust this browser for 30 days"**: a signed, per-browser cookie the code page sets, which
+  skips the code on that browser. A common ask; it weakens the second factor on a stolen laptop.
+- **Requiring it for some users in the package**: today `two_factor!` answers whether it is on and
+  the app's own route refuses (the example's `/admin`). A middleware that sends such a user to set
+  it up (`required_two_factor(who!)`) could follow if apps write the same check.
+- **A session that says how it signed in** (`Session.second_factor : Bool`): a user who turns it on
+  keeps the sessions they had; an admin's route could ask for a session that passed a code.
 
 ## Open questions
 

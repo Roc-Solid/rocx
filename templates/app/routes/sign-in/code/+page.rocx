@@ -1,0 +1,69 @@
+import pf.Html
+import pf.Endpoint
+import pf.Router
+import pf.Server
+import auth.SignInError
+import ../../../Generated/Api
+
+## The second step of signing in, for someone who turned on two-factor sign-in: the code their
+## authenticator app shows, or one of their recovery codes, posted to packages/auth's /auth/code.
+## A wrong code comes back here saying so (`?error=code`); the fifth ends the sign-in. A plain form,
+## so it works before the page's JavaScript has loaded.
+meta = { title: "Enter your code" }
+
+## Whom the waiting sign-in is for, or why there is none (410).
+waiting! : {} => Try({ email : Str }, Server.Problem)
+waiting! = |{}| Endpoint.read!(Api.get_sign_in_code({}))
+
+view! = |_| {
+	query = Router.location!({}).query
+	problem = SignInError.message(query)
+	<section class="code card">
+		{match waiting!({}) {
+			Ok(found) =>
+				<form method="post" action="/auth/code">
+					<h1>Enter your code</h1>
+					<p>Signing in as <strong>{found.email}</strong>. Enter the code your authenticator app shows, or one of your recovery codes.</p>
+					{if !problem.is_empty() {
+						<p class="problem" role="alert">{problem}</p>
+					}}
+					<input type="hidden" name="then" value={SignInError.field(query, "then")} />
+					<label for="code">Code</label>
+					<input id="code" name="code" required autocomplete="one-time-code" autocapitalize="off" spellcheck="false" />
+					<button type="submit" class="primary">Sign in</button>
+				</form>
+			Err(_) =>
+				<div role="alert">
+					<h1>Sign in again</h1>
+					<p>{if (problem.is_empty()) "No sign-in is waiting for a code in this browser: it waits ten minutes." else problem}</p>
+					<p><a class="button primary" href="/sign-in">Sign in</a></p>
+				</div>
+		}}
+		<form method="post" action="/auth/sign-out">
+			<button type="submit" class="quiet">Start again</button>
+		</form>
+	</section>
+}
+
+<style>
+	.code {
+		display: grid;
+		gap: 1rem;
+		max-width: 26rem;
+		margin: 0 auto;
+	}
+
+	form,
+	div {
+		display: grid;
+		gap: 0.6rem;
+	}
+
+	p {
+		margin: 0;
+	}
+
+	p:not(.problem) {
+		color: var(--ink-soft);
+	}
+</style>

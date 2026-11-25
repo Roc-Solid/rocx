@@ -1,14 +1,16 @@
 # auth
 
 Sign-in for Roc Solid apps, as a plugin (D-072): by a link mailed to an address, or at a provider
-(Google, GitHub, any OpenID Connect one). Sessions are kept in the app's database (Postgres, SQLite
-or Turso), as their token's hash. Middleware hands the signed-in user on to the routes.
+(Google, GitHub, any OpenID Connect one), and for those who turn it on, a code from an authenticator
+app after that (two-factor sign-in, D-081). Sessions are kept in the app's database (Postgres,
+SQLite or Turso), as their token's hash. Middleware hands the signed-in user on to the routes.
 
 The package has no pages. The app's sign-in page posts to it and links to it, the app mails the
 links (packages/email), and the app's `admit!` says who gets in and which of its users they are.
 What the package does is the part that is easy to get wrong: tokens, their hashes, their expiry and
-single use, cookies, OAuth's state, PKCE and nonce, the ID token's checks, and where a sign-in may
-send the browser after.
+single use, cookies, OAuth's state, PKCE and nonce, the ID token's checks, where a sign-in may
+send the browser after, and authenticator codes (sealed secrets, a code good once, recovery codes,
+a limit on wrong codes).
 
 The docs site's page, `/ecosystem/auth`, is the guide; this is the reference. `example/` is an app
 that uses all of it, and its tests (`example/test`) run it on SQLite and on Postgres.
@@ -67,6 +69,10 @@ Auth.Options := {
     link_page : Str ?? "",                     # the app's page a mailed link opens ("": /auth/link)
     cookie : Str ?? "session",                 # the session cookie's name
     refusal : Str ?? "Sign in first.",         # the words of required's 401
+    two_factor : Bool ?? Bool.False,           # may users turn on two-factor sign-in (below)
+    code_page : Str ?? "/sign-in/code",        # the app's page a sign-in waiting for its code goes to
+    issuer : Str ?? "",                        # the name authenticator apps show ("": the public URL's host)
+    key_env : Str ?? "APP_SECRET",             # the app's secret, which the sealing key is derived from
 }
 ```
 
@@ -187,7 +193,67 @@ to the admin when its time runs out or on `stop_impersonating!`. Each start and 
 with both users. Who may impersonate is the app's to decide before it calls (an admin's route, as
 the example's `/impersonate`, which checks `real_user` against `ADMIN_EMAILS`). Use `real_user` to
 record who did what, and to guard what only the person themselves may change (their sessions, their
-address).
+address, their two-factor sign-in). An admin acting as someone isn't asked for their code: no one
+signs in.
+
+## Two-factor sign-in
+
+With `two_factor: Bool.True`, a user may turn on two-factor sign-in: from then on, each of their
+sign-ins (a link, a provider, the dev sign-in, the app's own `sign_in!`) waits for the code their
+authenticator app shows (TOTP, RFC 6238: HMAC-SHA1, 30-second steps, six digits, as every app reads
+an `otpauth://` URI), or one of their recovery codes.
+
+```roc
+Auth.TwoFactor : [Off, Pending, On({ since_ms : I64, recovery_codes : U64 })]
+
+Auth.two_factor! : Str => Try(TwoFactor, [DbErr(Str), BadRow(Str), ..])
+Auth.two_factor_start! : Str, Str => Try({ secret : Str, uri : Str }, [AlreadyOn, NotOffered, DbErr(Str), BadRow(Str), ..])
+Auth.two_factor_pending! : Str, Str => Try({ secret : Str, uri : Str }, [NotPending, DbErr(Str), BadRow(Str), ..])
+Auth.two_factor_confirm! : Str, Str => Try(List(Str), [WrongCode, NotStarted, AlreadyOn, DbErr(Str), BadRow(Str), ..])
+Auth.two_factor_disable! : Str, Str => Try({}, [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..])
+Auth.two_factor_regenerate! : Str, Str => Try(List(Str), [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..])
+Auth.waiting! : Server.Request => Try({ user : Str, then : Str, tries_left : U64 }, [SignedOut])
+```
+
+**Turning it on.** `two_factor_start!(user, account)` makes a secret (20 random bytes) and keeps it
+sealed, waiting for its first code. The app shows the `uri` as a QR code (packages/qr's
+`<QrCode>`), and the `secret` as text (Base32 in groups of four) for an app that can't scan;
+`account` is what the app shows beside the issuer (their address). `two_factor_pending!` gives both
+again while it waits (the page reloaded, or a wrong code). `two_factor_confirm!(user, code)` takes
+the first code and turns it on: the answer is ten recovery codes (`k7qx-m2pa-r4tz-b6wd`), each good
+once in place of a code. Show them once: only their hashes are kept.
+
+**Signing in.** A user with it on isn't signed in by their link or provider: the cookie holds a
+sign-in waiting for a code, for ten minutes, and the browser goes to `code_page` (`?then=` where it
+was going). Meanwhile the middleware treats the request as signed out, but a page's GET goes to the
+code page rather than the sign-in page. The code page posts `code` (and `then`) to `/auth/code`:
+
+- a code the app shows now (or for the step either side, a clock a little out), later than the last
+  one this user used, so a code is good once; or one of their unused recovery codes (used up, and on
+  the log);
+- right: a session starts under a new token (the one the browser waited with signs no one in), on
+  to `then`;
+- wrong: back to the code page with `?error=code`; the fifth wrong code ends the sign-in, and the
+  sign-in page says `?error=attempts`;
+- after ten minutes, or with no sign-in waiting: the sign-in page, `?error=timeout`.
+
+`waiting!(request)` is the sign-in waiting in this browser: whose, where it goes, how many more
+tries it has, for the code page to say whom it signs in. The code page must not need a signed-in
+user (it would send itself to itself). A form posting to `/auth/sign-out` cancels.
+
+**Turning it off, new recovery codes.** `two_factor_disable!(user, code)` and
+`two_factor_regenerate!(user, code)` each take a code the app shows now or a recovery code.
+
+**Who must have it.** The package doesn't decide: `two_factor!(user)` says whether it is on, and a
+route that wants it (an admin's) refuses those without it, as the example's `/admin` does.
+
+**The secret at rest** is sealed with the platform's `AesGcm` under a key derived (HKDF-SHA256)
+from the app's secret, `APP_SECRET` (`key_env`), at least 32 characters (`openssl rand -hex 32`),
+with the user's id sealed beside it, so a row moved to another user doesn't open. With
+`two_factor`, the server doesn't start without it, but under `--dev`, where a development secret
+stands in (said on the log). Changing it makes every authenticator's secret unreadable: their codes
+stop working, but recovery codes still sign in (and turn it off, to set it up again).
+
 ## Providers
 
 ```roc
@@ -226,6 +292,7 @@ Each answers with a redirect.
 | `GET /auth/<provider>/callback` | back from it: signed in, on to `then` |
 | `POST /auth/sign-out` (`then`) | the session ended, its cookie gone, on to `then` (else `home`) |
 | `POST /auth/dev` (`email`, `then`) | under `--dev` only: that address signed in |
+| `POST /auth/code` (`code`, `then`) | a sign-in's second factor: signed in, on to `then`; or back to the code page |
 
 A sign-in that fails goes to the app's sign-in page with why, and where it was going (`&then=`):
 
@@ -236,6 +303,10 @@ A sign-in that fails goes to the app's sign-in page with why, and where it was g
 | `provider` | the provider refused, couldn't be reached, or isn't set up; `&reason=` says which |
 | `state` | back from a provider without the state this browser kept: too late, or another browser |
 | `unavailable` | the database couldn't take it (on the log) |
+| `attempts` | the fifth wrong code ended a sign-in waiting for its code |
+| `timeout` | no sign-in was waiting for a code in this browser (ten minutes went by) |
+
+A wrong code goes back to the code page with `?error=code`.
 
 ## The API
 
@@ -259,26 +330,33 @@ A sign-in that fails goes to the app's sign-in page with why, and where it was g
 | `identities! : Str => Try(List({ provider, subject, email }), …)` | the identities a user signs in with |
 | `providers! : {} => List({ name, label, path })` | the providers set up, for the sign-in page's buttons |
 | `dev_sign_in! : {} => Bool` | whether `POST /auth/dev` is open (`--dev`) |
+| `two_factor!`, `two_factor_start!`, `two_factor_pending!`, `two_factor_confirm!`, `two_factor_disable!`, `two_factor_regenerate!`, `waiting!` | two-factor sign-in (above) |
 | `google`, `github`, `oidc` | providers |
 
 `Rules` holds what is plain Roc, with its `expect`s: where a sign-in may go after (`path`), a token's
 shape and hash, the cookies' names, an address as it is kept, the state cookie, PKCE's challenge,
-the URL to a provider, an ID token's claims, GitHub's answers. `AuthStore` holds the statements.
+the URL to a provider, an ID token's claims, GitHub's answers, recovery codes and the sealing key.
+`Totp` is authenticator apps' codes (`code`, `matching`, `uri`, `grouped`), checked against RFC
+6238's and RFC 4226's own vectors. `AuthStore` holds the statements.
 `SignInError` names no platform (`browser.roc` lists it), so a sign-in page reads it in the browser:
 `SignInError.message(query)` is the sentence for `?error=` (and its `reason`), `SignInError.field`
-a field of the query (`then`, `email`).
+a field of the query (`then`, `email`); the code page uses it too.
 
 ## The tables
 
-`auth/0001_auth` and `auth/0002_impersonation`, the same on SQLite and on Postgres (times are
-milliseconds, given by the package):
+`auth/0001_auth`, `auth/0002_impersonation` and `auth/0003_two_factor`, the same on SQLite and on
+Postgres (times are milliseconds, given by the package):
 
 - `auth_sessions`: `id` (the token's hash), `user_id`, `created_at`, `expires_at`, and while
   impersonating `acting_as` and `acting_until`;
 - `auth_links`: `id` (the token's hash), `email`, `return_to`, `expires_at`;
-- `auth_identities`: `provider`, `subject`, `user_id`, `email`, `created_at`.
+- `auth_identities`: `provider`, `subject`, `user_id`, `email`, `created_at`;
+- `auth_two_factor`: `user_id`, `secret` (sealed), `enabled_at` (null while it waits for its first
+  code), `last_step` (the last 30-second step a code was used at), `created_at`;
+- `auth_recovery_codes`: `user_id`, `id` (the code's SHA-256), `created_at`;
+- `auth_waiting`: `id` (the token's hash), `user_id`, `return_to`, `attempts`, `expires_at`.
 
-Expired sessions and links are swept as sessions start.
+Expired sessions, links and waiting sign-ins are swept as sessions start.
 
 ## Safety
 
@@ -297,9 +375,17 @@ Expired sessions and links are swept as sessions start.
   client (`Guard.rate_limit`), so nobody mails an address a hundred links.
 - **Links in mail** go to the server's public URL, never to a request's `Host`, which whoever asks
   can set.
+- **Two-factor**: the secret sealed (AES-256-GCM, under a key from `APP_SECRET`), never in clear; a
+  code compared in constant time, good once (the last step used is kept); recovery codes 80 random
+  bits each, kept as their SHA-256, used up in one statement; five wrong codes end a sign-in, which
+  waits ten minutes at most; the session that follows has a new token. A sign-in that waits needs
+  its first factor again for five more tries (a new link: guard's limit on the sign-in mail counts
+  them), but the wrong codes of a user aren't counted across sign-ins: PROPOSALS.md.
 
 ## Status
 
-Built and tested (D-072, D-077): links, the link page, Google, GitHub, OpenID Connect, the dev
-sign-in, sessions, the middleware, impersonation. Not yet: passwords (they need a slow hash, Argon2, from the host), passkeys
-(a P-256 signature verified, by the host), discovery of a provider's endpoints from its issuer. PROPOSALS.md has them.
+Built and tested (D-072, D-077, D-081): links, the link page, Google, GitHub, OpenID Connect, the
+dev sign-in, sessions, the middleware, impersonation, two-factor sign-in with an authenticator app
+and recovery codes. Not yet: passwords (they need a slow hash, Argon2, from the host), passkeys (a
+P-256 signature verified, by the host), discovery of a provider's endpoints from its issuer.
+PROPOSALS.md has them.

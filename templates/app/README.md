@@ -1,8 +1,9 @@
 # {{title}}
 
 A Roc Solid app, made by `rocx new`. People sign in by a link mailed to them, or at Google or
-GitHub once you set those up. Sessions, mail, security headers and a limit on sign-in mail are set up
-from the first commit.
+GitHub once you set those up, and with a code from an authenticator app too once they turn on
+two-factor sign-in. Sessions, mail, security headers and a limit on sign-in mail are set up from the
+first commit.
 
 The guide to Roc Solid is at [roc-solid.github.io](https://roc-solid.github.io/).
 
@@ -33,8 +34,8 @@ and reloads the page when you save a file. Under `rocx dev`:
 | `routes/+error.rocx` | What a missing page (404) or a failed one (500) shows |
 | `routes/+page.rocx` | The front page |
 | `routes/api/me/+server.roc` | Who is signed in, for the bar at the top |
-| `routes/sign-in/` | The sign-in page, the endpoint that mails a link (`mail/`), and the page a link opens (`link/`) |
-| `routes/account/` | A page for signed-in people only: your address, where you're signed in, signing out everywhere |
+| `routes/sign-in/` | The sign-in page, the endpoint that mails a link (`mail/`), the page a link opens (`link/`), and the page that asks for a two-factor code (`code/`) |
+| `routes/account/` | A page for signed-in people only: your address, where you're signed in, signing out everywhere, and two-factor sign-in (its forms post to `two-factor/`) |
 | `components/Nav.rocx` | The bar at the top: a component, with its stories and tests |
 | `.rocx-version` | The version of Roc Solid this app builds with |
 | `.rocx` | A link to that version, which every `rocx` command makes (not committed) |
@@ -83,6 +84,21 @@ To move to another database, change the line. The migration this app starts with
 three (text ids, times as `bigint` milliseconds), and so does packages/auth's. Keep yours that way
 if you may move. The data doesn't move with it: copy it over yourself.
 
+## Two-factor sign-in
+
+Anyone may turn it on from their account page: it shows a QR code for their authenticator app
+(1Password, Google Authenticator, a phone's passwords app) and the key as text, and the app's first
+code turns it on and shows ten recovery codes, once. From then on, after their link or provider,
+signing in waits at `/sign-in/code` for the code the app shows, or a recovery code. Five wrong codes
+end that sign-in. Turning it off takes a code too.
+
+Each authenticator's secret is kept sealed under a key derived from `APP_SECRET`, which the server
+needs to start (but under `rocx dev`, where a development secret stands in). Make one with
+`openssl rand -hex 32`, set it where the server runs, and keep it: if it changes, everyone's codes
+stop working, and only their recovery codes sign them in. `main.roc`'s `two_factor: Bool.True`
+offers it; `issuer` is the name the apps show beside the address. To ask some users to have it on
+(admins, say), check `Auth.two_factor!(user)` in their routes.
+
 ## Signing in with Google or GitHub
 
 Each provider is offered on the sign-in page once its variables are set. Register the app with the
@@ -107,8 +123,11 @@ rocx build . --release out/ --target x64musl     # or arm64musl, for a Linux ser
 browser's files. Copy `out/` to the server and start it there:
 
 ```sh
-PUBLIC_URL=https://app.example.com SMTP_URL=smtps://… ./server --static static
+PUBLIC_URL=https://app.example.com SMTP_URL=smtps://… APP_SECRET=… ./server --static static
 ```
+
+`APP_SECRET` is the secret two-factor sign-in's key comes from (`openssl rand -hex 32`, once, and
+kept): without it the server doesn't start.
 
 On SQLite or Turso the database is `data/app.db` beside where it starts: keep that folder between
 deploys, and back it up (or point `DATABASE_URL` at a file elsewhere).
