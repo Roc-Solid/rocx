@@ -183,14 +183,15 @@ AppNotes := [].{
 	}
 
 	## The sidebar's groups: Start (the overview, then the first app to read), Apps, and Benchmarks,
-	## each app's page in the group its `kind` names, in this list's order.
+	## each app's page in the group its `kind` names, in this list's order; Benchmarks ends with
+	## js-framework-benchmark's page (its entries are in benchmarks/jsframework/, not examples/).
 	groups : List({ name : Str, pages : List({ path : Str, label : Str, blurb : Str }) })
 	groups = {
 		of = |kind| AppNotes.all.keep_if(|each| each.kind == kind).map(|each| { path: each.path, label: AppNotes.title(each.name), blurb: each.blurb })
 		[
 			{ name: "Start", pages: [{ path: Paths.examples, label: "All the examples", blurb: "What each is, and what it weighs" }].concat(of(Start)) },
 			{ name: "Apps", pages: of(App) },
-			{ name: "Benchmarks", pages: of(Benchmark) },
+			{ name: "Benchmarks", pages: of(Benchmark).append({ path: Paths.examples_js_framework_benchmark, label: "js-framework-benchmark", blurb: "Roc Solid beside Solid, React and others" }) },
 		]
 	}
 
@@ -215,7 +216,7 @@ AppNotes := [].{
 expect AppNotes.about("tasks").is_ok()
 expect AppNotes.about("nowhere") == Err(NoNotes)
 expect AppNotes.shown.len() == ExampleApps.all.len()
-expect AppNotes.groups.join_map(|group| group.pages).len() == AppNotes.all.len() + 1
+expect AppNotes.groups.join_map(|group| group.pages).len() == AppNotes.all.len() + 2
 expect AppNotes.meta("echo").toc.any(|entry| entry.id == "bench")
 expect !AppNotes.meta("tasks").toc.any(|entry| entry.id == "bench")
 expect AppNotes.meta("sqlite-vs-turso").toc.any(|entry| entry.id == "results")

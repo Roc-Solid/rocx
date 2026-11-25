@@ -1,0 +1,100 @@
+import pf.Html
+import ../../../Ui/Code
+import ../../../Ui/Heading
+import ../../../Ui/JsBenchResults
+import ../../../Ui/PageHero
+import ../../../Generated/Paths
+
+## Roc Solid in js-framework-benchmark: what the benchmark is, the results beside the frameworks it
+## is compared with (`JsBenchResults`, from site/js-framework-benchmark.json, which `just js-bench
+## bench` measures), what they say, the entries, and how to run it (benchmarks/jsframework/).
+meta = {
+	title: "js-framework-benchmark · Examples",
+	description: "Roc Solid in js-framework-benchmark, measured beside vanillajs, Solid, Leptos, Joy and React: CPU time, memory, download and first paint, each benchmark's numbers, what they say, and how to run it.",
+	toc: [
+		{ id: "results", label: "The results" },
+		{ id: "each", label: "Each benchmark" },
+		{ id: "reading", label: "What they say" },
+		{ id: "entries", label: "The entries" },
+		{ id: "run", label: "Run it" },
+	],
+}
+
+view! = |_|
+	<NoHydration>
+		<PageHero
+			eyebrow="Examples · Benchmarks"
+			title="Roc Solid in js-framework-benchmark"
+		>
+			js-framework-benchmark is the yardstick most web frameworks are measured with: one page, a
+			table of rows and six buttons. Its runner opens each framework's page in Chrome, clicks, and
+			times how long until the page has painted; then how much memory the page holds, and what it
+			downloads. Roc Solid's two entries are in the repository's <code>benchmarks/jsframework/</code>,
+			and here they are beside vanillajs (the floor: hand-written DOM code), Solid (the closest
+			relative), Leptos (signals in Rust and wasm), Joy (the other Roc framework) and React.
+		</PageHero>
+
+		<JsBenchResults />
+
+		<Heading id="reading">What they say</Heading>
+		<p>
+			The first paint is the best of them: the page is HTML the server rendered (here, written as
+			files by <code>rocx build --static</code>), shown before its wasm has loaded. Updating rows that
+			are there is close to the others: a row's holes run again only when its data changed (compared
+			with <code>==</code>), selecting one patches a class, and a swap moves the two rows that moved.
+		</p>
+		<p>
+			Making rows is where Roc Solid is slower: about two and a half times vanillajs for 1,000 rows,
+			and for 10,000. For each row the runtime calls into the wasm about four times (the row and its
+			holes), the host notes every allocation each call makes (so a call cut short by a read that
+			waits can be freed), Roc writes the row's markup as JSON, and the runtime reads it and makes the
+			elements one by one, with comments marking where each row and hole is. Memory follows from the
+			same: a computation for the row and each hole, each with what it read. The download is the app's
+			wasm and the runtime: half again as much as Joy's, Leptos's or React's, and many times Solid's,
+			which is JavaScript alone; the runtime is shipped minified (D-075). The repository's
+			<code>TODO.md</code> lists what is left.
+		</p>
+		<p>
+			The first run found worse (D-074): CPU five times the fastest, creating 1,000 rows 217 ms and
+			replacing them 798. The host's notes of what runs allocate had filled with a hash map's
+			tombstones, so every run cost more than the one before; and a <code>.map</code>'s rows put in
+			order moved every row between two swapped ones. Both are fixed, with tests that count rather
+			than time.
+		</p>
+
+		<Heading id="entries">The entries</Heading>
+		<p>
+			Each entry is an app of one page whose markup is the vanillajs entry's (the runner finds the
+			buttons by id and the rows by class): <code>keyed</code> keeps each row by its id
+			(<code>.map</code> with <code>{"key={row.id}"}</code>), so a row moves with its data;
+			<code>non-keyed</code> keeps a row by its position (<code>.map_with_index</code> with
+			<code>{"key={i}"}</code>), so a swap rewrites the two rows instead. The rows' data is plain
+			Roc (<code>Rows.roc</code>): an id, and a label of three words picked by a generator with a
+			fixed seed. Nothing is batched or cached beyond what an app would do, and the wasm is built as
+			an app ships it.
+		</p>
+		<p>
+			The others are the benchmark's own entries, built as its README says (Leptos's build is in its
+			repository). Joy's entries aren't in the benchmark yet: they are built from its 0.35.0 release
+			the way Joy's own <code>benchmarks/jsframework/README.md</code> says. Upstream retired its
+			non-keyed entries in October 2026; its runner still measures them, so ours, Joy's and
+			vanillajs's are kept.
+		</p>
+
+		<Heading id="run">Run it</Heading>
+		<p>
+			The benchmark lives outside the repository, in a clone of krausest/js-framework-benchmark with
+			its runner installed, the other entries built and a Chrome for its runner;
+			<code>benchmarks/jsframework/README.md</code> says how to set it up, once. Its runner needs a
+			small patch (in the same folder): a trace of a click could hold events from before tracing
+			began, which it counted as the click's. Then:
+		</p>
+		<Code source={"just js-bench entries   # Roc Solid's two entries, built into the clone\njust js-bench bench     # them, then two rounds of every entry (about 75 minutes)\njust js-bench bench --rounds=1 --count=3 --benchmarks=01_,05_   # a quick look"} numbers={Bool.False} plain />
+		<p>
+			The runner is headless, the benchmark's server on port 8089, and each round runs one benchmark at
+			a time for every entry, the second round in reverse order. Run it on mains, with nothing else
+			heavy running. The results land in <code>site/js-framework-benchmark.json</code>, which this
+			page reads: like the <a href={Paths.examples}>examples</a>' numbers, they are measured only when
+			asked, and the site's build doesn't measure.
+		</p>
+	</NoHydration>

@@ -89,7 +89,9 @@ view! = |_|
 			</p>
 			<p>
 				<code>just example-apps --bench</code> runs <a href={Paths.examples_echo}>echo</a>'s server benchmark
-				again, and <code>just example-shots</code> takes the screenshots. This site's build only reads what they
+				again, and <code>just example-shots</code> takes the screenshots. How the browser's runtime does
+				beside other frameworks is on <a href={Paths.examples_js_framework_benchmark}>js-framework-benchmark</a>'s
+				page. This site's build only reads what they
 				wrote and measures nothing itself, because a dozen wasm builds take minutes.
 			</p>
 			<p>

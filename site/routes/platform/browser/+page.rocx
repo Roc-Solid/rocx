@@ -277,7 +277,9 @@ view! = |_| {
 				<code>--opt=speed</code> renders a little faster and is the biggest raw. Compiling this site's
 				wasm took {Facts.fact!("client_compile_ms")} ms in Node. The runtime is
 				{Facts.fact!("runtime_gzip")} of JavaScript, gzipped. The <a href={Paths.showcase}>showcase</a> measures
-				itself as it runs: frames a second, and what each costs, Roc and the patches together.
+				itself as it runs: frames a second, and what each costs, Roc and the patches together; and
+				<a href={Paths.examples_js_framework_benchmark}>js-framework-benchmark</a> measures the platform beside
+				Solid, Leptos, Joy, React and hand-written DOM code.
 			</p>
 			<Machine machine={machine!({})} />
 			<p>

@@ -308,6 +308,12 @@ export function report(run) {
 		benchmarks: ids.map((id) => ({ id, label: LABELS[id] })),
 		results,
 		summary,
+		// The same numbers in hundredths, whole, for the docs' page (rocx site prepare writes
+		// site/Generated/JsBench.roc from them: rocx reads a JSON number whole).
+		hundredths: {
+			results: Object.fromEntries(meta.frameworks.map((entry) => [entry, Object.fromEntries(Object.entries(results[entry]).map(([id, r]) => [id, { mean: Math.round(r.mean * 100), stddev: Math.round(r.stddev * 100) }]))])),
+			summary: Object.fromEntries(meta.frameworks.map((entry) => [entry, Object.fromEntries(Object.entries(summary[entry]).map(([name, value]) => [name, value === null ? null : Math.round(value * 100)]))])),
+		},
 	};
 	writeFileSync(resultsFile, `${JSON.stringify(document, null, 1)}\n`);
 	const cell = (x, digits = 1) => (x === null || x === undefined ? "–" : x.toFixed(digits));

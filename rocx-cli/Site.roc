@@ -3,8 +3,9 @@
 ## the tests). In order:
 ##
 ## 1. site/Generated/PlatformReference.roc (SiteReference), ExampleApps.roc (from
-##    site/example-apps.json, which site/example-apps.mjs measures) and DbBench.roc (from
-##    site/sqlite-vs-turso.json): before rocx build, which copies them into the browser's copy;
+##    site/example-apps.json, which site/example-apps.mjs measures), DbBench.roc (from
+##    site/sqlite-vs-turso.json) and JsBench.roc (from site/js-framework-benchmark.json,
+##    benchmarks/jsframework/run.mjs's): before rocx build, which copies them into the browser's copy;
 ## 2. rocx build site --client site/build/client (with the stories, for a dev build);
 ## 3. the server platform's copy of the modules both platforms have;
 ## 4. site/Generated/Sources.roc (SiteSources), which quotes what rocx build wrote, and the
@@ -53,6 +54,8 @@ Site := [].{
 		Site.write_if_changed!(Fs.join([generated, "ExampleApps.roc"]), Site.example_apps_module(facts, Site.shot_files!(Fs.join([root, "site", "static", "shots"]))))
 		bench = Value.parse(Fs.read_or_empty!(Fs.join([root, "site", "sqlite-vs-turso.json"]))) ?? Null
 		Site.write_if_changed!(Fs.join([generated, "DbBench.roc"]), Site.db_bench_module(bench))
+		frameworks = Value.parse(Fs.read_or_empty!(Fs.join([root, "site", "js-framework-benchmark.json"]))) ?? Null
+		Site.write_if_changed!(Fs.join([generated, "JsBench.roc"]), Site.js_bench_module(frameworks))
 		# rocx build, in this process.
 		built = Build.build!(["site"], { client: Some("site/build/client"), cwd: root, dev, rocx: root })?
 		if !built.ok {
@@ -368,6 +371,66 @@ Site := [].{
 				.concat(workloads("workloads"))
 				.concat(["\t]", "", "\t## Each workload of the big run (a million orders), its time on each engine in each run.", "\tbig : List(Workload)", "\tbig = ["])
 				.concat(workloads("big"))
+				.concat(["\t]", "}", ""])
+		Str.join_with(lines, "\n")
+	}
+
+	## site/Generated/JsBench.roc: js-framework-benchmark's results (site/js-framework-benchmark.json,
+	## which benchmarks/jsframework/run.mjs writes; `Null` before it was run) as values the
+	## benchmark's page reads: the entries, each benchmark's mean and spread for each, and each
+	## entry's summary, in hundredths (the file's `hundredths`: rocx reads a JSON number whole).
+	js_bench_module : Value -> Str
+	js_bench_module = |results| {
+		q = Text.roc_string
+		field = |value, key| Value.field(value, key)
+		text = |key| Value.str(field(results, key))
+		frameworks = Value.items(field(results, "frameworks"))
+		names = frameworks.map(|f| Value.str(field(f, "entry")))
+		hundredths = field(results, "hundredths")
+		entry = |f| "{ entry: ${q(Value.str(field(f, "entry")))}, name: ${q(Value.str(field(f, "name")))}, version: ${q(Value.str(field(f, "version")))} }"
+		row = |b| {
+			id = Value.str(field(b, "id"))
+			of = |key| Str.join_with(names.map(|name| Site.int(field(field(field(field(hundredths, "results"), name), id), key))), ", ")
+			"\t\t{ id: ${q(id)}, label: ${q(Value.str(field(b, "label")))}, means: [${of("mean")}], spreads: [${of("stddev")}] },"
+		}
+		summary = |name| {
+			s = field(field(hundredths, "summary"), name)
+			n = |key| Site.int(field(s, key))
+			"\t\t{ cpu: ${n("cpu_geomean_ms")}, slowdown: ${n("slowdown")}, ready_memory: ${n("ready_memory_mb")}, run_memory: ${n("run_memory_mb")}, compressed: ${n("compressed_kb")}, uncompressed: ${n("uncompressed_kb")}, first_paint: ${n("first_paint_ms")} },"
+		}
+		lines =
+			[
+				"## Written by `rocx site prepare` from site/js-framework-benchmark.json, which",
+				"## benchmarks/jsframework/run.mjs measures (`just js-bench bench`). Run that again, not this one.",
+				"JsBench := [].{",
+				"\t## An entry: its folder in the benchmark (`keyed/solid`), its name on the page, and what was measured (`solid-v1.9.3-keyed`).",
+				"\tEntry : { entry : Str, name : Str, version : Str }",
+				"",
+				"\t## A benchmark's results, in hundredths (of a millisecond, a megabyte or a kilobyte): each entry's mean and standard deviation, in `entries`' order (0 where there is none).",
+				"\tRow : { id : Str, label : Str, means : List(U64), spreads : List(U64) }",
+				"",
+				"\t## An entry's summary, in hundredths: the CPU benchmarks' geometric mean (ms), its slowdown against each benchmark's fastest (×), memory once ready and with 1,000 rows (MB), what the page downloads compressed and not (KB), and its first paint (ms). 0 where there is none.",
+				"\tSummary : { cpu : U64, slowdown : U64, ready_memory : U64, run_memory : U64, compressed : U64, uncompressed : U64, first_paint : U64 }",
+				"",
+				"\t## When, at which commit of Roc Solid and of the benchmark, in which Chrome, how many rounds of how many iterations, how long, and the load and power during it.",
+				"\tmeasured : { date : Str, commit : Str, benchmark : Str, chrome : Str, rounds : U64, count : U64, minutes : U64, load : Str, power : Str }",
+				"\tmeasured = { date: ${q(text("measured"))}, commit: ${q(text("commit"))}, benchmark: ${q(text("benchmark"))}, chrome: ${q(text("chrome"))}, rounds: ${Site.int(field(results, "rounds"))}, count: ${Site.int(field(results, "count"))}, minutes: ${Site.int(field(results, "minutes"))}, load: ${q(text("load"))}, power: ${q(text("power"))} }",
+				"",
+				"\t## What it ran on (site/machine.mjs).",
+				"\tmachine : { model : Str, cpu : Str, cores : Str, memory : Str, storage : Str, os : Str, arch : Str, power : Str }",
+				"\tmachine = ${Site.machine_record(field(results, "machine"))}",
+				"",
+				"\t## The entries, in the page's order.",
+				"\tentries : List(Entry)",
+				"\tentries = [${Str.join_with(frameworks.map(entry), ", ")}]",
+				"",
+				"\t## Each benchmark, in the runner's order.",
+				"\trows : List(Row)",
+				"\trows = [",
+			]
+				.concat(Value.items(field(results, "benchmarks")).map(row))
+				.concat(["\t]", "", "\t## Each entry's summary, in `entries`' order.", "\tsummaries : List(Summary)", "\tsummaries = ["])
+				.concat(names.map(summary))
 				.concat(["\t]", "}", ""])
 		Str.join_with(lines, "\n")
 	}

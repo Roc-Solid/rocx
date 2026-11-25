@@ -1,0 +1,221 @@
+import pf.Html
+import ../Generated/JsBench
+import Heading
+import Machine
+import TableWrap
+
+## js-framework-benchmark's results (`JsBench`, from site/js-framework-benchmark.json, `just js-bench
+## bench`): each entry's summary, then each benchmark, an entry a column, Roc Solid's marked and the
+## best of each column or row in bold; then when, how and on what it was measured. Lower is better
+## everywhere. Pure: the data is the build's.
+JsBenchResults := [].{
+	view : {} -> Html
+	view = |_| JsBenchResults.results(JsBench.entries)
+
+	## The sections, or a line saying they weren't measured yet.
+	results : List(JsBench.Entry) -> Html
+	results = |entries|
+		if entries.is_empty() {
+			<>
+				<Heading id="results">The results</Heading>
+				<p class="missing">Not measured yet: run <code>just js-bench bench</code>.</p>
+			</>
+		} else {
+			m = JsBench.measured
+			<div class="js-bench">
+				<Heading id="results">The results</Heading>
+				<p>
+					{"Each entry's CPU time is the geometric mean of the nine CPU benchmarks below, each from the click to the end of the paint it causes; the slowdown is the geometric mean of each benchmark's time against the fastest entry's, the measure the official table ranks by. Memory is the page's with 1,000 rows; the download, everything the page loads, compressed as the benchmark's server sends it. Lower is better, and the best of each column is in bold."}
+				</p>
+				<TableWrap>
+					<table>
+						<thead>
+							<tr>
+								<th scope="col">Entry</th>
+								<th scope="col" class="num">CPU, geometric mean</th>
+								<th scope="col" class="num">Slowdown</th>
+								<th scope="col" class="num">Memory, 1,000 rows</th>
+								<th scope="col" class="num">Download</th>
+								<th scope="col" class="num">First paint</th>
+							</tr>
+						</thead>
+						<tbody>{...JsBench.entries.map_with_index(|entry, i| JsBenchResults.summary_row(entry, i))}</tbody>
+					</table>
+				</TableWrap>
+				<Heading id="each">Each benchmark</Heading>
+				<p>
+					{"Each cell is the mean of every iteration of both rounds (${m.rounds.to_str()} rounds of ${m.count.to_str()}), with its standard deviation under it. The runner slows the CPU down for three of them, as its id says ("}
+					<code>_x16</code>{" is sixteen times slower), so small differences show."}
+				</p>
+				{JsBenchResults.table("CPU, milliseconds", |id| !id.starts_with("2") and !id.starts_with("4"), "ms")}
+				{JsBenchResults.table("Memory, megabytes", |id| id.starts_with("2"), "MB")}
+				{JsBenchResults.table("What the page loads, kilobytes, and its first paint, milliseconds", |id| id.starts_with("4"), "")}
+				<p class="when">
+					{"Measured on ${m.date}: Roc Solid at commit "}<code>{m.commit}</code>{", ${m.benchmark}, Chrome ${m.chrome} headless, in ${m.minutes.to_str()} minutes, the machine's load average ${m.load} meanwhile, on ${m.power}. Compare the entries with each other rather than with another machine's numbers, or the official table's."}
+				</p>
+				<Machine machine={JsBench.machine} />
+			</div>
+		}
+
+	## An entry's row of the summary: its name, then each figure, the column's best in bold.
+	summary_row : JsBench.Entry, U64 -> Html
+	summary_row = |entry, i| {
+		none = { cpu: 0, slowdown: 0, ready_memory: 0, run_memory: 0, compressed: 0, uncompressed: 0, first_paint: 0 }
+		s = JsBench.summaries.get(i) ?? none
+		column = |pick| JsBenchResults.best(JsBench.summaries.map(pick))
+		<tr class:ours={JsBenchResults.ours(entry)}>
+			<th scope="row">{entry.name}</th>
+			{JsBenchResults.cell(JsBenchResults.one(s.cpu, " ms"), s.cpu == column(|x| x.cpu))}
+			{JsBenchResults.cell(JsBenchResults.times(s.slowdown), s.slowdown == column(|x| x.slowdown))}
+			{JsBenchResults.cell(JsBenchResults.one(s.run_memory, " MB"), s.run_memory == column(|x| x.run_memory))}
+			{JsBenchResults.cell(JsBenchResults.one(s.compressed, " KB"), s.compressed == column(|x| x.compressed))}
+			{JsBenchResults.cell(JsBenchResults.one(s.first_paint, " ms"), s.first_paint == column(|x| x.first_paint))}
+		</tr>
+	}
+
+	## A table of the benchmarks whose ids `shown` keeps: a row each, an entry a column, the row's
+	## best in bold.
+	table : Str, (Str -> Bool), Str -> Html
+	table = |caption, shown, unit|
+		<TableWrap>
+			<table class="each">
+				<caption>{caption}</caption>
+				<thead>
+					<tr>
+						<th scope="col">Benchmark</th>
+						{...JsBench.entries.map(|entry| <th scope="col" class="num" class:ours={JsBenchResults.ours(entry)}>{JsBenchResults.framework(entry.name)}<span class="kind">{JsBenchResults.kind(entry.name)}</span></th>)}
+					</tr>
+				</thead>
+				<tbody>{...JsBench.rows.keep_if(|bench| shown(bench.id)).map(|bench| JsBenchResults.bench_row(bench, unit))}</tbody>
+			</table>
+		</TableWrap>
+
+	## A benchmark's row: its label and id, then each entry's mean and spread.
+	bench_row : JsBench.Row, Str -> Html
+	bench_row = |r, unit| {
+		fastest = JsBenchResults.best(r.means)
+		cells = r.means.map_with_index(|mean, i| { mean, spread: r.spreads.get(i) ?? 0, ours: JsBenchResults.ours(JsBench.entries.get(i) ?? { entry: "", name: "", version: "" }) })
+		suffix = if (unit.is_empty()) (if (r.id.starts_with("43")) " ms" else " KB") else ""
+		<tr>
+			<th scope="row">{r.label}<code class="id">{r.id}</code></th>
+			{...cells.map(|c| <td class="num" class:best={c.mean > 0 and c.mean == fastest} class:ours={c.ours}>{JsBenchResults.one(c.mean, suffix)}<span class="spread">{if (c.mean == 0 or c.spread == 0) "" else "± ${JsBenchResults.one(c.spread, "")}"}</span></td>)}
+		</tr>
+	}
+
+	## A figure's cell, in bold when it is the best.
+	cell : Str, Bool -> Html
+	cell = |text, is_best| <td class="num" class:best={is_best}>{text}</td>
+
+	## An entry's framework and its kind, apart, for a column's head: "Roc Solid (keyed)" is
+	## "Roc Solid", then "keyed" under it.
+	framework : Str -> Str
+	framework = |name| name.split_on(" (").first() ?? name
+
+	kind : Str -> Str
+	kind = |name| (name.split_on(" (").get(1) ?? "").drop_suffix(")")
+
+	## Whether an entry is Roc Solid's.
+	ours : JsBench.Entry -> Bool
+	ours = |entry| entry.entry.ends_with("/roc-solid")
+
+	## The lowest of some figures in hundredths, but none (0).
+	best : List(U64) -> U64
+	best = |values| values.fold(0, |lowest, value| if (value > 0 and (lowest == 0 or value < lowest)) value else lowest)
+
+	## Hundredths with one decimal and a unit (`4575` → "45.8 ms"); a dash for none.
+	one : U64, Str -> Str
+	one = |hundredths, unit|
+		if hundredths == 0 {
+			"–"
+		} else {
+			tenths = (hundredths + 5) // 10
+			"${(tenths // 10).to_str()}.${(tenths % 10).to_str()}${unit}"
+		}
+
+	## Hundredths as a factor with two decimals (`206` → "2.06×"); a dash for none.
+	times : U64 -> Str
+	times = |hundredths|
+		if hundredths == 0 {
+			"–"
+		} else {
+			"${(hundredths // 100).to_str()}.${if (hundredths % 100 < 10) "0" else ""}${(hundredths % 100).to_str()}×"
+		}
+
+	<story name="The numbers' formats">
+		<p>{JsBenchResults.one(4575, " ms")} · {JsBenchResults.one(5, " MB")} · {JsBenchResults.times(206)} · {JsBenchResults.times(107)} · {JsBenchResults.one(0, "")}</p>
+	</story>
+
+	<style>
+		.js-bench table {
+			font-variant-numeric: tabular-nums;
+		}
+
+		.js-bench caption {
+			caption-side: top;
+			padding: var(--space-2) 0;
+			color: var(--text-muted);
+			font-size: var(--size-sm);
+			font-weight: 600;
+			text-align: left;
+		}
+
+		.js-bench .num {
+			text-align: right;
+			white-space: nowrap;
+		}
+
+		.js-bench th[scope="row"] {
+			text-transform: none;
+			letter-spacing: normal;
+			font-weight: normal;
+			color: var(--text);
+		}
+
+		.js-bench .id {
+			display: block;
+			font-size: var(--size-xs);
+			color: var(--text-muted);
+		}
+
+		.js-bench .kind {
+			display: block;
+			font-weight: normal;
+			text-transform: none;
+			letter-spacing: normal;
+		}
+
+		.js-bench .spread {
+			display: block;
+			font-size: var(--size-xs);
+			color: var(--text-muted);
+		}
+
+		.js-bench .when {
+			font-size: var(--size-sm);
+			color: var(--text-muted);
+		}
+
+		.js-bench .best {
+			font-weight: 700;
+			color: var(--text);
+		}
+
+		.js-bench .ours {
+			background: var(--accent-soft);
+		}
+
+		.js-bench thead .ours {
+			color: var(--accent-strong);
+		}
+	</style>
+}
+
+expect JsBenchResults.one(4575, " ms") == "45.8 ms"
+expect JsBenchResults.one(5, "") == "0.1"
+expect JsBenchResults.one(0, " ms") == "–"
+expect JsBenchResults.times(206) == "2.06×"
+expect JsBenchResults.times(107) == "1.07×"
+expect JsBenchResults.times(1000) == "10.00×"
+expect JsBenchResults.best([0, 300, 200, 0, 250]) == 200
+expect JsBenchResults.framework("Roc Solid (non-keyed)") == "Roc Solid" and JsBenchResults.kind("Roc Solid (non-keyed)") == "non-keyed"
+expect JsBenchResults.framework("React") == "React" and JsBenchResults.kind("React") == ""

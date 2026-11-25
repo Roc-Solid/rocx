@@ -241,7 +241,7 @@ test("the sidebar's groups: each part's pages under its headings, every page of 
 	assert.deepEqual(examples, [
 		{ name: "Start", pages: ["/examples", "/examples/hello"] },
 		{ name: "Apps", pages: ["/examples/tasks", "/examples/journal", "/examples/board", "/examples/quiz", "/examples/uptime", "/examples/notes", "/examples/pomodoro", "/examples/plate"] },
-		{ name: "Benchmarks", pages: ["/examples/echo", "/examples/sqlite-vs-turso", "/examples/checkboxes"] },
+		{ name: "Benchmarks", pages: ["/examples/echo", "/examples/sqlite-vs-turso", "/examples/checkboxes", "/examples/js-framework-benchmark"] },
 	]);
 	// Each page of a part is in its sidebar once, and the sidebar names no page that isn't there.
 	for (const [home, part] of [["/platform", platform], ["/ecosystem", ecosystem], ["/examples", examples]]) {
