@@ -56,6 +56,16 @@ const making_ = () => ({ children: [], kept: [], sources: new Set(), signals: []
  * writes it without its comments and hydrating takes its text as the server wrote it. The server
  * (server/host/src/signals.rs, `touched`) notes the same calls, so both agree.
  */
+/** The one empty list a finished run's record keeps for each kind of thing it made none of (most
+ * holes make nothing but their text): a thousand rows' holes keep no empty arrays of their own.
+ * Something added to one later (a child adopted, a box kept, a cleanup) gets a list of its own (`own`). */
+const NONE = Object.freeze([]);
+const own = (record, name) => (record[name] === NONE ? (record[name] = []) : record[name]);
+const spare = (record) => {
+	for (const name of ["children", "kept", "signals", "cleanups", "queries"]) if (record[name]?.length === 0) record[name] = NONE;
+	return record;
+};
+
 const inert = (making) => !making.live && making.sources.size === 0 && making.children.length === 0 && making.signals.length === 0 && making.cleanups.length === 0 && making.queries.length === 0;
 
 /** A hole, attribute, memo, fallback or the root: a box Roc made, run again when what it read changes. */
@@ -69,11 +79,13 @@ class Computation {
 		this.target = target;
 		this.name = name;
 		this.sources = new Set();
-		this.observers = new Set();
+		/** What reads it (made by the first: nothing reads most holes). */
+		this.observers = null;
 		/** What the last complete run made: child computations, boxes kept for them, cleanups. */
-		this.made = { children: [], kept: [], cleanups: [] };
-		/** Its requests' answers, by method, URL and body: a run again reads them. */
-		this.calls = new Map();
+		this.made = { children: NONE, kept: NONE, cleanups: NONE };
+		/** Its requests' answers, by method, URL and body: a run again reads them. Made by the first
+		 * request (most computations make none: a row's holes, a page's text). */
+		this.calls = null;
 		this.disposed = false;
 		/** Run untracked (a `.map`'s row, an `if`'s part: Solid's mapArray and untrack,
 		 * D-039): what it reads doesn't run it again; only a read that waits does, once it is in. */
@@ -82,7 +94,7 @@ class Computation {
 	}
 
 	adopt(child) {
-		(this.making ?? this.made).children.push(child);
+		own(this.making ?? this.made, "children").push(child);
 	}
 }
 
@@ -1294,12 +1306,12 @@ export class Runtime {
 				const items = this.lists.get(id).items;
 				const at = text(keyPtr, keyLen);
 				const item = items.get(at);
-				if (!item) return items.set(at, { value: ptr, observers: new Set() });
+				if (!item) return items.set(at, { value: ptr, observers: null });
 				this.ex.release(item.value);
 				item.value = ptr;
 				// A <For compared>'s item `==` the one the row had (D-053): the row isn't told; it keeps the newest.
 				if (same) return;
-				for (const observer of item.observers) this.schedule(observer);
+				for (const observer of item.observers ?? NONE) this.schedule(observer);
 			},
 			// A row's item, untracked, for a <For compared> to compare its new one with: 0 for a new row.
 			js_row_last: (id, keyPtr, keyLen) => this.lists.get(id).items.get(text(keyPtr, keyLen))?.value ?? 0,
@@ -1855,7 +1867,7 @@ export class Runtime {
 			const url = key.slice(4, key.includes("\n") ? key.indexOf("\n") : undefined);
 			return keys.some((wanted) => url === wanted || url.startsWith(`${wanted}/`) || url.startsWith(`${wanted}?`));
 		};
-		const targets = [...this.readers].filter((computation) => !computation.disposed && [...computation.calls.keys()].some(named));
+		const targets = [...this.readers].filter((computation) => !computation.disposed && computation.calls !== null && [...computation.calls.keys()].some(named));
 		this.notify("revalidate", { reads: targets.length });
 		if (!targets.length) return done();
 		let left = targets.length;
@@ -2383,9 +2395,9 @@ export class Runtime {
 			if (write.signal) this.ex.release(write.value);
 			else if (write.optimistic) this.ex.release(write.optimistic.value);
 		}
-		for (const source of listener.sources) source.observers.delete(listener);
+		for (const source of listener.sources) source.observers?.delete(listener);
 		listener.sources = making.sources;
-		for (const source of listener.sources) source.observers.add(listener);
+		for (const source of listener.sources) (source.observers ??= new Set()).add(listener);
 		// A cleanup it registered would run as a handler, its writes applied: let go of instead.
 		making.cleanups = making.cleanups.filter((cleanup) => typeof cleanup === "function" || (this.releaseKept(cleanup), false));
 		this.drop(making);
@@ -2788,11 +2800,11 @@ export class Runtime {
 		}
 		const asking = this.current;
 		const key = `${method} ${url}\n${body}`;
-		let answer = asking.calls.get(key);
+		let answer = asking.calls?.get(key);
 		if (!answer && this.answers.has(key)) {
 			// The server answered it while rendering the page: read here, not asked again.
 			answer = { state: "ok", value: this.answers.get(key) };
-			asking.calls.set(key, answer);
+			(asking.calls ??= new Map()).set(key, answer);
 			this.notify("seeded", { method, url, value: answer.value });
 		}
 		if (!answer) {
@@ -2812,9 +2824,10 @@ export class Runtime {
 					return Object.assign(answer, { state: "failed", error: `${method} ${url}: ${error.message ?? error}` });
 				},
 			);
-			asking.calls.set(key, answer);
+			(asking.calls ??= new Map()).set(key, answer);
 		}
-		asking.used?.add(key);
+		// What this run asked for (a computation's, made by its first request: `run` drops the rest).
+		if (asking.used !== undefined) (asking.used ??= new Set()).add(key);
 		if (method === "GET" && tracked && READERS.has(asking.kind)) this.readers.add(asking);
 		if (answer.state === "pending") throw new NotReady(answer.promise);
 		if (answer.state === "failed") throw new Failed(answer.error);
@@ -2931,7 +2944,7 @@ export class Runtime {
 				this.stopTimer(id);
 				this.releaseKept(id);
 			});
-		else this.current?.owner?.made?.kept.push(id);
+		else if (this.current?.owner?.made) own(this.current.owner.made, "kept").push(id);
 		const scope = this.current?.scope ?? null;
 		const owner = this.owner();
 		const fire = () => {
@@ -3219,7 +3232,7 @@ export class Runtime {
 		const previous = this.current;
 		this.current = computation;
 		computation.making = making;
-		computation.used = new Set();
+		computation.used = null;
 		this.stats.runs++;
 		let out;
 		let outcome = "ok";
@@ -3242,9 +3255,9 @@ export class Runtime {
 		}
 		// What it reads now is what it depends on, whatever the outcome; an untracked run depends on
 		// nothing (a read that waits runs it again, above).
-		for (const source of computation.sources) source.observers.delete(computation);
+		for (const source of computation.sources) source.observers?.delete(computation);
 		computation.sources = computation.untracked ? new Set() : making.sources;
-		for (const source of computation.sources) source.observers.add(computation);
+		for (const source of computation.sources) (source.observers ??= new Set()).add(computation);
 		if (outcome === "ok") {
 			computation.making = making;
 			try {
@@ -3253,13 +3266,13 @@ export class Runtime {
 				// Even if settling threw (hydrating found a mismatch): what it made is the computation's
 				// now, so disposing it lets go of all of it.
 				const old = computation.made;
-				computation.made = making;
+				computation.made = spare(making);
 				computation.queries = making.queries;
 				computation.making = null;
 				this.drop(old);
 			}
 			// Answers this run didn't ask for are stale.
-			for (const key of computation.calls.keys()) if (!computation.used.has(key)) computation.calls.delete(key);
+			if (computation.calls !== null) for (const key of computation.calls.keys()) if (!computation.used?.has(key)) computation.calls.delete(key);
 			computation.scope.loading?.done(computation);
 		} else {
 			computation.making = null;
@@ -3316,7 +3329,7 @@ export class Runtime {
 		if (stale === memo.stale) return;
 		memo.stale = stale;
 		this.recheckReaders(memo);
-		for (const observer of memo.observers) if (observer.kind === "memo") this.restale(observer);
+		for (const observer of memo.observers ?? NONE) if (observer.kind === "memo") this.restale(observer);
 	}
 
 	/** What `is_pending!` answers for the memos its probe read. */
@@ -3377,7 +3390,7 @@ export class Runtime {
 			computation.state = "ok";
 			computation.settle?.();
 			computation.settled = computation.settle = null;
-			if (!quiet) for (const observer of computation.observers) this.schedule(observer);
+			if (!quiet) for (const observer of computation.observers ?? NONE) this.schedule(observer);
 			return;
 		}
 		if (kind === "reaction") {
@@ -3529,7 +3542,7 @@ export class Runtime {
 			computation.error = failure.message;
 			computation.settle?.();
 			computation.settled = computation.settle = null;
-			for (const observer of computation.observers) this.schedule(observer);
+			for (const observer of computation.observers ?? NONE) this.schedule(observer);
 			return;
 		}
 		// An effect with an error handler (`create_effect_with!`, D-052): the handler is told, after the
@@ -3568,7 +3581,7 @@ export class Runtime {
 		computation.disposed = true;
 		this.readers.delete(computation);
 		this.revalidated(computation);
-		for (const source of computation.sources) source.observers.delete(computation);
+		for (const source of computation.sources) source.observers?.delete(computation);
 		computation.scope.loading?.done(computation);
 		if (computation.kind === "leave") {
 			// A `use_before_leave!` listener, gone with its owner: asked no more.
@@ -3759,7 +3772,7 @@ export class Runtime {
 	/** Computes a memo again, asking the server again. A failed one waits from now on, so what reads
 	 * it next (an <Errored> trying again) waits for the new answer instead of failing again. */
 	refresh(memo) {
-		memo.calls.clear();
+		memo.calls?.clear();
 		if (memo.state === "failed") {
 			memo.state = "pending";
 			memo.error = null;
@@ -3955,10 +3968,10 @@ export class Runtime {
 				if (!detached(row.range)) was[index] = at.value;
 				if (at.value !== index) {
 					at.value = index;
-					for (const observer of at.observers) this.schedule(observer);
+					for (const observer of at.observers ?? NONE) this.schedule(observer);
 				}
 			} else {
-				list.indexes.set(k, { value: index, observers: new Set() });
+				list.indexes.set(k, { value: index, observers: null });
 				const range = adopting ? { start: cursor.comment("row"), end: cursor.closing("row") } : makeRange("row");
 				row = { key: k, runner: r, range, fresh: !adopting };
 				row.computation = new Computation(this, { kind: "html", runner: this.kept.get(r), owner: null, scope, target: range });
@@ -4013,6 +4026,8 @@ export class Runtime {
 			const row = order[index];
 			if (!stays[index]) {
 				next.before(detached(row.range) ? (row.range.fragment ?? collectRange(row.range)) : collectRange(row.range));
+				// On the page now: the fragment that held it is empty, and needn't be kept.
+				row.range.fragment = null;
 				this.stats.patches++;
 				placed.push(row);
 			}
@@ -5179,7 +5194,8 @@ export class Runtime {
 		const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(ask);
 		observer?.observe(element);
 		ask();
-		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
+		const record = owner?.making ?? owner?.made;
+		const cleanups = record ? own(record, "cleanups") : undefined;
 		cleanups?.push(() => {
 			element.removeEventListener("scroll", ask);
 			observer?.disconnect();
@@ -5238,7 +5254,8 @@ export class Runtime {
 	listenOn(node, owner, scope) {
 		const target = node.to === "window" ? this.page?.defaultView : this.page;
 		if (!target?.addEventListener) return;
-		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
+		const record = owner?.making ?? owner?.made;
+		const cleanups = record ? own(record, "cleanups") : undefined;
 		for (const [kind, name, value, wanted] of node.a) {
 			if (kind === "pt") {
 				const view = this.page.defaultView;
@@ -5380,7 +5397,8 @@ export class Runtime {
 	 * `blob:` URL, kept (`fileOf`) until the element's owner goes, then let go. */
 	filesOf(event, owner) {
 		const list = event.dataTransfer?.files ?? event.clipboardData?.files ?? event.target?.files ?? [];
-		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
+		const record = owner?.making ?? owner?.made;
+		const cleanups = record ? own(record, "cleanups") : undefined;
 		const files = [];
 		for (const file of list) {
 			const url = typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "";
@@ -5427,7 +5445,8 @@ export class Runtime {
 			else asked ||= requestAnimationFrame(say);
 		};
 		target.addEventListener(name, listener, { passive: true });
-		const cleanups = (owner?.making ?? owner?.made)?.cleanups;
+		const record = owner?.making ?? owner?.made;
+		const cleanups = record ? own(record, "cleanups") : undefined;
 		cleanups?.push(() => {
 			target.removeEventListener(name, listener);
 			if (asked) cancelAnimationFrame(asked);
@@ -5721,7 +5740,7 @@ export class Runtime {
 				const list = this.lists.get(node.id);
 				const entries = JSON.parse(this.once(node.r, owner, scope));
 				const rows = entries.map(({ k, r }, index) => {
-					list.indexes.set(k, { value: index, observers: new Set() });
+					list.indexes.set(k, { value: index, observers: null });
 					return mark("row", this.html(JSON.parse(this.once(r, owner, scope)), owner, scope));
 				});
 				return mark("for", rows.length ? rows.join("") : mark("fallback", this.html(node.fallback, owner, scope)));
