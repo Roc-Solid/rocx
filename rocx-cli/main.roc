@@ -285,8 +285,8 @@ fmt! = |args, home| {
 }
 
 ## `rocx routes [dir] [--server] [--client]`: every route the app's routes/ has (the app here's,
-## without `dir`): the methods each answers, what runs around it, and what its comment says, in
-## brief. `--server`: only the endpoints; `--client`: only the pages (the error page too).
+## without `dir`): the methods each answers, and what runs around it. `--server`: only the
+## endpoints; `--client`: only the pages (the error page too).
 routes! = |args| {
 	server = args.contains("--server")
 	client = args.contains("--client")

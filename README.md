@@ -861,8 +861,8 @@ docs' [live page](https://roc-solid.github.io/platform/live).
 **OpenAPI.** An app can serve its endpoints' OpenAPI 3.2 document, which rocx writes as
 `Api.openapi`: each path and its params, each method with its handler's doc comment (its first
 sentence, without the method and path it may start with, is the summary Swagger UI and Scalar list
-it by; `rocx routes` shows the same), and the JSON Schemas of what it is sent and answers, from the
-handlers' types (written or inferred). It is off unless `App.program` says otherwise: `openapi:
+it by), and the JSON Schemas of what it is sent and answers, from the handlers' types (written or
+inferred). It is off unless `App.program` says otherwise: `openapi:
 Document` serves `GET /openapi.json`, and `Page(Swagger)` or `Page(Scalar)` also serves `GET
 /openapi.html`, the document in Swagger UI or
 Scalar (pinned on jsDelivr and checked against its hash). How, without reflection: a type's parser
@@ -960,8 +960,7 @@ rocx check --sql [dir]   # the app's SQL checked by its own database engine, and
 rocx test [dir]          # rocx generate as rocx check runs it, then the app's expects (roc test main.roc,
                          # with the compiler rocx has), each failure at its .rocx line
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
-rocx routes [dir]        # list an app's routes: method, path, what runs around it, and the
-                         # first sentence of each one's comment (an endpoint's, what OpenAPI shows)
+rocx routes [dir]        # list an app's routes: method, path, and what runs around it
   --server               # only the endpoints
   --client               # only the pages (the error page too)
 rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc files with roc fmt

@@ -290,8 +290,8 @@ view! = |_|
 				<code>GET /api/members</code>, as it renders, and the server answers that read through the
 				endpoint's route, behind the same middleware, so the handler gets the member's name. A handler's
 				<code>Endpoint.send!</code> of the app's own endpoint, and an MCP tool made from one, go the same
-				way: what guards an endpoint guards every way to it. <code>rocx routes</code> lists every route, what
-				runs around it (outermost first), and what its comment says:
+				way: what guards an endpoint guards every way to it. <code>rocx routes</code> lists every route and
+				what runs around it, outermost first:
 			</p>
 			<Code title="A terminal" source={Sources.route_list.rocx} numbers={Bool.False} plain />
 			<ul>

@@ -141,8 +141,8 @@ matches a list's field when one of its items does: `waitForMail({ bcc: "archive@
 They live in the server's memory (`Kv`), with or without a database, so each server a test starts
 begins with an empty mailbox, and a restart forgets it.
 
-`rocx routes --server`, in the app's folder, lists its endpoints, each with its method, path, middleware
-and what its comment says, which helps when writing requests by hand.
+`rocx routes --server`, in the app's folder, lists its endpoints, each with its method, path and middleware,
+which helps when writing requests by hand.
 
 ### 3. Its database and its jobs
 

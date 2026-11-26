@@ -66,10 +66,9 @@ Routes := [].{
 	## fields of the record its `meta` is written as, sorted (none when it is something else: a call, a
 	## spread); `takes_meta`: whether its view takes `meta` (a layout's: D-040 gives it one type).
 	## `bodies`: the rules a method's body is read with, as its `<method>_body` names them
-	## (`post_body = TaskForm.adding`, D-093), each with the line it is on. `docs`: what the comment
-	## of each method, its channel and its `respond!` says; `about`: what the file's first `##`
-	## comment says (a page's, what the page is).
-	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), about : Str, respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str), meta_fields : [Some(List(Str)), None], takes_meta : Bool, bodies : List(Body), params : [Some(ParamsAlias), None] }
+	## (`post_body = TaskForm.adding`, D-093), each with the line it is on. `docs`: what each
+	## method's comment says (its OpenAPI description, and its first sentence its summary).
+	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str), meta_fields : [Some(List(Str)), None], takes_meta : Bool, bodies : List(Body), params : [Some(ParamsAlias), None] }
 
 	## A page's own `Params : { id : I64 }` (D-101): the types of its path's params, as written, and its
 	## line (from 1). A page whose endpoints are elsewhere (under `api/`, D-100) says them so.
@@ -101,9 +100,9 @@ Routes := [].{
 	Found : { define : Str, name : Str, module_path : Str, file : Str, line : U64, route : [Some(Str), None], thunk : Bool }
 
 	## A line of `rocx routes`: `middleware`, what runs around it, outermost first (`routes/` +
-	## `(members)`'s), as each `+middleware.roc` says it, or `None`; `doc`, what its comment says, in
-	## brief (`brief`); `side`, a page's (`Client`: the error page too) or an endpoint's (`Server`).
-	Row : { method : Str, path : Str, file : Str, middleware : [Some(Str), None], doc : Str, side : [Server, Client] }
+	## `(members)`'s), as each `+middleware.roc` says it, or `None`; `side`, a page's (`Client`: the
+	## error page too) or an endpoint's (`Server`).
+	Row : { method : Str, path : Str, file : Str, middleware : [Some(Str), None], side : [Server, Client] }
 
 	## The last lines of every generated file start with this.
 	marker : Str
@@ -191,7 +190,7 @@ Routes := [].{
 	defs_of = |sources, file|
 		match sources.find_first(|source| source.file == file) {
 			Ok(source) => source.defs
-			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], about: "", respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [], meta_fields: None, takes_meta: Bool.False, bodies: [], params: None }
+			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [], meta_fields: None, takes_meta: Bool.False, bodies: [], params: None }
 		}
 
 	## Whether the file names a middleware (`middleware = …`).
@@ -676,15 +675,16 @@ Routes := [].{
 	}
 
 	## The definitions a route file has, among `view`, `view!`, `meta`, `middleware`, the methods and
-	## a channel's, at the top of the file; what its middleware is, as written; what each method's
-	## comment says (a channel's and `respond!`'s too); and what the file's first comment says.
+	## a channel's, at the top of the file; what its middleware is, as written; and what each
+	## method's comment says.
 	definitions : Str -> Defs
 	definitions = |source| {
 		bytes = source.to_utf8()
 		defined = |name| Routes.defines(bytes, name)
 		methods = Routes.method_names.keep_if(defined)
 		lines = source.split_on("\n")
-		about =
+		# The file's first comment: a lone method's, when it has none of its own.
+		first_comment =
 			match lines.find_first_index(|line| line.starts_with("##")) {
 				Ok(top) => {
 					var $end = top
@@ -695,20 +695,16 @@ Routes := [].{
 				}
 				Err(_) => ""
 			}
-		others = [Routes.channel_name, "respond!"].keep_if(defined)
-		docs = methods.concat(others).fold(
+		docs = methods.fold(
 			[],
-			|so_far, name| {
+			|so_far, method| {
 				above_it =
-					match lines.find_first_index(|line| Routes.line_defines(line, name)) {
+					match lines.find_first_index(|line| Routes.line_defines(line, method)) {
 						Ok(at) => Routes.comment_above(lines, at)
 						Err(_) => ""
 					}
-				# With no comment of its own, a file's one method (or, with none, its one channel or
-				# respond!) has the file's.
-				alone = if (methods.contains(name)) methods.len() == 1 else methods.is_empty() and others.len() == 1
-				doc = if (!above_it.is_empty()) above_it else if (alone) about else ""
-				if (doc.is_empty()) so_far else so_far.append({ key: name, value: doc })
+				doc = if (!above_it.is_empty()) above_it else if (methods.len() == 1) first_comment else ""
+				if (doc.is_empty()) so_far else so_far.append({ key: method, value: doc })
 			},
 		)
 		hooks = Routes.channel_hooks.keep_if(defined)
@@ -720,7 +716,6 @@ Routes := [].{
 			methods,
 			middleware: Routes.middleware_of(bytes),
 			docs,
-			about,
 			respond: defined("respond!"),
 			channel: if (channel) Some(hooks) else None,
 			hooks: if (channel) [] else hooks,
@@ -3528,7 +3523,7 @@ Routes := [].{
 			|at| {
 				page_rows =
 					match at.page {
-						Some(page) => [{ method: "GET", path: at.path, file: "routes/${page.file}", middleware: Routes.chain_said(table, sources, page.dirs), doc: Routes.brief(Routes.defs_of(sources, page.file).about), side: Client }]
+						Some(page) => [{ method: "GET", path: at.path, file: "routes/${page.file}", middleware: Routes.chain_said(table, sources, page.dirs), side: Client }]
 						None => []
 					}
 				server_rows =
@@ -3537,19 +3532,12 @@ Routes := [].{
 							defs = Routes.defs_of(sources, server.file)
 							file = "routes/${server.file}"
 							middleware = Routes.chain_said(table, sources, server.dirs)
-							row = |method, name| {
-								doc =
-									match defs.docs.find_first(|each| each.key == name) {
-										Ok(each) => Routes.brief(each.value)
-										Err(_) => ""
-									}
-								{ method, path: at.path, file, middleware, doc, side: Server }
-							}
-							methods = defs.methods.map(|method| row(if (method == "events!") "EVENTS" else Routes.verb_of(method), method))
-							responds = if (defs.respond) [row("*", "respond!")] else []
+							row = |method| { method, path: at.path, file, middleware, side: Server }
+							methods = defs.methods.map(|method| row(if (method == "events!") "EVENTS" else Routes.verb_of(method)))
+							responds = if (defs.respond) [row("*")] else []
 							channels =
 								match defs.channel {
-									Some(_) => [row("CHANNEL", Routes.channel_name)]
+									Some(_) => [row("CHANNEL")]
 									None => []
 								}
 							methods.concat(responds).concat(channels)
@@ -3560,17 +3548,13 @@ Routes := [].{
 			},
 		)
 		match table.error {
-			Some(error) => rows.append({ method: "*", path: "(anything else)", file: "routes/${error.file}", middleware: Routes.chain_said(table, sources, []), doc: Routes.brief(Routes.defs_of(sources, error.file).about), side: Client })
+			Some(error) => rows.append({ method: "*", path: "(anything else)", file: "routes/${error.file}", middleware: Routes.chain_said(table, sources, []), side: Client })
 			None => rows
 		}
 	}
 
-	## How wide `brief` makes a comment, at most, in characters.
-	brief_width : U64
-	brief_width = 72
-
 	## A comment's first sentence, as an endpoint's OpenAPI `summary` has it: on one line; without
-	## the method and path it starts with, which the document (and `rocx routes`) shows beside it
+	## the method and path it starts with, which the document shows beside it
 	## (`GET /hello: a greeting, as JSON.` is `A greeting, as JSON.`); a capital first.
 	summary : Str -> Str
 	summary = |doc| {
@@ -3581,11 +3565,6 @@ Routes := [].{
 		first = Text.at(said, 0)
 		if (Text.is_lower(first)) Str.from_utf8_lossy([first - 32].concat(said.drop_first(1))) else Str.from_utf8_lossy(said)
 	}
-
-	## A comment in brief, as `rocx routes` shows it: its `summary`, cut at a space, with `…`, past
-	## `brief_width` characters.
-	brief : Str -> Str
-	brief = |doc| Routes.cut_to(Routes.summary(doc), Routes.brief_width)
 
 	## Where the first sentence of `bytes` ends: after the first `.` before a space (or the end) that
 	## isn't in code (`` ` ``) or brackets; else at the end.
@@ -3644,23 +3623,6 @@ Routes := [].{
 		sentence
 	}
 
-	## `text` cut to `width` characters at most: at the last space that leaves room for a `…` after it
-	## (and without a `,`, `;` or `:` before it).
-	cut_to : Str, U64 -> Str
-	cut_to = |text, width| {
-		if Text.length(text) <= width {
-			return text
-		}
-		words = text.split_on(" ")
-		var $kept = words.first() ?? ""
-		var $next = 1
-		while $next < words.len() and Text.length($kept) + 1 + Text.length(words.get($next) ?? "") + 1 <= width {
-			$kept = "${$kept} ${words.get($next) ?? ""}"
-			$next = $next + 1
-		}
-		"${$kept.drop_suffix(",").drop_suffix(";").drop_suffix(":")}…"
-	}
-
 	## `rocx routes`: the routes of the app in `dir`, a line each, in columns (a route's middleware:
 	## what runs around it, outermost first); `shown`: all of them, or only the endpoints' (`Server`)
 	## or the pages' (`Client`: the error page too).
@@ -3681,8 +3643,8 @@ Routes := [].{
 				},
 		)
 		# No file: a route's path says it (a group's middleware is in its chain).
-		rows = kept.map(|row| [row.method, row.path, if (row.middleware == None) "-" else Routes.or_empty(row.middleware), row.doc])
-		header = ["METHOD", "PATH", "MIDDLEWARE (outermost first)", "DESCRIPTION"]
+		rows = kept.map(|row| [row.method, row.path, if (row.middleware == None) "-" else Routes.or_empty(row.middleware)])
+		header = ["METHOD", "PATH", "MIDDLEWARE (outermost first)"]
 		widths = header.map_with_index(|title, i| rows.fold(Text.length(title), |widest, row| if (Text.length(row.get(i) ?? "") > widest) Text.length(row.get(i) ?? "") else widest))
 		lines = [header].concat(rows).map(|row| Text.trim_end(Str.join_with(row.map_with_index(|cell, i| if (i + 1 == row.len()) cell else Text.pad_end(cell, widths.get(i) ?? 0)), "  ")))
 		Ok(Str.join_with(lines, "\n"))
@@ -3736,7 +3698,6 @@ Routes := [].{
 			methods: Value.items(Value.field(value, "methods")).map(Value.str),
 			middleware: Routes.maybe_text(Value.field(value, "middleware")),
 			docs: Value.fields(Value.field(value, "docs")).map(|each| { key: each.key, value: Value.str(each.value) }),
-			about: Value.str(Value.field(value, "about")),
 			respond: Routes.truthy(Value.field(value, "respond")),
 			channel: if (Routes.truthy(channel)) Some(Value.items(Value.field(channel, "hooks")).map(Value.str)) else None,
 			hooks: Value.items(Value.field(value, "hooks")).map(Value.str),
@@ -3877,7 +3838,6 @@ Routes := [].{
 				{ key: "middleware", value: Value.text_or_null(defs.middleware) },
 				{ key: "docs", value: Object(defs.docs.map(|doc| { key: doc.key, value: Text(doc.value) })) },
 			]
-				.concat(if (defs.about.is_empty()) [] else [{ key: "about", value: Text(defs.about) }])
 				.concat(respond)
 				.concat(channel)
 				.concat(if (defs.handlers.is_empty()) [] else [{ key: "handlers", value: Object(defs.handlers.map(handler_value)) }])
@@ -3921,7 +3881,7 @@ Routes := [].{
 			Server => "server"
 			Client => "client"
 		}
-		Object([{ key: "method", value: Text(row.method) }, { key: "path", value: Text(row.path) }, { key: "file", value: Text(row.file) }, { key: "middleware", value: Value.text_or_null(row.middleware) }, { key: "doc", value: Text(row.doc) }, { key: "side", value: Text(side) }])
+		Object([{ key: "method", value: Text(row.method) }, { key: "path", value: Text(row.path) }, { key: "file", value: Text(row.file) }, { key: "middleware", value: Value.text_or_null(row.middleware) }, { key: "side", value: Text(side) }])
 	}
 
 	## `rocx internal`'s calls of this module's functions (rocx-cli/rocx.mjs names them), by name.
@@ -4031,13 +3991,11 @@ expect Routes.params_alias(["import pf.Html", "", "Params : { id : I64 }", "", "
 expect Routes.params_alias(["Params : {", "\tid : I64,", "}"]) == Some({ text: "{ id : I64, }", line: 1 })
 expect Routes.params_alias(["view! = |_| x"]) == None
 expect Routes.definitions("import pf.Html\n\nParams : { id : I64 }\n\nview! = |_| x\n").params == Some({ text: "{ id : I64 }", line: 3 })
-expect Routes.brief("GET /hello: a greeting, as JSON.") == "A greeting, as JSON."
-expect Routes.brief("POST /b/<board>/cards (`column`: a key): a new card.\nIt goes last.") == "A new card."
-expect Routes.brief("GET /tasks/:id, for JSON: the task (see `Task.full`). And more.") == "The task (see `Task.full`)."
-expect Routes.brief("GET /members returns who you are.") == "GET /members returns who you are."
-expect Routes.brief("The page at /: rendered by the server.\n\n- A list") == "The page at /: rendered by the server."
-expect Routes.brief("A list,\nand a form.") == "A list, and a form."
-expect Routes.brief("") == ""
+expect Routes.summary("GET /hello: a greeting, as JSON.") == "A greeting, as JSON."
+expect Routes.summary("POST /b/<board>/cards (`column`: a key): a new card.\nIt goes last.") == "A new card."
+expect Routes.summary("GET /tasks/:id, for JSON: the task (see `Task.full`). And more.") == "The task (see `Task.full`)."
+expect Routes.summary("GET /members returns who you are.") == "GET /members returns who you are."
+expect Routes.summary("The page at /: rendered by the server.\n\n- A list") == "The page at /: rendered by the server."
+expect Routes.summary("A list,\nand a form.") == "A list, and a form."
+expect Routes.summary("") == ""
 expect Routes.summary("POST /notes: a new note, its title (1 to 200 characters), its body in Markdown, and its tags.") == "A new note, its title (1 to 200 characters), its body in Markdown, and its tags."
-expect Routes.brief("One of your notes, whole: its Markdown, tags, and whether it is pinned or archived, as the API gives it.") == "One of your notes, whole: its Markdown, tags, and whether it is pinned…"
-expect Text.length(Routes.brief("word ".repeat(40))) <= Routes.brief_width
