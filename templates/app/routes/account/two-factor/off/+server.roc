@@ -14,6 +14,7 @@ post! = |{ context, body, .. }|
 		Ok({}) => Ok({})
 		Err(WrongCode) => Err(BadRequest("That code didn't work: enter the one your app shows now, or a recovery code."))
 		Err(NotOn) => Err(Conflict("Two-factor sign-in is off already."))
+		Err(TooManyTries) => Err(Status(429, "Too many wrong codes in a row. Wait a quarter of an hour, then try again."))
 		Err(DbErr(why)) | Err(BadRow(why)) => {
 			Log.error!("account: two-factor sign-in couldn't be turned off", { error: why })
 			Err(Status(503, "It couldn't be turned off just now. Try again in a minute."))

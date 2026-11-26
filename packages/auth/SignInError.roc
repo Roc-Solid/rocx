@@ -11,6 +11,8 @@ SignInError := [].{
 	## - `code` (on the code page): that code isn't the one the authenticator app shows now, has
 	##   been used, or isn't a recovery code of theirs;
 	## - `attempts`: too many wrong codes, so the sign-in ended;
+	## - `locked`: too many wrong codes in a row for that user, across sign-ins, so codes are refused
+	##   for a quarter of an hour;
 	## - `timeout`: the sign-in waited too long for its code (ten minutes);
 	## - anything else (`unavailable`): it didn't work just then.
 	message : Str -> Str
@@ -24,6 +26,7 @@ SignInError := [].{
 			"state" => "That sign-in took too long, or came from another browser. Try again."
 			"code" => "That code didn't work. Enter the one your authenticator app shows now (each works once), or a recovery code."
 			"attempts" => "Too many wrong codes. Sign in again."
+			"locked" => "Too many wrong codes in a row. Wait a quarter of an hour, then sign in again."
 			"timeout" => "That sign-in waited too long for its code. Sign in again."
 			_ => "Signing in didn't work just now. Try again in a minute."
 		}
@@ -86,6 +89,7 @@ expect SignInError.message("error=unavailable") == "Signing in didn't work just 
 expect SignInError.message("then=%2F") == ""
 expect SignInError.message("error=code&then=%2Fnotes").starts_with("That code didn't work.")
 expect SignInError.message("error=attempts") == "Too many wrong codes. Sign in again."
+expect SignInError.message("error=locked").starts_with("Too many wrong codes in a row.")
 expect SignInError.field("error=link&then=%2Fnotes%3Fx%3D1", "then") == "/notes?x=1"
 expect SignInError.field("reason=a+b%20c", "reason") == "a b c"
 expect SignInError.field("x=%zz%4", "x") == "%zz%4"

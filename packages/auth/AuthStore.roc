@@ -132,14 +132,15 @@ AuthStore := [].{
 	identities! = |user| Db.all!("select provider, subject, email from auth_identities where user_id = $1 order by provider, subject", [Text(user)])
 
 	## A user's authenticator, as its row has it: its secret, sealed; when it was turned on (`Null`
-	## while it waits for its first code); the last step a code was taken at.
-	Authenticator : { secret : Str, enabled_at : Db.Nullable(I64), last_step : I64 }
+	## while it waits for its first code); the last step a code was taken at; how many wrong codes
+	## it has had in a row, and when the last was (`Rules.locked`).
+	Authenticator : { secret : Str, enabled_at : Db.Nullable(I64), last_step : I64, misses : I64, missed_at : I64 }
 
 	## `user`'s authenticator, on or waiting, if they have one.
 	authenticator! : Str => Try([Found(AuthStore.Authenticator), Missing], [DbErr(Str), BadRow(Str), ..others])
 	authenticator! = |user| {
 		rows : List(AuthStore.Authenticator)
-		rows = Db.all!("select secret, enabled_at, last_step from auth_two_factor where user_id = $1", [Text(user)])?
+		rows = Db.all!("select secret, enabled_at, last_step, misses, missed_at from auth_two_factor where user_id = $1", [Text(user)])?
 		match rows.get(0) {
 			Ok(row) => Ok(Found(row))
 			Err(_) => Ok(Missing)
@@ -189,6 +190,17 @@ AuthStore := [].{
 	## statement (two posts of one code at once: one is taken): how many changed (0 or 1).
 	used_step! : Str, I64 => Try(U64, [DbErr(Str), ..others])
 	used_step! = |user, step| Db.run!("update auth_two_factor set last_step = $2 where user_id = $1 and last_step < $2 and enabled_at is not null", [Text(user), Int(step)])
+
+	## Counts a code given for `user` at `now` as wrong until it is found right (`right_code!`), if
+	## their authenticator has had `misses` wrong ones in a row, as it was read: how many changed (0
+	## or 1). 0 when another code of theirs was counted meanwhile, so two at once can't both go by
+	## the count one read.
+	tried_code! : Str, I64, I64 => Try(U64, [DbErr(Str), ..others])
+	tried_code! = |user, misses, now| Db.run!("update auth_two_factor set misses = misses + 1, missed_at = $3 where user_id = $1 and misses = $2 and enabled_at is not null", [Text(user), Int(misses), Int(now)])
+
+	## A right code of `user`'s: no wrong ones in a row.
+	right_code! : Str => Try(U64, [DbErr(Str), ..others])
+	right_code! = |user| Db.run!("update auth_two_factor set misses = 0 where user_id = $1", [Text(user)])
 
 	## Turns `user`'s two-factor sign-in off: their authenticator and recovery codes gone.
 	disable! : Str => Try({}, [DbErr(Str), ..others])

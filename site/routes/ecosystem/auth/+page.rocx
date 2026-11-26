@@ -219,6 +219,11 @@ view! = |_|
 					A right code starts the session under a new token, so the one the browser waited with signs no
 					one in. A wrong one comes back with <code>?error=code</code>; the fifth ends the sign-in.
 				</li>
+				<li>
+					A user's wrong codes are counted across sign-ins too, and turning it off or making new recovery
+					codes: after ten in a row their codes are refused for a quarter of an hour
+					(<code>TooManyTries</code>, <code>?error=locked</code>).
+				</li>
 			</ul>
 			<p>
 				<strong>Who must have it.</strong> The package doesn't decide: <code>{"Auth.two_factor!(user)"}</code> says
@@ -282,6 +287,7 @@ view! = |_|
 						<tr><td><code>state</code></td><td>back from a provider too late, or in another browser</td></tr>
 						<tr><td><code>unavailable</code></td><td>the database couldn't take it just then</td></tr>
 						<tr><td><code>attempts</code></td><td>the fifth wrong code ended a sign-in waiting for its code</td></tr>
+						<tr><td><code>locked</code></td><td>the user's tenth wrong code in a row ended it: their codes are refused for a quarter of an hour</td></tr>
 						<tr><td><code>timeout</code></td><td>no sign-in was waiting for a code in this browser: ten minutes went by</td></tr>
 					</tbody>
 				</table>

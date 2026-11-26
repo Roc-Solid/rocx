@@ -262,9 +262,11 @@ Board := [].{
 	}
 
 	## Where to go after joining: a path on this site (`then`), or the front page. Never another
-	## site (`//elsewhere.example`), which would make the joining page a way to send people there.
+	## site (`//elsewhere.example`, `/\elsewhere.example`), which would make the joining page a way
+	## to send people there; nor a path with a control character in it, since a browser drops tabs
+	## and newlines from a URL (`/<tab>/elsewhere.example` is `//elsewhere.example` to it).
 	after_join : Str -> Str
-	after_join = |then| if (then.starts_with("/") and !then.starts_with("//") and !then.starts_with("/\\")) then else "/"
+	after_join = |then| if (then.starts_with("/") and !then.starts_with("//") and !then.contains("\\") and !then.to_utf8().any(|byte| byte < 0x20 or byte == 0x7f)) then else "/"
 
 	## The card a page's query opens (`?card=12`), or `""`.
 	card_in_query : Str -> Str
@@ -427,6 +429,8 @@ expect Board.slug_of("!!!") == ""
 expect Board.after_join("/b/launch?card=3") == "/b/launch?card=3"
 expect Board.after_join("//elsewhere.example") == "/"
 expect Board.after_join("https://elsewhere.example") == "/"
+expect Board.after_join("/\\elsewhere.example") == "/"
+expect Board.after_join("/\t/elsewhere.example") == "/"
 expect Board.card_in_query("card=12") == "12"
 expect Board.card_in_query("x=1&card=7") == "7"
 expect Board.card_in_query("card=evil") == ""

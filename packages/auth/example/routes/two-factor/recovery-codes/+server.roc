@@ -16,6 +16,7 @@ post! = |{ context, body, .. }|
 			Ok(codes) => Ok({ recovery_codes: codes })
 			Err(WrongCode) => Err(BadRequest("That code didn't work."))
 			Err(NotOn) => Err(Conflict("Two-factor sign-in isn't on."))
+			Err(TooManyTries) => Err(Status(429, "Too many wrong codes in a row. Wait a quarter of an hour."))
 			Err(DbErr(why)) | Err(BadRow(why)) => Err(Status(503, why))
 		}
 	}

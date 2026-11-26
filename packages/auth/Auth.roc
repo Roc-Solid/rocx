@@ -15,6 +15,7 @@ import Totp
 import "migrations/0001_auth.sql" as table : Str
 import "migrations/0002_impersonation.sql" as impersonation : Str
 import "migrations/0003_two_factor.sql" as two_factor_tables : Str
+import "migrations/0004_two_factor_misses.sql" as two_factor_misses : Str
 
 ## Sign-in for Roc Solid apps, as a plugin (D-072): by a link mailed to an address, or at a
 ## provider (Google, GitHub, any OpenID Connect one); sessions kept as their token's hash in the
@@ -145,7 +146,7 @@ Auth := [].{
 	TwoFactor : [Off, Pending, On({ since_ms : I64, recovery_codes : U64 })]
 
 	## The auth plugin: its endpoints (behind the app's middleware), its tables
-	## (`auth/0001_auth` to `auth/0003_two_factor`, the same on SQLite and Postgres), and its
+	## (`auth/0001_auth` to `auth/0004_two_factor_misses`, the same on SQLite and Postgres), and its
 	## settings, kept at start. It needs a database; with `two_factor`, the app's secret too (it
 	## won't start without it, but under `--dev`).
 	plugin : Auth.Options -> Plugin.Value(context, ctx)
@@ -168,7 +169,7 @@ Auth := [].{
 				{ method: "POST", path: "${at}/sign-out", kind: Endpoint, answer!: |request, _| left!(settings, request) },
 				{ method: "POST", path: "${at}/code", kind: Endpoint, answer!: |request, _| coded!(settings, request) },
 			].concat(List.join(away)),
-			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }],
+			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }, { name: "0004_two_factor_misses", sql: two_factor_misses }],
 			starts: [
 				|_context| {
 					Plugin.keep!("auth:settings", Json.to_str(settings))
@@ -564,8 +565,10 @@ Auth := [].{
 
 	## Turns `user`'s two-factor sign-in off, given a code their app shows now, or one of their
 	## recovery codes: their secret and recovery codes gone. `WrongCode` when it is neither;
-	## `NotOn` when it isn't on.
-	two_factor_disable! : Str, Str => Try({}, [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..others])
+	## `NotOn` when it isn't on; `TooManyTries` when they have given ten wrong codes in a row, here,
+	## at a sign-in or for new recovery codes, the last less than a quarter of an hour ago (the code
+	## isn't looked at).
+	two_factor_disable! : Str, Str => Try({}, [WrongCode, NotOn, TooManyTries, DbErr(Str), BadRow(Str), ..others])
 	two_factor_disable! = |user, code| {
 		_ = checked!(settings!({}), user, code)?
 		AuthStore.disable!(user)?
@@ -574,9 +577,9 @@ Auth := [].{
 	}
 
 	## New recovery codes for `user`, in place of those they had, given a code their app shows now
-	## (or a recovery code): ten more, each good once (show them once). `WrongCode`, `NotOn` as for
-	## `two_factor_disable!`.
-	two_factor_regenerate! : Str, Str => Try(List(Str), [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..others])
+	## (or a recovery code): ten more, each good once (show them once). `WrongCode`, `NotOn` and
+	## `TooManyTries` as for `two_factor_disable!`.
+	two_factor_regenerate! : Str, Str => Try(List(Str), [WrongCode, NotOn, TooManyTries, DbErr(Str), BadRow(Str), ..others])
 	two_factor_regenerate! = |user, code| {
 		_ = checked!(settings!({}), user, code)?
 		codes = recovery_codes!({})
@@ -898,8 +901,9 @@ unreached = |problem|
 ## `<at>/code`: a sign-in's second factor, posted from the app's code page (`code`, and `then`):
 ## the code from the user's authenticator app, or one of their recovery codes. Right: the sign-in
 ## becomes a session, on to `then` (else where it was going). Wrong: back to the code page saying
-## so, but the fifth wrong code ends the sign-in. No sign-in waiting (it took over ten minutes, or
-## the browser has none): the sign-in page says so.
+## so, but the fifth wrong code ends the sign-in. The user's tenth wrong code in a row, across
+## sign-ins (`Rules.locked`): the sign-in ended, the sign-in page saying to wait. No sign-in waiting
+## (it took over ten minutes, or the browser has none): the sign-in page says so.
 coded! : Auth.Settings, Server.Request => Server.Response
 coded! = |settings, request| {
 	body = Server.text_of(request)
@@ -913,6 +917,7 @@ coded! = |settings, request| {
 					match checked!(settings, row.user_id, Rules.query(body, "code")) {
 						Ok(how) => finished!(settings, token, row.user_id, how, then)
 						Err(WrongCode) | Err(NotOn) => wrong!(settings, token, row.user_id, then)
+						Err(TooManyTries) => ended!(settings, token, row.user_id, "locked", then)
 						Err(DbErr(why)) | Err(BadRow(why)) => unavailable!(settings, why)
 					}
 				}
@@ -958,46 +963,69 @@ wrong! : Auth.Settings, Str, Str, Str => Server.Response
 wrong! = |settings, token, user, then|
 	match AuthStore.missed!(Rules.hash(token)) {
 		Ok(attempts) if attempts < Rules.code_tries => Server.redirect(Rules.failed(settings.code_page, { code: "code", reason: "", email: "", then: then }))
-		Ok(_) => {
-			match AuthStore.end_waiting!(Rules.hash(token)) {
-				Ok(_) => {}
-				Err(DbErr(why)) => Log.error!("auth: a sign-in waiting for its code couldn't be ended", { error: why })
-			}
-			Log.warn!("auth: a sign-in ended after too many wrong codes", { user: user })
-			https = https!({})
-			Server.clear_cookie(Server.redirect(Rules.failed(settings.sign_in, { code: "attempts", reason: "", email: "", then: then })), Rules.cookie(settings.cookie, https), cookie_opts(https, 0))
-		}
+		Ok(_) => ended!(settings, token, user, "attempts", then)
 		Err(DbErr(why)) | Err(BadRow(why)) => unavailable!(settings, why)
 	}
 
+## The sign-in waiting by `token` ended (its cookie cleared), and the sign-in page saying why
+## (`code`: `attempts`, too many wrong codes for it; `locked`, too many in a row for the user).
+ended! : Auth.Settings, Str, Str, Str, Str => Server.Response
+ended! = |settings, token, user, code, then| {
+	match AuthStore.end_waiting!(Rules.hash(token)) {
+		Ok(_) => {}
+		Err(DbErr(why)) => Log.error!("auth: a sign-in waiting for its code couldn't be ended", { error: why })
+	}
+	Log.warn!("auth: a sign-in ended after too many wrong codes", { user: user, why: code })
+	https = https!({})
+	Server.clear_cookie(Server.redirect(Rules.failed(settings.sign_in, { code: code, reason: "", email: "", then: then })), Rules.cookie(settings.cookie, https), cookie_opts(https, 0))
+}
+
 ## Whether `given` is `user`'s code now (taken, so it works once) or one of their unused recovery
-## codes (used up): which it was. `NotOn` when their two-factor sign-in isn't on.
-checked! : Auth.Settings, Str, Str => Try([Code, Recovery], [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..others])
+## codes (used up): which it was. `NotOn` when their two-factor sign-in isn't on; `TooManyTries`,
+## without looking at it, when they have given `Rules.lock_tries` wrong codes in a row, the last
+## less than `Rules.code_lock_ms` ago (`Rules.locked`). Each code is counted as wrong before it is
+## looked at, and the count set back to 0 when it is right, so codes sent at once can't get past
+## the count: one of two read at once is `WrongCode`.
+checked! : Auth.Settings, Str, Str => Try([Code, Recovery], [WrongCode, NotOn, TooManyTries, DbErr(Str), BadRow(Str), ..others])
 checked! = |settings, user, given| {
-	typed = Rules.typed(given)
+	now = now!({})
 	match AuthStore.authenticator!(user)? {
 		Missing => Err(NotOn)
 		Found(row) =>
 			match row.enabled_at {
 				Null => Err(NotOn)
 				Some(_) =>
-					if Totp.is_code(typed) {
-						match opened!(settings, row.secret, user) {
-							Ok(secret) =>
-								match Totp.matching(secret, typed, Totp.step(now!({})), row.last_step) {
-									Ok(step) => if (AuthStore.used_step!(user, step)? == 1) Ok(Code) else Err(WrongCode)
-									Err(NoMatch) => Err(WrongCode)
-								}
-							Err(Unopened) => Err(WrongCode)
-						}
-					} else if Rules.is_recovery(typed) {
-						if (AuthStore.use_recovery!(user, Rules.hash(typed))? == 1) Ok(Recovery) else Err(WrongCode)
-					} else {
+					if Rules.locked(row.misses, row.missed_at, now) {
+						Err(TooManyTries)
+					} else if AuthStore.tried_code!(user, row.misses, now)? == 0 {
 						Err(WrongCode)
+					} else {
+						how = matched!(settings, user, row, Rules.typed(given), now)?
+						_ = AuthStore.right_code!(user)?
+						Ok(how)
 					}
 			}
 	}
 }
+
+## Whether `typed` is the code `user`'s authenticator (`row`, on) shows at `now`, taken so it works
+## once, or one of their unused recovery codes, used up.
+matched! : Auth.Settings, Str, AuthStore.Authenticator, Str, I64 => Try([Code, Recovery], [WrongCode, DbErr(Str), ..others])
+matched! = |settings, user, row, typed, now|
+	if Totp.is_code(typed) {
+		match opened!(settings, row.secret, user) {
+			Ok(secret) =>
+				match Totp.matching(secret, typed, Totp.step(now), row.last_step) {
+					Ok(step) => if (AuthStore.used_step!(user, step)? == 1) Ok(Code) else Err(WrongCode)
+					Err(NoMatch) => Err(WrongCode)
+				}
+			Err(Unopened) => Err(WrongCode)
+		}
+	} else if Rules.is_recovery(typed) {
+		if (AuthStore.use_recovery!(user, Rules.hash(typed))? == 1) Ok(Recovery) else Err(WrongCode)
+	} else {
+		Err(WrongCode)
+	}
 
 ## The secret `user`'s authenticator row keeps sealed. `Unopened` (on the log) when the app's
 ## secret has changed since it was sealed, or the row isn't theirs.

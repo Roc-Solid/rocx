@@ -4975,6 +4975,13 @@ every authenticator stops working and only recovery codes sign in. One more read
 (whether the user has it on), and at a signed-out page's GET with a cookie (whether it waits for a
 code). Wrong codes are counted per sign-in, not per user across sign-ins (PROPOSALS.md §5).
 
+**Later (2026-11-26):** they are counted per user too (`auth/0004_two_factor_misses`): an audit
+found `two_factor_disable!` and `two_factor_regenerate!` counted none, so a stolen session could
+guess its way to turning two-factor off. Ten wrong codes in a row, at sign-ins and those two, and
+the user's codes are refused for a quarter of an hour after the last (`TooManyTries`;
+`?error=locked` at a sign-in); each code is counted before it is looked at, by a compare-and-set on
+the count, so codes sent at once can't get past it.
+
 **Reversible:** yes: an option, off by default; a migration that adds tables.
 
 ## D-082 Payments and subscriptions through Stripe: packages/stripe

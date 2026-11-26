@@ -15,9 +15,11 @@ Rules := [].{
 
 	## A path of this site to go to: `then` if it is one (`/notes/4?x=1`), else `home`; never another
 	## site (`//elsewhere.example`, `/\elsewhere.example`, `https://…`), so a link or a provider's
-	## answer can't send you off after you sign in.
+	## answer can't send you off after you sign in. A control character anywhere (a tab, CR, LF, NUL,
+	## DEL) makes it `home` too: a browser drops tabs and newlines from a URL as it reads one, so
+	## `/<tab>/elsewhere.example` would be `//elsewhere.example` by the time it went there.
 	path : Str, Str -> Str
-	path = |then, home| if (then.starts_with("/") and !then.starts_with("//") and !then.contains("\\") and !then.contains("\r") and !then.contains("\n")) then else home
+	path = |then, home| if (then.starts_with("/") and !then.starts_with("//") and !then.contains("\\") and !then.to_utf8().any(|byte| byte < 0x20 or byte == 0x7f)) then else home
 
 	## A new token from random bytes (32 of them): base64url, what goes in a cookie or a link.
 	token : List(U8) -> Str
@@ -216,9 +218,28 @@ Rules := [].{
 	code_ms : I64
 	code_ms = 600_000
 
-	## How many wrong codes a sign-in waiting for one may have: the fifth ends it.
+	## How many wrong codes a sign-in waiting for one may have: the fifth ends it. A user's
+	## authenticator counts them too, across sign-ins and the pages that turn two-factor off or make
+	## new recovery codes (`locked`).
 	code_tries : I64
 	code_tries = 5
+
+	## How many wrong codes in a row a user may give, across sign-ins, before their codes are
+	## refused for `code_lock_ms`: ten, two sign-ins' worth.
+	lock_tries : I64
+	lock_tries = 10
+
+	## How long a user's codes are refused once they have given `lock_tries` wrong ones in a row: a
+	## quarter of an hour after the last.
+	code_lock_ms : I64
+	code_lock_ms = 900_000
+
+	## Whether a user's codes are refused now, given how many wrong ones they have given in a row
+	## (`misses`, the last at `missed_at`): `lock_tries` of them, the last less than `code_lock_ms`
+	## ago. Each wrong code after that starts the wait again, so a guesser who has a session of
+	## theirs, or their first factor, gets one guess a quarter of an hour, not thousands a minute.
+	locked : I64, I64, I64 -> Bool
+	locked = |misses, missed_at, now| misses >= Rules.lock_tries and now - missed_at < Rules.code_lock_ms
 
 	## `page`, going on to `then` after (`?then=`, left out when it is "" or "/"): the code page a
 	## sign-in waiting for its code goes to.
@@ -314,12 +335,24 @@ expect Rules.secret_of(Rules.sealed_plain([1, 2, 3], "user-1"), "user-1") == Ok(
 expect Rules.secret_of(Rules.sealed_plain([1, 2, 3], "user-1"), "user-2") == Err(NotTheirs)
 expect Rules.secret_of("user-1".to_utf8(), "user-1") == Err(NotTheirs)
 
+# ---- wrong codes in a row ----
+expect !Rules.locked(0, 0, 1_000_000)
+expect !Rules.locked(9, 1_000_000, 1_000_000)
+expect Rules.locked(10, 1_000_000, 1_000_000)
+expect Rules.locked(14, 1_000_000, 1_000_000 + Rules.code_lock_ms - 1)
+expect !Rules.locked(10, 1_000_000, 1_000_000 + Rules.code_lock_ms)
+
 # ---- path ----
 expect Rules.path("/notes/4?x=1", "/") == "/notes/4?x=1"
 expect Rules.path("//elsewhere.example/", "/") == "/"
 expect Rules.path("https://elsewhere.example/", "/home") == "/home"
 expect Rules.path("/\\elsewhere.example", "/") == "/"
 expect Rules.path("/a\r\nSet-Cookie: x", "/") == "/"
+expect Rules.path("/\t/elsewhere.example", "/") == "/"
+expect Rules.path("/\t\t/elsewhere.example", "/home") == "/home"
+expect Rules.path("/a\u(0)b", "/") == "/"
+expect Rules.path("/a\u(7f)b", "/") == "/"
+expect Rules.path("/notes/a b", "/") == "/notes/a b"
 expect Rules.path("", "/") == "/"
 
 # ---- tokens ----

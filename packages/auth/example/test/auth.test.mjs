@@ -269,6 +269,8 @@ for (const database of databases) {
 			const client = server.client();
 			const opened = await used(client, await mailedLink(client, "grace@example.com", "//elsewhere.example/x"));
 			assert.equal(opened.location, "/");
+			const tabbed = server.client();
+			assert.equal((await used(tabbed, await mailedLink(tabbed, "grace@example.com", "/\t/elsewhere.example/x"))).location, "/", "a tab, which a browser drops from a URL, too");
 			// Opened straight at /auth/link (an app without a link page), a link signs in too.
 			const straight = server.client();
 			const went = await straight.get(`/auth/link?token=${await mailedLink(straight, "grace@example.com", "/private")}`);
@@ -308,6 +310,7 @@ for (const database of databases) {
 			assert.equal(signed.location, "/private");
 			assert.equal((await client.read("/private")).user, annId);
 			assert.equal((await client.json("/test/as", { user: annId, then: "//elsewhere.example" })).location, "/", "Auth.path! keeps it on the site");
+			assert.equal((await client.json("/test/as", { user: annId, then: "/\t/elsewhere.example" })).location, "/", "a tab, which a browser drops from a URL, too");
 			// Switching: one Set-Cookie, the old session gone.
 			const bea = await signedIn("bea@example.com");
 			const beaId = (await bea.read("/me")).user;
@@ -583,6 +586,35 @@ for (const database of databases) {
 			assert.equal((await client.json("/two-factor/disable", { code: fresh[4] })).status, 409, "off already");
 			const { location } = await waiting("tf-di@example.com", "/private");
 			assert.equal(location, "/private", "signed in at once");
+		});
+
+		test("two-factor: a user's wrong codes count across sign-ins and turning it off, a right one sets the count back; the tenth in a row and their codes are refused for a quarter of an hour, a right one too, at a sign-in as well", async () => {
+			const client = await signedIn("tf-lk@example.com");
+			const user = (await client.read("/me")).user;
+			const { secret, codes } = await enrolled(client);
+			const misses = async () => Number((await db.query(`select misses from auth_two_factor where user_id = '${user}'`))[0].misses);
+			for (let tries = 1; tries <= 4; tries++) assert.equal((await client.json("/two-factor/disable", { code: wrongCode(secret) })).status, 400);
+			const first = await waiting("tf-lk@example.com");
+			for (let tries = 1; tries <= 4; tries++) {
+				assert.equal((await first.client.post("/auth/code", { code: wrongCode(secret), then: "/private" })).location, "/sign-in/code?error=code&then=%2Fprivate");
+			}
+			assert.equal(await misses(), 8, "four here, four at the sign-in");
+			assert.equal((await client.json("/two-factor/recovery-codes", { code: codes[0] })).status, 200, "a right code before the tenth");
+			assert.equal(await misses(), 0);
+			assert.equal((await client.json("/two-factor/recovery-codes", { code: wrongCode(secret) })).status, 400);
+			for (let tries = 2; tries <= 10; tries++) assert.equal((await client.json("/two-factor/disable", { code: wrongCode(secret) })).status, 400, `try ${tries}`);
+			const refused = await client.json("/two-factor/disable", { code: totp(secret, stepNow() + 1) });
+			assert.equal(refused.status, 429, "a right code, refused while it waits");
+			assert.equal(await misses(), 10, "not looked at, nor counted");
+			const second = await waiting("tf-lk@example.com");
+			const locked = await second.client.post("/auth/code", { code: totp(secret, stepNow() + 1), then: "/private" });
+			assert.equal(locked.location, "/sign-in?error=locked&then=%2Fprivate");
+			assert.ok(!second.client.cookies.has("session"), "the sign-in ended");
+			await db.query(`update auth_two_factor set missed_at = 0 where user_id = '${user}'`);
+			const third = await waiting("tf-lk@example.com");
+			const signed = await third.client.post("/auth/code", { code: totp(secret, stepNow() + 1), then: "/private" });
+			assert.equal(signed.location, "/private", "a quarter of an hour on, a right code signs in");
+			assert.equal(await misses(), 0);
 		});
 
 		test("two-factor: a provider's sign-in asks too; an admin impersonating them isn't asked; /admin wants its admins to have it on", async () => {

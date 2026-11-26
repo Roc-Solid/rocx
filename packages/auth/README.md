@@ -210,8 +210,8 @@ Auth.two_factor! : Str => Try(TwoFactor, [DbErr(Str), BadRow(Str), ..])
 Auth.two_factor_start! : Str, Str => Try({ secret : Str, uri : Str }, [AlreadyOn, NotOffered, DbErr(Str), BadRow(Str), ..])
 Auth.two_factor_pending! : Str, Str => Try({ secret : Str, uri : Str }, [NotPending, DbErr(Str), BadRow(Str), ..])
 Auth.two_factor_confirm! : Str, Str => Try(List(Str), [WrongCode, NotStarted, AlreadyOn, DbErr(Str), BadRow(Str), ..])
-Auth.two_factor_disable! : Str, Str => Try({}, [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..])
-Auth.two_factor_regenerate! : Str, Str => Try(List(Str), [WrongCode, NotOn, DbErr(Str), BadRow(Str), ..])
+Auth.two_factor_disable! : Str, Str => Try({}, [WrongCode, NotOn, TooManyTries, DbErr(Str), BadRow(Str), ..])
+Auth.two_factor_regenerate! : Str, Str => Try(List(Str), [WrongCode, NotOn, TooManyTries, DbErr(Str), BadRow(Str), ..])
 Auth.waiting! : Server.Request => Try({ user : Str, then : Str, tries_left : U64 }, [SignedOut])
 ```
 
@@ -235,6 +235,9 @@ code page rather than the sign-in page. The code page posts `code` (and `then`) 
   to `then`;
 - wrong: back to the code page with `?error=code`; the fifth wrong code ends the sign-in, and the
   sign-in page says `?error=attempts`;
+- the user's tenth wrong code in a row, across sign-ins and the two calls below: the sign-in ends,
+  and the sign-in page says `?error=locked`; their codes are refused for a quarter of an hour after
+  the last, and each wrong one after that starts the wait again;
 - after ten minutes, or with no sign-in waiting: the sign-in page, `?error=timeout`.
 
 `waiting!(request)` is the sign-in waiting in this browser: whose, where it goes, how many more
@@ -242,7 +245,9 @@ tries it has, for the code page to say whom it signs in. The code page must not 
 user (it would send itself to itself). A form posting to `/auth/sign-out` cancels.
 
 **Turning it off, new recovery codes.** `two_factor_disable!(user, code)` and
-`two_factor_regenerate!(user, code)` each take a code the app shows now or a recovery code.
+`two_factor_regenerate!(user, code)` each take a code the app shows now or a recovery code. Their
+wrong codes count toward the user's ten in a row; `TooManyTries` while their codes are refused (the
+code isn't looked at), which a route answers with a 429.
 
 **Who must have it.** The package doesn't decide: `two_factor!(user)` says whether it is on, and a
 route that wants it (an admin's) refuses those without it, as the example's `/admin` does.
@@ -304,6 +309,7 @@ A sign-in that fails goes to the app's sign-in page with why, and where it was g
 | `state` | back from a provider without the state this browser kept: too late, or another browser |
 | `unavailable` | the database couldn't take it (on the log) |
 | `attempts` | the fifth wrong code ended a sign-in waiting for its code |
+| `locked` | the user's tenth wrong code in a row ended it: codes are refused for a quarter of an hour |
 | `timeout` | no sign-in was waiting for a code in this browser (ten minutes went by) |
 
 A wrong code goes back to the code page with `?error=code`.
@@ -344,7 +350,8 @@ a field of the query (`then`, `email`); the code page uses it too.
 
 ## The tables
 
-`auth/0001_auth`, `auth/0002_impersonation` and `auth/0003_two_factor`, the same on SQLite and on
+`auth/0001_auth`, `auth/0002_impersonation`, `auth/0003_two_factor` and
+`auth/0004_two_factor_misses`, the same on SQLite and on
 Postgres (times are milliseconds, given by the package):
 
 - `auth_sessions`: `id` (the token's hash), `user_id`, `created_at`, `expires_at`, and while
@@ -352,7 +359,8 @@ Postgres (times are milliseconds, given by the package):
 - `auth_links`: `id` (the token's hash), `email`, `return_to`, `expires_at`;
 - `auth_identities`: `provider`, `subject`, `user_id`, `email`, `created_at`;
 - `auth_two_factor`: `user_id`, `secret` (sealed), `enabled_at` (null while it waits for its first
-  code), `last_step` (the last 30-second step a code was used at), `created_at`;
+  code), `last_step` (the last 30-second step a code was used at), `created_at`, `misses` (wrong
+  codes in a row) and `missed_at` (the last);
 - `auth_recovery_codes`: `user_id`, `id` (the code's SHA-256), `created_at`;
 - `auth_waiting`: `id` (the token's hash), `user_id`, `return_to`, `attempts`, `expires_at`.
 
@@ -378,9 +386,12 @@ Expired sessions, links and waiting sign-ins are swept as sessions start.
 - **Two-factor**: the secret sealed (AES-256-GCM, under a key from `APP_SECRET`), never in clear; a
   code compared in constant time, good once (the last step used is kept); recovery codes 80 random
   bits each, kept as their SHA-256, used up in one statement; five wrong codes end a sign-in, which
-  waits ten minutes at most; the session that follows has a new token. A sign-in that waits needs
-  its first factor again for five more tries (a new link: guard's limit on the sign-in mail counts
-  them), but the wrong codes of a user aren't counted across sign-ins: PROPOSALS.md.
+  waits ten minutes at most; the session that follows has a new token. A user's wrong codes are
+  counted across sign-ins too, and turning it off or making new recovery codes: ten in a row and
+  their codes are refused for a quarter of an hour (one more guess each quarter after that). Each
+  code is counted before it is looked at, so codes sent at once can't get past the count. Whoever
+  holds a user's first factor can keep them waiting that way; they couldn't sign in as them
+  anyway.
 
 ## Status
 

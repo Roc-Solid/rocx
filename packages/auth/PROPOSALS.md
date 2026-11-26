@@ -43,13 +43,9 @@ and nested transactions (D-076). And one more the user asked for: impersonation
 
 ## 5. Two-factor sign-in's next steps (D-081 built the first)
 
-- **A user's wrong codes counted across sign-ins.** Five wrong codes end a sign-in, and each new
-  one needs the first factor again: a new mailed link (which guard's limit on the sign-in mail
-  counts), or a provider's round trip, which nothing counts. Someone who holds the provider account
-  could try five codes a round trip, each a 3 in a million chance: about 46,000 round trips for
-  even odds. A count per user (in `auth_two_factor`: wrong codes since the last right one, and a
-  pause after, say, 10 in 15 minutes) would close that; it adds a way to lock a user out by
-  guessing, which is why it waits.
+- **A user's wrong codes counted across sign-ins**: built (`auth/0004_two_factor_misses`,
+  `Rules.locked`): ten in a row, across sign-ins, turning it off and new recovery codes, and their
+  codes are refused for a quarter of an hour. Left: telling the user by mail that it happened.
 - **"Trust this browser for 30 days"**: a signed, per-browser cookie the code page sets, which
   skips the code on that browser. A common ask; it weakens the second factor on a stolen laptop.
 - **Requiring it for some users in the package**: today `two_factor!` answers whether it is on and
