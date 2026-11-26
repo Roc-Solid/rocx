@@ -8,7 +8,7 @@
 //!
 //! The file's lines, as dotenv writes them: `NAME=value`, `export NAME=value`, blank lines and
 //! `# comments`. A value is as written, its spaces around trimmed, a ` #` and what follows it a
-//! comment; or in single quotes, as it is; or in double quotes, where `\n`, `\t`, `\"` and `\\` are
+//! comment; or in single quotes, as it is; or in double quotes, where `\n`, `\r`, `\t`, `\"` and `\\` are
 //! escapes; quoted values may run over several lines. `${NAME}` is kept as it is (no expansion).
 //!
 //! Read in `main`, before the log's thread or any other starts: changing the environment is only
