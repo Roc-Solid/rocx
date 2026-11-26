@@ -256,6 +256,8 @@ struct Handler {
     cleanups_of: Option<u64>,
     /// A timeout's box, let go of once it has run.
     release: Option<u64>,
+    /// How many `Solid.update!`s it is inside now, whose reads of signals give its writes (D-094).
+    own: u32,
 }
 
 struct Probe {
@@ -1413,7 +1415,7 @@ fn later(write: Write) {
 pub fn handle(runner: u64, event: String, scope: Scope, owner: Option<u64>, cleanups_of: Option<u64>, release: Option<u64>) {
     let id = with(|engine| {
         let id = engine.id();
-        engine.handlers.insert(id, Handler { runner, calls: HashMap::default(), writes: Vec::new(), event, scope, owner, cleanups_of, release });
+        engine.handlers.insert(id, Handler { runner, calls: HashMap::default(), writes: Vec::new(), event, scope, owner, cleanups_of, release, own: 0 });
         id
     });
     go(id);
@@ -1423,6 +1425,7 @@ fn go(id: u64) {
     let found = with(|engine| {
         let handler = engine.handlers.get_mut(&id)?;
         handler.writes.clear();
+        handler.own = 0;
         let runner = handler.runner;
         let effect = handler.cleanups_of;
         let callable = engine.kept.get(&runner).copied()?;
@@ -3108,10 +3111,36 @@ pub fn signal_new(value: Callable) -> u64 {
 
 pub fn signal_get(id: u64) -> Result<Callable, String> {
     with(|engine| {
-        let value = engine.signals.get(&id).copied().ok_or_else(|| "rocx: a signal was read after the part that made it went away".to_string())?;
+        let mut value = engine.signals.get(&id).copied().ok_or_else(|| "rocx: a signal was read after the part that made it went away".to_string())?;
         engine.track(Source::Signal(id));
+        // Inside `update!` (D-094): the handler's own write, not yet applied, if it made one.
+        if let Some(handler) = engine.handler()
+            && handler.own > 0
+            && let Some(written) = own_write(handler, id)
+        {
+            value = written;
+        }
         Ok(roc::retain(value))
     })
+}
+
+/// The value a handler's latest write to a signal gave it, not yet applied (an optimistic write's
+/// too); none if it wrote none.
+fn own_write(handler: &Handler, id: u64) -> Option<Callable> {
+    handler.writes.iter().rev().find_map(|write| match write {
+        Write::Signal(signal, written) | Write::Optimistic(signal, written) if *signal == id => Some(*written),
+        _ => None,
+    })
+}
+
+/// `Solid.update!` (D-094): the running handler's reads of signals give its own writes from on to
+/// off. Only a handler writes, so anywhere else there is nothing to give.
+pub fn own_writes(on: bool) {
+    with(|engine| {
+        if let Some(handler) = engine.handler() {
+            handler.own = if on { handler.own + 1 } else { handler.own.saturating_sub(1) };
+        }
+    });
 }
 
 pub fn signal_set(id: u64, value: Callable) -> Result<(), Callable> {
@@ -3213,15 +3242,8 @@ pub fn memo_last(fallback: Callable) -> Callable {
 pub fn signal_latest(id: u64) -> Result<Callable, String> {
     with(|engine| {
         let mut value = engine.signals.get(&id).copied().ok_or_else(|| "rocx: a signal was read after the part that made it went away".to_string())?;
-        if let Some(handler) = engine.handler() {
-            for write in handler.writes.iter().rev() {
-                if let Write::Signal(signal, written) = write
-                    && *signal == id
-                {
-                    value = *written;
-                    break;
-                }
-            }
+        if let Some(written) = engine.handler().and_then(|handler| own_write(handler, id)) {
+            value = written;
         }
         Ok(roc::retain(value))
     })

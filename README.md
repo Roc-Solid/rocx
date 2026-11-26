@@ -398,6 +398,7 @@ The names below come from `pf.Solid` unless the row says otherwise
 | You write | It means |
 |---|---|
 | `(count!, set_count!) = create_signal!(0)` | A **signal**: an accessor that reads it and a setter that writes it |
+| `update!(count!, set_count!, \|c\| c + 1)` | The setter's function form (Solid's `setCount((c) => c + 1)`), in a handler: the function is given the value the handler's writes so far leave, so two in one handler add two. A plain read there (`count!()`) is the value before them, so `set_count!(count!() + 1)` twice adds one. It takes an optimistic value's pair too |
 | `total! = create_memo!(\|\| …)` | A **memo**: a value computed from others, again when they change. One that reads an endpoint waits for it, and is read as a plain value |
 | `(todos, set_todos!) = create_store!(init)` | A **store** (Solid 2.0's `createStore`): `todos.get!(\|s\| s.filter)` reads one part, and its reader runs again only when that part changes (by `==`); `set_todos!(\|s\| { ..s, filter: Done })` writes |
 | `is_picked! = create_selector!(picked!)` | A **selector** (Solid's `createSelector`): `is_picked!(row.id)` is whether `row.id` is what `picked!` holds, tracked by that key alone, so a pick runs the holes of the row it leaves and the row it comes to, not every row's |

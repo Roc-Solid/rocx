@@ -111,6 +111,9 @@ When an item lands, delete its line here in the same commit.
   `--keep-temp` fix and kept relocations, then rocx's build step, manifest, loader and render check
   (a decision, D-068 or the next free number). Its parked copy (`spike/wasm-split/parked`) builds
   the browser's host from Zig, which D-090 made Rust.
+- **packages/presence's stores could compose (D-094).** Each store writes its signal from a read
+  (`set_typing!(typing!().started(…))`), so its README says to call a store once per handler: two
+  calls in one lose the first. Written with `Solid.update!` they compose, and that rule goes.
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
 - **D-052's dev warning has blind spots:** a reactive read inside a helper call that takes
   arguments, and one at the top of a `.map`'s row or a function child, aren't marked, so they don't

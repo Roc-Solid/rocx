@@ -1,14 +1,14 @@
 import pf.Html
 import pf.Endpoint
 import pf.Server
-import pf.Solid exposing [create_signal!, create_optimistic!]
+import pf.Solid exposing [create_optimistic!, create_signal!, update!]
 import pf.Router exposing [use_submission!, use_submissions!, use_action!, revalidate!]
 
 ## D-054, for the tests (`actions_app.roc`), a whole document: `<Meta>`, `<Link>` and `<Style>` in
 ## its `<head>`; a count shown ahead of the server (`create_optimistic!`), and another read; a form
 ## whose `by` is given ahead of time (`Endpoint.with_fields`); a form with a file; an action given a
-## file's URL; a submission tried again (`retry!`); and the reads a result, or a handler, reads again
-## (`revalidate!`).
+## file's URL; a submission tried again (`retry!`); the reads a result, or a handler, reads again
+## (`revalidate!`); and two updates of the optimistic count in one handler, composing (D-094).
 Actions := [].{
 	Add : { by : U64, note : Str }
 	Upload : { title : Str, photo : Str }
@@ -89,6 +89,11 @@ Actions := [].{
 						add!({ by: 100, note: "refuse" })
 					}}>Add 100</button>
 					<button class="write-only" on:click={|| set_shown!(999)}>Write only</button>
+					<button class="twice" on:click={|| {
+						update!(shown!, set_shown!, |n| n + 10)
+						update!(shown!, set_shown!, |n| n + 10)
+						add!({ by: 20, note: "twice" })
+					}}>Add 10, twice</button>
 					<button class="count-only" on:click={|| add!({ by: 1, note: "count-only" })}>Add 1</button>
 					<button class="nothing" on:click={|| add!({ by: 1, note: "nothing" })}>Add 1, read nothing</button>
 					<button class="flaky" on:click={|| add!({ by: 2, note: "flaky" })}>Add 2</button>

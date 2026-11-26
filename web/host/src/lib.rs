@@ -133,6 +133,7 @@ unsafe extern "C" {
     fn js_tracking() -> u32;
     fn js_memo_last() -> usize;
     fn js_signal_latest(id: u32) -> usize;
+    fn js_own_writes(on: u32);
     /// `Date.now()`, and `performance.timeOrigin + performance.now()`: milliseconds, as JS has them.
     fn js_now_millis() -> f64;
     fn js_now_precise() -> f64;
@@ -855,6 +856,12 @@ pub extern "C" fn roc_memo_last(fallback: Callable) -> Callable {
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_signal_latest(id: u64) -> Callable {
     given(unsafe { js_signal_latest(id as u32) })
+}
+
+/// `Solid.update!` (D-094): the running handler's reads of signals give its own writes, from on to off.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_own_writes(on: bool) {
+    unsafe { js_own_writes(on as u32) }
 }
 
 /// A dev build's `Html.read_at!`: where a component's body reads, for the runtime's warning; the

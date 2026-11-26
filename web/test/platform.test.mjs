@@ -754,7 +754,7 @@ window.hydrated = true;
 	return { tab, site, html };
 }
 
-test("stores (D-053): a store's parts, each read by its own hole, run again only when that part changes, compared with ==; a write runs the store's live selections once each, and no more as writes go on; two writes in one handler compose; a handler reads the newest; Store.of over a memo; a <For compared> of a store's list patches one row; four hundred selections of one store stay cheap; rendered as the server would and hydrated strictly", { skip }, async () => {
+test("stores (D-053): a store's parts, each read by its own hole, run again only when that part changes, compared with ==; a write runs the store's live selections once each, and no more as writes go on; two writes in one handler compose; a handler reads the newest; a signal's update!s compose (D-094); Store.of over a memo; a <For compared> of a store's list patches one row; four hundred selections of one store stay cheap; rendered as the server would and hydrated strictly", { skip }, async () => {
 	const { tab, site, html } = await hydrated("stores");
 	try {
 		assert.ok(html.includes(`<p class="filter"><!--x-->all<!--/x--></p> <p class="count"><!--x-->0<!--/x--></p> <p class="open"><!--x-->2<!--/x--></p>`), "the server reads each part once");
@@ -777,6 +777,13 @@ test("stores (D-053): a store's parts, each read by its own hole, run again only
 		assert.deepEqual(toggle.patched, ["li", "open"], "a <For compared>: the one row whose item changed, and the part that counts open ones");
 		await tab.eval(`window.step("button.seen")`);
 		assert.deepEqual((await shown()).slice(3, 4), ["3"], "a handler reads the store's newest");
+		// A signal's updates (D-094): two in one handler compose, and a read after them there is the value before.
+		await tab.eval(`window.step("button.updates")`);
+		assert.deepEqual([await textOf(tab, "p.n"), await textOf(tab, "p.before")], ["2", "0"], "two update!s add two; the handler's read after them is the value before them");
+		await tab.eval(`window.step("button.reads")`);
+		assert.equal(await textOf(tab, "p.n"), "3", "two writes from the handler's read add one: each read is the value before");
+		await tab.eval(`window.step("button.after")`);
+		assert.equal(await textOf(tab, "p.n"), "15", "an update after a write starts from what it wrote");
 		const again = await tab.eval(`window.step("button.filter")`);
 		assert.equal(again.selections, live + 1, "as many selections as before: none left behind by the runs that made them");
 		assert.equal(again.live, 0, "and nothing left allocated");
@@ -2522,7 +2529,7 @@ test("forms: after a plain post, the flash is the submission: what was typed and
 
 // ---- Solid Router's actions, createOptimistic and @solidjs/meta's head elements (D-054) ----
 
-test("actions (D-054): <Meta>, <Link> and <Style> in <head>, rendered by the server, kept by hydration strictly, following their holes, a later <Meta> in an earlier's place, gone with their part; a result reads again only the reads its answer names, or none, a handler's revalidate! its own; a form's fields given ahead of time; retry!; an optimistic value shown at once, held until its action is done, then the server's with no frame of the old, back at once when refused or with nothing sent; a form with a file and an action given a file's URL go as multipart", { skip }, async () => {
+test("actions (D-054): <Meta>, <Link> and <Style> in <head>, rendered by the server, kept by hydration strictly, following their holes, a later <Meta> in an earlier's place, gone with their part; a result reads again only the reads its answer names, or none, a handler's revalidate! its own; a form's fields given ahead of time; retry!; an optimistic value shown at once, held until its action is done, then the server's with no frame of the old, back at once when refused or with nothing sent, two update!s of it in one handler composing; a form with a file and an action given a file's URL go as multipart", { skip }, async () => {
 	server.tallies = { count: 0, other: 0 };
 	const posted = [];
 	const uploads = [];
@@ -2632,6 +2639,12 @@ test("actions (D-054): <Meta>, <Link> and <Style> in <head>, rendered by the ser
 		await tab.click(".write-only");
 		await sleep(100);
 		assert.equal(await textOf(tab, ".count"), "19");
+		// Two updates of it in one handler (D-094): the second given what the first wrote.
+		await tab.click(".twice");
+		await tab.wait("document.querySelector('.adds').textContent.includes('20/twice:done')", 3000);
+		assert.equal(await textOf(tab, ".count"), "39");
+		const twice = await tab.eval("window.counts");
+		assert.ok(twice.includes("39") && !twice.includes("29"), `shown at once as both updates leave it: ${twice}`);
 
 		// A form with a file goes as the browser sends one; so does an action given a file's URL.
 		await tab.eval("const files = new DataTransfer(); files.items.add(new File(['PNG!'], 'sea.png', { type: 'image/png' })); document.querySelector('.files input[type=file]').files = files.files");

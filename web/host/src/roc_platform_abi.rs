@@ -1484,6 +1484,15 @@ pub struct HostOptimisticSetArgs {
     pub arg1: RocErasedCallable,
 }
 
+/// Arguments for Host.own_writes!
+/// Roc signature: Bool => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostOwnWritesArgs {
+    pub arg0: bool,
+}
+
 /// Arguments for Host.read_at!
 /// Roc signature: Str => Str
 /// Refcounted fields are owned by the hosted function.
@@ -2039,6 +2048,10 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { decref_erased_callable(arg1, roc_host); }
     pub fn roc_optimistic_set(arg0: u64, arg1: RocErasedCallable);
+
+    /// Hosted symbol for Host.own_writes!
+    /// Roc signature: Bool => {}
+    pub fn roc_own_writes(arg0: bool);
 
     /// Hosted symbol for Host.problem!
     /// Roc signature: {} => Str

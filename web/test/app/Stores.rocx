@@ -1,12 +1,14 @@
 import pf.Html
 import pf.Repeat
-import pf.Solid exposing [create_signal!, create_memo!, create_store!]
+import pf.Solid exposing [create_memo!, create_signal!, create_store!, update!]
 import pf.Store
 
 ## D-053's stores, for the tests (`stores_app.roc`): one store of a filter, a count and a list of
 ## todos, each part read by its own hole (a selection), a `.map` of the items, writes from
 ## handlers (two in one, composing), a handler reading the store, `Store.of` over a memo, and a
-## grid of many selections of one store, one cell written at a time.
+## grid of many selections of one store, one cell written at a time. And a signal's updates
+## (D-094): two `update!`s in one handler compose, two writes from its read don't, an update after
+## a write starts from it, and a read after an update is the value before.
 Stores := [].{
 	Todo : { id : U64, title : Str, done : Bool }
 
@@ -17,6 +19,9 @@ Stores := [].{
 		total! = create_memo!(|| todos.get!(|s| s.count) * 10)
 		tens = Store.of(total!)
 		(grid, set_grid!) = create_store!({ cells: List.repeat(0.U64, 400), turn: 0.U64 })
+		(n!, set_n!) = create_signal!(0.U64)
+		(before!, set_before!) = create_signal!(0.U64)
+		add! = |by| update!(n!, set_n!, |was| was + by)
 		<div>
 			<button class="filter" on:click={|| set_todos!(|s| { ..s, filter: if (s.filter == "all") "open" else "all" })}>Filter</button>
 			<button class="count" on:click={|| set_todos!(|s| { ..s, count: s.count + 1 })}>Count</button>
@@ -29,11 +34,26 @@ Stores := [].{
 			<button class="same" on:click={|| set_todos!(|s| { ..s, items: s.items.map(|t| { ..t, title: t.title }) })}>Same</button>
 			<button class="seen" on:click={|| set_seen!(todos.get!(|s| s.count))}>Seen</button>
 			<button class="cell" on:click={|| set_grid!(|g| { ..g, cells: g.cells.update(g.turn % 400, |n| n + 1) ?? g.cells, turn: g.turn + 7 })}>Cell</button>
+			<button class="updates" on:click={|| {
+				add!(1)
+				add!(1)
+				set_before!(n!())
+			}}>Two updates</button>
+			<button class="reads" on:click={|| {
+				set_n!(n!() + 1)
+				set_n!(n!() + 1)
+			}}>Two writes</button>
+			<button class="after" on:click={|| {
+				set_n!(10)
+				add!(5)
+			}}>A write, then an update</button>
 			<p class="filter">{todos.get!(|s| s.filter)}</p>
 			<p class="count">{todos.get!(|s| s.count).to_str()}</p>
 			<p class="open">{todos.get!(|s| s.items.keep_if(|t| !t.done).len()).to_str()}</p>
 			<p class="seen">{seen!().to_str()}</p>
 			<p class="tens">{tens.get!(|n| n // 10).to_str()}</p>
+			<p class="n">{n!().to_str()}</p>
+			<p class="before">{before!().to_str()}</p>
 			<ul>
 				{...todos.get!(|s| s.items).map(|todo|
 					<li key={todo.id} class:done={todo.done}>{todo.title}</li>

@@ -192,6 +192,23 @@ view! = |_|
 				value through a <a href="#stores">store's selection</a>, which compares with <code>==</code>.
 			</p>
 
+			<h3>Writing from the value</h3>
+			<p>
+				Since a handler's writes apply when it is done, a read in the handler still gives the value before
+				them, as in Solid 2.0: <code>set_count!(count!() + 1)</code> twice in one handler adds one. To write
+				from the value the handler's writes leave, use <code>update!</code>, the function form of Solid's
+				setter (<code>{"setCount((c) => c + 1)"}</code>). It is given the accessor, the setter and a function
+				of the value, and the function gets the value as the handler's writes so far leave it, so two
+				updates add two. Only <code>update!</code> sees a write before it applies: a plain read after it
+				still gives the value before.
+			</p>
+			<Code source={"import pf.Solid exposing [create_signal!, update!]\n\n(count!, set_count!) = create_signal!(0)\nadd! = |n| update!(count!, set_count!, |c| c + n)\n\n<button on:click={|| {\n\tadd!(1)\n\tadd!(1)\n}}>Two more</button>"} numbers={Bool.False} />
+			<p>
+				It takes an <a href="#actions">optimistic value</a>'s accessor and setter too. A
+				<a href="#stores">store's</a> setter already takes a function, and two of its writes in one handler
+				compose the same way.
+			</p>
+
 			<h3>Memos and the server</h3>
 			<p>
 				A memo starts computing as soon as it is made. One that reads an endpoint
@@ -1246,6 +1263,7 @@ view! = |_|
 					<thead><tr><th>Solid 2.0</th><th>Roc Solid</th></tr></thead>
 					<tbody>
 						<tr><td><code>{"const [n, setN] = createSignal(0)"}</code></td><td><code>{"(n!, set_n!) = create_signal!(0)"}</code></td></tr>
+						<tr><td><code>{"setN((n) => n + 1)"}</code></td><td><code>{"update!(n!, set_n!, |n| n + 1)"}</code>, in a handler</td></tr>
 						<tr><td><code>{"const user = createMemo(() => …)"}</code></td><td><code>{"user! = create_memo!(|| …)"}</code></td></tr>
 						<tr><td><code>refresh(user)</code></td><td><code>refresh!(user!)</code></td></tr>
 						<tr><td><code>{"isPending(() => user())"}</code></td><td><code>is_pending!(user!)</code></td></tr>
@@ -1342,6 +1360,12 @@ view! = |_|
 				<li>
 					<strong>A submission's fields are methods</strong> (<code>submission.pending!()</code>), and a form's
 					<code>action</code> is the endpoint's URL: Roc can't turn an endpoint into a string by itself.
+				</li>
+				<li>
+					<strong>A setter takes a value.</strong> Solid's takes a function of the latest value too. A Roc
+					function takes one type of argument, so that form is a function of its own,
+					<code>{"update!(count!, set_count!, |c| c + 1)"}</code>, given the accessor too: Roc can't tell
+					which signal a setter writes, so the update reads it through its accessor.
 				</li>
 				<li>
 					<strong>Signals and memos don't compare.</strong> Solid skips a write of an equal value. Roc can't

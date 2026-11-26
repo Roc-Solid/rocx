@@ -118,7 +118,7 @@ Most modules are **shared**: written here and copied into `server/platform` by
 | Module | Shared | What it is for |
 | --- | --- | --- |
 | `Html` | yes | Markup: elements, holes, attributes, handlers, parts, rows, boundaries. Its serializer, its escaping, and the safe-URL and safe-CSS checks. |
-| `Solid` | yes | `create_signal!`, `create_memo!`, `create_store!`, `create_optimistic!`, `create_effect!`, `create_render_effect!`, `create_effect_with!`, `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `latest!`, `untrack!`, `use_context!`, `set_interval!`, `set_timeout!`. |
+| `Solid` | yes | `create_signal!`, `update!`, `create_memo!`, `create_selector!`, `create_store!`, `create_optimistic!`, `create_effect!`, `create_render_effect!`, `create_effect_with!`, `on_cleanup!`, `on_settled!`, `refresh!`, `is_pending!`, `latest!`, `untrack!`, `use_context!`, `set_interval!`, `set_timeout!`. |
 | `Store` | yes | A store's reads by part (`get!`) and `Store.of(accessor)`. |
 | `Repeat` | yes | `<Repeat>`: rows for a range of indexes. |
 | `Loading`, `Errored` | yes | The boundaries: a fallback while values come in, and one for a failure (`Errored.status_of`). |
@@ -241,6 +241,13 @@ A computation runs with the runtime noting what it reads (`js_signal_get`, `js_m
 item, the location…). A signal's setter, called in a handler, queues the write. When the handler
 is done, the writes apply, and each schedules the computations that read the signal. The
 flush runs in a microtask. A value a node already has isn't patched again.
+
+A read in the handler still gives the value before its writes, as Solid 2.0's does. `Solid.update!`
+(D-094) is the setter's function form: it reads through the accessor with `Host.own_writes!` on,
+and while it is, `js_signal_get` gives the handler's latest queued write to that signal (a plain
+write or an optimistic one), else its value. So two updates in one handler compose, and nothing
+else sees a write before it applies. A handler run again after a wait starts with no writes and
+`own_writes!` off.
 
 A setter can't compare Roc values, so every write runs the signal's readers. (Memos and store
 selections do compare, below.) Keep state that nothing shows in a signal nothing reads.
@@ -1355,7 +1362,9 @@ area:
 - **Stores** (`Stores.rocx`, D-053): a filter, a count and a list of todos in one store, each part a
   hole of its own, a `.map` of the list, two writes in one handler, a handler reading it,
   `Store.of` over a memo, and a grid of four hundred selections of one store: which holes each
-  write patches, how many selections it runs, and nothing left allocated.
+  write patches, how many selections it runs, and nothing left allocated. A signal's `update!`s
+  (D-094): two in one handler adding two, a read after them the value before, a write then an
+  update.
 - **Server reads.** `Echo.rocx`: a GET read with what is typed, rendered from the server's answer,
   hydrated without asking again, and asked again as one types. `Reads.rocx`: a GET read with the
   page's query, hydrated strictly, read again when its events say so. `Pending.rocx`:
@@ -1378,8 +1387,8 @@ area:
   keys (a result reading again only the reads its answer names, or none; a handler's own
   `revalidate!`), a form's fields given in its URL, `retry!` of a refused submission,
   `create_optimistic!` (shown at once, held while its action is on its way, then the server's with
-  no frame of the old; back at once when refused or with nothing sent), a form with a file and an
-  action given a file's URL, sent as multipart.
+  no frame of the old; back at once when refused or with nothing sent; two `update!`s of it in one
+  handler composing), a form with a file and an action given a file's URL, sent as multipart.
 - **Channels** (`Channels.rocx`: two feeds on one org's news, a third on another's, against a
   scripted `/rocx/live`): one stream for three subscriptions (one refused), messages in order, a
   frame's sayings in one post, a late subscriber resynced without a reconnect, one reconnect for a

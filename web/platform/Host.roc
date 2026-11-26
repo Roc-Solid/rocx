@@ -246,4 +246,10 @@ Host := [].{
 	## one, else the signal's. So two writes to a store in one handler compose, as two of Solid's
 	## draft setters do (D-053).
 	signal_latest! : U64 => Box(() -> a)
+
+	## `Solid.update!` (D-094): from `Bool.True` on, until `Bool.False`, the running handler's reads
+	## of signals give what it wrote to each, not yet applied (its latest write, an optimistic one
+	## too, as `signal_latest!` gives a store's), else the signal's value. Anywhere but in a
+	## handler, it does nothing.
+	own_writes! : Bool => {}
 }

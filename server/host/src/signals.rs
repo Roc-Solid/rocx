@@ -1551,6 +1551,12 @@ pub extern "C" fn roc_signal_latest(id: u64) -> Callable {
     }
 }
 
+/// `Solid.update!`'s reads of a handler's own writes (D-094): no handler runs on the server.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_own_writes(_on: bool) {
+    let _host = crate::preempt::host();
+}
+
 /// A dev build's `Html.read_at!` says where a component's body reads, for the browser's warning
 /// (web/runtime.js's `warnRead`): the server warns of nothing, and has no place to give back.
 #[unsafe(no_mangle)]

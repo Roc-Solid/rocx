@@ -196,6 +196,7 @@ platform ""
 		"roc_memo_new": Host.memo_new!,
 		"roc_navigate": Host.navigate!,
 		"roc_optimistic_set": Host.optimistic_set!,
+		"roc_own_writes": Host.own_writes!,
 		"roc_problem": Host.problem!,
 		"roc_read_at": Host.read_at!,
 		"roc_redirect_page": Host.redirect_page!,

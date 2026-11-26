@@ -1315,6 +1315,8 @@ export class Runtime {
 				const signal = this.signals.get(id);
 				if (!signal) throw new Error("rocx: a signal was read after the part that made it went away");
 				this.track(signal);
+				// Inside `update!` (D-094): the handler's own write, not yet applied, if it made one.
+				if (this.current?.own > 0) return this.ownWrite(this.current, signal) ?? signal.value;
 				return signal.value;
 			},
 			js_signal_set: (id, ptr) => {
@@ -1362,9 +1364,13 @@ export class Runtime {
 			js_signal_latest: (id) => {
 				const signal = this.signals.get(id);
 				if (!signal) throw new Error("rocx: a signal was read after the part that made it went away");
-				const writes = this.current?.kind === "handler" ? this.current.writes : [];
-				for (let at = writes.length - 1; at >= 0; at--) if (writes[at].signal === signal) return writes[at].value;
-				return signal.value;
+				return (this.current?.kind === "handler" && this.ownWrite(this.current, signal)) || signal.value;
+			},
+			// `Solid.update!` (D-094): the running handler's reads of signals give its own writes from on
+			// to off. Only a handler writes, so anywhere else there is nothing to give.
+			js_own_writes: (on) => {
+				const handler = this.current;
+				if (handler?.kind === "handler") handler.own = Math.max(0, (handler.own ?? 0) + (on ? 1 : -1));
 			},
 			// A selector (`create_selector!`): a computation answering its source's key, and a source a
 			// key, so a reader of a key runs again only when the answer for it changes (`settle`).
@@ -2578,6 +2584,7 @@ export class Runtime {
 			runner: listener.runner,
 			calls: new Map(),
 			writes: [],
+			own: 0,
 			event: this.leaveEvent({ id: 0, to: "", replace: false, scroll: true, delta: 0, prevented: false }),
 			scope: listener.scope,
 			owner: listener.owner,
@@ -4015,6 +4022,18 @@ export class Runtime {
 		this.schedule(memo);
 	}
 
+	/** The value a handler's latest write to a signal gave it, not yet applied (an optimistic write's
+	 * too); undefined if it wrote none. */
+	ownWrite(handler, signal) {
+		const writes = handler.writes;
+		for (let at = writes.length - 1; at >= 0; at--) {
+			const write = writes[at];
+			if (write.signal === signal) return write.value;
+			if (write.optimistic?.signal === signal) return write.optimistic.value;
+		}
+		return undefined;
+	}
+
 	/** Writes a handler made, applied together once it is done. */
 	apply(writes) {
 		// Optimistic writes (D-054) open a transition the submissions sent with them join.
@@ -4065,11 +4084,13 @@ export class Runtime {
 	 * (a leave's listener): one that waits isn't run again, and is done. */
 	handle(runner, event, scope = null, { owner = null, cleanups = null, done = null, again = true } = {}) {
 		// Its scope: the contexts and region where it was bound.
-		const handler = { kind: "handler", runner, calls: new Map(), writes: [], event, scope, owner, cleanups };
+		// `own`: how many `Solid.update!`s it is inside now, whose reads of signals give its writes.
+		const handler = { kind: "handler", runner, calls: new Map(), writes: [], own: 0, event, scope, owner, cleanups };
 		const go = () => {
 			const previous = this.current;
 			this.current = handler;
 			handler.writes = [];
+			handler.own = 0;
 			const mark = cleanups?.length ?? 0;
 			try {
 				this.enter(() => this.ex.run(this.kept.get(handler.runner)));

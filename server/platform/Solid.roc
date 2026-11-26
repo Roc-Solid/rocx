@@ -7,7 +7,7 @@ import Store
 ## changes. The browser's timers are here too (`set_interval!`, `set_timeout!`), each stopped by
 ## the `clear!` it answers, or when what started it goes.
 ##
-##     import pf.Solid exposing [create_signal!, create_memo!, create_selector!, create_optimistic!, create_store!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
+##     import pf.Solid exposing [create_signal!, update!, create_memo!, create_selector!, create_optimistic!, create_store!, create_effect!, create_render_effect!, create_effect_with!, on_cleanup!, on_settled!, refresh!, is_pending!, latest!, untrack!, use_context!, set_interval!]
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
@@ -15,7 +15,9 @@ import Store
 Solid := [].{
 
 	## A value that changes: its accessor and its setter (a tuple: Roc's list patterns may not
-	## match). Writes apply when the handler making them is done, as in Solid 2.0.
+	## match). Writes apply when the handler making them is done, as in Solid 2.0, so a read in that
+	## handler still gives the value before them: `set_count!(count!() + 1)` twice in one handler
+	## adds one. `update!` writes from the value the handler's writes leave, and composes.
 	create_signal! : a => ((() => a), (a => {}))
 	create_signal! = |value| {
 		id = Host.signal_new!(Box.box(|| value))
@@ -25,6 +27,31 @@ Solid := [].{
 		}
 		write! = |next| Host.signal_set!(id, Box.box(|| next))
 		(read!, write!)
+	}
+
+	## Writes what `change` makes of the value (Solid 2.0's function form of a setter,
+	## `setCount((c) => c + 1)`), from a handler, given the accessor and its setter: a signal's
+	## (`create_signal!`) or an optimistic value's (`create_optimistic!`). `change` is given the
+	## value as the handler's writes so far leave it, not yet applied, so two updates in one handler
+	## compose: the second is given what the first made. Only `update!` sees a write before it
+	## applies, as only Solid's function form does: a plain read in the handler (`count!()`) still
+	## gives the value before the handler's writes.
+	##
+	##     (count!, set_count!) = create_signal!(0)
+	##     add! = |n| update!(count!, set_count!, |c| c + n)
+	##     <button on:click={|| {
+	##         add!(1)
+	##         add!(1)
+	##     }}>Two more</button>
+	##
+	## Anything else `read!` reads is as it is: a memo isn't computed again from the handler's
+	## writes. Anywhere but in a handler, the setter fails, as it does on its own.
+	update! : (() => a), (a => {}), (a -> a) => {}
+	update! = |read!, write!, change| {
+		Host.own_writes!(Bool.True)
+		latest = read!()
+		Host.own_writes!(Bool.False)
+		write!(change(latest))
 	}
 
 	## A store (Solid 2.0's `createStore`): state of many parts in one value, read by parts
@@ -95,9 +122,10 @@ Solid := [].{
 	##         move!({ card: dragged!(), day })
 	##     }
 	##
-	## On the server there are no handlers: it is `compute`'s. Where several submissions may be on
-	## their way and each should apply to the server's latest data, derive it instead from what they
-	## sent (`Submissions.pending_inputs!`, D-030).
+	## Two writes in one handler compose through `update!`: `update!(cards!, set_cards!, |cards| …)`
+	## is given what the first wrote. On the server there are no handlers: it is `compute`'s. Where
+	## several submissions may be on their way and each should apply to the server's latest data,
+	## derive it instead from what they sent (`Submissions.pending_inputs!`, D-030).
 	create_optimistic! : (() => a) => ((() => a), (a => {}))
 	create_optimistic! = |compute| {
 		source! = Solid.create_memo!(compute)
@@ -154,8 +182,10 @@ Solid := [].{
 	## make the caller wait. Every read here does that already: a memo shows its last value while it
 	## is read again (`is_pending!` says it is), since nothing holds a write back until a change is
 	## done, as Solid 2.0's transitions do. So `latest!(read!)` is `read!()`, written as Solid code
-	## writes it; it would differ only if writes were held back. A memo with no value yet still makes
-	## the caller wait (`<Loading>`'s), and one that failed still fails (`<Errored>`'s).
+	## writes it; it would differ only if writes were held back. A handler's own writes, not yet
+	## applied, it doesn't give, as Solid 2.0's doesn't: `update!` is given those. A memo with no
+	## value yet still makes the caller wait (`<Loading>`'s), and one that failed still fails
+	## (`<Errored>`'s).
 	##
 	##     <input value={latest!(query!)} />
 	latest! : (() => a) => a

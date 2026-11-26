@@ -455,4 +455,8 @@ Host := [].{
 
 	## A signal's value: on the server no handler writes one.
 	signal_latest! : U64 => Box(() -> a)
+
+	## `Solid.update!`'s reads of a handler's own writes (D-094): no handler runs on the server, so
+	## it does nothing.
+	own_writes! : Bool => {}
 }

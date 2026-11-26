@@ -5546,6 +5546,63 @@ set.
 
 **Reversible:** yes: native/core's own allocator and guard are in git's history.
 
+## D-094 A setter's function form: `update!`
+
+**Status.** Built (2026-11-26).
+
+**Context.** `create_signal!` gives `(read!, write!)`, and the setter takes a value. A handler's
+writes apply when it is done (Solid 2.0's batching), so a read in the handler gives the value before
+them: `set_n!(n!() + 1)` twice adds one, and a helper that adds to a signal (`add!(by)`) can't be
+called twice in one handler. Solid 2.0's setter also takes a function, given the latest value with
+the writes not yet flushed (`setCount((c) => c + 1)`): its rules call that the writer's own
+composition channel, the one thing that sees a write before it applies (`latest(count)` doesn't).
+rocx's stores had this already (D-053: `set_todos!(|s| …)` starts from `Host.signal_latest!`);
+signals and optimistic values didn't.
+
+**Options.**
+1. `Solid.update!(set_n!, |n| n + 1)`, given the setter alone. A setter is a Roc closure over its
+   signal's id, and the runtime learns the id only when it is called, with a value: there is no way
+   to read the latest value through it.
+2. A second constructor that answers three things, `(n!, set_n!, update_n!)`. Non-breaking, and its
+   call site is short, but the choice is made where the signal is made, not where it is written,
+   and `create_optimistic!` would need a twin too.
+3. `latest!(n!)` giving the handler's own writes. Solid 2.0's `latest` doesn't: nothing but the
+   updater sees an unflushed write.
+4. `Solid.update!(n!, set_n!, |n| n + 1)`: the accessor reads the latest value, the setter writes,
+   so the types hold whatever the pair is.
+
+**Decision.** 4: `update! : (() => a), (a => {}), (a -> a) => {}` in `pf.Solid`.
+
+```roc
+(count!, set_count!) = create_signal!(0)
+add! = |n| update!(count!, set_count!, |c| c + n)
+<button on:click={|| {
+	add!(1)
+	add!(1)
+}}>Two more</button>
+```
+
+- It reads `read!` with `Host.own_writes!(Bool.True)`, then off. While it is on in a handler, a read
+  of a signal (`js_signal_get`) gives the handler's latest queued write to it (a plain write, or an
+  optimistic one), else its value; then `write!` queues the function's answer as a setter does. A
+  plain read in the handler, before or after, still gives the value before the handler's writes.
+- It takes an optimistic value's pair (`create_optimistic!`): its read is of a signal too.
+- Anything else `read!` reads is as it is: a memo isn't computed again from the handler's writes.
+- Outside a handler the flag does nothing, and the setter fails as it does on its own. A handler
+  that waits and runs again starts with no writes and the flag off. The server's host does nothing
+  (no handler runs there); the phone's engine has the same (`engine::own_writes`, its handler's
+  `own`).
+
+**Why.** Composing writes is the reason Solid has the function form, and the place it is chosen is
+the write. Given the accessor too, it is one function for signals and optimistic values, with no
+new constructor, and `create_signal!`'s pair is as it was.
+
+**Costs.** Three arguments where Solid has one, and nothing checks that the accessor and the setter
+are one signal's (a pair from two signals of one type reads one and writes the other). One hosted
+function (`own_writes!`) on each host.
+
+**Reversible:** yes: nothing else uses it.
+
 ## D-096 `Db.one!`: the one row a statement reads
 
 **Status.** Built (2026-11-26).

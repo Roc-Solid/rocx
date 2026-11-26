@@ -79,6 +79,12 @@ pub extern "C" fn roc_signal_latest(id: u64) -> Callable {
     }
 }
 
+/// `Solid.update!` (D-094): the running handler's reads of signals give its own writes, from on to off.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_own_writes(on: bool) {
+    engine::own_writes(on)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_optimistic_set(id: u64, value: Callable) {
     if let Err(value) = engine::optimistic_set(id, handed(value)) {

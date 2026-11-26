@@ -59,6 +59,7 @@ platform ""
 		"roc_now_millis": Host.now_millis!,
 		"roc_now_nanos": Host.now_nanos!,
 		"roc_optimistic_set": Host.optimistic_set!,
+		"roc_own_writes": Host.own_writes!,
 		"roc_problem": Host.problem!,
 		"roc_read_at": Host.read_at!,
 		"roc_refresh": Host.refresh!,
