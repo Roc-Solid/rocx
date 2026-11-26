@@ -125,9 +125,11 @@ made where the type is known (as `McpHttp.openapi({})` is).
 
 `Ai.run!(request, tools, context, heard!)` sends the model the tools; each turn that asks for some
 has them run, in order, each given `context`, and their answers sent back, until the model stops
-asking (or `max_turns`, `TooManyTurns`). `heard!` (an `Ai.Heard`) is given `Text(piece)` as the
+asking (or `max_turns`: `TooManyTurns(reply)`, what it had done, its `messages` and `usage`, to
+keep and to bill: its tools ran). `heard!` (an `Ai.Heard`) is given `Text(piece)` as the
 model writes and `Calling(name)` as it is about to use a tool; with `updates`, `Update(…)` too
-([Updates](#updates)).
+([Updates](#updates)). A turn cut off at `max_tokens` (`stop: MaxTokens`) ends the run; a tool
+call it was writing isn't run, and isn't in `messages`, so the conversation can be sent again.
 
 A tool is packages/tools' `Tool`, which packages/mcp serves too, so one tool serves the app's own
 model and its MCP server alike.
@@ -284,7 +286,7 @@ model's minimum (512 to 4,096 tokens, by model) isn't cached, and costs nothing 
 | `Refused(category)` | The model declined (the API's category, as `"cyber"`; often `""`) |
 | `Truncated` | `extract!`'s answer reached `max_tokens` before its JSON ended |
 | `InvalidJson(why)` | `extract!`'s answer didn't fit its type |
-| `TooManyTurns` | `run!` took `max_turns` turns and the model still wanted its tools |
+| `TooManyTurns(reply)` | `run!` took `max_turns` turns and the model still wanted its tools; `reply` is what it did (its `messages`, ending with the last tools' results, and every turn's `usage`) |
 | `Stopped(err)` | `heard!` answered `Err(err)`: from an endpoint's `events!`, the page went (`Stopped(Gone)`) |
 
 A 408, 409, 429, 500, 502, 503, 504 or 529 answer, or a stream that fails as overloaded before anything was heard,

@@ -57,6 +57,12 @@ events! = |{ params, .. }|
 							finished!("")
 						}
 						Err(Stopped(Gone)) => Err(Gone)
+						Err(TooManyTurns(reply)) => {
+							# What it did before it ran out of turns (its tools ran): kept, so the chat
+							# goes on from there.
+							Chats.save!(params.chat, reply.messages)
+							finished!("That took too many steps; ask again to go on.")
+						}
 						Err(problem) => finished!(Ai.explain(problem))
 					}
 				}

@@ -221,7 +221,10 @@ view! = |_|
 			<p>
 				<code>{"Ai.run!(request, tools, context, heard!)"}</code> sends the model the tools. Each turn that asks
 				for some has them run, in order, each given <code>context</code>, and their answers sent back, until the
-				model stops asking, or <code>max_turns</code> turns have gone (<code>TooManyTurns</code>).
+				model stops asking, or <code>max_turns</code> turns have gone (<code>TooManyTurns(reply)</code>: what it
+				did, its <code>messages</code> and <code>usage</code>, to keep and to bill). A turn cut off at
+				<code>max_tokens</code> ends the run, and a tool call it was writing isn't run, nor kept in
+				<code>messages</code>.
 				<code>heard!</code> is given <code>Text(piece)</code> as the model writes, and <code>Calling(name)</code>
 				as it is about to use a tool.
 			</p>
@@ -419,7 +422,7 @@ view! = |_|
 						<tr><td><code>Refused(category)</code></td><td>the model declined (the API's category, as <code>"cyber"</code>; often <code>""</code>)</td></tr>
 						<tr><td><code>Truncated</code></td><td><code>extract!</code>'s answer reached <code>max_tokens</code> before its JSON ended</td></tr>
 						<tr><td><code>InvalidJson(why)</code></td><td><code>extract!</code>'s answer didn't fit its type</td></tr>
-						<tr><td><code>TooManyTurns</code></td><td><code>run!</code> took <code>max_turns</code> turns and the model still wanted its tools</td></tr>
+						<tr><td><code>TooManyTurns(reply)</code></td><td><code>run!</code> took <code>max_turns</code> turns and the model still wanted its tools; <code>reply</code> is what it did (its <code>messages</code> and <code>usage</code>)</td></tr>
 						<tr><td><code>Stopped(err)</code></td><td><code>heard!</code> answered <code>Err(err)</code>: from an endpoint's <code>events!</code>, the page went (<code>Stopped(Gone)</code>)</td></tr>
 					</tbody>
 				</table>

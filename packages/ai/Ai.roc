@@ -115,9 +115,12 @@ Ai := [].{
 	## - `Refused(category)`: the model declined (the API's category, as `"cyber"`; often "");
 	## - `Truncated`: `extract!`'s answer reached `max_tokens` before its JSON ended;
 	## - `InvalidJson(why)`: `extract!`'s answer didn't fit its type;
-	## - `TooManyTurns`: `run!` took `max_turns` turns and the model still wanted its tools;
+	## - `TooManyTurns(reply)`: `run!` took `max_turns` turns and the model still wanted its tools:
+	##   what it had done (its tools ran, perhaps changing things), as a `Reply` whose `messages`
+	##   end with the last tools' results (so it can be kept, or gone on with) and whose `usage` is
+	##   every turn's (to bill), `stop` `ToolUse`;
 	## - `Stopped(why)`: the function given each piece of text said to stop.
-	Problem(err) : [NoKey, Status(U16, Str), Unreachable(Str), TimedOut, Broken(Str), Refused(Str), Truncated, InvalidJson(Str), TooManyTurns, Stopped(err)]
+	Problem(err) : [NoKey, Status(U16, Str), Unreachable(Str), TimedOut, Broken(Str), Refused(Str), Truncated, InvalidJson(Str), TooManyTurns(Reply), Stopped(err)]
 
 	## The answer, whole.
 	##
@@ -209,7 +212,10 @@ Ai := [].{
 	## is about to use it (`Calling`); with `updates`, what to show meanwhile (`Update`, `Heard`). A
 	## tool's refusal (`Err("No note 7")`), arguments that don't
 	## fit its type, and a tool it doesn't have go back to the model as a tool error, which it can
-	## act on; a failure inside (`Failed`) too, its reason logged (`ai.tool`) and not sent.
+	## act on; a failure inside (`Failed`) too, its reason logged (`ai.tool`) and not sent. A turn cut
+	## off at `max_tokens` (`stop` `MaxTokens`) ends the run: a tool call it hadn't finished isn't
+	## run, and isn't in `messages` (which the API would refuse to go on with: a `tool_use` needs its
+	## `tool_result`). After `max_turns`, `TooManyTurns` holds what was done.
 	##
 	##     tools = [Tool.typed("find_notes", "Finds the notes that mention a word", schema, Notes.find!)]
 	##     reply = Ai.run!({ prompt: question }, tools, {}, |_| Ok({}))?
@@ -232,12 +238,16 @@ Ai := [].{
 		var $messages = conversation_of(request)
 		var $usage = { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 		var $turns = 0
+		var $text = ""
+		var $model = model
 		while $turns < request.max_turns {
 			turn = turn!(settings, model, betas, request.label, body_of(model, request, $messages, described, Err(NoFormat)), relay!)?
 			message = Turn.message(turn)
 			$messages = $messages.append(message)
 			$usage = added($usage, Turn.usage_of(turn))
 			$turns = $turns + 1
+			$text = Message.text(message)
+			$model = Turn.model_of(turn)
 			match Turn.stop_of(turn) {
 				Refusal(category) => return Err(Refused(category))
 				ToolUse => {
@@ -255,11 +265,23 @@ Ai := [].{
 					$messages = $messages.append(Message.of_blocks(User, $results))
 				}
 				PauseTurn => {}
+				MaxTokens => {
+					# Cut off: a tool call it was writing isn't whole, and isn't run; the message
+					# without it (none, when nothing else is left), so the conversation can go on.
+					cut = Ai.without_calls(message)
+					kept = $messages.drop_last(1).concat(if (Message.blocks(cut).is_empty()) [] else [cut])
+					return Ok({ text: Message.text(message), messages: kept, stop: MaxTokens, usage: $usage, model: Turn.model_of(turn) })
+				}
 				stop => return Ok({ text: Message.text(message), messages: $messages, stop: stop, usage: $usage, model: Turn.model_of(turn) })
 			}
 		}
-		Err(TooManyTurns)
+		Err(TooManyTurns({ text: $text, messages: $messages, stop: ToolUse, usage: $usage, model: $model }))
 	}
+
+	## A message without its tool calls (`tool_use` blocks): what is left of a turn cut off at
+	## `max_tokens`.
+	without_calls : Message -> Message
+	without_calls = |message| Message.of_blocks(Message.role_of(message), Message.blocks(message).drop_if(|block| block.get("type") == Ok(String("tool_use"))))
 
 	## What went wrong, in a sentence: for the log, or a page.
 	explain : Problem(err) -> Str
@@ -273,7 +295,7 @@ Ai := [].{
 			Refused(category) => if (category.is_empty()) "the model declined" else "the model declined (${category})"
 			Truncated => "the answer reached max_tokens before it ended"
 			InvalidJson(why) => "the answer didn't fit its type: ${why}"
-			TooManyTurns => "the model still wanted its tools after max_turns turns"
+			TooManyTurns(_) => "the model still wanted its tools after max_turns turns"
 			Stopped(_) => "stopped"
 		}
 }
@@ -764,3 +786,9 @@ expect {
 expect wait_of("2") == Ok(2000) and wait_of("0") == Ok(0) and wait_of("") == Err(Unsaid) and wait_of("600") == Ok(60_000)
 
 expect error_message("{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"max_tokens: too large\"}}".to_utf8()) == "invalid_request_error: max_tokens: too large"
+
+expect {
+	cut = Message.of_blocks(Assistant, [Object([("type", String("text")), ("text", String("Let me add "))]), Object([("type", String("tool_use")), ("id", String("toolu_1")), ("name", String("add_note")), ("input", Object([]))])])
+	Message.blocks(Ai.without_calls(cut)) == [Object([("type", String("text")), ("text", String("Let me add "))])] and Message.role_of(Ai.without_calls(cut)) == Assistant
+}
+expect Message.blocks(Ai.without_calls(Message.of_blocks(Assistant, [Object([("type", String("tool_use")), ("id", String("toolu_1")), ("name", String("x")), ("input", Object([]))])]))).is_empty()

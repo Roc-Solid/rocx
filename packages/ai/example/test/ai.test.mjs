@@ -145,6 +145,26 @@ test("a chat: the assistant hands the note to the notes keeper, an agent it uses
 	assert.deepEqual(messages[4], { role: "user", content: [{ type: "text", text: "Thanks" }] });
 });
 
+test("a turn cut off at max_tokens as it wrote a tool call: the call isn't run, and the conversation kept has no tool_use without its result, so the next turn can be sent", async () => {
+	const client = app.client();
+	const sent = api.requests.length;
+	api.turn({ blocks: [{ type: "text", text: "Let me add " }, { type: "tool_use", id: "toolu_cut", name: "notes_keeper", input: { task: "Add a n" } }], stop: "max_tokens" });
+	const heard = await say(client, "c-cut", "Remember the bread");
+	assert.equal(textOf(heard), "Let me add ");
+	assert.equal(heard.at(-1).problem, "");
+	assert.equal(api.requests.length, sent + 1, "the cut call wasn't run: no agent was asked");
+	api.turn({ blocks: [{ type: "text", text: "Sure, noted." }] });
+	assert.equal(textOf(await say(client, "c-cut", "Go on")), "Sure, noted.");
+	const next = api.requests.at(-1).body;
+	assert.deepEqual(
+		next.messages.map((message) => message.role),
+		["user", "assistant", "user"],
+	);
+	const blocks = next.messages.flatMap((message) => (typeof message.content === "string" ? [] : message.content));
+	assert.ok(!blocks.some((block) => block.type === "tool_use"), JSON.stringify(next.messages));
+	assert.ok(blocks.some((block) => block.type === "text" && block.text === "Let me add "), "what it wrote before it was cut off is kept");
+});
+
 test("a tool's refusal, arguments that don't fit, input that isn't JSON and an agent given no task go back to the model as tool errors", async () => {
 	const sent = api.requests.length;
 	api.turn({
