@@ -2,7 +2,9 @@
 # the musl target the hosts are built for and wasm32 (the browser's host), `just setup` (Zig and the pinned nightly, cached; the Roc
 # fork's compiler, which `just setup` downloads prebuilt from this repository's release of it;
 # bin/rocx), the Rust hosts' dependencies (cached), and, when a job asks for them, Chromium and
-# Firefox for the browser tests. A job's Postgres is a service of its own (ci.yml).
+# Firefox for the browser tests: a job that runs any must ask, as in CI a missing browser fails
+# them rather than skipping them (web/test/browser.mjs, `browsersRequired`). A job's Postgres is a
+# service of its own (ci.yml).
 name: Toolchain
 description: Node, just, Rust, the pinned toolchain (just setup), and browsers when asked for
 inputs:

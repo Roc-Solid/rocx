@@ -6,4 +6,4 @@ export { Answer, ReadError, Client, Events, Server, links, startServer, storyPat
 export { Node, QueryError, decode, isHidden, normalize, parse, roles, screen, serialize, text, within } from "./dom.mjs";
 export { Connection, Database, connect, ident, literal, sqlText, testDatabase } from "./postgres.mjs";
 export { SqliteDatabase, testSqlite } from "./sqlite.mjs";
-export { Browser, Element, Tab, findChrome, findGecko, launchBrowser } from "./browser.mjs";
+export { Browser, Element, Tab, browsersRequired, findChrome, findGecko, launchBrowser } from "./browser.mjs";

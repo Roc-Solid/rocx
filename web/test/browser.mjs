@@ -1,6 +1,8 @@
 // A real browser for tests, with no dependencies: Chromium's headless shell, driven over the
 // DevTools protocol with Node's own WebSocket. $CHROME names the binary; otherwise the one
-// Playwright keeps in its cache is used, and the tests that need it are skipped without one.
+// Playwright keeps in its cache is used. Without one, the tests that need it skip, and the run says
+// so once; where browsers are required (`browsersRequired`: in CI, or ROCX_BROWSERS=required), a
+// missing one is an error instead, so a browser install that broke fails the run, not passes it.
 //
 // Gecko too (Zen, or Firefox: `launchGecko`), headless, over WebDriver BiDi, for what only it
 // shows: its page has the same methods (`goto`, `eval`, `wait`, `click`, `type`, `press`, `drag`, `touchDrag`,
@@ -13,17 +15,50 @@ import { join } from "node:path";
 /** Where Playwright keeps the browsers it downloads. */
 const playwrightCache = () => join(homedir(), process.platform === "darwin" ? "Library/Caches/ms-playwright" : ".cache/ms-playwright");
 
+/**
+ * Whether a missing browser is an error rather than a skip: with `ROCX_BROWSERS=required`, and in
+ * CI (`CI` set, and not `false` or `0`: GitHub Actions sets it, as most CI services do), unless
+ * `ROCX_BROWSERS=optional` lets the browser tests skip there. Any other `ROCX_BROWSERS` is an error.
+ */
+export function browsersRequired(env = process.env) {
+	const asked = env.ROCX_BROWSERS ?? "";
+	if (asked === "required") return true;
+	if (asked === "optional") return false;
+	if (asked !== "") throw new Error(`ROCX_BROWSERS is ${JSON.stringify(asked)}: "required" (a missing browser fails the tests) or "optional" (the tests that need it skip), or unset (required in CI)`);
+	return Boolean(env.CI) && !["false", "0"].includes(env.CI.toLowerCase());
+}
+
+/** The browsers already said to be missing, so each is said once. */
+const missed = new Set();
+
+/**
+ * What a finder answers when there is no `browser` (`get` says how to have one): an error where
+ * browsers are required (`browsersRequired`); elsewhere null, for the tests that need it to skip,
+ * and a line on the console the first time, so a run that skipped them says so.
+ */
+function missing(browser, get) {
+	if (browsersRequired()) {
+		const why = process.env.ROCX_BROWSERS === "required" ? "ROCX_BROWSERS=required" : `CI=${process.env.CI}`;
+		throw new Error(`no ${browser}, and browser tests must run here (${why}): ${get}. ROCX_BROWSERS=optional lets them skip instead.`);
+	}
+	if (!missed.has(browser)) {
+		missed.add(browser);
+		console.warn(`rocx tests: no ${browser}, so the tests that need it skip (${get}). In CI, or with ROCX_BROWSERS=required, they fail instead.`);
+	}
+	return null;
+}
+
+/** Chromium's headless shell: `$CHROME`, or Playwright's newest; else `missing` (null, or an error where browsers are required). */
 export function findChrome() {
 	if (process.env.CHROME) return process.env.CHROME;
 	const cache = playwrightCache();
-	if (!existsSync(cache)) return null;
-	for (const dir of readdirSync(cache).filter((name) => name.startsWith("chromium_headless_shell-")).sort().reverse()) {
+	for (const dir of existsSync(cache) ? readdirSync(cache).filter((name) => name.startsWith("chromium_headless_shell-")).sort().reverse() : []) {
 		for (const platform of readdirSync(join(cache, dir))) {
 			const binary = join(cache, dir, platform, "chrome-headless-shell");
 			if (existsSync(binary)) return binary;
 		}
 	}
-	return null;
+	return missing("Chromium headless shell", "set CHROME to one, or run `npx playwright install --only-shell chromium`");
 }
 
 /** Chromium, headless, with a profile of its own: its tabs share that profile's cookies, so a test
@@ -294,7 +329,7 @@ class Page {
 
 /**
  * A Gecko browser: `$GECKO`, else Zen or Firefox where they are installed, else the Firefox
- * Playwright keeps in its cache; null when there is none.
+ * Playwright keeps in its cache; else `missing` (null, or an error where browsers are required).
  */
 export function findGecko() {
 	if (process.env.GECKO) return process.env.GECKO;
@@ -303,12 +338,11 @@ export function findGecko() {
 	const found = installed.find((binary) => existsSync(binary));
 	if (found) return found;
 	const cache = playwrightCache();
-	if (!existsSync(cache)) return null;
-	for (const dir of readdirSync(cache).filter((name) => /^firefox-\d+$/.test(name)).sort().reverse()) {
+	for (const dir of existsSync(cache) ? readdirSync(cache).filter((name) => /^firefox-\d+$/.test(name)).sort().reverse() : []) {
 		const binary = process.platform === "darwin" ? join(cache, dir, "firefox", "Nightly.app", "Contents", "MacOS", "firefox") : join(cache, dir, "firefox", "firefox");
 		if (existsSync(binary)) return binary;
 	}
-	return null;
+	return missing("Gecko browser (Zen or Firefox)", "set GECKO to one, install Zen or Firefox, or run `npx playwright install firefox`");
 }
 
 /**

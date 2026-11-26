@@ -4311,6 +4311,16 @@ The fork's source stays private while anyone can build and test the repository.
 
 **Reversible:** yes: delete the workflow and the releases; `just setup` falls back to the fork.
 
+**Later (2026-11-26):** a browser test can't skip in CI. A missing browser was `null` from
+`findChrome`, `findGecko` and packages/testing's `launchBrowser`, so the tests that needed one
+skipped and a job whose browser install broke stayed green. Now web/test/browser.mjs's finders
+(every launcher goes through them) throw where browsers are required: with
+`ROCX_BROWSERS=required`, and wherever `CI` is set (GitHub sets `CI=true`) unless
+`ROCX_BROWSERS=optional` says they may skip there. Elsewhere they skip as before, and the run says
+so once a browser, on the console. Every job that runs browser tests (`test-rocx`/`test-web`,
+`test-server`, `examples`) installs both browsers already (`browsers: "true"`), and none of them
+skipped one; `check` and `site` run none, so no job changed.
+
 ## D-070 One hole, and a hole's own `if` and `match` as control flow
 
 **Status.** Built (2026-11-24).

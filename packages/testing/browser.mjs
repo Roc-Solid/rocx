@@ -5,7 +5,7 @@
 // dom.mjs finds (it reads the live document), and is used with real clicks and keys, and drags (a
 // mouse's, and a finger's).
 //
-//   const browser = await launchBrowser();          // null without Chromium: skip
+//   const browser = await launchBrowser();          // null without Chromium: skip (in CI: an error)
 //   const tab = await browser.open(`${app.url}/`);   // hydrated
 //   await (await tab.getByRole("button", { name: "Add one" })).click();
 //   assert.equal((await tab.findByText("2")).tag, "output");
@@ -22,20 +22,32 @@ import { QueryError, parse, within } from "./dom.mjs";
 /** The driver: web/test/browser.mjs (`findChrome`, `launch`, `findGecko`, `launchGecko`). */
 const driver = () => import(pathToFileURL(join(repo, "web", "test", "browser.mjs")).href);
 
-/** Chromium's headless shell: `$CHROME`, or Playwright's cached one; null when there is none. */
+/** Chromium's headless shell: `$CHROME`, or Playwright's cached one; when there is none, null (said
+ * once on the console), or an error where browsers are required (`browsersRequired`). */
 export async function findChrome() {
 	return (await driver()).findChrome();
 }
 
-/** A Gecko browser (`$GECKO`, Zen, Firefox, or Playwright's Firefox); null when there is none. */
+/** A Gecko browser (`$GECKO`, Zen, Firefox, or Playwright's Firefox); when there is none, as `findChrome`. */
 export async function findGecko() {
 	return (await driver()).findGecko();
 }
 
 /**
- * A browser, started (`close()` when done): Chromium, or with `engine: "gecko"` Zen or Firefox;
- * null when there is none, for a test to skip. Its tabs share their cookies, as one person's
- * browser does: for two people at once, launch twice.
+ * Whether a missing browser fails the tests rather than skipping them: with
+ * `ROCX_BROWSERS=required`, and in CI (`CI` set, as GitHub Actions sets it) unless
+ * `ROCX_BROWSERS=optional`.
+ */
+export async function browsersRequired() {
+	return (await driver()).browsersRequired();
+}
+
+/**
+ * A browser, started (`close()` when done): Chromium, or with `engine: "gecko"` Zen or Firefox.
+ * When there is none, null, for a test to skip (the run says so once, on the console); where
+ * browsers are required (in CI, or with `ROCX_BROWSERS=required`: `browsersRequired`) an error
+ * instead, so a broken browser install fails the run rather than skipping its browser tests. Its
+ * tabs share their cookies, as one person's browser does: for two people at once, launch twice.
  */
 export async function launchBrowser({ engine = "chromium" } = {}) {
 	const { findChrome: chrome, launch, findGecko: gecko, launchGecko } = await driver();

@@ -192,7 +192,12 @@ await db.drop();
 ### 4. In a browser
 
 `launchBrowser()` starts Chromium's headless shell: `$CHROME`, or the one Playwright keeps in its
-cache. It answers `null` when there is none, so the test can skip. `browser.open(url)` opens a tab
+cache. It answers `null` when there is none, so the test can skip, and the run says so once on the
+console (`rocx tests: no Chromium headless shell, so the tests that need it skip …`). In CI (`CI`
+set, as GitHub Actions sets it), or with `ROCX_BROWSERS=required`, a missing browser is an error
+instead, so a CI whose browser install broke fails rather than passing with its browser tests
+skipped; install the browsers in CI (`npx playwright install --with-deps --only-shell chromium
+firefox`), or set `ROCX_BROWSERS=optional` where the browser tests may skip. `browser.open(url)` opens a tab
 and waits for the page to hydrate, strictly: a page that isn't what the browser's half renders
 throws. The tab has the same queries, and its elements are used with real clicks and keys.
 `findBy…` looks again until the page shows what it asks for.
@@ -289,7 +294,7 @@ compare with `==`: their tags, their attributes in order, their text and their c
 | `server.mjs` | `startServer(executable, options)`: the server on a free port, resolved once it listens. Options: `statics` (directories it serves), `database` (a URL, or a test's own database: its `url`, and the database then knows the server), `dev` (`--dev`), `debug` (`--debug`, on by default), `context` (`--context-file`), `flags`, `env` (added to the environment; `ROCX_LOG` is `json` unless it says otherwise), `cwd`. A `Server` has `url`, `client()`, `mail()` (each message's `to`, `cc`, `bcc`, `reply_to`, `headers`, …), `waitForMail(match, { after, ms })` (a list's field matches when one item does), `logs()` (the JSON log, parsed) and `stop()`. A `Client` is one person's cookie jar: `get` (a page), `post` (a plain form, from the last page), `submit` (as the runtime sends a form), `json(path, value, method)`, `put(path, bytes)`, `read(path)` (a GET endpoint, as a page reads it; a `ReadError` unless 200), `events(path)` (an `Events` stream: `next()`, `take(n)`, `close()`, or `for await`), `request(path, { method, headers, body })`, `cookies` and `flash`. Each `Answer` has `status`, `headers`, `location`, `text`, `bytes`, `json()`, `dom` and `follow()`. Also `links(message)`, `until(check, { ms })` and `storyPath(module, name)`. |
 | `postgres.mjs` | `testDatabase(url = DATABASE_URL, { template, prefix })`: a database of the test's own (with `template`, a copy of that database), with `url`, `name`, `query(text)`, `` sql`…${value}` `` (values written as literals), `jobs({ kind, state })`, `enqueue(kind, input, { key, attempts })`, `settleJobs({ later, ms })`, `close()` and `drop()`. `connect(url)` opens one connection with the same methods. A client of its own, over Node's sockets: the simple query protocol; SCRAM-SHA-256, MD5 or a clear-text password; rows as objects of numbers, booleans, JSON and text. |
 | `sqlite.mjs` | `testSqlite({ prefix })`: a SQLite file of the test's own, with `url`, `path`, `query(sql, params)`, `` sql`…${value}` `` (values as parameters: a boolean as 1 or 0, a date as ISO text, an object as JSON), `jobs`, `enqueue`, `settleJobs` (the workers woken through the server), `close()` and `drop()`, over `node:sqlite`. |
-| `browser.mjs` | `launchBrowser({ engine })` (`"chromium"` or `"gecko"`; `null` when there is none), `findChrome()`, `findGecko()`. `browser.open(url, { strict, cookies, script, timeout })` and `browser.close()`. A `Tab` has the queries (async), `findBy…` and `findAllBy…` (`(query, options, { ms })`), `waitFor(check, { ms })`, `goto(url)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot({ width, height, full, dark })`, `drag(source, target, { drop })`, `finish({ cancel })`, `touchDrag(source, target, { hold, lift })`, `lift()` and `close()`. Each `Element` has `tag`, `text`, `role`, `name`, `attr(name)`, `click()`, `focus()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()` and `selector()`. |
+| `browser.mjs` | `launchBrowser({ engine })` (`"chromium"` or `"gecko"`; `null` when there is none, said once on the console; an error where browsers are required), `findChrome()`, `findGecko()` (the same), `browsersRequired()` (`ROCX_BROWSERS=required`, or `CI` set unless `ROCX_BROWSERS=optional`). `browser.open(url, { strict, cookies, script, timeout })` and `browser.close()`. A `Tab` has the queries (async), `findBy…` and `findAllBy…` (`(query, options, { ms })`), `waitFor(check, { ms })`, `goto(url)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot({ width, height, full, dark })`, `drag(source, target, { drop })`, `finish({ cancel })`, `touchDrag(source, target, { hold, lift })`, `lift()` and `close()`. Each `Element` has `tag`, `text`, `role`, `name`, `attr(name)`, `click()`, `focus()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()` and `selector()`. |
 | `build.mjs` | `buildForTests(dir, { out, client, dev, opt, specialize })`: `rocx build`, the browser's wasm and the server, into `out` (`<dir>/build/test`); answers `{ server, statics }`. `client: false` skips the browser's half; `dev: true` adds the stories; `opt` is the server's optimization (`"dev"`, or `"speed"`, built without lambda-set specialization unless `specialize` or `ROCX_SPECIALIZE=yes`). Also `repo`, the repository it uses. |
 | `index.mjs` | everything above |
 
@@ -306,9 +311,10 @@ expects. `node --test 'packages/testing/test/*.test.mjs'` (part of `just test`) 
   line. It needs Roc.
 - `build.test.mjs`: `buildForTests` throwing on a type error, and on a warning alone. It needs the
   toolchain and the server's host built.
-- `browser.test.mjs`: `tab.drag` in each browser there is.
+- `browser.test.mjs`: `tab.drag` in each browser there is; and no browser, skipped outside CI and
+  an error in it (it needs nothing).
 - `app.test.mjs`: everything above against a real app it builds (`test/fixture.mjs`), with
-  Postgres and Chromium when they are there. It needs the toolchain and the platforms' hosts built.
+  Postgres when it is there, and Chromium and Gecko (required in CI, as above). It needs the toolchain and the platforms' hosts built.
 
 Not yet. Each of these needs a change outside the package, written up in `PROPOSALS.md`:
 

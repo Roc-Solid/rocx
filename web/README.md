@@ -1308,7 +1308,9 @@ others.
 ## Tests
 
 Both suites need the toolchain (`just setup`) and Chromium (`CHROME` to name one); a few tests
-also need Gecko (Zen or Firefox). Before the tests run, `platform.test.mjs` builds what it needs:
+also need Gecko (Zen or Firefox). Without a browser its tests skip, said once on the console; in CI
+(`CI` set), or with `ROCX_BROWSERS=required`, they fail instead (`browser.mjs`'s
+`browsersRequired`). Before the tests run, `platform.test.mjs` builds what it needs:
 the test app through rocx, the browser's copy of it, a dev build of one component, the host, and
 each app's wasm.
 

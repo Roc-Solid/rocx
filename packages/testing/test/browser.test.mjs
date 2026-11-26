@@ -1,9 +1,14 @@
 // A tab's drag (browser.mjs, `Tab.drag`), in each browser there is: Chromium, through its own drag
 // and drop, and Gecko (Zen or Firefox), through the DOM's drag events. One page, no app: a card
 // that can be dragged, a list that takes it, and a tray that doesn't. Each skips without its browser.
+// And a browser that isn't there: a skip said once on the console, or, in CI, an error.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { findChrome, findGecko, launchBrowser } from "../browser.mjs";
 
 const PAGE = `<!doctype html><html><body style="margin: 0; font: 16px sans-serif">
@@ -83,3 +88,23 @@ for (const [engine, find] of [
 		}
 	});
 }
+
+test("no browser: outside CI, null and one line saying so; in CI or with ROCX_BROWSERS=required, an error, so a broken install fails the run", () => {
+	// A home with no Playwright cache, and none of this run's variables: no Chromium to find.
+	const home = mkdtempSync(join(tmpdir(), "rocx-no-browser-"));
+	const script = `const { findChrome, launchBrowser } = await import(${JSON.stringify(new URL("../browser.mjs", import.meta.url).href)});
+try { console.log(JSON.stringify([await findChrome(), await findChrome(), await launchBrowser()])); } catch (error) { console.log("threw: " + error.message); }`;
+	const run = (env) => spawnSync(process.execPath, ["--input-type=module", "-e", script], { env: { PATH: process.env.PATH, HOME: home, ...env }, encoding: "utf8" });
+	try {
+		for (const env of [{}, { CI: "false" }, { CI: "true", ROCX_BROWSERS: "optional" }]) {
+			const skipped = run(env);
+			assert.equal(skipped.stdout.trim(), "[null,null,null]", JSON.stringify(env));
+			assert.deepEqual(skipped.stderr.trim().split("\n"), ["rocx tests: no Chromium headless shell, so the tests that need it skip (set CHROME to one, or run `npx playwright install --only-shell chromium`). In CI, or with ROCX_BROWSERS=required, they fail instead."], "said once");
+		}
+		assert.match(run({ CI: "true" }).stdout, /^threw: no Chromium headless shell, and browser tests must run here \(CI=true\): set CHROME to one/);
+		assert.match(run({ ROCX_BROWSERS: "required" }).stdout, /^threw: no Chromium headless shell, and browser tests must run here \(ROCX_BROWSERS=required\)/);
+		assert.match(run({ ROCX_BROWSERS: "yes" }).stdout, /^threw: ROCX_BROWSERS is "yes": "required" .* or "optional"/);
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});

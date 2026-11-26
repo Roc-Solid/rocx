@@ -267,7 +267,11 @@ view! = |_|
 		<Heading id="browser">In a browser</Heading>
 		<p>
 			<code>launchBrowser()</code> starts Chromium's headless shell (<code>$CHROME</code>, or the one
-			Playwright keeps in its cache). When there is none it answers <code>null</code>, so the test can skip.
+			Playwright keeps in its cache). When there is none it answers <code>null</code>, so the test can skip,
+			and the run says so once on the console. In CI (<code>CI</code> set, as GitHub Actions sets it), or
+			with <code>ROCX_BROWSERS=required</code>, a missing browser is an error instead: a CI whose browser
+			install broke fails, rather than passing with its browser tests skipped.
+			<code>ROCX_BROWSERS=optional</code> lets them skip in CI too.
 			<code>browser.open(url)</code> opens a tab and waits until the page has hydrated, strictly: if the page
 			the server sent isn't what the browser's half renders, it throws. The tab has the same queries, and
 			each element found can be clicked, typed in and filled through the browser's own input.

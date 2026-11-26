@@ -456,7 +456,8 @@ examples := `git ls-files 'examples/*/main.roc' | xargs -n1 dirname | tr '\n' ' 
 # (`roc test`); and its node tests, examples/<name>/test/*.test.mjs, when
 # it has them (a glob: `node --test <dir>` doesn't find them on Node 24; helper modules there
 # don't end in .test.mjs). They need nothing for their database, all on SQLite (each test makes a
-# file of its own), and Chromium for their browser tests, which skip without it; the browser's host
+# file of its own), and Chromium for their browser tests, which skip without it (fail, in CI or
+# with ROCX_BROWSERS=required); the browser's host
 # first (`web-host`; `rocx check --sql` builds the server's). Every example is run, and those that
 # failed are named at the end.
 #

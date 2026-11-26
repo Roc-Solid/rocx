@@ -1093,9 +1093,12 @@ just test
   stand-in for Stripe's API, ai's against one for Anthropic's Messages API).
 
 The browser tests drive Chromium's headless shell over the DevTools protocol, with no npm
-dependencies: `$CHROME`, or Playwright's cached one; without one they are skipped. The tests of
+dependencies: `$CHROME`, or Playwright's cached one; without one they are skipped, and the run
+says so once. In CI (`CI` set), or with `ROCX_BROWSERS=required`, a missing browser fails the tests
+instead (`ROCX_BROWSERS=optional` lets them skip), so a browser install that broke can't leave CI
+green. The tests of
 `packages/testing` and of the board example drive Gecko too when there is one (headless over WebDriver
-BiDi: `$GECKO`, Zen, Firefox, or Playwright's Firefox).
+BiDi: `$GECKO`, Zen, Firefox, or Playwright's Firefox), which the same rule requires in CI.
 
 **CI** (`.github/workflows/ci.yml`) runs five jobs side by side on every push to master and every
 pull request, on GitHub's Linux runners on arm64, with the fork's compiler prebuilt for them:
