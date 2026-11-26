@@ -30,8 +30,9 @@ Middlewares := [].{
 			},
 	)
 
-	## Logs each answer: its method, path, status and time, and who asked (`Log.info!`), and why,
-	## when it failed (`Log.error!`).
+	## Logs each answer: its method, path, status and time, and who asked (`Log.info!`), and what it
+	## said when it failed (`Log.error!`): the plain message the client got; why the database failed
+	## is logged where it happened (`Store.refusal!`).
 	logged : Middleware(Middlewares.Context, Middlewares.Context)
 	logged = Middleware.make(
 		|request, context, next!| {

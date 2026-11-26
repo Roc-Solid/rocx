@@ -36,8 +36,9 @@ Middlewares := [].{
 	is_public : Str -> Bool
 	is_public = |path| path == "/sign-in" or path.starts_with("/auth/") or path.starts_with("/rocx/") or path.starts_with("/__")
 
-	## Logs each answer: its method, path, status and time (`Log.info!`), and why, when it failed
-	## (`Log.error!`).
+	## Logs each answer: its method, path, status and time (`Log.info!`), and what it said when it
+	## failed (`Log.error!`): the plain message the client got; why the database failed is logged
+	## where it happened (`Store.refusal!`).
 	logged : Middleware({}, {})
 	logged = Middleware.make(
 		|request, context, next!| {

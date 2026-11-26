@@ -5,7 +5,7 @@
 ##
 ## packages/auth keeps who joined as whom as a session in the database, its cookie `board_session`.
 ## Without an `admit!`, nobody signs in by a link or a provider: joining (`/join`) starts the session
-## itself (`Auth.sign_in!`), for the person picked or made.
+## itself (`Auth.switch!`, ending the session the browser had), for the person picked or made.
 app [program] { auth: "../../packages/auth/main.roc", guard: "../../packages/guard/main.roc", pf: platform "../../server/platform/main.roc", presence: "../../packages/presence/main.roc" }
 
 import auth.Auth

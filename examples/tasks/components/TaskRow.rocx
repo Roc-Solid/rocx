@@ -8,8 +8,8 @@ import Avatar
 ## One task on a list: a box to tick, its title (a link to its page), when it is due and who has
 ## it, and buttons to move it up or down or delete it. Every control is a plain `<form>` that posts
 ## to an endpoint, so the list works without JavaScript; with it, the runtime sends the form with
-## `fetch` instead, because the list reads that endpoint's submissions (`use_submissions!`), and the
-## change shows at once. Rows can also be dragged onto each other, which only a browser running
+## `fetch` instead (as it sends every form to an endpoint of the app's, D-095), and since the list
+## reads that endpoint's submissions (`use_submissions!`), the change shows at once. Rows can also be dragged onto each other, which only a browser running
 ## the page can do: that sends the same move as an action (`use_action!`).
 TaskRow := [].{
 

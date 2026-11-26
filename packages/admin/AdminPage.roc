@@ -16,13 +16,17 @@ import Widget
 ## import pf.Db
 ## import pf.Random
 ## import pf.Server
+## import admin.Admin
 ## import admin.AdminPage
 ## import ../../../Middlewares
 ##
 ## middleware = Middlewares.staff
 ##
 ## respond! : { request : Server.Request, params : {}, context : { user : Str, staff : Bool } } => Server.Response
-## respond! = |{ request, context, .. }| AdminPage.respond!(request, context, Admin.admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
+## respond! = |{ request, context, .. }| AdminPage.respond!(request, context, admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
+##
+## admin : Admin.Config({ user : Str, staff : Bool })
+## admin = { mount: "/admin/db", access: |context| if (context.staff) Edit else Refused, tables: [{ name: "books" }] }
 ## ```
 ##
 ## A package can't name the server's platform (see the README), so the app hands the admin the

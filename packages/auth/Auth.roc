@@ -32,7 +32,7 @@ import "migrations/0004_two_factor_misses.sql" as two_factor_misses : Str
 ## (back from it), `POST <at>/sign-out`, `POST <at>/dev` (any address, under `--dev` only), and
 ## `POST <at>/code` (a sign-in's second factor, from the app's `code_page`). Each answers with a
 ## redirect: where the browser was going, or the app's sign-in page with why not
-## (`?error=link|refused|provider|state|unavailable|attempts|timeout`, and `&reason=` for `refused`
+## (`?error=link|refused|provider|state|unavailable|attempts|locked|timeout`, and `&reason=` for `refused`
 ## and `provider`), or the code page after a wrong code (`?error=code`).
 Auth := [].{
 
@@ -901,9 +901,11 @@ unreached = |problem|
 ## `<at>/code`: a sign-in's second factor, posted from the app's code page (`code`, and `then`):
 ## the code from the user's authenticator app, or one of their recovery codes. Right: the sign-in
 ## becomes a session, on to `then` (else where it was going). Wrong: back to the code page saying
-## so, but the fifth wrong code ends the sign-in. The user's tenth wrong code in a row, across
-## sign-ins (`Rules.locked`): the sign-in ended, the sign-in page saying to wait. No sign-in waiting
-## (it took over ten minutes, or the browser has none): the sign-in page says so.
+## so, but the fifth wrong code ends the sign-in (`attempts`). Once the user has given ten wrong
+## codes in a row, across sign-ins, their codes are refused unread for a quarter of an hour after
+## the last (`Rules.locked`): a code sent then ends the sign-in, the sign-in page saying to wait
+## (`locked`). No sign-in waiting (it took over ten minutes, or the browser has none): the sign-in
+## page says so.
 coded! : Auth.Settings, Server.Request => Server.Response
 coded! = |settings, request| {
 	body = Server.text_of(request)

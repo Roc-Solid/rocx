@@ -295,7 +295,7 @@ Rules := [].{
 	}
 
 	## Where a sign-in that failed sends the browser: the app's sign-in page with why
-	## (`?error=link|refused|provider|state|unavailable|attempts|timeout` and, for `refused` and
+	## (`?error=link|refused|provider|state|unavailable|attempts|locked|timeout` and, for `refused` and
 	## `provider`, `&reason=`), whose address it was when it is known (`&email=`: `admit!` turned it
 	## away), and where they were going (`&then=`); or the code page, after a wrong code
 	## (`?error=code`).
