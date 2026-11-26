@@ -77,11 +77,19 @@ Solid := [].{
 	## A value computed from others, computed again when they change: its accessor. It is async when
 	## it calls the server: until the answer is in, reading it makes the reader wait (it runs again
 	## once the answer is in); a failure shows the nearest <Errored>.
-	create_memo! : (() => a) => (() => a)
+	##
+	## Computed again to a value `==` the one it had, it tells no one (Solid's `createMemo`, D-109):
+	## what reads it runs again only when it changed. So a memo of a part of what changes often (a
+	## page's answer read again, a clock) is where a part of the page that shows only that part is
+	## kept. Its value compares, so it is data (records, tags, lists, text, numbers; a type of one's
+	## own needs its `is_eq`); what doesn't (a function, markup) is computed in a function instead.
+	create_memo! : (() => a) => (() => a) where [a.is_eq : a, a -> Bool]
 	create_memo! = |compute| {
 		run! = || {
 			value = compute()
-			Host.memo_done!(Box.box(|| value), Bool.False)
+			boxed = Box.box(|| value)
+			last = Box.unbox(Host.memo_last!(boxed))
+			Host.memo_done!(boxed, last() == value)
 			""
 		}
 		id = Host.memo_new!(Box.box(run!))
@@ -126,7 +134,7 @@ Solid := [].{
 	## is given what the first wrote. On the server there are no handlers: it is `compute`'s. Where
 	## several submissions may be on their way and each should apply to the server's latest data,
 	## derive it instead from what they sent (`Submissions.pending_inputs!`, D-030).
-	create_optimistic! : (() => a) => ((() => a), (a => {}))
+	create_optimistic! : (() => a) => ((() => a), (a => {})) where [a.is_eq : a, a -> Bool]
 	create_optimistic! = |compute| {
 		source! = Solid.create_memo!(compute)
 		held : [Held(a), Unheld]

@@ -6531,3 +6531,48 @@ keep true as rocx changes: a decision that changes a rule changes the block or t
 
 **Reversible:** yes: the command, the check's line and `rocx new`'s call go; an app's block stays
 as plain text.
+
+## D-109 A memo computed again to the same value tells no one
+
+**Status.** Built (2026-11-27).
+
+**Context.** `create_memo!` told its readers each time it ran (`Host.memo_done!(…, Bool.False)`),
+whatever it computed. Solid's `createMemo` compares (`===`, by default) and stays quiet when the
+value is the same. Found in an app whose page reads its data again on each piece of news: a memo
+of a part that hadn't changed (a week number, the page's title) still ran every reader, and a pure
+view given it (D-039: a pure view's props are values, its call made anew when one changes) was made
+anew with its element: an icon, a link, an image reloaded. Store selections already compared
+(D-053: `Host.memo_last!`, then `memo_done!`'s `same`), by Roc's `==`.
+
+**Options.**
+1. As it was: a memo always tells; what wants quiet reads a store's selection.
+2. An option per memo, Solid's `{ equals }`, or a second function that compares.
+3. `create_memo!` compares, by `==`, as a selection does; its value must compare (`a.is_eq`).
+
+**Decision.** 3. `create_memo!` asks the runtime for the memo's last value (`memo_last!`) and says
+whether the new one equals it (`memo_done!`'s `same`); an equal one tells no one. Its type says
+`where [a.is_eq : a, a -> Bool]`, and so does `create_optimistic!`'s, which holds a memo. A memo's
+first value has no readers to tell.
+
+- **What needs `is_eq`:** a memo of a type of one's own. The repository had two, packages/charts'
+  `Scale` and `Band` (the charts' scales, in memos), which compare their fields now. A memo of
+  what can't compare (a function, markup) is a function instead: `doubled! = || count!() * 2`
+  computes when read.
+- **Docs:** the platform's README, `Solid.create_memo!`'s comment, the components page.
+- **Tested:** web/test's `Untracked` holds a memo computed again to the same value as its count
+  changes, and a pure view given it: the view's element is the same after a click.
+
+**Why.** Solid's semantics, and the platform's own store selections': a value that didn't change
+moves nothing. Readers of a memo of a part of a page's data run only when that part changed.
+
+**Costs.** A comparison each time a memo runs (`==` of its value: a list's is linear in its
+length). A memo of a type of one's own needs its `is_eq`, or the memo is a function.
+
+**Reversible:** yes: `memo_done!(…, Bool.False)` again, and the constraint goes.
+
+**Fixed with it** (not a decision): a comment line before a hole's `match` arm (D-070) was read as
+part of the arm's pattern, which made the pattern more than a line, and the match a plain hole,
+every arm made anew each time its value changed, with no warning. `Flow.skip_comments` passes over
+whole comment lines where a pattern starts; their lines are kept, so reports point where they did.
+test/transpile.test.mjs checks a match with comments before its first arm and between arms.
+

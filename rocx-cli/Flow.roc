@@ -294,6 +294,19 @@ Flow := [].{
 
 	## The `match` the code from `from` up to `to` is, if it is one: `match`, a value, and a block of
 	## arms, with nothing after it. Arms are on lines of their own, or after a `,`.
+	## Where code starts from `at`: past whitespace and whole comment lines (`# …`, `## …`).
+	skip_comments : List(U8), U64 -> U64
+	skip_comments = |src, at| {
+		var $i = Text.skip_space(src, at)
+		while Text.at(src, $i) == '#' {
+			while $i < src.len() and Text.at(src, $i) != '\n' {
+				$i = $i + 1
+			}
+			$i = Text.skip_space(src, $i)
+		}
+		$i
+	}
+
 	arms : List(U8), U64, U64, List(Flow.Piece) -> Try(Flow.Arms, [NotFlow])
 	arms = |src, from, to, spans| {
 		toks = Flow.tokens(src, from, to, spans)
@@ -331,8 +344,10 @@ Flow := [].{
 					}
 					Err(_) => close_at
 				}
-			# The pattern from its first character: the line end before it is the arm's line.
-			$pattern_from = Text.skip_space(src, $pattern_from)
+			# The pattern from its first character, past comment lines above it: the line end before
+			# it is the arm's line. (Read as the pattern, a comment made it more than a line, and the
+			# match a plain hole, every arm made anew each time its value changed.)
+			$pattern_from = Flow.skip_comments(src, $pattern_from)
 			guard_at = inside.find_first(|t| t.at >= $pattern_from and t.at < arrow.at and Flow.is_word(t, "if"))
 			(pattern, guard) =
 				match guard_at {

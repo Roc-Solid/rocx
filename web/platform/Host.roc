@@ -13,8 +13,8 @@ Host := [].{
 	## Makes a memo from its computation, and runs it.
 	memo_new! : Box(() => Str) => U64
 
-	## The running memo's value. `same`: it equals the value the memo has (a store's selection says
-	## so, by Roc's `==`), so the memo's readers aren't told; `create_memo!`'s always say `Bool.False`.
+	## The running memo's value. `same`: it equals the value the memo has (by Roc's `==`, as a
+	## store's selection and `create_memo!` compare it, D-109), so the memo's readers aren't told.
 	memo_done! : Box(() -> a), Bool => {}
 
 	## Aborts the caller while the memo waits, or fails it when the memo failed.

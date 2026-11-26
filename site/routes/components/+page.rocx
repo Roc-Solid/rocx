@@ -145,7 +145,8 @@ view! = |_|
 					<Code source={"doubled! = create_memo!(||\n\tcount!() * 2)"} numbers={Bool.False} />
 					<p>
 						A value computed from others, and computed again when they change. You read it as you read
-						a signal: <code>doubled!()</code>.
+						a signal: <code>doubled!()</code>. Computed again to the same value, it tells no one, so what
+						reads it runs only when it changed.
 					</p>
 				</Feature>
 			</FeatureGrid>

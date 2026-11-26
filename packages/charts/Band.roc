@@ -4,6 +4,11 @@
 ## the first slot to the third is in slot 1.5 halfway there.
 Band := { count : Dec, range : (Dec, Dec), padding : Dec }.{
 
+	## Two bands are the same when their counts, ranges and paddings are: a memo of one (D-109)
+	## tells no one of bands computed again the same.
+	is_eq : Band, Band -> Bool
+	is_eq = |a, b| a.count == b.count and a.range == b.range and a.padding == b.padding
+
 	## `count` slots across `range`, a `padding` share of each left empty.
 	band : Dec, (Dec, Dec), Dec -> Band
 	band = |count, range, padding| { count, range, padding: Dec.min(Dec.max(padding, 0.0), 1.0) }

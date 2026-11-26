@@ -11,6 +11,8 @@ Untracked := [].{
 		(count!, set_count!) = create_signal!(1.U64)
 		(base!, set_base!) = create_signal!(10.U64)
 		sum! = create_memo!(|| count!() + untrack!(|| base!()))
+		# Computed again as count changes, and the same each time: it tells no one (D-109).
+		big! = create_memo!(|| count!() > 100)
 		<div>
 			<button class="add" on:click={|| set_count!(count!() + 1)}>Add</button>
 			<button class="rebase" on:click={|| set_base!(base!() + 10)}>Rebase</button>
@@ -24,6 +26,7 @@ Untracked := [].{
 			</p>
 			<Start start={count!()} />
 			<Start start={count!()} />
+			<Flag on={big!()} />
 		</div>
 	}
 }
@@ -44,4 +47,10 @@ Start := [].{
 		(kept!, _) = create_signal!(untrack!(|| start))
 		<p class="start">{first.to_str()} {kept!().to_str()} {start.to_str()}</p>
 	}
+}
+
+## A pure view given a memo that stays the same (D-109): never made again.
+Flag := [].{
+	view : { on : Bool } -> Html
+	view = |{ on }| <i class="flag">{if (on) "big" else "small"}</i>
 }

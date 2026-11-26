@@ -321,6 +321,10 @@ The nearest `<Loading>` shows its fallback until everything inside has its first
 that, a memo read again keeps showing its last value while it waits, and `is_pending!` says so. A
 failure shows the nearest `<Errored>`.
 
+A memo computed again compares its value with the last by Roc's `==` (D-109), as a store's
+selection does (`Host.memo_last!`, then `memo_done!`'s `same`): an equal one tells no one, so its
+readers run only when it changed. `create_memo!` asks for `a.is_eq`: a memo holds data.
+
 ### `is_pending!`
 
 `is_pending!(read!)` is Solid 2.0's `isPending`: whether what `read!` reads is waiting for a new

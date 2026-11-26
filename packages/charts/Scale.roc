@@ -4,6 +4,11 @@ import Ticks
 ## screen's: 300 down to 0, since an SVG's y grows downward). `scale.at(value)` is the place.
 Scale := { domain : (Dec, Dec), range : (Dec, Dec) }.{
 
+	## Two scales are the same when their domains and ranges are: a memo of one (D-109) tells no one
+	## of a scale computed again the same.
+	is_eq : Scale, Scale -> Bool
+	is_eq = |a, b| a.domain == b.domain and a.range == b.range
+
 	## The scale from `domain` onto `range`.
 	linear : (Dec, Dec), (Dec, Dec) -> Scale
 	linear = |domain, range| { domain, range }

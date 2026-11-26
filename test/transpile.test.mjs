@@ -506,6 +506,12 @@ test("a hole's if and match (D-070): one that reads what changes is the part its
 	assert.equal(reactive(lines).split("\n").length, lines.split("\n").length, "as many lines");
 	assert.match(reactive(lines).split("\n")[2], /Html\.element\("p"/, "the arm's markup on its line");
 	assert.match(reactive(lines).split("\n")[1], /^\tOk\(\{ name: _, age: years \}\) if {2}years > 17 {2}=> /, "the arm's pattern on its line, indented as written, binding only what its guard reads");
+	// Comments before an arm (the first, and one after another) are passed over: the match is still
+	// its arms, kept while their case holds, not a plain hole made anew for each value.
+	const noted = `x = <div>{match found!() {\n\t# The post, kept while it is there.\n\tFound(data) => <p>{data}</p>\n\t## None.\n\t# Gone.\n\tMissing => <></>\n}}</div>`;
+	assert.ok(reactive(noted).includes(`Html.branched(|| Ok(match  found!()  { Found(_) => "0", Missing => "1" })`), reactive(noted));
+	assert.equal(reactive(noted).split("\n").length, noted.split("\n").length, "as many lines, the comments' kept as lines");
+	assert.match(reactive(noted).split("\n")[2], /^\tFound\(_\) => /, "the arm on its line");
 });
 
 test("a hole's .map (D-071): a list that changes is its rows, by the root's key, its names getters; by position with .map_with_index and key={i}; a list that doesn't change is made once, as before", () => {
