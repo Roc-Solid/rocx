@@ -196,18 +196,15 @@ When an item lands, delete its line here in the same commit.
   The five steps of 2026-11-25/26 are in: `create_selector!` (D-083), the host's allocation notes
   without a hash map, `.map` rows as templates (D-084), fewer calls per row (known rows
   make no box, the wasm's imports called directly), and the runtime shaken to
-  what an app uses (D-087, with D-086's links). The runner's run of 2026-11-26 (b84a0b8): CPU
-  1.83× the fastest (2.06× before; React 1.74×), creating 1,000 rows 39.3 ms (45.8; vanillajs 18.7),
-  10,000 448 (474), selecting one 7.7 (11.8: vanillajs's), the download 66.2 KB (73.4), first paint
-  37 ms (the best), run memory 4.8 MB, ready to use 288 ms (312; still the last, Leptos 266).
-  Clearing 1,000 rows went from 17.4 ms to 19.8 in both runs that night, its script time the same
-  (about 3 ms by hand): not found yet. Since 2026-11-26 a list whose rows all go is emptied at once
-  (its parent's content, as vanillajs clears; spike/wasm-engine's step 6 brought back): 13% less
-  script by hand; the next run says what it does to the runner's clear. Also since 2026-11-26 a
-  computation keeps less (its sources a short array, a run's lists and a finished run's record
-  shared while empty): the JS heap with 1,000 rows 11% smaller, with 10,000 15%, the speed the same
-  (profiled: a few tenths of a millisecond of 30). A row's holes run in one call, and rows without
-  their comments, were measured and not taken (about 4% and 3%, for their cost).
+  what an app uses (D-087, with D-086's links). Then the browser's host in Rust (D-090, D-091), a
+  list whose rows all go emptied at once, and a computation keeping less (its sources a short array,
+  a run's lists and a finished run's record shared while empty). The runner's run of 2026-11-26 at
+  505b0e7 (2 rounds of 15, mains): CPU 1.68× the fastest (1.83× at b84a0b8, 2.06× before; React
+  1.70×), creating 1,000 rows 36.1 ms (39.3; vanillajs 18.5), 10,000 381 (448), selecting one 6.2
+  (7.7), clearing 15.0 (19.8: the old regression gone), the download 67.7 KB (66.2), first paint
+  30 ms (the best), run memory 4.5 MB (4.8), ready to use 262 ms (288; still the last, Leptos 230).
+  A row's holes run in one call, and rows without their comments, were measured and not taken
+  (about 4% and 3%, for their cost).
   What is left, measured: each hole is a computation of its own, run by a call into wasm (about 4
   calls a row, each with the runtime's bookkeeping: a computation, its sources' Sets, its frame);
   a row is still a range between two comments; a list read again runs Roc over every item (its key

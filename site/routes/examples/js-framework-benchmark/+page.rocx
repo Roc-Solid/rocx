@@ -45,7 +45,7 @@ view! = |_|
 			is the other way round: the page answers a click once the runtime and the wasm have come and
 			hydrated it, and on the benchmark's server, which compresses each file as it sends it, slowly,
 			that is the last of them. What a page downloads is most of that: the runtime ships only what the
-			page uses (D-087), 124 KB of its 175, but with the wasm it is still more than Joy's, Leptos's or
+			page uses (D-087), 128 KB of its 180, but with the wasm it is still more than Joy's, Leptos's or
 			React's, and many times Solid's, which is JavaScript alone.
 		</p>
 		<p>
@@ -67,6 +67,15 @@ view! = |_|
 			selecting one 11.8 to 7.7, the download 73.4 KB to 66.2, and CPU 1.83× the fastest: beside
 			React's 1.74×. Each step was measured on its own, and two were taken back for what they cost
 			elsewhere: preload hints (a later first paint) and delegated handlers (more memory).
+		</p>
+		<p>
+			The run shown here (2026-11-26, at 505b0e7) came after the browser's host became Rust (D-090,
+			its memory shared with the phone's, D-091), a list whose rows all go was emptied at once, and
+			each computation kept less: CPU 1.68× the fastest, now ahead of React's 1.70×; creating 1,000
+			rows 39.3 ms to 36.1, 10,000 448 to 381, replacing 1,000 43.3 to 40.5, appending 46.6 to 42.1,
+			selecting one 7.7 to 6.2, clearing 19.8 to 15.0, run memory 4.8 MB to 4.5, the first paint
+			37 ms to 30 and ready to use 288 ms to 262. The download grew 66.2 KB to 67.7, the runtime with
+			the features that landed in between.
 		</p>
 
 		<Heading id="entries">The entries</Heading>
