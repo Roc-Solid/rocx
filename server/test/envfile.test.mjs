@@ -37,7 +37,8 @@ function place(files) {
  * tests use); resolves when it listens, or with its exit code and log when it stops first. */
 function start(cwd, { flags = [], env = {} } = {}) {
 	const inherited = { ...process.env };
-	for (const name of ["ENVFILE_ONE", "ENVFILE_TWO", "ENVFILE_QUOTED", "ENVFILE_KEPT", "ENVFILE_NAMED", "ROCX_ENV_FILE"]) delete inherited[name];
+	// DATABASE_URL too: the app is SQLite's, which a Postgres URL (just test's, CI's) would stop.
+	for (const name of ["ENVFILE_ONE", "ENVFILE_TWO", "ENVFILE_QUOTED", "ENVFILE_KEPT", "ENVFILE_NAMED", "ROCX_ENV_FILE", "DATABASE_URL"]) delete inherited[name];
 	const child = spawn(app, ["--port", "0", ...flags], { cwd, stdio: ["ignore", "ignore", "pipe"], env: { ...inherited, ROCX_LOG: "json", ...env } });
 	let logged = "";
 	return new Promise((resolve) => {
