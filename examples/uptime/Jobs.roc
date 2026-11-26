@@ -57,7 +57,7 @@ sweep! = |{}| {
 		|{}| {
 			ids = Store.claim_due!({})?
 			for id in ids {
-				_ = Job.enqueue_keyed!(Jobs.check, { monitor: id }, { when: Now, key: "check:${id.to_str()}" })?
+				_ = Job.enqueue_keyed!(Jobs.check, { monitor: id }, { key: "check:${id.to_str()}" })?
 			}
 			Ok({})
 		},
@@ -76,7 +76,7 @@ alert! : I64, [Opened, Closed] => Try({}, [DbErr(Str), BadRow(Str), JobErr(Str)]
 alert! = |incident, what| {
 	kind = Alerts.kind_name(what)
 	for subscriber in Store.subscribers!({})? {
-		_ = Job.enqueue_keyed!(Jobs.alert, { incident, kind, subscriber: subscriber.id }, { when: Now, key: "alert:${incident.to_str()}:${kind}:${subscriber.id.to_str()}" })?
+		_ = Job.enqueue_keyed!(Jobs.alert, { incident, kind, subscriber: subscriber.id }, { key: "alert:${incident.to_str()}:${kind}:${subscriber.id.to_str()}" })?
 	}
 	Ok({})
 }

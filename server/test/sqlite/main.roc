@@ -374,10 +374,10 @@ route! = |request, context| {
 			run = param(query, "run")
 			outcome = Db.transaction!(
 				|{}| {
-					Job.enqueue!(note_job, { said: "${run}-kept" }, { when: Now })?
+					Job.enqueue!(note_job, { said: "${run}-kept" }, {})?
 					dropped = Db.transaction!(
 						|{}| {
-							Job.enqueue!(note_job, { said: "${run}-dropped" }, { when: Now })?
+							Job.enqueue!(note_job, { said: "${run}-dropped" }, {})?
 							Err(JobErr("dropped on purpose"))
 						},
 					)
@@ -508,14 +508,14 @@ route! = |request, context| {
 		}
 
 		# ---- Jobs ----
-		("POST", "/jobs/note") => enqueued(Job.enqueue!(note_job, { said: param(query, "said") }, { when: Now }))
+		("POST", "/jobs/note") => enqueued(Job.enqueue!(note_job, { said: param(query, "said") }, {}))
 		# Queued in a transaction: there only if it commits.
 		("POST", "/jobs/note-tx") => {
 			failing = param(query, "fail") == "yes"
 			said = param(query, "said")
 			outcome = Db.transaction!(
 				|{}| {
-					Job.enqueue!(note_job, { said: said }, { when: Now })?
+					Job.enqueue!(note_job, { said: said }, {})?
 					if (failing) Err(JobErr("on purpose")) else Ok({})
 				},
 			)
@@ -525,8 +525,8 @@ route! = |request, context| {
 				Err(DbErr(why)) => text(500, why)
 			}
 		}
-		("POST", "/jobs/flaky") => enqueued(Job.enqueue!(flaky_job, { name: param(query, "name"), fails: I64.from_str(param(query, "fails")) ?? 0 }, { when: Now }))
-		("POST", "/jobs/slow") => enqueued(Job.enqueue!(slow_job, { said: param(query, "said") }, { when: Now }))
+		("POST", "/jobs/flaky") => enqueued(Job.enqueue!(flaky_job, { name: param(query, "name"), fails: I64.from_str(param(query, "fails")) ?? 0 }, {}))
+		("POST", "/jobs/slow") => enqueued(Job.enqueue!(slow_job, { said: param(query, "said") }, {}))
 		# Keyed, `in_ms` from now: `Queued`, or `Exists` while one with the key is pending.
 		("POST", "/jobs/keyed") => {
 			due = Time.now_millis!({}) + number(query, "in_ms")

@@ -317,7 +317,7 @@ added = Db.run!("insert into notes (body) values ($1)", [Text(body)])     # the 
 
 Db.transaction!(|{}| {
     _ = Db.run!("insert into orders …", […])?
-    Job.enqueue!(receipt, { order }, { when: Now })?      # queued only if this commits
+    Job.enqueue!(receipt, { order }, {})?                 # queued only if this commits
     Ok(order)
 })
 ```

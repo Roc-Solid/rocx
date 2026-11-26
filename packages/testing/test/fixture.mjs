@@ -178,7 +178,7 @@ import ../../../Jobs
 ## POST /api/welcome: a welcome queued for \`to\` (a job: needs the database).
 post! : { request : Server.Request, params : {}, context : c, body : { to : Str } } => Try({}, Endpoint.Refusal)
 post! = |{ body, .. }|
-	match Job.enqueue!(Jobs.welcome, { to: body.to }, { when: Now }) {
+	match Job.enqueue!(Jobs.welcome, { to: body.to }, {}) {
 		Ok({}) => Ok({})
 		Err(JobErr(why)) => Err(Status(503, why))
 	}

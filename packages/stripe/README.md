@@ -264,7 +264,7 @@ on_event! = |event|
         Session(session) if session.mode == Payment and session.paid and event.type == "checkout.session.completed" =>
             Orders.fulfil!(event.user, session).map_err(|DbErr(why)| why)
         Invoice(invoice) if event.type == "invoice.payment_failed" =>
-            Job.enqueue!(Jobs.card_failed, { user: event.user, pay_at: invoice.hosted_url }, { when: Now }).map_err(|JobErr(why)| why)
+            Job.enqueue!(Jobs.card_failed, { user: event.user, pay_at: invoice.hosted_url }, {}).map_err(|JobErr(why)| why)
         _ => Ok({})
     }
 ```

@@ -79,7 +79,7 @@ program = {
 			"/asked-in-init" => text(200, context.asked)
 			# A job, which notes what it saw.
 			"/job" =>
-				match Job.enqueue!(noting, { key: "job" }, { when: Now }) {
+				match Job.enqueue!(noting, { key: "job" }, {}) {
 					Ok({}) => text(202, "queued")
 					Err(JobErr(why)) => text(500, why)
 				}

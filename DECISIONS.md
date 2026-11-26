@@ -379,6 +379,12 @@ pinned Roc has no default fields in record types, and a plain field would have c
 **Why.** Oban's `unique` and `cancel_job`: every app with per-record work wants one job per record.
 **Reversible:** the migration is forward-only, but nothing depended on the old constraint.
 
+**Later (2026-11-26):** the options have defaults, as a plugin's do (D-033): `Job.Opts := { when :
+When ?? Now }` and `Job.KeyedOpts := { key : Str, when : When ?? Now }`. `Job.enqueue!(kind,
+input, {})` queues a job now, `enqueue_keyed!` says only its `key`, and a call that says
+`{ when: Now }` compiles as it did. The keyed form keeps its own name, since a key changes what the
+call answers (`Queued` or `Exists`).
+
 ## D-010 Jobs: listing and control
 
 **Context.** Nothing listed jobs or acted on them. The jobs page (D-011) is built on this, and an app

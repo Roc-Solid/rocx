@@ -23,9 +23,9 @@ import "migrations/0001_jobs_sqlite.sql" as lite_jobs_table : Str
 ## # Once, within 20 minutes: a reminder sent twice is worse than one missed.
 ## reminder = Job.define_with("reminder", { attempts: 1, timeout_ms: 20 * 60_000 }, |_context, { member }| …)
 ##
-## Job.enqueue!(welcome, { member: 7 }, { when: Now })
+## Job.enqueue!(welcome, { member: 7 }, {})                                             # now
 ## Job.enqueue!(welcome, { member: 7 }, { when: At(Time.now_millis!({}) + 60_000) })    # a minute from now
-## Job.enqueue_keyed!(reminder, { member: "ada" }, { when: Now, key: "reminder:ada" })   # Queued, or Exists
+## Job.enqueue_keyed!(reminder, { member: "ada" }, { key: "reminder:ada" })             # Queued, or Exists
 ## Job.cancel!("reminder:ada")
 ## ```
 ##
@@ -167,12 +167,14 @@ Job := [].{
 	## milliseconds since the epoch (`Time.now_millis!`), one in the past being due now.
 	When : [Now, At(U64)]
 
-	## How a job is queued: `when` it runs. A record, so that more can be said later without every
-	## call changing (Roc has no optional arguments, so each call says every field).
-	Opts : { when : When }
+	## How a job is queued: `when` it runs, `Now` unless it says. A record whose fields have
+	## defaults, so a call says only what it changes (`{}` for none), and more can be said later
+	## without any call changing.
+	Opts := { when : When ?? Now }
 
-	## How a job is queued with a key (`enqueue_keyed!`): `when` it runs, and its `key`.
-	KeyedOpts : { when : When, key : Str }
+	## How a job is queued with a key (`enqueue_keyed!`): its `key`, which every call says, and `when`
+	## it runs, `Now` unless it says.
+	KeyedOpts := { key : Str, when : When ?? Now }
 
 	## Queues a job of `kind` with `input`, to run when `opts` says. The workers hear of it
 	## (`rocx_jobs` is notified) once it is there for them: now, or when its transaction commits. A `JobErr`

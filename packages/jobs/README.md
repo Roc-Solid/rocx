@@ -43,12 +43,18 @@ Jobs := [].{
 ```
 
 ```roc
-Job.enqueue!(Jobs.welcome, { member: 7 }, { when: Now })
+Job.enqueue!(Jobs.welcome, { member: 7 }, {})                                            # now
 Job.enqueue!(Jobs.welcome, { member: 7 }, { when: At(Time.now_millis!({}) + 60_000) })  # a minute from now
-Job.enqueue_keyed!(Jobs.reminder, { member: "ada" }, { when: Now, key: "reminder:ada" }) # Ok(Queued), or Ok(Exists)
+Job.enqueue_keyed!(Jobs.reminder, { member: "ada" }, { key: "reminder:ada" })           # Ok(Queued), or Ok(Exists)
 Job.cancel!("reminder:ada")                               # cancels the queued jobs with that key: how many
 Job.move!("reminder:ada", At(due))                        # the queued one with that key runs then instead
 ```
+
+The third argument says how a job is queued, a record whose fields have defaults:
+`Job.Opts := { when : When ?? Now }`, and for a keyed job `Job.KeyedOpts := { key : Str, when :
+When ?? Now }`. `{}` queues a job to run as soon as a worker is free; `{ when: At(ms) }` not before
+that moment (milliseconds since the epoch; one past is due now). A call that says `{ when: Now }`
+says the default.
 
 ## The plugin
 
@@ -138,7 +144,7 @@ paused = Db.transaction!(|{}| {
     if changed == 0 {
         Err(NotFound)
     } else {
-        Job.enqueue!(Jobs.paused, { monitor: id }, { when: Now })?
+        Job.enqueue!(Jobs.paused, { monitor: id }, {})?
         Ok({})
     }
 })

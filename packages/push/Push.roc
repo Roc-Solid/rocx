@@ -363,7 +363,7 @@ queue_each! = |ids, data, options| {
 	var $count = 0
 	for id in ids {
 		input = { subscription: id, data, ttl: checked.ttl, urgency: urgency_text(checked.urgency), topic: checked.topic, queued_ms: now, later: 0 }
-		match Job.enqueue!(Push.deliver, input, { when: Now }) {
+		match Job.enqueue!(Push.deliver, input, {}) {
 			Ok({}) => {}
 			Err(JobErr(why)) => return Err(why)
 		}

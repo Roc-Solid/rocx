@@ -55,7 +55,7 @@ Sales := [].{
 				_ = Db.run!("insert into payments (sale, amount, method) values ($1, $2, $3)", [Int(sale), Int(total), Text("card")])?
 				_ = Db.run!("insert into ledger (sale, account, amount, at) values ($1, $2, $3, $4)", [Int(sale), Text("revenue"), Int(total), Int(at)])?
 				if job {
-					Job.enqueue!(Sales.receipt, { sale: sale }, { when: Now })?
+					Job.enqueue!(Sales.receipt, { sale: sale }, {})?
 				}
 				Ok({})
 			},

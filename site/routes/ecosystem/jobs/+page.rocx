@@ -94,11 +94,12 @@ view! = |_|
 			<Heading id="queue">Queueing one</Heading>
 			<Code title={"${Sources.platform_enqueue.file}, in part"} source={Sources.platform_enqueue.rocx} numbers={Bool.False} />
 			<p>
-				<code>{"Job.enqueue!(kind, input, { when })"}</code> queues a job to run <code>Now</code>, as soon as a
-				worker is free, or <code>At(ms)</code>: not before that moment, in milliseconds since the epoch, as
-				<code>Time.now_millis!</code> tells it (a moment in the past means now). The input is written as JSON,
-				and read back as the kind's input type when the job runs. The options are a record, so more can be
-				added later without changing every call.
+				<code>{"Job.enqueue!(kind, input, {})"}</code> queues a job to run as soon as a worker is free.
+				<code>{"{ when: At(ms) }"}</code> queues it not before that moment, in milliseconds since the epoch, as
+				<code>Time.now_millis!</code> tells it (a moment in the past means now); <code>when</code> is
+				<code>Now</code> unless a call says. The input is written as JSON, and read back as the kind's input
+				type when the job runs. The options are a record whose fields have defaults, so a call says only what
+				it changes, and more can be added later without changing any call.
 			</p>
 			<p>
 				Queued inside <code>Db.transaction!</code>, a job is a row in the transaction: it runs only if the
@@ -134,7 +135,8 @@ view! = |_|
 					tried five times, with no limit.
 				</li>
 				<li>
-					<strong>Keys.</strong> <code>{"Job.enqueue_keyed!(kind, input, { when, key })"}</code> answers
+					<strong>Keys.</strong> <code>{"Job.enqueue_keyed!(kind, input, { key })"}</code> (and
+					<code>when</code>, as for <code>enqueue!</code>) answers
 					<code>Queued</code>, or <code>Exists</code> when a job with that key is already queued or running, and
 					then queues nothing. Once that job is done, failed or canceled, the key is free again. A key names
 					what the job is for (<code>reminder:ada</code>), so you can find the job by it:

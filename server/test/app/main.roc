@@ -572,10 +572,10 @@ route! = |request, context| {
 		("POST", "/nested/job") => {
 			outcome = Db.transaction!(
 				|{}| {
-					Job.enqueue!(note_job, { run, said: "${run}-kept" }, { when: Now })?
+					Job.enqueue!(note_job, { run, said: "${run}-kept" }, {})?
 					dropped = Db.transaction!(
 						|{}| {
-							Job.enqueue!(note_job, { run, said: "${run}-dropped" }, { when: Now })?
+							Job.enqueue!(note_job, { run, said: "${run}-dropped" }, {})?
 							Err(JobErr("dropped on purpose"))
 						},
 					)
@@ -608,7 +608,7 @@ route! = |request, context| {
 
 		# ---- Jobs ----
 		("POST", "/jobs/note") =>
-			match Job.enqueue!(note_job, { run, said: Server.text_of(request) }, { when: Now }) {
+			match Job.enqueue!(note_job, { run, said: Server.text_of(request) }, {}) {
 				Ok({}) => text(202, "queued")
 				Err(JobErr(why)) => text(500, why)
 			}
@@ -620,12 +620,13 @@ route! = |request, context| {
 		("POST", "/jobs/flaky") => {
 			fails : I64
 			fails = I64.from_str(param(request.query, "fails")) ?? 0
-			match Job.enqueue!(flaky_job, { run, fails }, { when: Now }) {
+			match Job.enqueue!(flaky_job, { run, fails }, {}) {
 				Ok({}) => text(202, "queued")
 				Err(JobErr(why)) => text(500, why)
 			}
 		}
 		("POST", "/jobs/crash") =>
+			# `{ when: Now }` says what `{}` leaves to the default (the other calls here).
 			match Job.enqueue!(crash_job, { run: run }, { when: Now }) {
 				Ok({}) => text(202, "queued")
 				Err(JobErr(why)) => text(500, why)
@@ -636,7 +637,7 @@ route! = |request, context| {
 			done = Db.transaction!(
 				|{}| {
 					_ = Db.run!("insert into notes (body) values ($1)", [Text("with a job ${run}")])?
-					Job.enqueue!(note_job, { run, said: "committed" }, { when: Now })?
+					Job.enqueue!(note_job, { run, said: "committed" }, {})?
 					Ok("queued")
 				},
 			)
@@ -662,7 +663,7 @@ route! = |request, context| {
 						aborted = Db.run!("insert into nowhere values (1)", [])
 						_ = aborted
 					}
-					Job.enqueue!(note_job, { run, said: "rolled back" }, { when: Now })?
+					Job.enqueue!(note_job, { run, said: "rolled back" }, {})?
 					if how == "" or how == "refused" Err(Refused) else Ok("?")
 				},
 			)
@@ -703,12 +704,12 @@ route! = |request, context| {
 				Err(DbErr(why)) => text(500, why)
 			}
 		("POST", "/jobs/twice") =>
-			match Job.enqueue!(twice_job, { run: run }, { when: Now }) {
+			match Job.enqueue!(twice_job, { run: run }, {}) {
 				Ok({}) => text(202, "queued")
 				Err(JobErr(why)) => text(500, why)
 			}
 		("POST", "/jobs/slow") =>
-			match Job.enqueue!(slow_job, { run, on: param(request.query, "on"), url: param(request.query, "url") }, { when: Now }) {
+			match Job.enqueue!(slow_job, { run, on: param(request.query, "on"), url: param(request.query, "url") }, {}) {
 				Ok({}) => text(202, "queued")
 				Err(JobErr(why)) => text(500, why)
 			}
@@ -781,7 +782,7 @@ route! = |request, context| {
 				Err(EmailErr(why)) => text(500, why)
 			}
 		("POST", "/jobs/mail") =>
-			match Job.enqueue!(mail_job, { to: param(request.query, "to"), run }, { when: Now }) {
+			match Job.enqueue!(mail_job, { to: param(request.query, "to"), run }, {}) {
 				Ok({}) => text(202, "queued")
 				Err(JobErr(why)) => text(500, why)
 			}
@@ -1066,7 +1067,7 @@ route! = |request, context| {
 		("GET", "/env/dev") => text(200, if (Env.dev!({})) "dev" else "not dev")
 		("GET", "/env/public-url") => text(200, Env.public_url!({}))
 		("POST", "/jobs/env") =>
-			match Job.enqueue!(env_job, { run, name: param(request.query, "name") }, { when: Now }) {
+			match Job.enqueue!(env_job, { run, name: param(request.query, "name") }, {}) {
 				Ok({}) => text(202, "queued")
 				Err(JobErr(why)) => text(500, why)
 			}

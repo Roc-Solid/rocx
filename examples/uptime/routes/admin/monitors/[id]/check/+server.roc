@@ -12,7 +12,7 @@ post! : { request : Server.Request, params : { id : Str }, context : {}, body : 
 post! = |{ params, .. }|
 	match I64.from_str(params.id) {
 		Ok(id) =>
-			match Job.enqueue_keyed!(Jobs.check, { monitor: id }, { when: Now, key: "check:${id.to_str()}" }) {
+			match Job.enqueue_keyed!(Jobs.check, { monitor: id }, { key: "check:${id.to_str()}" }) {
 				Ok(_) => Ok("A check is on its way.")
 				Err(JobErr(why)) => Err(Status(503, why))
 			}
