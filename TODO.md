@@ -12,6 +12,16 @@ When an item lands, delete its line here in the same commit.
 
 ## Waiting on a decision by the user
 
+- **One Rust engine for every target** (`spike/one-engine/REPORT.md`, 2026-11-26): the phone's engine
+  for the server (signals.rs replaced) and then the browser (runtime.js retired, hydration by the
+  engine, JavaScript kept to the DOM, hydrating and browser APIs). Feasible; in five phases, the first
+  (one core for the server and the phone) changing nothing in the browser. Its open questions wait
+  on the user.
+- **The page's wasm and runtime aren't cached** (found in that investigation): only files named by
+  their content are served `immutable` (the stylesheet), and `app.wasm`, `runtime.js` and
+  `start.js` have fixed names and no `ETag` or `Last-Modified`, so every visit downloads them again.
+  Named by their content as the stylesheet is, they would be kept for a year.
+
 - **packages/ai's next users (D-085).** examples/notes' assistant on its MCP tools (`Ai.run!` over
   `Agents.server.tools`, one tool for both), and Plate's meal from words (`Ai.extract!`).
 - **iOS and Android apps (D-063, Proposed).** Background work; the web stays primary. The Android
