@@ -15,11 +15,17 @@ pub enum Kind {
     Fragment,
 }
 
+/// A node, linked to its parent, its first and last child and its siblings: a child is put in,
+/// taken out or moved in constant time, as the DOM's are, however many its parent has (a table of
+/// 10,000 rows).
 #[derive(Debug)]
 pub struct Node {
     pub kind: Kind,
     pub parent: Option<NodeId>,
-    pub children: Vec<NodeId>,
+    first: Option<NodeId>,
+    last: Option<NodeId>,
+    prev: Option<NodeId>,
+    next: Option<NodeId>,
 }
 
 /// The nodes between two comments: what a markup or list hole, a <Show>, a <For>, a row or a
@@ -64,7 +70,7 @@ impl Dom {
                 Kind::Fragment => self.op(4, &[id], &[]),
             }
         }
-        self.nodes.push(Node { kind, parent: None, children: Vec::new() });
+        self.nodes.push(Node { kind, parent: None, first: None, last: None, prev: None, next: None });
         self.nodes.len() - 1
     }
 
@@ -120,12 +126,33 @@ impl Dom {
 
     /// The same, said to no one: the node is put somewhere else at once (`insert_before`).
     fn unlink(&mut self, node: NodeId) {
-        if let Some(parent) = self.nodes[node].parent.take() {
-            let children = &mut self.nodes[parent].children;
-            if let Some(at) = children.iter().position(|&child| child == node) {
-                children.remove(at);
-            }
+        let Some(parent) = self.nodes[node].parent.take() else { return };
+        let (prev, next) = (self.nodes[node].prev.take(), self.nodes[node].next.take());
+        match prev {
+            Some(prev) => self.nodes[prev].next = next,
+            None => self.nodes[parent].first = next,
         }
+        match next {
+            Some(next) => self.nodes[next].prev = prev,
+            None => self.nodes[parent].last = prev,
+        }
+    }
+
+    /// A node's children, first to last.
+    pub fn children(&self, node: NodeId) -> Children<'_> {
+        Children { dom: self, at: self.nodes[node].first }
+    }
+
+    pub fn first_child(&self, node: NodeId) -> Option<NodeId> {
+        self.nodes[node].first
+    }
+
+    pub fn last_child(&self, node: NodeId) -> Option<NodeId> {
+        self.nodes[node].last
+    }
+
+    pub fn previous_sibling(&self, node: NodeId) -> Option<NodeId> {
+        self.nodes[node].prev
     }
 
     /// Puts comments around `node`, where it is: a range that holds it (a D-070 hole whose text
@@ -144,21 +171,31 @@ impl Dom {
     /// there, and is left empty.
     pub fn insert_before(&mut self, parent: NodeId, node: NodeId, before: Option<NodeId>) {
         if self.is_fragment(node) {
-            let moved = std::mem::take(&mut self.nodes[node].children);
-            for child in moved {
-                self.nodes[child].parent = None;
+            while let Some(child) = self.nodes[node].first {
+                self.unlink(child);
                 self.insert_before(parent, child, before);
             }
             return;
         }
         self.unlink(node);
+        // A `before` that isn't `parent`'s child puts the node last, as it always has here.
+        let before = before.filter(|&before| self.nodes[before].parent == Some(parent));
         self.op(5, &[parent as u32, node as u32, before.map_or(u32::MAX, |before| before as u32)], &[]);
-        let at = match before {
-            Some(before) => self.nodes[parent].children.iter().position(|&child| child == before).unwrap_or(self.nodes[parent].children.len()),
-            None => self.nodes[parent].children.len(),
+        let prev = match before {
+            Some(before) => self.nodes[before].prev,
+            None => self.nodes[parent].last,
         };
-        self.nodes[parent].children.insert(at, node);
         self.nodes[node].parent = Some(parent);
+        self.nodes[node].prev = prev;
+        self.nodes[node].next = before;
+        match prev {
+            Some(prev) => self.nodes[prev].next = Some(node),
+            None => self.nodes[parent].first = Some(node),
+        }
+        match before {
+            Some(before) => self.nodes[before].prev = Some(node),
+            None => self.nodes[parent].last = Some(node),
+        }
     }
 
     pub fn append(&mut self, parent: NodeId, node: NodeId) {
@@ -166,10 +203,7 @@ impl Dom {
     }
 
     pub fn next_sibling(&self, node: NodeId) -> Option<NodeId> {
-        let parent = self.nodes[node].parent?;
-        let children = &self.nodes[parent].children;
-        let at = children.iter().position(|&child| child == node)?;
-        children.get(at + 1).copied()
+        self.nodes[node].next
     }
 
     /// A range of its own, in a fragment (`makeRange`): the fragment, to put it where it goes.
@@ -216,6 +250,19 @@ impl Dom {
             self.append(fragment, node);
         }
         fragment
+    }
+
+    /// A range and what it shows, moved before `before` in `parent`, node by node.
+    pub fn move_range(&mut self, range: Range, parent: NodeId, before: Option<NodeId>) {
+        let mut at = Some(range.start);
+        while let Some(node) = at {
+            let next = self.nodes[node].next;
+            self.insert_before(parent, node, before);
+            if node == range.end {
+                break;
+            }
+            at = next;
+        }
     }
 
     /// A range and what it shows, taken off the page (`removeRange`).
@@ -311,5 +358,21 @@ impl Dom {
             at = self.nodes[node].parent;
         }
         false
+    }
+}
+
+/// A node's children, first to last (`Dom::children`).
+pub struct Children<'a> {
+    dom: &'a Dom,
+    at: Option<NodeId>,
+}
+
+impl Iterator for Children<'_> {
+    type Item = NodeId;
+
+    fn next(&mut self) -> Option<NodeId> {
+        let node = self.at?;
+        self.at = self.dom.nodes[node].next;
+        Some(node)
     }
 }

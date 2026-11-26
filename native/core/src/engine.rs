@@ -1648,6 +1648,7 @@ fn settle_for(id: u64, entries: Vec<Value>) {
         return;
     };
     let mut order = Vec::new();
+    let mut seen: HashSet<String> = HashSet::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
         let key = entry.get("k").and_then(Value::as_str).unwrap_or("").to_string();
         let runner = entry.get("r").and_then(Value::as_u64).unwrap_or(0);
@@ -1686,15 +1687,15 @@ fn settle_for(id: u64, entries: Vec<Value>) {
         if let Some(comp) = fresh {
             run(comp);
         }
-        if !order.contains(&key) {
+        if seen.insert(key.clone()) {
             order.push(key);
         }
     }
     // Rows whose key is gone, and their items.
     let gone = with(|engine| {
         let list = engine.lists.get_mut(&list)?;
-        let gone: Vec<String> = list.rows.keys().filter(|key| !order.contains(key)).cloned().collect();
-        let items: Vec<String> = list.items.keys().filter(|key| !order.contains(key)).cloned().collect();
+        let gone: Vec<String> = list.rows.keys().filter(|key| !seen.contains(*key)).cloned().collect();
+        let items: Vec<String> = list.items.keys().filter(|key| !seen.contains(*key)).cloned().collect();
         for key in items {
             if let Some(item) = list.items.remove(&key) {
                 roc::release(item);
@@ -1705,11 +1706,8 @@ fn settle_for(id: u64, entries: Vec<Value>) {
     for key in gone.unwrap_or_default() {
         drop_row(list, &key);
     }
-    with(|engine| {
-        if let Some(list) = engine.lists.get_mut(&list) {
-            list.order = order.clone();
-        }
-    });
+    // The order the rows were in, for the moves below.
+    let was = with(|engine| engine.lists.get_mut(&list).map(|list| std::mem::replace(&mut list.order, order.clone()))).unwrap_or_default();
     // The fallback while there are no rows.
     let (part_now, fallback_range) = with(|engine| engine.comp(id).map(|comp| (comp.part, comp.fallback_range)).unwrap_or_default());
     if !order.is_empty() {
@@ -1742,24 +1740,62 @@ fn settle_for(id: u64, entries: Vec<Value>) {
             }
         });
     }
-    // Rows in order: one already where it goes stays; the others move (or arrive) there.
+    // Rows in order, as runtime.js's `steady` puts them: the longest run of rows already in order
+    // stays where it is, and the others move (or arrive) around it, last to first, each before
+    // the row after it. A swap moves two rows.
     with(|engine| {
         let Some(parent) = engine.dom.nodes[range.start].parent else { return };
-        let mut at = engine.dom.next_sibling(range.start);
-        for key in &order {
+        let Some(rows) = engine.lists.get(&list).map(|list| &list.rows) else { return };
+        let position: HashMap<&str, usize> = was.iter().enumerate().map(|(at, key)| (key.as_str(), at)).collect();
+        let places: Vec<Option<usize>> = order
+            .iter()
+            .map(|key| match rows.get(key) {
+                Some(row) if row.fresh.is_none() => position.get(key.as_str()).copied(),
+                _ => None,
+            })
+            .collect();
+        let stays = steady(&places);
+        let mut before = range.end;
+        for (at, key) in order.iter().enumerate().rev() {
             let Some(row) = engine.lists.get_mut(&list).and_then(|list| list.rows.get_mut(key)) else { continue };
             let (row_range, fresh) = (row.range, row.fresh.take());
-            if at == Some(row_range.start) {
-                at = engine.dom.next_sibling(row_range.end);
-                continue;
+            if !stays[at] {
+                match fresh {
+                    Some(fragment) => engine.dom.insert_before(parent, fragment, Some(before)),
+                    None => engine.dom.move_range(row_range, parent, Some(before)),
+                }
             }
-            let moving = match fresh {
-                Some(fragment) => fragment,
-                None => engine.dom.collect_range(row_range),
-            };
-            engine.dom.insert_before(parent, moving, at);
+            before = row_range.start;
         }
     });
+}
+
+/// Which of the rows, by where each was (`None`: new), stay where they are: a longest run of them
+/// in the order they were in (a longest increasing subsequence, in n log n).
+fn steady(places: &[Option<usize>]) -> Vec<bool> {
+    let mut stays = vec![false; places.len()];
+    // The run of each length so far whose last place is least, by its last row; each row's row
+    // before it in its run.
+    let mut ends: Vec<usize> = Vec::new();
+    let mut before = vec![usize::MAX; places.len()];
+    for (at, place) in places.iter().enumerate() {
+        let Some(place) = *place else { continue };
+        let length = ends.partition_point(|&end| places[end].is_some_and(|end| end < place));
+        if length > 0 {
+            before[at] = ends[length - 1];
+        }
+        if length == ends.len() {
+            ends.push(at);
+        } else {
+            ends[length] = at;
+        }
+    }
+    let mut at = ends.last().copied();
+    while let Some(row) = at {
+        stays[row] = true;
+        at = (before[row] != usize::MAX).then_some(before[row]);
+    }
+    stays
 }
 
 fn drop_row(list: u64, key: &str) {
@@ -2426,9 +2462,9 @@ fn submitted(form: NodeId) {
                     fields.push(format!("{}={}", encode(name), encode(&value)));
                 }
             }
-            for child in engine.dom.nodes[node].children.iter().rev() {
-                stack.push(*child);
-            }
+            let at = stack.len();
+            stack.extend(engine.dom.children(node));
+            stack[at..].reverse();
         }
         Some((action, fields.join("&")))
     });

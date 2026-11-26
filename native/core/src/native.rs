@@ -118,7 +118,7 @@ fn stylesheet(engine: &mut Engine) -> (String, bool) {
         let dom = &engine.dom;
         match dom.tag(node) {
             Some("style") => {
-                for &child in &dom.nodes[node].children {
+                for child in dom.children(node) {
                     out.push_str(dom.text_of(child));
                     out.push('\n');
                 }
@@ -139,9 +139,9 @@ fn stylesheet(engine: &mut Engine) -> (String, bool) {
             }
             _ => {}
         }
-        for &child in engine.dom.nodes[node].children.iter().rev() {
-            stack.push(child);
-        }
+        let at = stack.len();
+        stack.extend(engine.dom.children(node));
+        stack[at..].reverse();
     }
     (out, loading)
 }
@@ -283,7 +283,7 @@ impl Projection<'_> {
     }
 
     fn svg_children(&mut self, node: NodeId, matrix: svg::Matrix, style: &svg::Style, styles: &css::Computed, drawing: &mut svg::Drawing) {
-        let children = self.dom().nodes[node].children.clone();
+        let children: Vec<NodeId> = self.dom().children(node).collect();
         for child in children {
             let Some(tag) = self.dom().tag(child).map(str::to_string) else { continue };
             if matches!(tag.as_str(), "title" | "desc" | "metadata" | "style") {
@@ -352,7 +352,7 @@ impl Projection<'_> {
     fn flow(&mut self, node: NodeId, styles: &css::Computed) -> Vec<u64> {
         let mut out = Vec::new();
         let mut run: Vec<NodeId> = Vec::new();
-        let children = self.dom().nodes[node].children.clone();
+        let children: Vec<NodeId> = self.dom().children(node).collect();
         for child in children {
             let inline = match &self.dom().nodes[child].kind {
                 Kind::Text(_) => true,
@@ -391,7 +391,7 @@ impl Projection<'_> {
 
     /// Whether all an element holds is inline (text and inline elements, all the way down).
     fn inline_only(&self, node: NodeId) -> bool {
-        self.dom().nodes[node].children.iter().all(|&child| match &self.dom().nodes[child].kind {
+        self.dom().children(node).all(|child| match &self.dom().nodes[child].kind {
             Kind::Text(_) | Kind::Comment | Kind::Fragment => true,
             Kind::Element { tag, .. } => HIDDEN.contains(&tag.as_str()) || (INLINE.contains(&tag.as_str()) && self.inline_only(child)),
         })
@@ -400,7 +400,7 @@ impl Projection<'_> {
     /// Whether an element holds any text or inline element (one with nothing in it but a hole's
     /// markers, an emptied list, stays a box).
     fn has_inline(&self, node: NodeId) -> bool {
-        self.dom().nodes[node].children.iter().any(|&child| matches!(self.dom().nodes[child].kind, Kind::Text(_) | Kind::Element { .. }))
+        self.dom().children(node).any(|child| matches!(self.dom().nodes[child].kind, Kind::Text(_) | Kind::Element { .. }))
     }
 
     /// The text inline content says (`textContent`, a `<br>` a line break).
@@ -409,7 +409,7 @@ impl Projection<'_> {
             Kind::Text(text) => text.clone(),
             Kind::Element { tag, .. } if tag == "br" => "\u{2028}".into(),
             Kind::Element { tag, .. } if HIDDEN.contains(&tag.as_str()) => String::new(),
-            _ => self.dom().nodes[node].children.iter().map(|&child| self.inline_text(child)).collect(),
+            _ => self.dom().children(node).map(|child| self.inline_text(child)).collect(),
         }
     }
 }

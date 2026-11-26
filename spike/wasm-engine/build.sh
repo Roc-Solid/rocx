@@ -5,6 +5,7 @@
 #
 #   spike/wasm-engine/build.sh [out]     (default /tmp/wasm-engine: out/today, out/engine)
 #
+# NAMES=1 links the engine's wasm with --debug: its functions named, for profile.mjs.
 # The engine's page is linked with the web platform's exports swapped for the engine's for the
 # length of its build (web/platform/main.roc and its host.wasm are put back after, as they were).
 set -euo pipefail
@@ -30,7 +31,7 @@ grep -q '"rocx_start"' "$platform"
 
 mkdir -p "$engine/rocx"
 cp "$today/index.html" "$engine/index.html"
-.tools/roc-active build --target=wasm32 --opt=size --specialize=yes --output="$engine/rocx/app.wasm" "$client" >/dev/null
+.tools/roc-active build --target=wasm32 --opt=size --specialize=yes ${NAMES:+--debug} --output="$engine/rocx/app.wasm" "$client" >/dev/null
 cp spike/wasm-engine/engine.js "$engine/rocx/engine.js"
 cat > "$engine/rocx/start.js" <<'EOF'
 // spike/wasm-engine: the page started by the Rust engine (engine.js), rendered afresh.
