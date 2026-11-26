@@ -12,7 +12,7 @@ post! : { request : Server.Request, params : {}, context : Middlewares.Context, 
 post! = |{ request, .. }|
 	match TaskForm.new_list.parse_body(Server.text_of(request)) {
 		Ok(name) => {
-			id = Store.add_list!(name).map_err(Store.refusal)?
+			id = Store.add_list!(name).map_err!(Store.refusal!)?
 			Err(Answer(Server.redirect(Paths.lists_id({ id: id }))))
 		}
 		Err(issues) => Err(Issues.refusal(issues))

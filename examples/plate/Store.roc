@@ -1,5 +1,6 @@
 import pf.Db
 import pf.Endpoint
+import pf.Log
 import pf.Time
 import charts.Format
 import forms.Date
@@ -18,13 +19,16 @@ Store := [].{
 	## Why the store couldn't do something.
 	Problem : [NotFound, DbErr(Str), BadRow(Str)]
 
-	## An endpoint's refusal for a problem: a 404, or a 500 that says why (which the middleware
-	## logs).
-	refusal : Problem -> Endpoint.Refusal
-	refusal = |problem|
+	## An endpoint's refusal for a problem: a 404, or a 500. Why the database failed goes on the
+	## log, never to the client: its text can name the app's tables, columns and values.
+	refusal! : Problem => Endpoint.Refusal
+	refusal! = |problem|
 		match problem {
 			NotFound => NotFound
-			DbErr(why) | BadRow(why) => Status(500, "The database failed: ${why}")
+			DbErr(why) | BadRow(why) => {
+				Log.error!("plate: the database failed", { error: why })
+				Status(500, "Something went wrong on our side. Try again in a minute.")
+			}
 		}
 
 	# ---- Days ----

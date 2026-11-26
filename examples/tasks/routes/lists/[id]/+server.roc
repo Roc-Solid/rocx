@@ -11,10 +11,10 @@ import ../../../TaskForm
 ## after every change it sends.
 get! : { request : Server.Request, params : { id : Str }, context : Middlewares.Context } => Try(Tasks.Sheet, Endpoint.Refusal)
 get! = |{ params, context, .. }| {
-	list = Store.list!(params.id).map_err(Store.refusal)?
-	tasks = Store.tasks!(params.id).map_err(Store.refusal)?
-	people = Store.people!({}).map_err(Store.refusal)?
-	today = Store.today!({}).map_err(Store.refusal)?
+	list = Store.list!(params.id).map_err!(Store.refusal!)?
+	tasks = Store.tasks!(params.id).map_err!(Store.refusal!)?
+	people = Store.people!({}).map_err!(Store.refusal!)?
+	today = Store.today!({}).map_err!(Store.refusal!)?
 	Ok({ id: list.id, name: list.name, tasks, people, me: context.me, today })
 }
 
@@ -29,11 +29,11 @@ post! = |{ request, params, .. }|
 			# Who it is for is checked here, against the team in the database: a form can't know.
 			known =
 				match task.assignee {
-					Ok(person) => Store.is_person!(person).map_err(Store.refusal)?
+					Ok(person) => Store.is_person!(person).map_err!(Store.refusal!)?
 					Err(Missing) => Bool.True
 				}
 			if known {
-				Store.add!(params.id, task).map_err(Store.refusal)
+				Store.add!(params.id, task).map_err!(Store.refusal!)
 			} else {
 				Err(Issues.refusal([{ field: "assignee", code: Custom("unknown", "Choose someone on the team"), message: "Choose someone on the team" }]))
 			}

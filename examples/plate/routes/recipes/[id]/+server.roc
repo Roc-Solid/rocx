@@ -10,9 +10,9 @@ import ../../../Store
 ## foods a search for another ingredient finds (`?q=`; the recipe itself left out).
 get! : { request : Server.Request, params : { id : Str }, context : {} } => Try(Plate.Kitchen, Endpoint.Refusal)
 get! = |{ request, params, .. }| {
-	recipe = Store.recipe!(params.id).map_err(Store.refusal)?
+	recipe = Store.recipe!(params.id).map_err!(Store.refusal!)?
 	query = Query.value(request.query, "q").trim()
-	hits = Store.search!(query, { limit: 12, except: recipe.food }).map_err(Store.refusal)?
+	hits = Store.search!(query, { limit: 12, except: recipe.food }).map_err!(Store.refusal!)?
 	Ok({ recipe, query, hits })
 }
 
@@ -20,6 +20,6 @@ get! = |{ request, params, .. }| {
 post! : { request : Server.Request, params : { id : Str }, context : {}, body : { name : Str, servings : Str, notes : Str } } => Try({}, Endpoint.Refusal)
 post! = |{ request, params, .. }|
 	match PlateForm.recipe_edit.parse_body(Server.text_of(request)) {
-		Ok(recipe) => Store.save_recipe!(params.id, recipe).map_err(Store.refusal)
+		Ok(recipe) => Store.save_recipe!(params.id, recipe).map_err!(Store.refusal!)
 		Err(issues) => Err(Issues.refusal(issues))
 	}

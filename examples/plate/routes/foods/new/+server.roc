@@ -37,7 +37,7 @@ post! = |{ request, .. }| {
 						extras,
 						portion,
 					})
-						.map_err(Store.refusal)?
+						.map_err!(Store.refusal!)?
 				Err(Answer(Server.redirect(Links.food(id, { day: Query.value(posted, "then_day"), meal: Query.value(posted, "then_meal") }))))
 			}
 		}

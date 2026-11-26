@@ -13,10 +13,10 @@ post! : { request : Server.Request, params : {}, context : Middlewares.Context, 
 post! = |{ request, body, .. }|
 	if body.person.is_empty() {
 		Err(Answer(Auth.sign_out!(request, Server.redirect(Paths.root))))
-	} else if Store.is_person!(body.person).map_err(Store.refusal)? {
+	} else if Store.is_person!(body.person).map_err!(Store.refusal!)? {
 		match Auth.switch!(request, Server.redirect(Paths.root), body.person) {
 			Ok(answer) => Err(Answer(answer))
-			Err(DbErr(why)) => Err(Store.refusal(DbErr(why)))
+			Err(DbErr(why)) => Err(Store.refusal!(DbErr(why)))
 		}
 	} else {
 		Err(BadRequest("Pick someone on the team."))

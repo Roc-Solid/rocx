@@ -7,6 +7,6 @@ import ../Store
 ## reads any day.
 get! : { request : Server.Request, params : {}, context : {} } => Try(Plate.Day, Endpoint.Refusal)
 get! = |_| {
-	today = Store.today!({}).map_err(Store.refusal)?
-	Store.day!(today).map_err(Store.refusal)
+	today = Store.today!({}).map_err!(Store.refusal!)?
+	Store.day!(today).map_err!(Store.refusal!)
 }

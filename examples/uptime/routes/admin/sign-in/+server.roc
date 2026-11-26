@@ -1,5 +1,6 @@
 import pf.Server
 import pf.Endpoint
+import pf.Log
 import ../../../Session
 
 ## POST /admin/sign-in: the admin password. Right, and the browser gets a session's cookie
@@ -14,5 +15,8 @@ post! = |{ body, .. }|
 		Err(Wrong) => Err(Status(401, "That isn't the admin password."))
 		Err(Closed) => Err(Status(503, "Signing in is off: start the server with ADMIN_PASSWORD set."))
 		Err(TooMany) => Err(Status(429, "Too many tries: wait a minute and try again."))
-		Err(DbErr(why)) => Err(Status(503, "The database couldn't start a session: ${why}"))
+		Err(DbErr(why)) => {
+			Log.error!("uptime: a session couldn't be started", { error: why })
+			Err(Status(503, "Signing in didn't work just now. Try again in a minute."))
+		}
 	}

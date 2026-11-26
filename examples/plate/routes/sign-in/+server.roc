@@ -2,6 +2,7 @@ import pf.Server
 import pf.Endpoint
 import forms.Issues
 import ../../PlateForm
+import ../../Store
 import ../../Query
 import ../../Session
 
@@ -18,7 +19,7 @@ post! = |{ request, .. }| {
 				Err(Open) => Err(Answer(Server.redirect("/")))
 				Err(Wrong) => refused("That isn't the password")
 				Err(TooMany) => refused("Too many tries: wait a minute, then try again")
-				Err(DbErr(why)) => Err(Status(500, "The database failed: ${why}"))
+				Err(DbErr(why)) => Err(Store.refusal!(DbErr(why)))
 			}
 		Err(issues) => Err(Issues.refusal(issues))
 	}

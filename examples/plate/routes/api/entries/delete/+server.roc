@@ -8,6 +8,6 @@ import ../../../../Store
 ## is gone from the page before the answer is in. Deleting one that's gone already is no problem.
 post! : { request : Server.Request, params : {}, context : {}, body : { id : Str } } => Try({}, Endpoint.Refusal)
 post! = |{ body, .. }| {
-	_ = Store.unlog!(body.id).map_err(Store.refusal)?
+	_ = Store.unlog!(body.id).map_err!(Store.refusal!)?
 	Ok({})
 }

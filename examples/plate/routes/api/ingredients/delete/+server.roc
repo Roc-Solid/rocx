@@ -6,6 +6,6 @@ import ../../../../Store
 ## Gone already is no problem.
 post! : { request : Server.Request, params : {}, context : {}, body : { id : Str } } => Try({}, Endpoint.Refusal)
 post! = |{ body, .. }| {
-	_ = Store.remove_ingredient!(body.id).map_err(Store.refusal)?
+	_ = Store.remove_ingredient!(body.id).map_err!(Store.refusal!)?
 	Ok({})
 }

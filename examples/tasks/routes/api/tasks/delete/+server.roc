@@ -10,7 +10,7 @@ import ../../../../Generated/Paths
 ## (the task's page is gone with it). The runtime and scripts get the list's id as JSON.
 post! : { request : Server.Request, params : {}, context : Middlewares.Context, body : Tasks.Remove } => Try(Str, Endpoint.Refusal)
 post! = |{ request, body, .. }| {
-	list = Store.remove!(body.id).map_err(Store.refusal)?
+	list = Store.remove!(body.id).map_err!(Store.refusal!)?
 	match Endpoint.posted_by(request) {
 		PlainForm => Err(Answer(Server.redirect(if (list.is_empty()) Paths.root else Paths.lists_id({ id: list }))))
 		Runtime | Other => Ok(list)

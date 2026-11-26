@@ -11,9 +11,9 @@ import ../../../Store
 ## of day suggests, which the page's form starts at unless its address says another.
 get! : { request : Server.Request, params : { id : Str }, context : {} } => Try(Plate.Pick, Endpoint.Refusal)
 get! = |{ params, .. }| {
-	food = Store.food!(params.id).map_err(Store.refusal)?
-	today = Store.today!({}).map_err(Store.refusal)?
-	meal = Store.meal_now!({}).map_err(Store.refusal)?
+	food = Store.food!(params.id).map_err!(Store.refusal!)?
+	today = Store.today!({}).map_err!(Store.refusal!)?
+	meal = Store.meal_now!({}).map_err!(Store.refusal!)?
 	Ok({ food, today, meal })
 }
 
@@ -25,8 +25,8 @@ post! = |{ request, params, .. }|
 	match PlateForm.amount.parse_body(Server.text_of(request)) {
 		Ok(amount) => {
 			day = Date.to_str(amount.day)
-			_ = Store.log!({ food: params.id, day, meal: amount.meal, count: amount.count, unit: amount.unit }).map_err(Store.refusal)?
-			today = Store.today!({}).map_err(Store.refusal)?
+			_ = Store.log!({ food: params.id, day, meal: amount.meal, count: amount.count, unit: amount.unit }).map_err!(Store.refusal!)?
+			today = Store.today!({}).map_err!(Store.refusal!)?
 			Err(Answer(Server.redirect(Links.diary(day, today))))
 		}
 		Err(issues) => Err(Issues.refusal(issues))

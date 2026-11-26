@@ -10,6 +10,6 @@ import ../../Store
 post! : { request : Server.Request, params : {}, context : {}, body : { day : Str, kg : Str } } => Try({}, Endpoint.Refusal)
 post! = |{ request, .. }|
 	match PlateForm.weight.parse_body(Server.text_of(request)) {
-		Ok(weight) => Store.weigh!(Date.to_str(weight.day), weight.kg).map_err(Store.refusal)
+		Ok(weight) => Store.weigh!(Date.to_str(weight.day), weight.kg).map_err!(Store.refusal!)
 		Err(issues) => Err(Issues.refusal(issues))
 	}

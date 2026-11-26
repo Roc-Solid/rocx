@@ -9,9 +9,9 @@ import ../../Store
 get! : { request : Server.Request, params : {}, context : {} } => Try(Plate.Trends, Endpoint.Refusal)
 get! = |{ request, .. }| {
 	range = Plate.range_of(Query.value(request.query, "days"))
-	totals = Store.totals!(range).map_err(Store.refusal)?
-	weights = Store.weights!(range).map_err(Store.refusal)?
-	target = Store.aim!({}).map_err(Store.refusal)?
-	today = Store.today!({}).map_err(Store.refusal)?
+	totals = Store.totals!(range).map_err!(Store.refusal!)?
+	weights = Store.weights!(range).map_err!(Store.refusal!)?
+	target = Store.aim!({}).map_err!(Store.refusal!)?
+	today = Store.today!({}).map_err!(Store.refusal!)?
 	Ok({ range, today, totals, target, weights })
 }

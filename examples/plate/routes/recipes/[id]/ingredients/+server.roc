@@ -11,6 +11,6 @@ import ../../../../Store
 post! : { request : Server.Request, params : { id : Str }, context : {}, body : { food : Str, grams : Str } } => Try({}, Endpoint.Refusal)
 post! = |{ request, params, .. }|
 	match PlateForm.ingredient.parse_body(Server.text_of(request)) {
-		Ok(ingredient) => Store.add_ingredient!(params.id, ingredient).map_err(Store.refusal)
+		Ok(ingredient) => Store.add_ingredient!(params.id, ingredient).map_err!(Store.refusal!)
 		Err(issues) => Err(Issues.refusal(issues))
 	}

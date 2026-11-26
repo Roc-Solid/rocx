@@ -23,7 +23,7 @@ post! = |{ request, .. }| {
 				Err(NotFound) =>
 					match OpenFoodFacts.lookup!(code) {
 						Ok(product) => {
-							id = Store.add_food!({ source: "off", name: product.name, brand: product.brand, barcode: code, per100: product.per100, extras: product.extras, portion: product.portion }).map_err(Store.refusal)?
+							id = Store.add_food!({ source: "off", name: product.name, brand: product.brand, barcode: code, per100: product.per100, extras: product.extras, portion: product.portion }).map_err!(Store.refusal!)?
 							Log.info!("found on Open Food Facts", { barcode: code, name: product.name })
 							Err(Answer(Server.redirect(Links.food(id, then))))
 						}
@@ -34,7 +34,7 @@ post! = |{ request, .. }| {
 							refused("Open Food Facts couldn't be asked just now (${why}). Try again, or make the food yourself.")
 						}
 					}
-				Err(problem) => Err(Store.refusal(problem))
+				Err(problem) => Err(Store.refusal!(problem))
 			}
 		Err(issues) => Err(Issues.refusal(issues))
 	}

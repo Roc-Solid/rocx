@@ -1,5 +1,6 @@
 import pf.Db
 import pf.Endpoint
+import pf.Log
 import forms.Date
 import Tasks
 
@@ -27,13 +28,16 @@ Store := [].{
 		done: row.done,
 	}
 
-	## An endpoint's refusal for a problem: a 404, or a 500 that says why (which the middleware
-	## logs: `Middlewares.logged`).
-	refusal : Problem -> Endpoint.Refusal
-	refusal = |problem|
+	## An endpoint's refusal for a problem: a 404, or a 500. Why the database failed goes on the
+	## log, never to the client: its text can name the app's tables, columns and values.
+	refusal! : Problem => Endpoint.Refusal
+	refusal! = |problem|
 		match problem {
 			NotFound => NotFound
-			DbErr(why) | BadRow(why) => Status(500, "The database failed: ${why}")
+			DbErr(why) | BadRow(why) => {
+				Log.error!("tasks: the database failed", { error: why })
+				Status(500, "Something went wrong on our side. Try again in a minute.")
+			}
 		}
 
 	## Today, as SQLite has it (`2026-11-24`, in UTC): what a task's due day is counted from.

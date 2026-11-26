@@ -9,4 +9,4 @@ import ../../../../Tasks
 ## record as an action (`use_action!`). The id is in the body, not the path: the page lists the
 ## submissions to one URL, every move on the list together.
 post! : { request : Server.Request, params : {}, context : Middlewares.Context, body : Tasks.Move } => Try({}, Endpoint.Refusal)
-post! = |{ body, .. }| Store.move!(body).map_err(Store.refusal)
+post! = |{ body, .. }| Store.move!(body).map_err!(Store.refusal!)

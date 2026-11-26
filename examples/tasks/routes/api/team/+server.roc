@@ -9,8 +9,8 @@ import ../../../Tasks
 ## top), and so do the front page and `/me`: a page renders each URL once, however many read it.
 get! : { request : Server.Request, params : {}, context : Middlewares.Context } => Try(Tasks.Team, Endpoint.Refusal)
 get! = |{ context, .. }| {
-	people = Store.people!({}).map_err(Store.refusal)?
-	lists = Store.lists!({}).map_err(Store.refusal)?
+	people = Store.people!({}).map_err!(Store.refusal!)?
+	lists = Store.lists!({}).map_err!(Store.refusal!)?
 	# A session naming nobody on the team (someone who has left) is nobody.
 	me = if (people.any(|person| person.id == context.me)) context.me else ""
 	Ok({ me, people, lists })

@@ -10,8 +10,8 @@ import ../../../Generated/Paths
 ## GET /tasks/:id, for JSON: the task, the list it is on, and the team.
 get! : { request : Server.Request, params : { id : Str }, context : Middlewares.Context } => Try(Tasks.Detail, Endpoint.Refusal)
 get! = |{ params, .. }| {
-	found = Store.task!(params.id).map_err(Store.refusal)?
-	people = Store.people!({}).map_err(Store.refusal)?
+	found = Store.task!(params.id).map_err!(Store.refusal!)?
+	people = Store.people!({}).map_err!(Store.refusal!)?
 	Ok({ task: found.task, list: found.list, people })
 }
 
@@ -26,12 +26,12 @@ post! = |{ request, params, .. }|
 		Ok(task) => {
 			known =
 				match task.assignee {
-					Ok(person) => Store.is_person!(person).map_err(Store.refusal)?
+					Ok(person) => Store.is_person!(person).map_err!(Store.refusal!)?
 					Err(Missing) => Bool.True
 				}
 			if known {
-				Store.save!(params.id, task).map_err(Store.refusal)?
-				found = Store.task!(params.id).map_err(Store.refusal)?
+				Store.save!(params.id, task).map_err!(Store.refusal!)?
+				found = Store.task!(params.id).map_err!(Store.refusal!)?
 				Err(Answer(Server.redirect(Paths.lists_id({ id: found.list.id }))))
 			} else {
 				Err(Issues.refusal([{ field: "assignee", code: Custom("unknown", "Choose someone on the team"), message: "Choose someone on the team" }]))

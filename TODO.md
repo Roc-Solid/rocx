@@ -250,6 +250,13 @@ When an item lands, delete its line here in the same commit.
   - `--opt=speed`: is the three-step `Middleware.then` miscompile
     (`test/compiler-bugs/middleware-skipped-opt-speed`) still there? journal's and plate's chains
     have three steps.
+- **Database errors sent to clients:** the package examples answer a failed query with its text
+  (`Err(Status(503, why))`: packages/auth's, stripe's, push's and guard's examples, and
+  sqlite-vs-turso's bench routes), which can name tables, columns and values. examples/tasks, plate
+  and uptime log it and answer a plain 500 since the audit of 2026-11-26 (`Store.refusal!`). The
+  platform has no refusal for this (a `Failed(why)` that logs `why` with the route and answers a
+  plain 500); Endpoint.roc is shared with the browser's platform, which has no log, so it needs a
+  decision.
 - **Stale proposals:** `packages/testing/PROPOSALS.md` (`src/routes.mjs`, `outbox.rs`, `<For>`; item
   11 is done), `packages/mcp/PROPOSALS.md` #1, `packages/otel/PROPOSALS.md`,
   `packages/forms/PROPOSALS.md` ("Nothing here is built").
