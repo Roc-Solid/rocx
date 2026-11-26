@@ -16,6 +16,7 @@ const LAST = 0xffffffff;
 export async function start(source, path = location.pathname) {
 	let ex;
 	const nodes = [];
+	const templates = [];
 	const ids = new WeakMap();
 	const text = (ptr, len) => decoder.decode(new Uint8Array(ex.memory.buffer, ptr, len));
 	const env = {
@@ -132,6 +133,36 @@ export async function start(source, path = location.pathname) {
 				case 11:
 					nodes[u32()] = undefined;
 					break;
+				case 12: {
+					// A template's skeleton, as markup: its first node, to copy.
+					const id = u32();
+					const template = document.createElement("template");
+					template.innerHTML = str();
+					templates[id] = template.content.firstChild;
+					break;
+				}
+				case 13: {
+					// A copy of one, its nodes the engine's ids in document order.
+					const root = templates[u32()].cloneNode(true);
+					const count = u32();
+					let node = root;
+					for (let i = 0; i < count; i++) {
+						const id = u32();
+						nodes[id] = node;
+						if (node.nodeType === 1) ids.set(node, id);
+						if (node.firstChild) node = node.firstChild;
+						else {
+							while (node !== root && !node.nextSibling) node = node.parentNode;
+							node = node === root ? null : node.nextSibling;
+						}
+					}
+					break;
+				}
+				case 14: {
+					const old = nodes[u32()];
+					old.replaceWith(nodes[u32()]);
+					break;
+				}
 				default:
 					throw new Error(`rocx engine: op ${op} at ${at - 1}`);
 			}

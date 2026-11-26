@@ -59,11 +59,15 @@ pub struct Dom {
     /// Nodes let go of since the last render, and the ids free to use again.
     freed: Vec<NodeId>,
     spare: Vec<NodeId>,
+    /// While set (`quietly`), changes make no ops: what a CLONE op makes on the page at once.
+    quiet: bool,
+    /// The templates the page has been sent (TEMPLATE ops), by id.
+    sent: Vec<bool>,
 }
 
 impl Dom {
     pub fn new() -> Dom {
-        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new(), texts: Vec::new(), freed: Vec::new(), spare: Vec::new() };
+        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new(), texts: Vec::new(), freed: Vec::new(), spare: Vec::new(), quiet: false, sent: Vec::new() };
         dom.root = dom.element("rocx-root");
         dom
     }
@@ -103,6 +107,11 @@ impl Dom {
         for &node in &nodes {
             self.detach(node);
         }
+        self.let_go(nodes)
+    }
+
+    /// Detached nodes and everything inside them let go of for good (`free_range`).
+    pub fn let_go(&mut self, mut nodes: Vec<NodeId>) -> Vec<NodeId> {
         let mut gone = Vec::new();
         while let Some(node) = nodes.pop() {
             if self.nodes[node].gone {
@@ -123,6 +132,52 @@ impl Dom {
         gone
     }
 
+    /// Runs `f` with no ops made: the page makes what it changes another way (a CLONE op).
+    pub fn quietly<R>(&mut self, f: impl FnOnce(&mut Dom) -> R) -> R {
+        let was = std::mem::replace(&mut self.quiet, true);
+        let answer = f(self);
+        self.quiet = was;
+        answer
+    }
+
+    /// Whether the page has template `id` (a TEMPLATE op), saying it has from now on.
+    pub fn template_sent(&mut self, id: usize) -> bool {
+        if self.sent.len() <= id {
+            self.sent.resize(id + 1, false);
+        }
+        std::mem::replace(&mut self.sent[id], true)
+    }
+
+    /// 12 TEMPLATE id html: a template's skeleton, as markup, for the page to copy.
+    pub fn template_op(&mut self, id: usize, html: &str) {
+        self.op(12, &[id as u32], &[html]);
+    }
+
+    /// 13 CLONE template count ids…: a copy of a template's skeleton, its nodes (in document order,
+    /// its root first) these, made quietly here.
+    pub fn clone_op(&mut self, template: usize, nodes: &[NodeId]) {
+        if !cfg!(target_arch = "wasm32") || self.quiet {
+            return;
+        }
+        self.ops.push(13);
+        self.ops.extend_from_slice(&(template as u32).to_le_bytes());
+        self.ops.extend_from_slice(&(nodes.len() as u32).to_le_bytes());
+        for &node in nodes {
+            self.ops.extend_from_slice(&(node as u32).to_le_bytes());
+        }
+    }
+
+    /// `old` replaced by `node` (a fragment: its children) where it is, and taken off the page: 14
+    /// REPLACE old node.
+    pub fn replace(&mut self, old: NodeId, node: NodeId) {
+        let Some(parent) = self.nodes[old].parent else { return };
+        self.op(14, &[old as u32, node as u32], &[]);
+        self.quietly(|dom| {
+            dom.insert_before(parent, node, Some(old));
+            dom.unlink(old);
+        });
+    }
+
     /// The render after nodes were let go of is over: their ids may be used again.
     pub fn recycle(&mut self) {
         self.spare.append(&mut self.freed);
@@ -130,7 +185,7 @@ impl Dom {
 
     /// An op for the browser's DOM (`ops`): its code, its ids, its strings.
     fn op(&mut self, code: u8, ids: &[u32], texts: &[&str]) {
-        if !cfg!(target_arch = "wasm32") {
+        if !cfg!(target_arch = "wasm32") || self.quiet {
             return;
         }
         self.ops.push(code);
