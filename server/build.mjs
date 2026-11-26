@@ -245,13 +245,19 @@ function buildRustHost(hostDir, targetsDir, library, target) {
 
 const webHostDir = join(root, "web", "host");
 
-/** The browser's host (web/host, Rust with no std): cargo's static library for wasm32, made the
- * relocatable object Roc links each app's wasm with (web/platform/targets/wasm32/host.wasm) by
- * `zig wasm-ld -r`, every object in it kept (Roc's link takes what the app uses). Built when its Rust
- * is newer than the object; rocx's own builds do the same (rocx-cli/Hosts.roc's web_host!). */
+/** The browser's host (web/host, Rust with no std, and web/memory, which it shares with the phone's
+ * host): cargo's static library for wasm32, made the relocatable object Roc links each app's wasm
+ * with (web/platform/targets/wasm32/host.wasm) by `zig wasm-ld -r`, every object in it kept (Roc's
+ * link takes what the app uses). Built when their Rust is newer than the object; rocx's own builds
+ * do the same (rocx-cli/Hosts.roc's web_host!). */
 export function buildWebHost() {
 	const object = join(root, "web", "platform", "targets", "wasm32", "host.wasm");
-	const sources = ["Cargo.toml", "build.rs", ...readdirSync(join(webHostDir, "src")).map((name) => join("src", name))].map((name) => join(webHostDir, name));
+	// Its Rust, and rocx-memory's (web/memory), which it shares with the phone's host.
+	const memoryDir = join(root, "web", "memory");
+	const sources = [
+		...["Cargo.toml", "build.rs", ...readdirSync(join(webHostDir, "src")).map((name) => join("src", name))].map((name) => join(webHostDir, name)),
+		...["Cargo.toml", ...readdirSync(join(memoryDir, "src")).map((name) => join("src", name))].map((name) => join(memoryDir, name)),
+	];
 	if (existsSync(object) && sources.every((source) => statSync(source).mtimeMs <= statSync(object).mtimeMs)) return object;
 	const env = rustEnv();
 	const triple = "wasm32-unknown-unknown";

@@ -370,8 +370,10 @@ test-rocx: server-host
     for package in packages/*/main.roc; do echo "$package"; {{ roc }} test "$package" || exit 1; done
 
 # `just test`'s second part: the web platform in Node and Chromium, and the site in a browser,
-# served by the native server. One file at a time: both build the web platform's host.
+# served by the native server. One file at a time: both build the web platform's host. First the
+# hosts' shared memory (web/memory, D-091), on this machine.
 test-web: server-host
+    if command -v cargo >/dev/null; then cargo test -q --manifest-path web/memory/Cargo.toml; else RUSTUP_HOME=$PWD/.tools/rust/rustup CARGO_HOME=$PWD/.tools/rust/cargo .tools/rust/cargo/bin/cargo test -q --manifest-path web/memory/Cargo.toml; fi
     ROCX_ENV_FILE= ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
 
 # `just test`'s third part: the server platform, and packages/testing's, packages/posthog's and

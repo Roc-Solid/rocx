@@ -750,14 +750,21 @@ pub fn run(id: u64) -> Option<Outcome> {
     })?;
     let result = if kind == CompKind::Root { roc::mount() } else { roc::run(runner) };
     with(|engine| engine.current = previous);
+    // A run that waits or fails: its frame, reclaimed once what it made is let go of (a crash's
+    // isn't, as the browser's isn't).
+    let mut unwound = None;
     let (outcome, out, failure) = match result {
         Ok(out) => (Outcome::Ok, Some(out), None),
-        Err(Abort::Wait(wait)) => {
+        Err((Abort::Wait(wait), frame)) => {
             with(|engine| engine.waiters.entry(wait).or_default().push(Waiter::Comp(id)));
+            unwound = Some(frame);
             (Outcome::Pending, None, None)
         }
-        Err(Abort::Failed(why, memo)) => (Outcome::Failed, None, Some((why, memo))),
-        Err(Abort::Crash(why)) => {
+        Err((Abort::Failed(why, memo), frame)) => {
+            unwound = Some(frame);
+            (Outcome::Failed, None, Some((why, memo)))
+        }
+        Err((Abort::Crash(why), _)) => {
             log(Level::Error, &format!("rocx native: Roc crashed: {why}"));
             (Outcome::Failed, None, Some((format!("crashed: {why}"), None)))
         }
@@ -803,6 +810,9 @@ pub fn run(id: u64) -> Option<Outcome> {
         });
         if let Some(making) = making {
             drop_made(making);
+        }
+        if let Some(frame) = unwound {
+            frame.reclaim();
         }
         if outcome == Outcome::Pending {
             if kind == CompKind::Root {
@@ -906,8 +916,10 @@ pub fn probe(callable: Callable) -> Vec<u64> {
         (id, engine.current.replace(Current::Probe(id)))
     });
     let result = roc::run(callable);
-    if let Err(Abort::Crash(why)) = result {
-        log(Level::Error, &format!("rocx native: Roc crashed in a probe: {why}"));
+    match result {
+        Err((Abort::Crash(why), _)) => log(Level::Error, &format!("rocx native: Roc crashed in a probe: {why}")),
+        Err((_, frame)) => frame.reclaim(),
+        Ok(_) => {}
     }
     with(|engine| {
         engine.current = previous;
@@ -1431,7 +1443,7 @@ fn go(id: u64) {
                 with(|engine| engine.release_kept(kept));
             }
         }
-        Err(why) => {
+        Err((why, frame)) => {
             let dropped = with(|engine| {
                 let writes = engine.handlers.get_mut(&id).map(|handler| std::mem::take(&mut handler.writes)).unwrap_or_default();
                 for write in writes {
@@ -1442,6 +1454,9 @@ fn go(id: u64) {
                 effect.and_then(|effect| engine.comp(effect)).map(|effect| effect.cleanups.split_off(mark.min(effect.cleanups.len()))).unwrap_or_default()
             });
             clean_up(dropped);
+            if !matches!(why, Abort::Crash(_)) {
+                frame.reclaim();
+            }
             match why {
                 Abort::Wait(wait) => with(|engine| engine.waiters.entry(wait).or_default().push(Waiter::Handler(id))),
                 Abort::Failed(why, _) | Abort::Crash(why) => {
@@ -2459,15 +2474,17 @@ fn component(reference: Option<u64>, owner: Option<u64>, scope: &Scope) -> (Opti
     });
     match result {
         Ok(json) => (Some(comp), vec![serde_json::from_str(&json).unwrap_or(Value::Null)]),
-        Err(Abort::Wait(_)) => {
+        // A wait here is the app's mistake, and its frame stays (as the browser's throws).
+        Err((Abort::Wait(_), _)) => {
             log(Level::Error, "rocx: a component read a value that isn't in yet outside its markup: read it in a hole ({…}), which waits");
             (Some(comp), Vec::new())
         }
-        Err(Abort::Failed(why, memo)) => {
+        Err((Abort::Failed(why, memo), frame)) => {
             failed(comp, why, memo);
+            frame.reclaim();
             (Some(comp), Vec::new())
         }
-        Err(Abort::Crash(why)) => {
+        Err((Abort::Crash(why), _)) => {
             log(Level::Error, &format!("rocx native: Roc crashed in a component: {why}"));
             failed(comp, format!("crashed: {why}"), None);
             (Some(comp), Vec::new())

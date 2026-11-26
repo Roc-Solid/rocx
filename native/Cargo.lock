@@ -149,10 +149,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rocx-memory"
+version = "0.1.0"
+
+[[package]]
 name = "rocx-native-core"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "rocx-memory",
  "serde_json",
 ]
 

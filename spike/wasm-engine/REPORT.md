@@ -74,7 +74,7 @@ measured in the same harness.
 And before the browser could run on it, the engine would need what runtime.js has and it hasn't:
 hydration, navigating in place (D-040), drags (D-055), transitions and moves, actions and
 submissions, channels, `<Meta>`/`<Link>`/`<Style>`, requests and timers through the page, and
-the abort-leak frees (roc.rs says its waits leak).
+the abort-leak frees (roc.rs says its waits leak; since D-091, rocx-memory frees them).
 
 ## The Rust host on its own (D-090 since)
 

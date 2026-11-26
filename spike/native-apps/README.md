@@ -374,11 +374,12 @@ host's GPU.
 1. **Phase 0's conformance suite.** The engine is a port of runtime.js, checked only on this screen
    (and its paths on the Mac). `web/test/app` run on both engines, the native tree compared with
    Chromium's DOM after each step, is what makes the other half of the hosted functions trusted.
-2. **What a run that waits leaves behind.** The jump past Roc's frames leaks what they held (a few
-   allocations a wait; `live allocations` is 21 after the Mac run above). The browser's host frees
-   it (frames, `reclaim`) and the server's frees a failed run's list; the same is needed here.
-   Nodes taken off the engine's document stay in its arena too, and every request's answer stays
-   in its table.
+2. **What a run that waits leaves behind.** Freed since D-091: the jump past Roc's frames used to
+   leak what they held; each call now runs in a frame of rocx-memory's (`web/memory`, the browser's
+   host's too), and the engine reclaims one that ended early once it has let go of what the run
+   made (`native/mac` says `notes kept: 0` after a run). A list's rows' nodes are freed too
+   (spike/wasm-engine's round 2); other nodes taken off the engine's document stay in its arena,
+   and every request's answer stays in its table.
 3. **Layout.** `LinearLayout`s, not Taffy: blocks stack, a flex box is a row, margins collapse
    between siblings only. Inline blocks don't share a line (the field and "Send" do in a browser,
    not here), and grid, positioning and wrapping aren't there (percentage sizes are, `Box.kt`). Taffy (the design's)

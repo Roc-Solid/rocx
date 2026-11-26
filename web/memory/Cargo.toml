@@ -1,0 +1,9 @@
+[package]
+name = "rocx-memory"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Roc's memory for the web platform's hosts (the browser's, web/host; the phone's, native/core): each allocation numbered by the call into Roc that made it, so what a run that unwinds held is freed; and Zig's allocator for wasm, ported"
+
+[lib]
+path = "src/lib.rs"

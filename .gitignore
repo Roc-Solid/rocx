@@ -33,6 +33,7 @@ web/test/build/
 # the libraries Roc links apps against
 cli/host/target/
 web/host/target/
+web/memory/target/
 cli/platform/targets/
 server/host/target/
 server/platform/targets/

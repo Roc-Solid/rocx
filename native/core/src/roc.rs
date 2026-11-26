@@ -8,39 +8,31 @@
 //! trampoline's, which hold nothing to drop; a hosted function jumps only once it has let go of
 //! what it holds, and never while it borrows the engine.
 //!
-//! What the skipped Roc frames held is not freed: a run that waits leaks the few values its frames
-//! held (the browser's host frees them, `frame_unwound` and `reclaim`; the server's frees a failed
-//! run's list). That is the spike's, and the next step (spike/native-apps/README.md).
+//! What the skipped Roc frames held is freed as the browser's host frees it (rocx-memory, shared):
+//! each call runs in a frame, and one that ends early answers its frame (`Unwound`), which its
+//! caller reclaims once it has let go of what the run made.
 
 use crate::abi::{self, RocErasedCallable as Callable, RocHost, RocStr};
-use std::alloc::{Layout, alloc, dealloc};
+use rocx_memory as memory;
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicI64, Ordering};
 
 // ---- Memory ----
-
-/// What precedes each allocation: what `dealloc` needs to free it.
-#[repr(C)]
-struct Header {
-    size: usize,
-    align: usize,
-}
-
-const HEADER: usize = std::mem::size_of::<Header>();
-
-/// Allocations Roc holds now.
-static LIVE: AtomicI64 = AtomicI64::new(0);
+//
+// Roc's memory is rocx-memory's (web/memory, the browser's host's too): each allocation numbered by
+// the call into Roc that made it, so what a call that ends early held is freed once the engine has
+// let go of what it handed over (`Unwound::reclaim`).
 
 /// How many allocations Roc holds now.
 pub fn live_allocations() -> i64 {
-    LIVE.load(Ordering::Relaxed)
+    memory::live()
 }
 
-fn offset_for(align: usize) -> usize {
-    let align = align.max(16);
-    (HEADER + align - 1) & !(align - 1)
+/// The host's notes of what runs allocate (0 between runs, unless a run that ended early waits to
+/// be reclaimed), and how many allocations Roc has made: for the tests.
+pub fn memory_notes() -> (u32, i64) {
+    (memory::notes_kept(), memory::allocated())
 }
 
 fn out_of_memory() -> ! {
@@ -48,49 +40,25 @@ fn out_of_memory() -> ! {
     std::process::abort()
 }
 
-fn allocate(length: usize, alignment: usize) -> NonNull<c_void> {
-    let align = alignment.max(16);
-    let offset = offset_for(align);
-    let Some(size) = offset.checked_add(length) else { out_of_memory() };
-    let Ok(layout) = Layout::from_size_align(size, align) else { out_of_memory() };
-    unsafe {
-        let base = alloc(layout);
-        if base.is_null() {
-            out_of_memory()
-        }
-        let user = base.add(offset);
-        let header = user.sub(HEADER) as *mut Header;
-        header.write(Header { size, align });
-        LIVE.fetch_add(1, Ordering::Relaxed);
-        NonNull::new_unchecked(user as *mut c_void)
-    }
+fn allocated(ptr: *mut u8) -> NonNull<c_void> {
+    NonNull::new(ptr.cast()).unwrap_or_else(|| out_of_memory())
 }
 
-fn deallocate(user: *mut c_void) {
-    if user.is_null() {
-        return;
+fn allocate(length: usize, alignment: usize) -> NonNull<c_void> {
+    allocated(memory::alloc_for_roc(length, alignment))
+}
+
+fn deallocate(user: *mut c_void, alignment: usize) {
+    if !user.is_null() {
+        memory::dealloc_for_roc(user.cast(), alignment);
     }
-    unsafe {
-        let header = (user as *mut u8).sub(HEADER) as *mut Header;
-        let Header { size, align } = header.read();
-        let base = (user as *mut u8).sub(offset_for(align));
-        dealloc(base, Layout::from_size_align_unchecked(size, align));
-    }
-    LIVE.fetch_sub(1, Ordering::Relaxed);
 }
 
 fn resize(user: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
     if user.is_null() {
         return allocate(length, alignment);
     }
-    unsafe {
-        let header = (user as *mut u8).sub(HEADER) as *mut Header;
-        let old = (*header).size - offset_for((*header).align);
-        let moved = allocate(length, alignment);
-        std::ptr::copy_nonoverlapping(user as *const u8, moved.as_ptr() as *mut u8, old.min(length));
-        deallocate(user);
-        moved
-    }
+    allocated(memory::realloc_for_roc(user.cast(), length, alignment))
 }
 
 #[unsafe(no_mangle)]
@@ -99,8 +67,8 @@ pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> NonNull<c_void> 
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_dealloc(ptr: *mut c_void, _alignment: usize) {
-    deallocate(ptr)
+pub extern "C" fn roc_dealloc(ptr: *mut c_void, alignment: usize) {
+    deallocate(ptr, alignment)
 }
 
 #[unsafe(no_mangle)]
@@ -133,8 +101,8 @@ fn text(bytes: *const u8, len: usize) -> String {
 extern "C" fn host_alloc(_: *mut RocHost, length: usize, alignment: usize) -> NonNull<c_void> {
     allocate(length, alignment)
 }
-extern "C" fn host_dealloc(_: *mut RocHost, ptr: *mut c_void, _alignment: usize) {
-    deallocate(ptr)
+extern "C" fn host_dealloc(_: *mut RocHost, ptr: *mut c_void, alignment: usize) {
+    deallocate(ptr, alignment)
 }
 extern "C" fn host_realloc(_: *mut RocHost, ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
     resize(ptr, length, alignment)
@@ -240,8 +208,22 @@ pub fn abort(why: Abort) -> ! {
     unsafe { rocx_guard_escape() }
 }
 
-/// Runs `call`, which calls into Roc, guarded: its result, or why it ended.
-fn guarded<F: FnOnce() -> R, R>(call: F) -> Result<R, Abort> {
+/// A call into Roc that ended early: its frame, whose allocations wait until the engine has let go
+/// of everything the run handed it (its computations, signals, boxes), then are freed (`reclaim`).
+/// One never reclaimed (a crash) is a leak, never a use after free.
+#[must_use]
+#[derive(Debug)]
+pub struct Unwound(u32);
+
+impl Unwound {
+    pub fn reclaim(self) {
+        memory::reclaim(self.0)
+    }
+}
+
+/// Runs `call`, which calls into Roc, guarded and in a frame of its own: its result, or why it
+/// ended and its frame.
+fn guarded<F: FnOnce() -> R, R>(call: F) -> Result<R, (Abort, Unwound)> {
     struct Slot<F, R> {
         call: Option<F>,
         out: Option<R>,
@@ -253,11 +235,14 @@ fn guarded<F: FnOnce() -> R, R>(call: F) -> Result<R, Abort> {
         }
     }
     let mut slot = Slot { call: Some(call), out: None };
+    let frame = memory::frame_begin();
     let ended = unsafe { rocx_guarded(trampoline::<F, R>, &mut slot as *mut Slot<F, R> as *mut c_void) } != 0;
     if ended {
+        memory::frame_unwound(frame);
         let why = ABORT.with(|slot| slot.borrow_mut().take()).unwrap_or_else(|| Abort::Crash("crashed".into()));
-        return Err(why);
+        return Err((why, Unwound(frame)));
     }
+    memory::frame_end(frame);
     Ok(slot.out.take().expect("a call that returned has its result"))
 }
 
@@ -305,13 +290,13 @@ fn call_run(callable: Callable) -> RocStr {
 }
 
 /// The app's markup (`main!`'s), as JSON, its holes kept by the host.
-pub fn mount() -> Result<String, Abort> {
+pub fn mount() -> Result<String, (Abort, Unwound)> {
     let json = guarded(call_mount)?;
     Ok(taken(json))
 }
 
 /// Runs a box the host keeps (a computation, a handler, a fallback): its answer, as JSON.
-pub fn run(callable: Callable) -> Result<String, Abort> {
+pub fn run(callable: Callable) -> Result<String, (Abort, Unwound)> {
     // `run_for_host!` takes a reference: the host keeps its own.
     retain(callable);
     let json = guarded(|| call_run(callable))?;

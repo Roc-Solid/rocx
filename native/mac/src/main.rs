@@ -106,4 +106,6 @@ fn main() {
         settle(&woken, 0);
     }
     println!("live allocations: {}", core::roc::live_allocations());
+    let (kept, made) = core::roc::memory_notes();
+    println!("notes kept: {kept} (of {made} allocations made)");
 }

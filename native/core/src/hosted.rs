@@ -18,14 +18,21 @@ fn fail(why: String) -> ! {
     roc::abort(Abort::Failed(why, None))
 }
 
+/// A box given to the engine to keep: noted in the running call's frame (rocx-memory's `hand`), so
+/// a call that ends early frees nothing the engine still holds.
+fn handed(boxed: Callable) -> Callable {
+    rocx_memory::hand(boxed as usize);
+    boxed
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_keep(callable: Callable) -> u64 {
-    engine::keep(callable)
+    engine::keep(handed(callable))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_signal_new(value: Callable) -> u64 {
-    engine::signal_new(value)
+    engine::signal_new(handed(value))
 }
 
 #[unsafe(no_mangle)]
@@ -38,7 +45,7 @@ pub extern "C" fn roc_signal_get(id: u64) -> Callable {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_signal_set(id: u64, value: Callable) {
-    if let Err(value) = engine::signal_set(id, value) {
+    if let Err(value) = engine::signal_set(id, handed(value)) {
         roc::release(value);
         fail("a signal is written in a handler, not while computing".into())
     }
@@ -46,12 +53,12 @@ pub extern "C" fn roc_signal_set(id: u64, value: Callable) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_memo_new(runner: Callable) -> u64 {
-    engine::memo_new(runner)
+    engine::memo_new(handed(runner))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_memo_done(value: Callable, same: bool) {
-    engine::memo_done(value, same)
+    engine::memo_done(handed(value), same)
 }
 
 #[unsafe(no_mangle)]
@@ -74,7 +81,7 @@ pub extern "C" fn roc_signal_latest(id: u64) -> Callable {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_optimistic_set(id: u64, value: Callable) {
-    if let Err(value) = engine::optimistic_set(id, value) {
+    if let Err(value) = engine::optimistic_set(id, handed(value)) {
         roc::release(value);
         fail("an optimistic value is written in a handler, not while computing".into())
     }
@@ -90,7 +97,7 @@ pub extern "C" fn roc_memo_get(id: u64) -> Callable {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_selector_new(runner: Callable) -> u64 {
-    engine::selector_new(runner)
+    engine::selector_new(handed(runner))
 }
 
 #[unsafe(no_mangle)]
@@ -109,12 +116,12 @@ pub extern "C" fn roc_template(site: RocStr) -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_refresh(probe: Callable) {
-    engine::refresh_probe(probe)
+    engine::refresh_probe(handed(probe))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_is_pending(probe: Callable) -> bool {
-    engine::is_pending(probe)
+    engine::is_pending(handed(probe))
 }
 
 #[unsafe(no_mangle)]
@@ -155,7 +162,7 @@ pub extern "C" fn roc_row_index(list: u64, key: RocStr) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_row_set(list: u64, key: RocStr, value: Callable, same: bool) -> bool {
-    engine::row_set(list, taken(key), value, same);
+    engine::row_set(list, taken(key), handed(value), same);
     // The engine makes each row from its box: none is kept.
     false
 }
@@ -175,7 +182,7 @@ pub extern "C" fn roc_row_get(list: u64, key: RocStr) -> Callable {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_context_value(value: Callable) -> u64 {
-    engine::context_value(value)
+    engine::context_value(handed(value))
 }
 
 #[unsafe(no_mangle)]
@@ -258,12 +265,12 @@ pub extern "C" fn roc_host_live_publish(topic: RocStr, message: RocStr) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_timeout(ms: u64, handler: Callable) -> u64 {
-    engine::start_timer(ms, false, handler)
+    engine::start_timer(ms, false, handed(handler))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_interval(ms: u64, handler: Callable) -> u64 {
-    engine::start_timer(ms, true, handler)
+    engine::start_timer(ms, true, handed(handler))
 }
 
 #[unsafe(no_mangle)]
@@ -291,7 +298,7 @@ pub extern "C" fn roc_browser_call(name: RocStr, arg: RocStr) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_effect_new(runner: Callable) {
-    if let Err(why) = engine::effect_new(runner) {
+    if let Err(why) = engine::effect_new(handed(runner)) {
         fail(why)
     }
 }
@@ -303,7 +310,7 @@ pub extern "C" fn roc_effect_options(render: bool, error_box: u64) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_cleanup(runner: Callable) {
-    if let Err(why) = engine::cleanup(runner) {
+    if let Err(why) = engine::cleanup(handed(runner)) {
         fail(why)
     }
 }

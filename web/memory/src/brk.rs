@@ -1,5 +1,6 @@
-//! The host's memory: Zig's allocator for wasm (std.heap.BrkAllocator, which the Zig host used),
-//! ported. Slots of a power of two in size, each size's from 64 KiB pages of its own, a freed slot
+//! A wasm host's memory: Zig's allocator for wasm (std.heap.BrkAllocator, which the Zig host
+//! used), ported; the browser's host's global allocator, and the engine's in a browser
+//! (spike/wasm-engine). Slots of a power of two in size, each size's from 64 KiB pages of its own, a freed slot
 //! kept on its size's list (the list's link in the slot's last word); bigger ones, whole pages a
 //! power of two in number, from `memory.grow`. Fast and small; memory is never given back to the
 //! browser, but a freed slot is used again by the next of its size.
@@ -24,8 +25,7 @@ struct Brk {
     big_frees: [usize; BIG_CLASSES],
 }
 
-/// The allocator's state: one, the wasm being single-threaded. Self-contained, so another crate can
-/// use this file as it is (native/core's engine in a browser, spike/wasm-engine).
+/// The allocator's state: one, the wasm being single-threaded.
 struct State(UnsafeCell<Brk>);
 
 unsafe impl Sync for State {}

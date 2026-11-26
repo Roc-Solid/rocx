@@ -22,14 +22,11 @@ pub mod roc;
 pub mod svg;
 #[cfg(target_arch = "wasm32")]
 mod web;
-// In a browser (spike/wasm-engine), the browser's host's allocator (web/host, Zig's for wasm ported):
-// fast and small, where Rust's default for wasm is dlmalloc.
-#[cfg(target_arch = "wasm32")]
-#[path = "../../../web/host/src/brk.rs"]
-mod brk;
+// In a browser (spike/wasm-engine), the browser's host's allocator (rocx-memory's, Zig's for wasm
+// ported): fast and small, where Rust's default for wasm is dlmalloc.
 #[cfg(target_arch = "wasm32")]
 #[global_allocator]
-static MEMORY: brk::Memory = brk::Memory;
+static MEMORY: rocx_memory::brk::Memory = rocx_memory::brk::Memory;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};

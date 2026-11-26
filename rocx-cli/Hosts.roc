@@ -230,7 +230,9 @@ Hosts := [].{
 			}
 			return Err(Failed("no browser host in ${rocx}: no web/host, and no web/platform/targets/wasm32/host.wasm"))
 		}
-		if Hosts.not_newer!(host_dir, File.modified!(object)) {
+		# Its Rust, and rocx-memory's (web/memory), which it shares with the phone's host.
+		built = File.modified!(object)
+		if Hosts.not_newer!(host_dir, built) and Hosts.not_newer!(Fs.join([rocx, "web", "memory"]), built) {
 			return Ok({})
 		}
 		triple = "wasm32-unknown-unknown"

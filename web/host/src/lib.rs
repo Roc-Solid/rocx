@@ -4,8 +4,8 @@
 //! read that isn't in yet): the wasm frames above it unwind, so nothing here holds a borrow of the
 //! host's state across a call out to JavaScript.
 //!
-//! No std: what the host needs of memory is its own (brk.rs, Zig's allocator for wasm, ported), and
-//! what Roc gets of it is tracked (track.rs).
+//! No std: what the host needs of memory is rocx-memory's (web/memory, shared with the phone's host):
+//! its allocator (Zig's for wasm, ported), and the tracking of what Roc gets of it.
 
 #![no_std]
 
@@ -14,8 +14,8 @@ extern crate alloc;
 #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
 #[path = "roc_platform_abi.rs"]
 mod abi;
-mod brk;
-mod track;
+
+use rocx_memory as track;
 
 use abi::{RocErasedCallable as Callable, RocHost, RocStr};
 use core::cell::UnsafeCell;
@@ -23,7 +23,7 @@ use core::ffi::c_void;
 use core::ptr::NonNull;
 
 #[global_allocator]
-static MEMORY: brk::Memory = brk::Memory;
+static MEMORY: rocx_memory::brk::Memory = rocx_memory::brk::Memory;
 
 /// The host's state, one of each: the wasm is single-threaded, and a call into it runs to its end
 /// or throws (no state is borrowed across a call out).
@@ -194,17 +194,25 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> NonNull<c_void> {
-    unsafe { NonNull::new_unchecked(track::alloc(length, alignment).cast()) }
+    allocated(track::alloc_for_roc(length, alignment))
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_dealloc(ptr: *mut c_void, alignment: usize) {
-    track::dealloc(ptr.cast(), alignment)
+    track::dealloc_for_roc(ptr.cast(), alignment)
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_realloc(ptr: *mut c_void, new_length: usize, alignment: usize) -> NonNull<c_void> {
-    unsafe { NonNull::new_unchecked(track::realloc(ptr.cast(), new_length, alignment).cast()) }
+    allocated(track::realloc_for_roc(ptr.cast(), new_length, alignment))
+}
+
+/// What Roc asked for, or the end: Roc writes through it unchecked.
+fn allocated(ptr: *mut u8) -> NonNull<c_void> {
+    match NonNull::new(ptr.cast()) {
+        Some(ptr) => ptr,
+        None => crashed(b"roc_alloc: out of memory"),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -347,7 +355,7 @@ fn taken(len: usize) -> RocStr {
     }
     // A big string: its reference count (1), then its bytes.
     let word = size_of::<usize>();
-    let base = track::alloc(word + len, align_of::<usize>());
+    let base = allocated(track::alloc_for_roc(word + len, align_of::<usize>())).as_ptr().cast::<u8>();
     unsafe {
         let bytes = base.add(word);
         *(base as *mut isize) = 1;

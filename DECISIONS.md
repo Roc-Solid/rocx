@@ -5423,3 +5423,47 @@ end native/core's leak, and more if the reactive graph moves into the wasm (the 
 only, as for the other hosts.
 
 **Reversible:** yes: host.zig is in git's history, and runtime.js didn't change.
+
+## D-091 One memory for the web platform's two hosts
+
+**Status.** Built (2026-11-26), the user's go: the first piece of a front end shared by every
+target (D-090's "Why"), after spike/wasm-engine's round 2.
+
+**Context.** The web platform has two hosts: the browser's (`web/host`, in the page's wasm) and the
+phone's (`native/core`, D-063), which answers the same hosted functions. The browser's noted every
+allocation made in a call into Roc, so what a call that ended early (a read that waits or fails)
+held was freed once the runtime let go of what the run handed it (`frame_unwound`, `reclaim`). The
+phone's had its own allocator and nothing of that: its guard jumps past Roc's frames, and what they
+held leaked, every time a hole or a memo waited.
+
+**Decision.** Roc's memory is a crate both hosts use, `rocx-memory` (`web/memory`, no std):
+
+- The tracking, `web/host/src/track.rs` moved there and made to fit a 64-bit machine: the header is
+  16 bytes there (8 on wasm32: the number, a u32, then the length, in its last word), a note's
+  address a word, and the allocations still marked a hash set (open addressing) where wasm32's is a
+  bitmap of its 4 GiB. Its memory comes from the program's global allocator, and its state is
+  behind a spin lock off wasm (one thread runs Roc; the lock only keeps it whole should another
+  allocate).
+- Zig's allocator for wasm (`brk`, D-090's `src/brk.rs`), the browser's host's global allocator and
+  the engine's in a browser (spike/wasm-engine).
+
+The browser's host is as it was, its tracking now the crate's. The phone's runs each call into Roc
+in a frame (`roc::guarded`): one that ends early answers its frame (`roc::Unwound`, which must be
+used), and the engine reclaims it where runtime.js does, once it has let go of what the run made:
+a computation's run that waited or failed (after its `making` is dropped and a memo's `next`
+released), a probe, a handler (after its writes are released and its cleanups run), a component
+that failed. A crash's frame isn't reclaimed, as the browser's isn't. Each box a hosted function
+hands the engine to keep is noted (`hosted::handed`), so nothing the engine still holds is freed.
+`native/mac` prints the notes kept after a run (0 when every frame was reclaimed).
+
+**Measured.** The browser's: the benchmark's app.wasm 134,654 bytes raw, 39,930 with brotli
+(134,083 and 39,712 before); web/test's platform suite 53/53. The phone's: phone-hello and
+examples/tasks on native/mac against their own servers show the same screens and leave the same
+live allocations as before, with `notes kept: 0`. `cargo test` of the crate (`just test-web` runs
+it): a run that unwinds freed, one that handed a box over still held, runs inside runs, the hash
+set.
+
+**Costs.** A frame and a note per allocation on the phone too (the browser had them already). A
+64-bit machine's marks are a hash set, not a bitmap.
+
+**Reversible:** yes: native/core's own allocator and guard are in git's history.

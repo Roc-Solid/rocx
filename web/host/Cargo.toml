@@ -11,6 +11,10 @@ path = "src/lib.rs"
 # with (web/platform/targets/wasm32/host.wasm): web/build.mjs.
 crate-type = ["staticlib"]
 
+[dependencies]
+# Roc's memory, shared with the phone's host (native/core): the tracking, and Zig's allocator for wasm.
+rocx-memory = { path = "../memory" }
+
 [profile.release]
 opt-level = "s"
 lto = true

@@ -81,11 +81,10 @@ When an item lands, delete its line here in the same commit.
   with no server, `--origin http://127.0.0.1:9`): the first frame waits for the sheet, which "one
   that fails doesn't hold the screen" says it shouldn't. Seen on master's engine too; against the
   app's own server it shows.
-- **One tracking for both of the web platform's hosts (D-090).** `web/host/src/track.rs` (Roc's
-  memory with the header of the host's, the frames, and freeing what a run that unwound held) could be
-  a crate `native/core` shares, which would end its leak of what a run that waits held
-  (`native/core/src/roc.rs`). Then the hosted functions themselves, if the reactive graph moves into
-  the wasm (`spike/wasm-engine/REPORT.md`).
+- **More of the web platform's hosts shared (after D-091's rocx-memory).** The browser's host and
+  the phone's share Roc's memory now; the hosted functions themselves would be next if the
+  reactive graph moves into the wasm (`spike/wasm-engine/REPORT.md`): then web/host's would be the
+  engine's.
 - **D-079's names on the phone.** native/core's engine builds what hand-built markup names as it is.
   It runs no script and hides `<script>`, so nothing runs from a name there, but for parity with the
   web it could leave out the same names (and say so on its log).

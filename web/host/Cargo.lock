@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "rocx-memory"
+version = "0.1.0"
+
+[[package]]
 name = "rocx-web-host"
 version = "0.1.0"
+dependencies = [
+ "rocx-memory",
+]
