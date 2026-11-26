@@ -19,6 +19,8 @@ mod http;
 pub mod native;
 pub mod roc;
 pub mod svg;
+#[cfg(target_arch = "wasm32")]
+mod web;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -137,6 +139,11 @@ pub fn pump() {
     }
     engine::flush();
     engine::send_requests();
+    // A page's DOM is changed as the engine's document was (spike/wasm-engine); a phone's views are
+    // its projection.
+    #[cfg(target_arch = "wasm32")]
+    let ops = web::ops();
+    #[cfg(not(target_arch = "wasm32"))]
     let ops = native::render();
     // A stylesheet the render found named (`Engine::sheet`).
     engine::send_requests();

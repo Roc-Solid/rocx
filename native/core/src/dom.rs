@@ -34,18 +34,53 @@ pub struct Dom {
     pub nodes: Vec<Node>,
     /// What the app's markup goes in: the screen.
     pub root: NodeId,
+    /// In a browser (wasm32, spike/wasm-engine): every change since the last flush, as ops for the
+    /// page's JavaScript to make on its own DOM (`web.rs`):
+    ///
+    /// ```text
+    /// 1 ELEMENT id tag   2 TEXT id data   3 COMMENT id   4 FRAGMENT id
+    /// 5 INSERT parent node before (u32::MAX: last)   6 DETACH node   7 SET_TEXT node data
+    /// 8 ATTR node name value   9 REMOVE_ATTR node name   10 STYLE node name value ("": none)
+    /// ```
+    ///
+    /// Ids are u32 little-endian; a string is its UTF-8 length (u32) and its bytes.
+    pub ops: Vec<u8>,
 }
 
 impl Dom {
     pub fn new() -> Dom {
-        let mut dom = Dom { nodes: Vec::new(), root: 0 };
+        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new() };
         dom.root = dom.element("rocx-root");
         dom
     }
 
     fn add(&mut self, kind: Kind) -> NodeId {
+        if cfg!(target_arch = "wasm32") {
+            let id = self.nodes.len() as u32;
+            match &kind {
+                Kind::Element { tag, .. } => self.op(1, &[id], &[tag]),
+                Kind::Text(data) => self.op(2, &[id], &[data]),
+                Kind::Comment => self.op(3, &[id], &[]),
+                Kind::Fragment => self.op(4, &[id], &[]),
+            }
+        }
         self.nodes.push(Node { kind, parent: None, children: Vec::new() });
         self.nodes.len() - 1
+    }
+
+    /// An op for the browser's DOM (`ops`): its code, its ids, its strings.
+    fn op(&mut self, code: u8, ids: &[u32], texts: &[&str]) {
+        if !cfg!(target_arch = "wasm32") {
+            return;
+        }
+        self.ops.push(code);
+        for id in ids {
+            self.ops.extend_from_slice(&id.to_le_bytes());
+        }
+        for text in texts {
+            self.ops.extend_from_slice(&(text.len() as u32).to_le_bytes());
+            self.ops.extend_from_slice(text.as_bytes());
+        }
     }
 
     pub fn element(&mut self, tag: &str) -> NodeId {
@@ -77,6 +112,14 @@ impl Dom {
 
     /// Takes a node out of its parent, if it has one.
     pub fn detach(&mut self, node: NodeId) {
+        if self.nodes[node].parent.is_some() {
+            self.op(6, &[node as u32], &[]);
+        }
+        self.unlink(node);
+    }
+
+    /// The same, said to no one: the node is put somewhere else at once (`insert_before`).
+    fn unlink(&mut self, node: NodeId) {
         if let Some(parent) = self.nodes[node].parent.take() {
             let children = &mut self.nodes[parent].children;
             if let Some(at) = children.iter().position(|&child| child == node) {
@@ -108,7 +151,8 @@ impl Dom {
             }
             return;
         }
-        self.detach(node);
+        self.unlink(node);
+        self.op(5, &[parent as u32, node as u32, before.map_or(u32::MAX, |before| before as u32)], &[]);
         let at = match before {
             Some(before) => self.nodes[parent].children.iter().position(|&child| child == before).unwrap_or(self.nodes[parent].children.len()),
             None => self.nodes[parent].children.len(),
@@ -185,6 +229,7 @@ impl Dom {
     }
 
     pub fn set_text(&mut self, node: NodeId, data: &str) {
+        self.op(7, &[node as u32], &[data]);
         if let Kind::Text(text) = &mut self.nodes[node].kind {
             text.clear();
             text.push_str(data);
@@ -206,6 +251,7 @@ impl Dom {
     }
 
     pub fn set_attr(&mut self, node: NodeId, name: &str, value: &str) {
+        self.op(8, &[node as u32], &[name, value]);
         if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind {
             match attrs.iter_mut().find(|(named, _)| named == name) {
                 Some(entry) => entry.1 = value.to_string(),
@@ -215,6 +261,7 @@ impl Dom {
     }
 
     pub fn remove_attr(&mut self, node: NodeId, name: &str) {
+        self.op(9, &[node as u32], &[name]);
         if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind {
             attrs.retain(|(named, _)| named != name);
         }
@@ -245,6 +292,7 @@ impl Dom {
     }
 
     pub fn set_style(&mut self, node: NodeId, name: &str, value: &str) {
+        self.op(10, &[node as u32], &[name, value]);
         if let Kind::Element { styles, .. } = &mut self.nodes[node].kind {
             styles.retain(|(named, _)| named != name);
             if !value.is_empty() {

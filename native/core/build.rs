@@ -9,7 +9,11 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=src/guard.c");
-    cc::Build::new().file("src/guard.c").opt_level(2).compile("rocx_guard");
+    // In a browser (wasm32) a call into Roc is guarded by the page's JavaScript (a try around it),
+    // as web/runtime.js guards one: wasm has no setjmp.
+    if std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() != Ok("wasm32") {
+        cc::Build::new().file("src/guard.c").opt_level(2).compile("rocx_guard");
+    }
 
     let repo = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..");
     let platform = repo.join("web/platform");
