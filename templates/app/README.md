@@ -143,10 +143,12 @@ app.example.com {
 
 On HTTPS the session cookie is `Secure`, and named `__Host-{{name}}_session`.
 
-The sign-in mail's limit counts each client by its address. Behind one proxy, the address is the one
-the proxy adds to `X-Forwarded-For` (`Middlewares.proxies` is `Hops(1)`). With no proxy in front,
-change it to `Direct`: otherwise a client could write any address it likes there, and never be
-limited. Behind two proxies (a load balancer, then Caddy), `Hops(2)`.
+The sign-in mail's limit counts each client by its address. `Middlewares.proxies` is
+`Proxies(Ip.private)`: the address the connection came from, unless that is a proxy on this machine
+or in a private network (Caddy, a load balancer), and then the one it adds to `X-Forwarded-For`.
+With no proxy in front, a client's own `X-Forwarded-For` is never believed. Behind a proxy with a
+public address, name its ranges (`Proxies(Ip.cidrs(["203.0.113.0/24"]))`) or say how many proxies
+there are (`Hops(1)`): otherwise every client counts as that proxy.
 
 ## Tests
 

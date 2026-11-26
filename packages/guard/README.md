@@ -139,7 +139,8 @@ Guard.rate_limit_with({ name, policy, key, max_keys: 50_000 })
   /64, the block one household is given). `Guard.user(|context| context.user, trust)` counts the
   signed-in user, or the address when signed out. `Guard.route` counts the method and path, and
   `Guard.both(key, key)` each pair. A key is any `Server.Request, context -> Str`. A request whose
-  key is `""` isn't limited.
+  key is `""` isn't limited. A client whose address can't be told (an `X-Forwarded-For` that isn't
+  an address, where it is trusted) counts as `unknown`, one count for every such client, not none.
 - **Each limit its own name.** `name` keeps limits' counts apart. Put a limit in a route file's
   `middleware` for one route, or `Guard.under("/api", …)` in the default middleware for a whole
   tree.
@@ -175,7 +176,9 @@ says its own proxies wrote it:
 The connection's address is the request's `peer` (`Server.Request`). With no proxy in front,
 `Direct` is the client. Behind one, `peer` is the proxy, and `Hops` or `Proxies` read past it in
 `X-Forwarded-For`. `Proxies` starts at `peer`, so a client that reaches the server directly is
-itself the client, whatever it writes in the header.
+itself the client, whatever it writes in the header: `Proxies(Ip.private)` is right with no proxy
+and behind one in the server's own network (the app template's choice). `Hops(1)` with no proxy in
+front believes the client's header, so anyone can name any address and never be limited.
 
 ## Feature flags
 

@@ -42,6 +42,12 @@ test("a limit counts each client by its address: the sixth try in a minute is re
 	assert.match(browser.flash.body, /^Too many requests: try again in \d+ s\.$/);
 });
 
+test("a client whose address can't be told (an X-Forwarded-For that isn't one, with no proxy in front) isn't let off: every such client shares one count", async () => {
+	const statuses = [];
+	for (let i = 0; i < 6; i++) statuses.push((await app.client({ headers: { "x-forwarded-for": `not-an-address-${i}` } }).json("/login", {})).status);
+	assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429]);
+});
+
 test("a flag's override: an admin turns maintenance on (every page 503, but /admin) and resets it", async () => {
 	const admin = app.client({ headers: { cookie: "user=ada" } });
 	const visitor = app.client();

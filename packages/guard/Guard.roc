@@ -78,13 +78,15 @@ Guard := [].{
 		)
 
 	## The client's address, as `trust` says to find it (`ClientIp`): an IPv6 one by its /64.
-	## `""` (not limited) when it can't be told.
+	## `unknown` when it can't be told (no connection's address, or what is trusted to say isn't an
+	## address: an `X-Forwarded-For` a client wrote, behind fewer proxies than `Hops` says), one count
+	## for every such client, so a header that isn't an address doesn't make a client unlimited.
 	ip : ClientIp.Trust -> Key(c)
 	ip = |trust|
 		|request, _context|
 			match ClientIp.of(trust, peer(request), request.headers) {
 				Ok(found) => Ip.key(found)
-				Err(Unknown) => ""
+				Err(Unknown) => "unknown"
 			}
 
 	## The signed-in user, as `user` reads them from the context (`|context| context.member`);

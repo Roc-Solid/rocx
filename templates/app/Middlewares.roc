@@ -4,6 +4,7 @@ import pf.Server
 import auth.Auth
 import guard.ClientIp
 import guard.Guard
+import guard.Ip
 import guard.RateLimit
 import guard.Security
 import Accounts
@@ -52,11 +53,13 @@ Middlewares := [].{
 		Guard.rate_limit("sign-in mail from a client", RateLimit.per_minute(5), Guard.ip(Middlewares.proxies))
 			.then(Guard.rate_limit("sign-in mail to an address", RateLimit.per_hour(5), |request, _| Middlewares.address_in(request)))
 
-	## Who a client is, for the rate limits: the server sits behind one proxy (Caddy, a load
-	## balancer) that adds the client's address to `X-Forwarded-For`. With no proxy in front, write
-	## `Direct`, or a client can name any address it likes.
+	## Who a client is, for the rate limits: the address the connection came from, unless that is a
+	## proxy on this machine or in the server's private network (Caddy, a load balancer), whose
+	## `X-Forwarded-For` says who it came from. So with no proxy in front, a client's own header is
+	## never believed (it could name any address it likes). Behind a proxy at a public address, name
+	## its ranges (`Proxies(Ip.cidrs([…]))`), or say how many there are (`Hops(1)`).
 	proxies : ClientIp.Trust
-	proxies = Hops(1)
+	proxies = Proxies(Ip.private)
 
 	## The address a sign-in form (or JSON) was posted for, lower-cased; "" (not counted) when there
 	## is none, which the endpoint refuses anyway.

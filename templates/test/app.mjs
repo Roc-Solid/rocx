@@ -16,7 +16,8 @@ let addresses = 0;
 
 /**
  * Someone at a browser, from an address of their own: what the proxy in front says, in
- * `X-Forwarded-For` (the app trusts one proxy: `Middlewares.proxies`), so the sign-in mail's limit
+ * `X-Forwarded-For` (the app trusts proxies at private addresses, as the test's connection, from
+ * 127.0.0.1, is: `Middlewares.proxies`), so the sign-in mail's limit
  * from each client counts each of them apart.
  */
 export function person(server) {
