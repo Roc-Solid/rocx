@@ -41,7 +41,7 @@ Under `rocx dev`, the components' stories are at http://localhost:8080/__rocx/st
 its own, from the repository's root (`just web-host` first, if the browser's host isn't built yet):
 
 ```sh
-bin/rocx build examples/quiz --client examples/quiz/build/client
+bin/rocx generate examples/quiz --client examples/quiz/build/client
 .tools/roc-active build --target=wasm32 --opt=size \
   --output=examples/quiz/build/client/static/rocx/app.wasm examples/quiz/build/client/main.roc
 node server/build.mjs examples/quiz/main.roc examples/quiz/build/quiz

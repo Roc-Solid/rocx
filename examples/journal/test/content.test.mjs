@@ -27,7 +27,7 @@ after(() => copy && rmSync(copy, { recursive: true, force: true }));
 
 /** Builds and checks the copy: its exit status and what it said. */
 function check() {
-	const built = spawnSync(tools.rocx, ["build", copy], { encoding: "utf8", env: { ...process.env, ROC: tools.roc } });
+	const built = spawnSync(tools.rocx, ["generate", copy], { encoding: "utf8", env: { ...process.env, ROC: tools.roc } });
 	if (built.status !== 0) return { status: built.status, said: built.stdout + built.stderr };
 	const checked = spawnSync(tools.roc, ["check", join(copy, "main.roc")], { encoding: "utf8" });
 	return { status: checked.status, said: checked.stdout + checked.stderr };

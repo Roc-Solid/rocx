@@ -52,7 +52,7 @@ examples/echo/bench.sh 30 9000    # 30 s a level, on port 9000
 Or by hand, from the repository's root:
 
 ```sh
-bin/rocx build examples/echo
+bin/rocx generate examples/echo
 node server/build.mjs examples/echo/main.roc /tmp/rocx-echo/echo --opt=speed
 /tmp/rocx-echo/echo --port 18080 --host 127.0.0.1 &
 bombardier -m POST -H 'content-type: application/json' -b '"hello"' -c 64 -d 10s -l http://127.0.0.1:18080/echo

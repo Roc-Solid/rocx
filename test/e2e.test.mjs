@@ -40,7 +40,7 @@ const run = (...args) => spawnSync(rocx, args, { encoding: "utf8" });
 test("the fixture page compiles and its expects pass", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = fixtureCopy();
 	try {
-		assert.equal(run("build", dir).status, 0);
+		assert.equal(run("generate", dir).status, 0);
 		const checked = run("check", "--", roc, "test", join(dir, "main.roc"));
 		assert.equal(checked.status, 0, checked.stdout);
 		assert.match(checked.stdout, /All \(\d+\) tests passed/);
@@ -52,7 +52,7 @@ test("the fixture page compiles and its expects pass", { skip: !hasRoc && "no Ro
 test("a type error is reported at the .rocx line, quoting the .rocx code", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = fixtureCopy((source) => source.replace("<a href={post.link}>{post.title}</a>", "<a href={post.link}>{post.status}</a>"));
 	try {
-		assert.equal(run("build", dir).status, 0);
+		assert.equal(run("generate", dir).status, 0);
 		const line = readFileSync(join(dir, "Page.rocx"), "utf8").split("\n").findIndex((l) => l.includes("{post.status}</a>")) + 1;
 		const checked = run("check", "--", roc, "check", join(dir, "main.roc"));
 		assert.notEqual(checked.status, 0);
@@ -67,7 +67,7 @@ test("a type error is reported at the .rocx line, quoting the .rocx code", { ski
 test("a markup error stops the build at its line", () => {
 	const dir = fixtureCopy((source) => source.replace("</ul>", "</ol>"));
 	try {
-		const built = run("build", dir);
+		const built = run("generate", dir);
 		assert.equal(built.status, 1);
 		assert.match(built.stderr, /Page\.rocx:\d+:\d+: <ul> is closed by <\/ol>/);
 	} finally {
@@ -92,7 +92,7 @@ test("a file that mentions the marker isn't taken for one rocx wrote", () => {
 	try {
 		const source = 'docs = "# rocx: generated from X.rocx"\nx = 1\n';
 		writeFileSync(join(dir, "Docs.roc"), source);
-		assert.equal(run("build", dir).status, 0);
+		assert.equal(run("generate", dir).status, 0);
 		assert.equal(readFileSync(join(dir, "Docs.roc"), "utf8"), source, "not deleted as stale");
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -115,7 +115,7 @@ function routesCopy(edit = (path, source) => source) {
 test("routes: each route file a module, its page in Root, a path for every page, a function of its params", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = routesCopy();
 	try {
-		const built = run("build", dir);
+		const built = run("generate", dir);
 		assert.equal(built.status, 0, built.stderr);
 		assert.match(readFileSync(join(dir, "Generated", "BlogSlugPage.roc"), "utf8").split("\n")[2], /^BlogSlugPage := \[\]\.\{$/, "the module's line, on the route file's blank line");
 		assert.match(readFileSync(join(dir, "Generated", "BlogSlugPage.roc"), "utf8"), /^import Paths$/m, "its imports, from where rocx wrote it");
@@ -131,7 +131,7 @@ test("routes: each route file a module, its page in Root, a path for every page,
 test("routes: a link with the wrong params doesn't compile, and is reported at the route file's line", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = routesCopy((path, source) => source.replace('Paths.blog_slug({ slug: "other" })', 'Paths.blog_slug({ slg: "other" })'));
 	try {
-		assert.equal(run("build", dir).status, 0);
+		assert.equal(run("generate", dir).status, 0);
 		const checked = run("check", "--", roc, "check", join(dir, "main.roc"));
 		assert.notEqual(checked.status, 0);
 		assert.match(checked.stdout, /routes\/blog\/\[slug\]\/\+page\.rocx:8:\d+/);
@@ -145,7 +145,7 @@ test("routes: a link with the wrong params doesn't compile, and is reported at t
 test("routes: a route file with no blank line before its definitions builds, its module's line on the first one's, and a mistake in it is still reported at its line", { skip: !hasRoc && "no Roc (run `just setup`, or set ROC)" }, () => {
 	const dir = routesCopy((path, source) => source.replace("import ../../../Generated/Paths\n\n", "import ../../../Generated/Paths\n"));
 	try {
-		const built = run("build", dir);
+		const built = run("generate", dir);
 		assert.equal(built.status, 0, built.stderr);
 		assert.equal(readFileSync(join(dir, "Generated", "BlogSlugPage.roc"), "utf8").split("\n")[3], "BlogSlugPage := [].{ view! = |{ params: params! }|");
 		const tested = run("check", "--", roc, "test", join(dir, "main.roc"));
@@ -155,7 +155,7 @@ test("routes: a route file with no blank line before its definitions builds, its
 	}
 	const wrong = routesCopy((path, source) => source.replace("import ../../../Generated/Paths\n\n", "import ../../../Generated/Paths\n").replace('Paths.blog_slug({ slug: "other" })', 'Paths.blog_slug({ slg: "other" })'));
 	try {
-		assert.equal(run("build", wrong).status, 0);
+		assert.equal(run("generate", wrong).status, 0);
 		const checked = run("check", "--", roc, "check", join(wrong, "main.roc"));
 		assert.notEqual(checked.status, 0);
 		assert.match(checked.stdout, /routes\/blog\/\[slug\]\/\+page\.rocx:7:\d+/);
@@ -168,7 +168,7 @@ test("routes: a route file with no blank line before its definitions builds, its
 	try {
 		mkdirSync(join(endpoint, "routes", "feed"));
 		writeFileSync(join(endpoint, "routes", "feed", "+server.roc"), "import pf.Server\nimport pf.Endpoint\nget! : { request : Server.Request, params : {}, context : c } => Try(Str, Endpoint.Refusal)\nget! = |_| Ok(nobody)\n");
-		const built = run("build", endpoint);
+		const built = run("generate", endpoint);
 		assert.equal(built.status, 0, built.stderr);
 		assert.equal(readFileSync(join(endpoint, "Generated", "FeedServer.roc"), "utf8").split("\n")[2], "FeedServer := [].{ get! : { request : Server.Request, params : {}, context : c } => Try(Str, Endpoint.Refusal)");
 		const checked = run("check", "--", roc, "check", join(endpoint, "main.roc"));
@@ -183,7 +183,7 @@ test("routes: a directory that isn't a path's part is refused", () => {
 	const other = routesCopy();
 	try {
 		cpSync(join(other, "routes", "blog"), join(other, "routes", "Blog Posts"), { recursive: true });
-		const built = run("build", other);
+		const built = run("generate", other);
 		assert.equal(built.status, 1);
 		assert.match(built.stderr, /a directory is a path's part in lower case/);
 	} finally {
@@ -217,7 +217,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 	try {
 		// rocx build writes the program; the author wrote main.roc, the route files and their modules.
 		// A dev build: the stories too (Counter's and Badge's), which change no page of the app's.
-		const built = run("build", dir, "--client", client, "--dev");
+		const built = run("generate", dir, "--client", client, "--dev");
 		assert.equal(built.status, 0, built.stderr);
 		assert.ok(!existsSync(join(dir, "Generated", "ServerFunctions.roc")), "no server functions (D-023): rocx writes no ServerFunctions");
 		const app = readFileSync(join(dir, "Generated", "App.roc"), "utf8");
@@ -395,7 +395,7 @@ test("an app of components: rocx build refuses a job outside its module's block,
 		cpSync(join(here, "e2e", "app"), dir, { recursive: true });
 		try {
 			edit(dir);
-			return run("build", dir);
+			return run("generate", dir);
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
@@ -455,7 +455,7 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 	writeFileSync(join(dir, "context.txt"), "ctx");
 	let server;
 	try {
-		const built = run("build", dir);
+		const built = run("generate", dir);
 		assert.equal(built.status, 0, built.stderr);
 		buildHost();
 		buildApp(join(dir, "main.roc"), join(dir, "app"));
@@ -544,7 +544,7 @@ test("the contract (D-037): a route, an actor and a job each import Generated/Ap
 	let server;
 	const gone = new AbortController();
 	try {
-		const built = run("build", dir);
+		const built = run("generate", dir);
 		assert.equal(built.status, 0, built.stderr);
 		const api = readFileSync(join(dir, "Generated", "Api.roc"), "utf8");
 		assert.match(api, /^import pf\.Channel\nimport \.\.\/News\n\nApi := /m, "the modules its types name, and no route file");
@@ -599,7 +599,7 @@ test("the contract (D-037): a wrong body or answer against it doesn't compile, i
 	try {
 		const client = join(dir, "build", "client");
 		const both = () => {
-			const built = run("build", dir, "--client", client);
+			const built = run("generate", dir, "--client", client);
 			assert.equal(built.status, 0, built.stderr);
 			return [run("check", "--", roc, "check", join(dir, "main.roc")), run("check", "--", roc, "check", join(client, "main.roc"))];
 		};

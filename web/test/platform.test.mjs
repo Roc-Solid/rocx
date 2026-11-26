@@ -40,7 +40,7 @@ function run(command, args) {
 /** The app through rocx, and the browser's copy; the host; then each app, the profile from the dev
  * backend and optimized, the others as the server's half (dev backend) or the browser's (for size). */
 if (!skip) {
-	run(rocxBinary(), ["build", join(here, "app"), "--client", join(out, "app-client")]);
+	run(rocxBinary(), ["generate", join(here, "app"), "--client", join(out, "app-client")]);
 	// A dev build of D-052's component (`rocx build --dev`), for the warning of a read in a
 	// component's body: a copy of it, the platform named from where the copy is.
 	const devApp = join(out, "dev-app");
@@ -48,7 +48,7 @@ if (!skip) {
 	mkdirSync(devApp, { recursive: true });
 	cpSync(join(here, "app", "Untracked.rocx"), join(devApp, "Untracked.rocx"));
 	writeFileSync(join(devApp, "main.roc"), readFileSync(join(here, "app", "untracked_app.roc"), "utf8").replace('"../../platform/main.roc"', '"../../../platform/main.roc"'));
-	run(rocxBinary(), ["build", devApp, "--dev"]);
+	run(rocxBinary(), ["generate", devApp, "--dev"]);
 	buildWebHost();
 	for (const [name, app, opt] of [
 		["app-dev", join(here, "app", "main.roc"), "dev"],

@@ -107,7 +107,10 @@ after(() => {
 test("rocx build --image: an OCI image of the app's release, with no Dockerfile, that docker loads and runs", { skip, timeout: 30 * 60 * 1000 }, async () => {
 	const built = spawnSync(rocxBinary(), ["build", app, "--image", image, "--tag", "rocx-image-test:1"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 	assert.equal(built.status, 0, built.stdout + built.stderr);
-	assert.match(built.stderr, new RegExp(`rocx build --image: .*shop\\.tar, rocx-image-test:1 \\(linux/${arch}\\) in [\\d.]+ s: [\\d.]+ MB to send, [\\d.]+ MB unpacked`));
+	assert.match(built.stderr, new RegExp(`rocx build --image · Shop App → \\S*shop\\.tar · rocx-image-test:1 · linux/${arch}`));
+	assert.match(built.stderr, /✓ image · one layer, gzipped\s+[\d.]+ s/);
+	assert.match(built.stderr, /shop\.tar  [\d.]+ MB to send · [\d.]+ MB unpacked/);
+	assert.match(built.stderr, /Run  docker load -i \S*shop\.tar/);
 
 	const outer = untar(readFileSync(image));
 	assert.deepEqual([...outer.keys()].filter((name) => !name.startsWith("blobs/")), ["oci-layout", "index.json", "manifest.json"]);

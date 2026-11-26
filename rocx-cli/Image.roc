@@ -21,6 +21,7 @@ import pf.Time
 import Fs
 import Release
 import Static
+import Term
 import Text
 import Value
 
@@ -85,28 +86,48 @@ Image := [].{
 				return Err(Exit(2))
 			}
 		}
-		match Image.made!(asked, cwd, rocx) {
-			Ok(said) => {
-				for line in said {
-					_ = Stderr.line!(line)
-				}
+		styled = Term.styled!({})
+		target = if (asked.target.is_empty()) Image.linux_of(Image.machine!({})) else asked.target
+		shown = Static.shown(cwd, asked.file)
+		Term.header!(styled, "rocx build --image", ["${Fs.basename(Fs.real!(asked.dir))} → ${shown}", asked.tag, "linux/${Image.arch_of(target)}"])
+		match Image.made!({ ..asked, target: target }, cwd, rocx) {
+			Ok(made) => {
+				_ = Stderr.line!("")
+				_ = Stderr.line!("  ${shown}  ${Image.megabytes(made.sent)} to send ${Term.dim(styled, "· ${Image.megabytes(made.unpacked)} unpacked")}")
+				Term.next!(
+					styled,
+					"Run",
+					[
+						"docker load -i ${shown}",
+						"docker run -p 8080:8080 -v ${Image.name_of(Fs.basename(Fs.real!(asked.dir)))}-data:/app/data ${asked.tag}",
+						Term.dim(styled, "settings as environment variables: DATABASE_URL, PUBLIC_URL…"),
+					],
+				)
 				Ok({})
 			}
 			Err(Failed(message)) => {
+				_ = Stderr.line!("")
 				_ = Stderr.line!("rocx build --image: ${message}")
 				Err(Exit(1))
 			}
 		}
 	}
 
-	## The release built into the app's `build/image/release`, then the image from it.
-	made! : Asked, Str, Str => Try(List(Str), [Failed(Str)])
+	## The release built into the app's `build/image/release`, then the image from it (`asked`'s
+	## target named): how many bytes its layer is to send (gzipped) and unpacked.
+	made! : Asked, Str, Str => Try({ sent : U64, unpacked : U64 }, [Failed(Str)])
 	made! = |asked, cwd, rocx| {
-		started = Time.now_ms!({})
-		target = if (asked.target.is_empty()) Image.linux_of(Image.machine!({})) else asked.target
+		target = asked.target
 		work = Fs.join([asked.dir, "build", "image"])
 		release = Fs.join([work, "release"])
 		_ = Release.made!({ dir: asked.dir, out: release, target }, cwd, rocx)?
+		Term.step!(Term.styled!({}), "image · one layer, gzipped", |{}| Image.written!(asked, work, release))
+	}
+
+	## The image of the release in `release`, written to `asked.file` (its layer made in `work`).
+	written! : Asked, Str, Str => Try({ sent : U64, unpacked : U64 }, [Failed(Str)])
+	written! = |asked, work, release| {
+		target = asked.target
 		static = Fs.join([release, "static"])
 		serves = File.is_dir!(static)
 		files = if (serves) Fs.files!(static, "", |_| Bool.False) else []
@@ -130,7 +151,6 @@ Image := [].{
 				$entries = $entries.append(File({ path: "app/static/${Fs.relative(static, path)}", mode: Image.file_mode, bytes }))
 			}
 		}
-		_ = Stderr.line!("rocx: the image (its layer, gzipped, and its manifest)…")
 		layer_tar = Image.tarred($entries)?
 		diff_id = "sha256:${Crypto.SHA256.hash(layer_tar).to_hex()}"
 		layer_file = Fs.join([work, "layer.tar"])
@@ -157,11 +177,7 @@ Image := [].{
 		Fs.make_dirs!(Fs.dirname(asked.file))
 		Image.write!(asked.file, archive)?
 		Fs.delete!("${layer_file}.gz")
-		shown = Static.shown(cwd, asked.file)
-		Ok([
-			"rocx build --image: ${shown}, ${asked.tag} (linux/${Image.arch_of(target)}) in ${Image.seconds(Time.now_ms!({}) - started)} s: ${Image.megabytes(zipped.len())} to send, ${Image.megabytes(layer_tar.len())} unpacked",
-			"docker load -i ${shown}, then run it with a volume at /app/data for its database (PORT 8080; DATABASE_URL, PUBLIC_URL…).",
-		])
+		Ok({ sent: zipped.len(), unpacked: layer_tar.len() })
 	}
 
 	## The user the server runs as: distroless's `nonroot`.

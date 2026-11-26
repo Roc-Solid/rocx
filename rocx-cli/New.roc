@@ -3,10 +3,12 @@ import pf.Stdin
 import pf.Stdout
 import pf.Stderr
 import Fs
+import Term
 import Text
 import Versions
 
-## `rocx new <dir> [--db sqlite|postgres|turso]` (D-078): a new app made from rocx's template
+## `rocx new [dir] [--db sqlite|postgres|turso]` (D-078, D-107: the directory asked for at a terminal
+## when not given): a new app made from rocx's template
 ## (`templates/app/` beside this rocx, in a clone or an install), its placeholders filled in: where
 ## the platform and packages are (`./.rocx`, the app's link to this version of rocx), its name as
 ## code writes it and as people read it, and its database (SQLite unless `--db` says otherwise, or
@@ -21,8 +23,10 @@ New := [].{
 	run! : List(Str), Str => Try({}, [Exit(I32)])
 	run! = |args, home|
 		match New.parse(args) {
-			Err(why) => Versions.failed!("rocx new: ${why}\nusage: rocx new <dir> [--db sqlite|postgres|turso]")
-			Ok({ dir, db }) => {
+			Err(why) => Versions.failed!("rocx new: ${why}\nusage: rocx new [dir] [--db sqlite|postgres|turso]")
+			Ok({ dir: given, db }) => {
+				styled = Term.styled!({})
+				dir = if (given.is_empty()) ask_name!(styled)? else given
 				template = Fs.join([home, "templates", "app"])
 				if !Fs.is_dir!(template) {
 					return Versions.failed!("rocx new: this rocx has no template (${template})")
@@ -33,13 +37,14 @@ New := [].{
 				}
 				database =
 					match db {
-						Given(given) => given
-						Ask => ask!({})
+						Given(chosen) => chosen
+						Ask => ask!(styled)
 					}
 				named = Fs.basename(target)
+				Term.header!(styled, "rocx new", [named, New.database_name(database)])
 				filled = { root: "./.rocx", name: New.code_name(named), title: New.title(named) }
 				match made!(template, target, "", filled, database) {
-					Ok({}) => {}
+					Ok({}) => Term.ok!(styled, "${dir}/ made from the template")
 					Err(why) => return Versions.failed!("rocx new: ${why}")
 				}
 				version = Versions.own!(home)
@@ -47,10 +52,10 @@ New := [].{
 					_ = Fs.write!(Fs.join([target, ".rocx-version"]), "${version}\n")
 				}
 				match Versions.link!(target, home) {
-					Ok({}) => {}
+					Ok(_) => Term.ok!(styled, if (version.is_empty()) "on this clone of rocx (.rocx links to it)" else "on rocx ${version} (.rocx-version: commit it)")
 					Err(Failed(why)) => return Versions.failed!(why)
 				}
-				_ = Stdout.line!(New.made_line(dir, database, version))
+				Term.next!(styled, "Next", New.next_lines(styled, dir, database))
 				Ok({})
 			}
 		}
@@ -81,7 +86,7 @@ New := [].{
 				return Err("one directory, not \"${$dir}\" and \"${word}\"")
 			}
 		}
-		if ($dir.is_empty()) Err("which directory?") else Ok({ dir: $dir, db: $db })
+		Ok({ dir: $dir, db: $db })
 	}
 
 	## A database by the name `--db` gives it.
@@ -152,37 +157,57 @@ New := [].{
 			Turso => "Turso(\"data/app.db\")"
 		}
 
-	## What rocx new says once the app is made: where, on which database, and how to start it.
-	made_line : Str, New.Database, Str -> Str
-	made_line = |dir, database, version| {
-		pinned = if (version.is_empty()) "made from a clone of rocx: no .rocx-version, and .rocx links to the clone" else "on rocx ${version} (.rocx-version)"
-		db =
-			match database {
-				Sqlite => "SQLite, a file in data/"
-				Postgres => "Postgres: set DATABASE_URL before you start it"
-				Turso => "Turso, a file in data/"
-			}
-		"Made ${dir}, ${pinned}, on ${db}.\n\n  cd ${dir}\n  rocx dev\n\nThen open the address it prints and sign in with the dev sign-in (any address: rocx dev runs the server under --dev). The app's README.md says what to change first."
-	}
+	## A database's name, as people read it.
+	database_name : New.Database -> Str
+	database_name = |database|
+		match database {
+			Sqlite => "SQLite"
+			Postgres => "Postgres"
+			Turso => "Turso"
+		}
+
+	## What to do once the app is made: go there, start it, and what then.
+	next_lines : Bool, Str, New.Database -> List(Str)
+	next_lines = |styled, dir, database|
+		["cd ${dir}"]
+			.concat(if (database == Postgres) ["export DATABASE_URL=postgres://…"] else [])
+			.concat(["rocx dev", Term.dim(styled, "then sign in with any address (rocx dev's sign-in); README.md says what to change first")])
 }
 
 ## The line main.roc chooses the database on, as the template writes it (SQLite).
 sqlite_line : Str
 sqlite_line = "database: Sqlite(\"data/app.db\"),"
 
-## The database, asked at a terminal; off one, SQLite, said.
-ask! : {} => New.Database
-ask! = |{}|
+## The directory, asked at a terminal (`my-app` when the answer is empty); off one, an error.
+ask_name! : Bool => Try(Str, [Exit(I32)])
+ask_name! = |styled|
 	if Stdin.is_terminal!({}) {
-		_ = Stdout.line!("Which database?\n  1. SQLite (a file beside the server) [default]\n  2. Postgres\n  3. Turso (SQLite's format, concurrent writes)")
-		match Stdin.line!({}) {
-			Ok(answer) =>
-				match Text.trim(answer) {
-					"2" => Postgres
-					"3" => Turso
-					other => New.database_of(other) ?? Sqlite
-				}
-			Err(EndOfInput) => Sqlite
+		_ = Stderr.write!("  ${Term.bold(styled, "Name")} ${Term.dim(styled, "(the app's directory: my-app)")} ")
+		answer = Stdin.line!({}) ?? ""
+		_ = Stderr.line!("")
+		Ok(if (Text.trim(answer).is_empty()) "my-app" else Text.trim(answer))
+	} else {
+		Versions.failed!("rocx new: which directory? rocx new my-app")
+	}
+
+## The database, asked at a terminal; off one, SQLite, said.
+ask! : Bool => New.Database
+ask! = |styled|
+	if Stdin.is_terminal!({}) {
+		choices = [
+			"  ${Term.bold(styled, "Database")}",
+			"    1  SQLite    ${Term.dim(styled, "a file beside the server (the default)")}",
+			"    2  Postgres  ${Term.dim(styled, "a server of its own, at DATABASE_URL")}",
+			"    3  Turso     ${Term.dim(styled, "SQLite's format, writes at the same time")}",
+		]
+		_ = Stderr.line!(Str.join_with(choices, "\n"))
+		_ = Stderr.write!("  ${Term.dim(styled, "›")} ")
+		answer = Stdin.line!({}) ?? ""
+		_ = Stderr.line!("")
+		match Text.trim(answer) {
+			"2" => Postgres
+			"3" => Turso
+			other => New.database_of(other) ?? Sqlite
 		}
 	} else {
 		_ = Stderr.line!("rocx new: no terminal to ask at, so SQLite (--db postgres or --db turso for another)")
@@ -219,7 +244,7 @@ expect New.title("2048") == "App 2048"
 expect New.parse(["shop"]) == Ok({ dir: "shop", db: Ask })
 expect New.parse(["shop", "--db", "Postgres"]) == Ok({ dir: "shop", db: Given(Postgres) })
 expect New.parse(["--db", "mysql", "shop"]).is_err()
-expect New.parse([]).is_err()
+expect New.parse([]) == Ok({ dir: "", db: Ask })
 expect New.parse(["a", "b"]).is_err()
 expect New.fill("main.roc", "pf: platform \"{{root}}/server/platform/main.roc\"\ndatabase: Sqlite(\"data/app.db\"),\ncookie: \"{{name}}_session\"", { root: "./.rocx", name: "shop", title: "Shop" }, Turso) == Ok("pf: platform \"./.rocx/server/platform/main.roc\"\ndatabase: Turso(\"data/app.db\"),\ncookie: \"shop_session\"")
 expect New.fill("main.roc", "no database here", { root: "./.rocx", name: "shop", title: "Shop" }, Sqlite).is_err()

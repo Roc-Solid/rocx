@@ -38,13 +38,17 @@ view! = |_|
 			<Heading id="commands">Commands</Heading>
 			<p>
 				A <code>dir</code> is an app's folder, the one with <code>routes/</code> in it; without one, a
-				command works on the current folder. Run <code>rocx</code> alone to see the usage line.
+				command works on the current folder. Run <code>rocx</code> alone (or <code>rocx --help</code>) for
+				the commands, and <code>rocx help build</code> (or <code>rocx build --help</code>) for one's options.
+				At a terminal each step of a build is drawn as it runs, a <code>✓</code> and its time when done;
+				in a pipe, in CI or with <code>NO_COLOR</code> set, the same lines are plain text.
 			</p>
 			<div class="commands">
 				<div class="command">
-					<p class="command-usage">rocx new {"<dir>"}<span>--db sqlite|postgres|turso</span></p>
+					<p class="command-usage">rocx new {"[dir]"}<span>--db sqlite|postgres|turso</span></p>
 					<p>
-						Makes a new app in <code>dir</code>, which must be empty or new, from rocx's template: people
+						Makes a new app in <code>dir</code> (asked for at a terminal when not given), which must be
+						empty or new, from rocx's template: people
 						sign in through the <a href={Paths.ecosystem_auth}>auth package</a> (a link by email, Google and
 						GitHub once their keys are set, any address under <code>rocx dev</code>), its users are in its
 						own table, other sites' posts are refused, guard's security headers are on, and the sign-in
@@ -88,10 +92,69 @@ view! = |_|
 					</div>
 				</div>
 				<div class="command">
-					<p class="command-usage">rocx build {"<dir>…"}<span>--client {"<out>"}</span><span>--dev</span></p>
+					<p class="command-usage">rocx build {"[dir]"}<span>--out dist</span><span>--target arm64musl</span></p>
+					<p>
+						The app built to deploy: <code>dist/server</code>, its server optimized for speed, and
+						<code>dist/static</code>, the app's <code>static/</code> folder and the browser's files, its wasm
+						optimized for size. Run <code>dist/server --static dist/static</code> behind a proxy that speaks
+						TLS (Caddy, say). <code>--target</code> builds for another machine: <code>arm64mac</code>,
+						<code>x64mac</code>, or <code>arm64musl</code> and <code>x64musl</code>, static Linux executables
+						for a container. The server's host has the database engine the app's program names alone
+						(<code>database</code>; SQLite when it names none), and a Linux one has no debug info. The
+						build is made beside <code>dist</code> (or <code>--out</code>) and replaces it only once it is
+						complete; the folder must be empty, or an earlier build (it has a <code>server</code>).
+					</p>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx build {"[dir]"} --image<span>--out {"<name>.tar"}</span><span>--tag name:tag</span></p>
+					<p>
+						The release as a container image, which rocx writes itself: no Dockerfile, and no Docker to
+						build it. The server is a static Linux executable with its TLS roots inside, so the image has
+						no base, only one layer: <code>/app/server</code>, <code>/app/static</code>, a user to run as
+						(65532), <code>/tmp</code>, and <code>/app/data</code> for a volume (a SQLite app's
+						<code>data/app.db</code>). It runs in <code>/app</code> on <code>PORT</code> 8080. The file is an
+						OCI image in a tar, <code>{"<name>.tar"}</code> (the app's folder's name) unless
+						<code>--out</code> says: <code>docker load -i</code> takes it, as does podman. <code>--tag</code>
+						names it (the directory's name, <code>:latest</code>, by default); <code>--target</code> is
+						<code>arm64musl</code> or <code>x64musl</code>, this machine's processor by default.
+					</p>
+				</div>
+				<div class="command" id="static">
+					<p class="command-usage">rocx build {"[dir]"} --static<span>--out dist</span><span>--base /path/</span><span>--route {"<path>"}</span><span>--built {"<build>"}</span><span>-- {"<server options>"}</span></p>
 					<div>
 						<p>
-							Turns each <code>.rocx</code> file under the folders into the <code>.roc</code> file beside
+							Writes the app as static files into <code>dist/</code> (or <code>--out</code>), for a host with no server:
+							GitHub Pages, a CDN, any folder a web server serves. It builds the app for production,
+							starts its server on a free port, and asks it for every page: <code>/</code>, each page
+							whose path has no params, and every page those link to. Each page becomes
+							<code>{"<path>/index.html"}</code>. Beside them go <code>404.html</code> (what a path
+							nothing answers shows), the app's <code>static/</code>, and <code>rocx/</code> with the
+							runtime and the wasm. A page carries the answers to the reads it made while it rendered,
+							so its data is there without a server. This site is built this way.
+						</p>
+						<p>
+							<code>--base</code> puts every URL under a path, for a site served there
+							(<code>example.github.io/docs/</code> is <code>--base /docs/</code>). <code>--route</code>
+							asks for a path no page links to: a page with params (<code>/blog/hello</code>), or an
+							endpoint's answer, written as a file (<code>/feed.xml</code>). <code>--built</code> uses a
+							build you made (its <code>server</code> and <code>client/static</code>) instead of building
+							one. The copy is made beside its folder and replaces it only once it is complete; the folder
+							must be empty, or an earlier copy.
+						</p>
+						<p>
+							What only a server can answer isn't in the copy, and the build lists it: a method that
+							writes (<code>post!</code>), events and channels, a page behind a directory's middleware
+							(it answers each request as it comes), a page with params that no link or
+							<code>--route</code> reached, and a link to a path that answered an error.
+						</p>
+					</div>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx generate {"[dir]…"}<span>--client {"<out>"}</span><span>--dev</span></p>
+					<div>
+						<p>
+							What <code>rocx build</code> and <code>rocx dev</code> do first, and nothing else, for
+							editors and scripts. Turns each <code>.rocx</code> file under the folders into the <code>.roc</code> file beside
 							it, its markup written as calls to the platform's <code>Html</code>. For an app it also
 							writes <code>Generated/</code>: <code>Routes.roc</code> (the router), <code>Paths.roc</code>
 							(a typed link for each route), <code>Api.roc</code> and <code>Handlers.roc</code> (the
@@ -122,63 +185,6 @@ view! = |_|
 						</p>
 						<p><code>--dev</code> also builds the <a href="#stories">stories</a> and their catalog.</p>
 					</div>
-				</div>
-				<div class="command" id="static">
-					<p class="command-usage">rocx build {"<dir>"}<span>--static {"<out>"}</span><span>--base /path/</span><span>--route {"<path>"}</span><span>--built {"<build>"}</span><span>-- {"<server options>"}</span></p>
-					<div>
-						<p>
-							Writes the app as static files into <code>{"<out>"}</code>, for a host with no server:
-							GitHub Pages, a CDN, any folder a web server serves. It builds the app for production,
-							starts its server on a free port, and asks it for every page: <code>/</code>, each page
-							whose path has no params, and every page those link to. Each page becomes
-							<code>{"<path>/index.html"}</code>. Beside them go <code>404.html</code> (what a path
-							nothing answers shows), the app's <code>static/</code>, and <code>rocx/</code> with the
-							runtime and the wasm. A page carries the answers to the reads it made while it rendered,
-							so its data is there without a server. This site is built this way.
-						</p>
-						<p>
-							<code>--base</code> puts every URL under a path, for a site served there
-							(<code>example.github.io/docs/</code> is <code>--base /docs/</code>). <code>--route</code>
-							asks for a path no page links to: a page with params (<code>/blog/hello</code>), or an
-							endpoint's answer, written as a file (<code>/feed.xml</code>). <code>--built</code> uses a
-							build you made (its <code>server</code> and <code>client/static</code>) instead of building
-							one. The copy is made beside <code>{"<out>"}</code> and replaces it only once it is
-							complete; <code>{"<out>"}</code> must be empty, or an earlier copy.
-						</p>
-						<p>
-							What only a server can answer isn't in the copy, and the build lists it: a method that
-							writes (<code>post!</code>), events and channels, a page behind a directory's middleware
-							(it answers each request as it comes), a page with params that no link or
-							<code>--route</code> reached, and a link to a path that answered an error.
-						</p>
-					</div>
-				</div>
-				<div class="command">
-					<p class="command-usage">rocx build {"<dir>"}<span>--release {"<out>"}</span><span>--target arm64musl</span></p>
-					<p>
-						The app built to deploy: <code>out/server</code>, its server optimized for speed, and
-						<code>out/static</code>, the app's <code>static/</code> folder and the browser's files, its wasm
-						optimized for size. Run <code>out/server --static out/static</code> behind a proxy that speaks
-						TLS (Caddy, say). <code>--target</code> builds for another machine: <code>arm64mac</code>,
-						<code>x64mac</code>, or <code>arm64musl</code> and <code>x64musl</code>, static Linux executables
-						for a container. The server's host has the database engine the app's program names alone
-						(<code>database</code>; SQLite when it names none), and a Linux one has no debug info. The
-						build is made beside <code>out</code> and replaces it only once it is complete;
-						<code>out</code> must be empty, or an earlier build (it has a <code>server</code>).
-					</p>
-				</div>
-				<div class="command">
-					<p class="command-usage">rocx build {"<dir>"}<span>--image {"<file.tar>"}</span><span>--tag name:tag</span></p>
-					<p>
-						The release as a container image, which rocx writes itself: no Dockerfile, and no Docker to
-						build it. The server is a static Linux executable with its TLS roots inside, so the image has
-						no base, only one layer: <code>/app/server</code>, <code>/app/static</code>, a user to run as
-						(65532), <code>/tmp</code>, and <code>/app/data</code> for a volume (a SQLite app's
-						<code>data/app.db</code>). It runs in <code>/app</code> on <code>PORT</code> 8080. The file is an
-						OCI image in a tar: <code>docker load -i</code> takes it, as does podman. <code>--tag</code>
-						names it (the directory's name, <code>:latest</code>, by default); <code>--target</code> is
-						<code>arm64musl</code> or <code>x64musl</code>, this machine's processor by default.
-					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx check {"[dir]"}</p>
@@ -272,6 +278,10 @@ view! = |_|
 						version the app names, installing it first if it isn't, so a team shares one version through
 						the app's repository. A rocx from Nix leaves upgrading to Nix.
 					</p>
+				</div>
+				<div class="command">
+					<p class="command-usage">rocx help {"[command]"}</p>
+					<p>The commands, or one command's usage and options (<code>rocx {"<command>"} --help</code> too).</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx --version</p>
@@ -411,7 +421,7 @@ view! = |_|
 			</p>
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 			<p>
-				<code>rocx build . --release dist</code> does all of it for a release: the browser's copy, its wasm
+				<code>rocx build</code> does all of it for a release: the browser's copy, its wasm
 				(<code>--opt=size --specialize=yes</code>), and the server's program with its host, one
 				executable (<code>--opt=speed</code>), with what it serves beside it. <code>--target arm64musl</code>
 				or <code>x64musl</code> makes a static Linux executable for a container, from a Mac too
@@ -419,7 +429,7 @@ view! = |_|
 				database and the rest as flags or environment variables
 				(<a href={"${Paths.platform_server}#running"}>running it</a>).
 			</p>
-			<Code source={"rocx build . --release dist --target arm64musl\ndist/server --port 8080 --static dist/static"} numbers={Bool.False} plain />
+			<Code source={"rocx build --target arm64musl\ndist/server --port 8080 --static dist/static"} numbers={Bool.False} plain />
 			<p>
 				The two programs are optimized differently. The server's, <code>--opt=speed</code>, is built with
 				boxy lowering (<code>--specialize=no</code>) by default. With lambda-set specialization, Roc's

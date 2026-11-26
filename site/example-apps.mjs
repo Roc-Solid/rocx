@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Measures the example apps for the docs' examples page, into site/example-apps.json (committed): each
-// app's browser half (rocx build --client, then its wasm with --opt=size, as `just examples` builds
+// app's browser half (rocx generate --client, then its wasm with --opt=size, as `just examples` builds
 // it) raw, gzipped and brotli'd, the runtime every page loads beside it, and what the app is made of
 // (its pages, endpoints, lines of Roc, expects, node tests, packages, whether it has Postgres). With
 // --bench, echo's server too: the build it ships (--opt=speed) under bombardier, each of its two
@@ -110,7 +110,7 @@ export function anatomy(name) {
 function browserHalf(name, rocx) {
 	const client = join(tmpdir(), "rocx-example-apps", name);
 	rmSync(client, { recursive: true, force: true });
-	run(rocx, ["build", `examples/${name}`, "--client", client], { env: { ...process.env, ROC: roc() } });
+	run(rocx, ["generate", `examples/${name}`, "--client", client], { env: { ...process.env, ROC: roc() } });
 	if (!existsSync(join(client, "main.roc"))) return null;
 	const wasm = join(client, "static", "rocx", "app.wasm");
 	run(roc(), ["build", "--target=wasm32", "--opt=size", `--output=${wasm}`, join(client, "main.roc")]);
@@ -121,7 +121,7 @@ function browserHalf(name, rocx) {
 function shippedRuntime(rocx) {
 	const client = join(tmpdir(), "rocx-example-apps", "runtime");
 	rmSync(client, { recursive: true, force: true });
-	run(rocx, ["build", "examples/hello", "--client", client], { env: { ...process.env, ROC: roc() } });
+	run(rocx, ["generate", "examples/hello", "--client", client], { env: { ...process.env, ROC: roc() } });
 	return readFileSync(join(client, "static", "rocx", "runtime.js"));
 }
 
@@ -151,7 +151,7 @@ export function echoVariants() {
  * it; and Roc's own time on a request, from the answers' server-timing. */
 async function bench(rocx, seconds = 10) {
 	const out = join(tmpdir(), "rocx-example-apps", "echo-server");
-	run(rocx, ["build", "examples/echo"]);
+	run(rocx, ["generate", "examples/echo"]);
 	buildApp(join(root, "examples", "echo", "main.roc"), out, { opt: "speed" });
 	const port = 18000 + Math.floor(Math.random() * 900);
 	const server = spawn(out, ["--port", String(port), "--host", "127.0.0.1"], { stdio: "ignore" });

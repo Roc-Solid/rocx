@@ -39,7 +39,7 @@ the tests make it short): `BOARD_LEASE_TTL_MS=5000 ../../bin/rocx dev`.
 its own, from the repository's root (`just web-host` first, if the browser's host isn't built yet):
 
 ```sh
-bin/rocx build examples/board --client examples/board/build/client
+bin/rocx generate examples/board --client examples/board/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/board/build/client/static/rocx/app.wasm examples/board/build/client/main.roc
 node server/build.mjs examples/board/main.roc examples/board/build/server
 cd examples/board && build/server --port 18120 --static build/client/static

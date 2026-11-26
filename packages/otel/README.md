@@ -44,7 +44,7 @@ state.
    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_SERVICE_NAME=shop ./server
    ```
 
-Nothing is copied into the app. `example/` does all of this (`rocx build .`): `GET /hello/<name>`
+Nothing is copied into the app. `example/` does all of this (`rocx dev`): `GET /hello/<name>`
 counts `app.greetings`. Without the plugin in the app's list, `Otel.record!` measures nothing, and
 says so once on the log.
 

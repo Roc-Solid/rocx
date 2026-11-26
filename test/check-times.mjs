@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // How long checking an app takes, for each example app and the docs site: `rocx build` (the .rocx
 // files into Roc; the site's `rocx site prepare`), then `rocx check -- roc check --no-cache` of its
-// server program and of its browser one (the copy `rocx build --client` writes; an app of endpoints
+// server program and of its browser one (the copy `rocx generate --client` writes; an app of endpoints
 // alone has none). With no cache, each check does all of it, the app's modules, the platform's and
 // the packages': what a newcomer's first check costs, and the same work every run, so it can be
 // compared (a cached check of the same files takes some 20 ms). Each the median of three, in ms.
@@ -28,7 +28,7 @@ const SLOWER = 1.5;
 const AT_LEAST_MS = 250;
 const HISTORY = 30;
 const COLUMNS = [
-	["build", "rocx build (ms)"],
+	["build", "rocx generate (ms)"],
 	["server", "check: server (ms)"],
 	["client", "check: browser (ms)"],
 ];
@@ -65,7 +65,7 @@ const check = (what, main) => median(what, rocx, ["check", "--", compiler, "chec
 function example(name) {
 	const dir = join("examples", name);
 	const client = join(dir, "build", "client");
-	const build = median(`rocx build ${dir}`, rocx, ["build", dir, "--client", client]);
+	const build = median(`rocx generate ${dir}`, rocx, ["generate", dir, "--client", client]);
 	const server = check(`checking ${dir}/main.roc`, join(dir, "main.roc"));
 	const browser = existsSync(join(root, client, "main.roc")) ? check(`checking ${client}/main.roc`, join(client, "main.roc")) : undefined;
 	return { build, server, ...(browser === undefined ? {} : { client: browser }) };

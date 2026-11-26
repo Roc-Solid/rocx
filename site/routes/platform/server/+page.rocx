@@ -126,14 +126,14 @@ view! = |_|
 
 			<Heading id="deploying">Deploying</Heading>
 			<p>
-				A release build is one command: <code>rocx build . --release dist</code> writes
+				A release build is one command: <code>rocx build</code> writes
 				<code>dist/server</code> and <code>dist/static</code> (<a href={"${Paths.tooling}#commands"}>rocx</a>).
 				<code>--target arm64musl</code> (or <code>x64musl</code>) makes a static Linux executable, from
 				macOS too: the platform's prebuilt host carries musl's C library and unwinder. The migrations are
 				inside the executable. To deploy:
 			</p>
 			<ul>
-				<li>Put it in a container with the app's static files: <code>rocx build . --image app.tar</code> writes an image with nothing else in it, no Dockerfile needed, for <code>docker load -i app.tar</code> (<a href={"${Paths.tooling}#commands"}>rocx</a>). Its server has the database engine the app's program names alone, and no debug info: a hello world's image is 3.7 MB to send.</li>
+				<li>Put it in a container with the app's static files: <code>rocx build --image</code> writes an image with nothing else in it, no Dockerfile needed, for <code>docker load -i my-app.tar</code> (<a href={"${Paths.tooling}#commands"}>rocx</a>). Its server has the database engine the app's program names alone, and no debug info: a hello world's image is 3.7 MB to send.</li>
 				<li>Give it its database: a Postgres app a <code>DATABASE_URL</code>; a SQLite app a file on a volume (<code>--database-url sqlite:/data/app.db</code>).</li>
 				<li>Give it its settings (<code>APP_SECRET</code>, <code>SMTP_URL</code>, an API's key) as environment variables, or in a file it reads as it starts (<code>--env-file</code>; the environment wins). A plugin whose setting is missing stops the start, saying which.</li>
 				<li>Put a proxy in front of it for TLS, and tell the app its public address with <code>PUBLIC_URL</code>, so the links it sends point there (<a href={Paths.platform_settings}>settings</a>).</li>

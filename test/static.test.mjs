@@ -69,13 +69,18 @@ after(async () => {
 test("rocx build --static: every page as a file under the base, what a link or a --route answers that isn't a page, 404.html, the app's static/ and rocx/; what the copy lacks said", { skip }, () => {
 	assert.equal(built.status, 0, built.err);
 	const said = built.err.trimEnd().split("\n");
-	assert.match(said[0], /^rocx build --static: 4 pages and 1 file in \S+, for \/base\/ \(\d+\.\d\d s\)$/);
-	assert.deepEqual(said.slice(1), [
-		"a link on / to /gone answered 404: not in the copy",
-		"not in the copy, as only a server answers them: POST /api/notes",
-		"not in the copy, as a directory's middleware answers each request as it comes: /account",
-		"no page of /drafts/[id] was written: link to one from a page, or name it (--route /drafts/<id>)",
-	]);
+	assert.match(said[0], /^  rocx build --static · app → \S+\/ · for \/base\/$/);
+	assert.ok(said.some((line) => /^  ✓ pages rendered\s+\d+\.\d s$/.test(line)), built.err);
+	assert.ok(said.some((line) => /^  \S+\/  4 pages and 1 file$/.test(line)), built.err);
+	assert.deepEqual(
+		said.filter((line) => line.startsWith("  ! ")),
+		[
+			"  ! a link on / to /gone answered 404: not in the copy",
+			"  ! not in the copy, as only a server answers them: POST /api/notes",
+			"  ! not in the copy, as a directory's middleware answers each request as it comes: /account",
+			"  ! no page of /drafts/[id] was written: link to one from a page, or name it (--route /drafts/<id>)",
+		],
+	);
 	assert.deepEqual(files(copy), ["404.html", "about/index.html", "api/hello", "blog/first-post/index.html", "index.html", "robots.txt", "rocx/app.wasm", "rocx/runtime.js", "rocx/start.js", "tags/roc/index.html"]);
 	assert.equal(readFileSync(join(copy, "api/hello"), "utf8"), '"hello"', "the endpoint's answer, as it is");
 	assert.match(readFileSync(join(copy, "tags/roc/index.html"), "utf8"), /<h1>Tag roc<\/h1>/);
@@ -126,7 +131,7 @@ test("rocx build --static: the copy, as plain files under /base/, hydrates at a 
 });
 
 test("rocx build --static refuses: arguments it can't take (exit 2); a copy where the app is, or over a directory that isn't a copy (exit 1)", { skip }, () => {
-	assert.equal(rocx("test/static/app", "--static").status, 2);
+	assert.equal(rocx("test/static/app", "--static", "--out").status, 2);
 	assert.equal(rocx("test/static/app", "test/e2e/app", "--static", "dist").status, 2);
 	assert.equal(rocx("test/static/app", "--static", "dist", "--base", "base").status, 2);
 	assert.equal(rocx("test/static/app", "--static", "dist", "--route", "tags/roc").status, 2);

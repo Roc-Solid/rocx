@@ -237,7 +237,9 @@ test("rocx build --release: the server and what it serves, which starts and answ
 	const refused = bare(rocx, ["build", ".", "--release", "kept"], { cwd: app });
 	assert.equal(refused.code, 1, refused.said);
 	assert.ok(existsSync(join(app, "kept", "notes.txt")));
-	const server = spawn(join(dist, "server"), ["--port", "0", "--static", join(dist, "static")], { cwd: app, stdio: ["ignore", "ignore", "pipe"] });
+	// The template's app is a SQLite one (D-105): a Postgres DATABASE_URL in the environment isn't its.
+	const { DATABASE_URL: _postgres, ...env } = process.env;
+	const server = spawn(join(dist, "server"), ["--port", "0", "--static", join(dist, "static")], { cwd: app, env, stdio: ["ignore", "ignore", "pipe"] });
 	try {
 		const url = await new Promise((resolve, reject) => {
 			let said = "";
@@ -345,7 +347,10 @@ test("rocx upgrade: a version installed and made the default; an app moved onto 
 test("rocx new from an install: the template copied and filled in, its version pinned, its link made; it checks and tests with no roc on PATH", { skip }, () => {
 	const made = bare(rocx, ["new", "my-shop", "--db", "sqlite"], { cwd: work });
 	assert.equal(made.code, 0, made.said);
-	assert.match(made.said, /Made my-shop, on rocx 2026\.11\.25 \(\.rocx-version\), on SQLite/);
+	assert.match(made.said, /rocx new · my-shop · SQLite/);
+	assert.match(made.said, /✓ my-shop\/ made from the template/);
+	assert.match(made.said, /✓ on rocx 2026\.11\.25 \(\.rocx-version: commit it\)/);
+	assert.match(made.said, /Next  cd my-shop\n\s+rocx dev/);
 	const app = join(work, "my-shop");
 	assert.equal(readFileSync(join(app, ".rocx-version"), "utf8").trim(), VERSION);
 	assert.equal(real(join(app, ".rocx")), real(release));

@@ -26,6 +26,9 @@ import Release
 import Image
 import Versions
 import New
+import Help
+import BuildArgs
+import Term
 import qr.Qr
 
 main! = |args| {
@@ -36,7 +39,21 @@ main! = |args| {
 	if Versions.app_commands.contains(words.first() ?? "") {
 		Versions.dispatch!(home, Fs.resolve(Fs.cwd!(), [Versions.app_dir(words.drop_first(1))]), words)?
 	}
+	# `rocx <command> --help` (before any `--`, past which the words are another program's).
+	asked_help = BuildArgs.until_dashes(words).any(|word| word == "--help" or word == "-h")
 	match words.first() {
+		Err(_) => {
+			Help.show!("")
+			Ok({})
+		}
+		Ok("help") | Ok("--help") | Ok("-h") => {
+			Help.show!(words.get(1) ?? "")
+			Ok({})
+		}
+		Ok(command) if asked_help => {
+			Help.show!(command)
+			Ok({})
+		}
 		Ok("internal") => internal!({})
 		Ok("--version") => {
 			Stdout.line!(Versions.line!(home))?
@@ -55,10 +72,8 @@ main! = |args| {
 		Ok("test") => Dev.test_app!(words.drop_first(1), home)
 		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
 		Ok("routes") if words.len() == 2 => routes!(words.get(1) ?? ".")
-		Ok("build") if words.contains("--image") => Image.run!(words.drop_first(1), home)
-		Ok("build") if words.contains("--release") => Release.run!(words.drop_first(1), home)
-		Ok("build") if words.contains("--static") => Static.run!(words.drop_first(1), home)
-		Ok("build") => build!(words.drop_first(1), home)
+		Ok("build") => build_command!(words.drop_first(1), home)
+		Ok("generate") => build!(words.drop_first(1), home)
 		Ok("dev") => Dev.app!(words.drop_first(1), home)
 		Ok("site") if !Hosts.is_clone!(home) => clone_only!("rocx site", home)
 		Ok("site") if words.get(1) == Ok("prepare") => site_prepare!(words.drop_first(2), home)
@@ -67,13 +82,32 @@ main! = |args| {
 		Ok("self-build") => self_build!(home)
 		Ok("qr") if words.len() >= 2 => qr!(words.drop_first(1))
 		Ok("fmt") if words.drop_first(1).any(|arg| arg != "--check") => fmt!(words.drop_first(1), home)
-		_ => usage!({})
+		Ok(command) => usage!(command)
 	}
 }
 
-usage! = |{}| {
-	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…] | rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl] | rocx build <dir> --image <file.tar> [--tag name:tag] [--target arm64musl|x64musl] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx test [dir] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text> | rocx new <dir> [--db sqlite|postgres|turso] | rocx upgrade [<version>] | rocx --version")?
+## A command it can't take (`command` the first word): what to read, on standard error; exit 2.
+usage! = |command| {
+	styled = Term.styled!({})
+	said = if (Help.knows(command)) "rocx ${command}: not with those words" else "rocx: no command `${command}`"
+	Stderr.line!("${Term.red(styled, said)}. ${if (Help.knows(command)) "rocx help ${command}" else "rocx --help"} says what it takes.")?
 	Err(Exit(2))
+}
+
+## `rocx build [dir] [--image|--static] [--out PATH] …` (D-107): the release, the image or the
+## static copy, by `BuildArgs`; the words before D-107 too.
+build_command! = |args, home| {
+	read = BuildArgs.read(args)
+	cwd = Fs.cwd!()
+	match read.mode {
+		Generate => build!(args, home)
+		Release => Release.run!([read.dir, "--release", if (read.out.is_empty()) Fs.join([read.dir, "dist"]) else read.out].concat(read.rest), home)
+		Static => Static.run!([read.dir, "--static", if (read.out.is_empty()) Fs.join([read.dir, "dist"]) else read.out].concat(read.rest), home)
+		Image => {
+			name = Image.name_of(Fs.basename(Fs.real!(Fs.resolve(cwd, [read.dir]))))
+			Image.run!([read.dir, "--image", if (read.out.is_empty()) Fs.join([read.dir, "${name}.tar"]) else read.out].concat(read.rest), home)
+		}
+	}
 }
 
 ## A command for working on rocx itself (`what`), which an installed version (`home`) doesn't have:
@@ -118,7 +152,8 @@ self_build! = |home| {
 	}
 }
 
-## `rocx build <dir>… [--client <out>] [--dev]`, with the root of the first app (`Hosts.root_of!`).
+## `rocx generate [dir]… [--client <out>] [--dev]` (what `rocx build <dir>…` was before D-107): the
+## apps' Generated/ and browser's copies, with the root of the first app (`Hosts.root_of!`).
 build! = |rest, home| {
 	dev = rest.contains("--dev")
 	client_at = rest.find_first_index(|arg| arg == "--client")
@@ -143,11 +178,11 @@ build! = |rest, home| {
 	).map(|each| each.arg)
 	match client {
 		Given(_) if dirs.len() > 1 => {
-			Stderr.line!("rocx build --client: one directory, the app's")?
+			Stderr.line!("rocx generate --client: one directory, the app's")?
 			Err(Exit(2))
 		}
-		Missing => usage!({})
-		_ if dirs.is_empty() => usage!({})
+		Missing => usage!("generate")
+		_ if dirs.is_empty() => build!(rest.append("."), home)
 		_ => {
 			given = match client {
 				Given(out) => Some(out)

@@ -27,6 +27,7 @@ import Remap
 import Minify
 import Routes
 import Shake
+import Term
 import Text
 import Value
 
@@ -113,23 +114,30 @@ Static := [].{
 				return Err(Exit(2))
 			}
 		}
+		styled = Term.styled!({})
+		Term.header!(styled, "rocx build --static", ["${Fs.basename(Fs.real!(asked.dir))} → ${Static.shown(cwd, asked.out)}/", if (asked.base == "/") "" else "for ${asked.base}"])
 		match Static.made!(asked, cwd, rocx) {
-			Ok(said) => {
-				for line in said {
-					_ = Stderr.line!(line)
+			Ok(made) => {
+				_ = Stderr.line!("")
+				_ = Stderr.line!("  ${Static.shown(cwd, asked.out)}/  ${Static.count(made.pages, "page")} and ${Static.count(made.files, "file")}")
+				for note in made.notes {
+					Term.warn!(styled, note)
 				}
+				Term.next!(styled, "Serve", ["${Static.shown(cwd, asked.out)}/ from any static host${if (asked.base == "/") "" else ", at ${asked.base}"}"])
 				Ok({})
 			}
 			Err(Failed(message)) => {
+				_ = Stderr.line!("")
 				_ = Stderr.line!("rocx build --static: ${message}")
 				Err(Exit(1))
 			}
 		}
 	}
 
-	## The copy made: what to say (the count, then notes).
-	made! : Asked, Str, Str => Try(List(Str), [Failed(Str)])
+	## The copy made: how many pages and files, and what to note (what the copy lacks).
+	made! : Asked, Str, Str => Try({ pages : U64, files : U64, notes : List(Str) }, [Failed(Str)])
 	made! = |asked, cwd, rocx| {
+		styled = Term.styled!({})
 		shown_dir = Static.shown(cwd, asked.dir)
 		if !File.is_dir!(Fs.join([asked.dir, "routes"])) {
 			return Err(Failed("${shown_dir} has no routes/: give the app's directory"))
@@ -172,9 +180,8 @@ Static := [].{
 		guarded = Static.own_middleware(table, $sources)
 		stage = "${asked.out}.building"
 		Fs.delete_all!(stage)
-		started = Time.now_ms!({})
 		job = { server, served, flags: asked.flags, log: Fs.join([built_at, "static-server.log"]), stage, base: asked.base, routes: asked.routes, pages: Static.plain_pages(table, guarded), guarded }
-		copied = match Static.prerender!(job) {
+		copied = match Term.step!(styled, "pages rendered", |{}| Static.prerender!(job)) {
 			Ok(done) => done
 			Err(Failed(why)) => {
 				Fs.delete_all!(stage)
@@ -193,8 +200,7 @@ Static := [].{
 			Ok({}) => {}
 			Err(CantRename(why)) => return Err(Failed(why))
 		}
-		counted = "rocx build --static: ${Static.count(copied.pages, "page")} and ${Static.count(copied.files, "file")} in ${Static.shown(cwd, asked.out)}${if (asked.base == "/") "" else ", for ${asked.base}"} (${Dev.seconds(Time.now_ms!({}) - started)} s)"
-		Ok([counted].concat(copied.notes).concat(Static.notes(Routes.route_list(table, $sources), table, guarded, copied.written)))
+		Ok({ pages: copied.pages, files: copied.files, notes: copied.notes.concat(Static.notes(Routes.route_list(table, $sources), table, guarded, copied.written)) })
 	}
 
 	## A path as `cwd` names it: relative if it is under `cwd` (`.` for `cwd` itself), else whole.
@@ -228,31 +234,41 @@ Static := [].{
 	## app's root (`Hosts.root_of!`).
 	build! : Str, Str, Str => Try({}, [Failed(Str)])
 	build! = |dir, into, rocx| {
+		styled = Term.styled!({})
 		client = Fs.join([into, "client"])
 		main = Fs.join([dir, "main.roc"])
 		if !File.exists!(main) {
 			Dev.write_main!(dir, main, rocx)
 		}
-		match Build.build!([dir], { client: Some(client), cwd: Fs.cwd!(), dev: Bool.False, rocx }) {
-			Ok(built) if built.ok => {
-				said = built.said.keep_if(|line| !Dev.files_written(line))
-				if !said.is_empty() {
-					_ = Stderr.line!(Str.join_with(said, "\n"))
-				}
-			}
-			Ok(built) => return Err(Failed("${Str.join_with(built.said, "\n")}\nrocx build failed"))
-			Err(Problem(message)) => return Err(Failed("Error: ${message}\nrocx build failed"))
+		generated = Term.step!(
+			styled,
+			"app modules",
+			|{}|
+				match Build.build!([dir], { client: Some(client), cwd: Fs.cwd!(), dev: Bool.False, rocx }) {
+					Ok(built) if built.ok => Ok(built.said.keep_if(|line| !Dev.files_written(line)))
+					Ok(built) => Err(Failed("${Str.join_with(built.said, "\n")}\nrocx build failed"))
+					Err(Problem(message)) => Err(Failed("Error: ${message}\nrocx build failed"))
+				},
+		)?
+		if !generated.is_empty() {
+			_ = Stderr.line!(Str.join_with(generated, "\n"))
 		}
 		tools = Dev.tools!(rocx)?
-		Hosts.server_host!(rocx, tools.target)?
-		Static.roc_build!(tools, ["--target=${tools.target}", "--opt=dev", "--output=${Fs.join([into, "server"])}", main], "the server's build")?
+		Term.step!(styled, "server host", |{}| Hosts.server_host!(rocx, tools.target))?
+		Term.step!(styled, "server · for rendering", |{}| Static.roc_build!(tools, ["--target=${tools.target}", "--opt=dev", "--output=${Fs.join([into, "server"])}", main], "the server's build"))?
 		client_main = Fs.join([client, "main.roc"])
 		if !File.exists!(client_main) {
 			return Err(Failed("rocx build wrote no browser's copy (${client_main}): the app has no pages"))
 		}
-		Dev.web_host!(tools)?
-		Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]))?
-		Static.shake!(rocx, dir, client)
+		Term.step!(
+			styled,
+			"browser wasm · for size",
+			|{}| {
+				Dev.web_host!(tools)?
+				Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]))?
+				Static.shake!(rocx, dir, client)
+			},
+		)
 	}
 
 	## The browser's wasm, optimized for size with its lambda sets specialized (smaller with brotli);
@@ -263,7 +279,7 @@ Static := [].{
 		match Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=yes", "--output=${wasm}", client_main], "the browser's build") {
 			Ok({}) => Ok({})
 			Err(Failed(why)) if Static.compiler_crashed(why) => {
-				_ = Stderr.line!("rocx: the compiler crashed specializing the browser's program (a bug of Roc's, not the app's): building it without specializing")
+				Term.note!("  rocx: the compiler crashed specializing the browser's program (a bug of Roc's, not the app's): building it without specializing")
 				Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=no", "--output=${wasm}", client_main], "the browser's build")
 			}
 			Err(failed) => Err(failed)
@@ -296,7 +312,7 @@ Static := [].{
 					Err(CantWrite(why)) => Err(Failed(why))
 				}
 			Err(Unshaped(why)) => {
-				_ = Stderr.line!("rocx: runtime.js ships whole, as it can't be read to leave out what the app doesn't use: ${why}")
+				Term.note!("  rocx: runtime.js ships whole, as it can't be read to leave out what the app doesn't use: ${why}")
 				Ok({})
 			}
 		}
@@ -349,7 +365,7 @@ Static := [].{
 		if !lines.any(|line| line.starts_with("0 errors and 0 warnings found")) {
 			rest = lines.keep_if(|line| !Text.trim(line).is_empty())
 			if !rest.is_empty() {
-				_ = Stderr.line!(Str.join_with(rest, "\n"))
+				Term.note!(Str.join_with(rest, "\n"))
 			}
 		}
 		Ok({})

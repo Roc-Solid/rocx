@@ -21,7 +21,7 @@ Versions := [].{
 
 	## The commands that work on an app, and so run the version it wants.
 	app_commands : List(Str)
-	app_commands = ["dev", "build", "check", "test", "routes", "lint"]
+	app_commands = ["dev", "build", "generate", "check", "test", "routes", "lint"]
 
 	## Where releases come from: `ROCX_RELEASES` (a URL, or a directory laid out as one), else
 	## GitHub's.
@@ -81,22 +81,28 @@ Versions := [].{
 
 	## The app at `dir`'s `.rocx` made a link to `home` (an installed version, or a clone), unless it
 	## is one already: made when missing, mended when it points elsewhere or at nothing. A `.rocx` that
-	## is a directory of its own is left alone.
-	link! : Str, Str => Try({}, [Failed(Str)])
+	## is a directory of its own is left alone. Whether it made the link.
+	link! : Str, Str => Try(Bool, [Failed(Str)])
 	link! = |dir, home| {
 		linked = Fs.join([dir, ".rocx"])
 		match File.real_path!(linked) {
-			Ok(real) if real == Fs.real!(home) => return Ok({})
-			Ok(real) if real == Fs.join([Fs.real!(dir), ".rocx"]) and File.is_dir!(linked) => return Ok({})
+			Ok(real) if real == Fs.real!(home) => return Ok(Bool.False)
+			Ok(real) if real == Fs.join([Fs.real!(dir), ".rocx"]) and File.is_dir!(linked) => return Ok(Bool.False)
 			_ => {}
 		}
 		match File.symlink!(home, linked) {
-			Ok({}) => {
-				_ = Stderr.line!("rocx: ${Fs.basename(dir)}/.rocx links to ${home} now")
-				Ok({})
-			}
+			Ok({}) => Ok(Bool.True)
 			Err(CantLink(why)) => Err(Failed("rocx: can't link the app to rocx: ${why}"))
 		}
+	}
+
+	## `link!`, saying so when it made the link.
+	link_said! : Str, Str => Try({}, [Failed(Str)])
+	link_said! = |dir, home| {
+		if Versions.link!(dir, home)? {
+			_ = Stderr.line!("rocx: ${Fs.basename(dir)}/.rocx links to ${home} now")
+		}
+		Ok({})
 	}
 
 	## Before a command on the app at `dir` (`args`: all of rocx's words): when the app names a
@@ -117,7 +123,7 @@ Versions := [].{
 		own = Versions.own!(home)
 		if own.is_empty() or own == wanted {
 			return
-				match Versions.link!(dir, home) {
+				match Versions.link_said!(dir, home) {
 					Ok({}) => Ok({})
 					Err(Failed(why)) => {
 						_ = Stderr.line!(why)
@@ -282,7 +288,7 @@ Versions := [].{
 					Err(_) => return Versions.failed!("rocx upgrade: can't write .rocx-version")
 				}
 			}
-			match Versions.link!(dir, at) {
+			match Versions.link_said!(dir, at) {
 				Ok({}) => {}
 				Err(Failed(why)) => return Versions.failed!(why)
 			}
@@ -302,13 +308,17 @@ Versions := [].{
 	## an option or an option's value, before `--`; else here (`.`).
 	app_dir : List(Str) -> Str
 	app_dir = |words| {
-		valued = ["--port", "--client", "--static", "--base", "--route", "--built", "--release", "--target", "--engine", "--server"]
+		valued = ["--port", "--client", "--base", "--route", "--built", "--release", "--target", "--engine", "--server", "--out", "--tag"]
 		var $value_next = Bool.False
+		var $previous = ""
 		for word in words {
+			# `--image <file.tar>` (before D-107): the file isn't the app.
+			skip = $previous == "--image" and word.ends_with(".tar")
+			$previous = word
 			if word == "--" {
 				return "."
 			}
-			if $value_next {
+			if $value_next or skip {
 				$value_next = Bool.False
 			} else if valued.contains(word) {
 				$value_next = Bool.True
@@ -330,3 +340,5 @@ expect Versions.is_version("2026.11.25.2")
 expect !Versions.is_version("../x")
 expect !Versions.is_version("1.0/2")
 expect !Versions.is_version("")
+expect Versions.app_dir(["--image", "build/app.tar", "--tag", "app:1"]) == "."
+expect Versions.app_dir(["--static", "--out", "site/dist", "site"]) == "site"

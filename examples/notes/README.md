@@ -51,7 +51,7 @@ Mail is sent from `Notes <notes@example.com>` (the `from` given to `Email.plugin
 
 ```sh
 just web-host   # the browser's host, which the WebAssembly is linked with
-bin/rocx build examples/notes --client examples/notes/build/client
+bin/rocx generate examples/notes --client examples/notes/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/notes/build/client/static/rocx/app.wasm examples/notes/build/client/main.roc
 node server/build.mjs examples/notes/main.roc examples/notes/build/server --opt=speed
 cd examples/notes && build/server --port 8080 --static build/client/static
@@ -216,7 +216,7 @@ To run the parts by hand from the repository's root (each test file builds the a
 own server on its own SQLite file; the browser test needs Chromium):
 
 ```sh
-bin/rocx build examples/notes
+bin/rocx generate examples/notes
 bin/rocx check -- .tools/roc-active test examples/notes/main.roc   # the expects
 node --test 'examples/notes/test/*.test.mjs'
 ```

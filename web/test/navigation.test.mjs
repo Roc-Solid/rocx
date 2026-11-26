@@ -39,7 +39,7 @@ function run(command, args) {
 /** The app through rocx (and its browser's copy), the host, the server half (with what is inside
  * each <NoHydration>) and the browser's wasm. */
 if (!skip) {
-	run(rocxBinary(), ["build", join(here, "nav"), "--client", join(out, "nav-client")]);
+	run(rocxBinary(), ["generate", join(here, "nav"), "--client", join(out, "nav-client")]);
 	buildWebHost();
 	run(roc, ["build", "--target=wasm32", "--opt=dev", `--output=${join(out, "nav-server.wasm")}`, join(here, "nav", "nav_server.roc")]);
 	run(roc, ["build", "--target=wasm32", "--opt=size", `--output=${join(out, "nav.wasm")}`, join(out, "nav-client", "main.roc")]);

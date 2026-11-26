@@ -32,7 +32,7 @@ start it from; `bin/rocx dev examples/checkboxes` from the root works too.
 its own, from the repository's root (`just web-host` first, if the browser's host isn't built yet):
 
 ```sh
-bin/rocx build examples/checkboxes --client examples/checkboxes/build/client
+bin/rocx generate examples/checkboxes --client examples/checkboxes/build/client
 .tools/roc-active build --target=wasm32 --opt=size \
   --output=examples/checkboxes/build/client/static/rocx/app.wasm examples/checkboxes/build/client/main.roc
 node server/build.mjs examples/checkboxes/main.roc examples/checkboxes/build/million

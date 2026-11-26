@@ -8,7 +8,7 @@
 # libhost.so (native/android-dev), which loads each build of an app rocx dev serves; steps 3, 5 and
 # 6 alone, into native/android/build/dev-client/rocx-dev.apk (dev.rocx.devclient, "rocx dev").
 #
-# 1. The app's browser copy (rocx build --client), whose main.roc is the app on web/platform.
+# 1. The app's browser copy (rocx generate --client), whose main.roc is the app on web/platform.
 # 2. Its Roc for the phone: web/platform's arm64musl target, the app alone as an archive (Roc has no
 #    Android target; its static Linux objects for arm64 are Android's ELF too).
 # 3. The native host for Android (native/android with native/core), a Rust static library.
@@ -85,8 +85,8 @@ mkdir -p "$out"
 
 if [ -z "$dev_client" ]; then
     # ---- 1. The app's browser copy ----
-    step "rocx build --client ($name)"
-    "$repo/bin/rocx" build --client "$out/client" "$app" >&2
+    step "rocx generate --client ($name)"
+    "$repo/bin/rocx" generate --client "$out/client" "$app" >&2
 
     # ---- 2. Its Roc, for the phone ----
     step "roc build --target=arm64musl --opt=$opt (an archive: the app alone)"

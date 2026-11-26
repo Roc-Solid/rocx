@@ -24,6 +24,7 @@ import Commands
 import Fs
 import Hosts
 import Sql
+import Term
 import Text
 import Value
 
@@ -99,7 +100,16 @@ CheckSql := [].{
 		match CheckSql.checked!(dir_path, options) {
 			Ok(Quiet) => Ok({})
 			Ok(Said(said)) => {
-				for line in said.lines {
+				# Under rocx dev (`--quiet`) at a terminal, a check that found nothing is a step's line
+				# (D-107); plain, the line an editor reads as rocx's own.
+				styled = Term.styled!({})
+				lines =
+					match said.lines {
+						[only] if styled and options.quiet and said.ok and only.ends_with(": no problems") =>
+							["  ${Term.green(styled, "✓")} SQL: ${only.drop_prefix("rocx check --sql: ").drop_suffix(": no problems")}"]
+						_ => said.lines
+					}
+				for line in lines {
 					_ = Stdout.line!(line)
 				}
 				if (said.ok) Ok({}) else Err(Exit(1))

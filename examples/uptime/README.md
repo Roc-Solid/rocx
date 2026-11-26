@@ -48,7 +48,7 @@ The app reads these environment variables:
 
 ```sh
 just web-host   # the browser's host, which the WebAssembly is linked with
-bin/rocx build examples/uptime --client examples/uptime/build/client
+bin/rocx generate examples/uptime --client examples/uptime/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/uptime/build/client/static/rocx/app.wasm examples/uptime/build/client/main.roc
 node server/build.mjs examples/uptime/main.roc examples/uptime/build/uptime --opt=speed
 cd examples/uptime && ADMIN_PASSWORD=acme-demo build/uptime --port 8080 \
@@ -177,7 +177,7 @@ To run the parts by hand from the repository's root (each test file makes its ow
 temporary directory and removes it after):
 
 ```sh
-bin/rocx build examples/uptime
+bin/rocx generate examples/uptime
 bin/rocx check -- .tools/roc-active test examples/uptime/main.roc   # the expects
 node --test 'examples/uptime/test/*.test.mjs'
 ```

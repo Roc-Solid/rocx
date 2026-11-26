@@ -40,7 +40,8 @@ after(() => {
 test("rocx new from a clone: the template filled in, .rocx linked to the clone; it checks, its SQL checks, its expects pass", { skip }, () => {
 	const made = rocx(["new", "Acme-Books", "--db", "sqlite"]);
 	assert.equal(made.code, 0, made.said);
-	assert.match(made.said, /Made Acme-Books, made from a clone of rocx/);
+	assert.match(made.said, /✓ Acme-Books\/ made from the template/);
+	assert.match(made.said, /✓ on this clone of rocx \(\.rocx links to it\)/);
 	const app = join(work, "Acme-Books");
 	assert.equal(realpathSync(join(app, ".rocx")), realpathSync(root));
 	assert.ok(!existsSync(join(app, ".rocx-version")), "a clone pins no version");

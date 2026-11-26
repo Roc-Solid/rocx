@@ -33,7 +33,7 @@ optimized for size here, as the docs' examples page measures it:
 
 ```sh
 just web-host     # the browser platform's host, once (rocx dev builds it too)
-bin/rocx build examples/journal --client examples/journal/build/client
+bin/rocx generate examples/journal --client examples/journal/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/journal/build/client/static/rocx/app.wasm examples/journal/build/client/main.roc
 node server/build.mjs examples/journal/main.roc examples/journal/build/journal
 examples/journal/build/journal --port 18140 --static examples/journal/build/client/static --static examples/journal/static

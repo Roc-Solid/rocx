@@ -71,7 +71,7 @@ main! = |{}| Greeting.view({ name: "Ada", unread: [] })
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		writeFileSync(join(dir, path), content);
 	}
-	const built = spawnSync(rocxBinary(), ["build", dir], { encoding: "utf8" });
+	const built = spawnSync(rocxBinary(), ["generate", dir], { encoding: "utf8" });
 	assert.equal(built.status, 0, built.stderr);
 	return dir;
 }

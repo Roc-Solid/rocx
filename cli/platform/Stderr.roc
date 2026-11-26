@@ -14,4 +14,8 @@ Stderr := [].{
 		Host.write!(2, text)
 		Ok({})
 	}
+
+	## Whether standard error is a terminal (rocx's progress lines are drawn in place there).
+	is_terminal! : {} => Bool
+	is_terminal! = |{}| Host.is_terminal!(2)
 }

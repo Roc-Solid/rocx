@@ -53,7 +53,7 @@ comparing, build it as `just db-bench` does (below).
 From the repository's root:
 
 ```sh
-bin/rocx build examples/sqlite-vs-turso
+bin/rocx generate examples/sqlite-vs-turso
 node server/build.mjs examples/sqlite-vs-turso/main.roc /tmp/bench/app --opt=speed
 /tmp/bench/app --port 8080 --database-url turso:/tmp/bench/turso.db &
 curl -s -X POST http://127.0.0.1:8080/bench -H 'content-type: application/json' -d '{"size":10}'

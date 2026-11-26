@@ -137,11 +137,11 @@ provider is one line: see the auth page in the guide.
 ## Going live
 
 ```sh
-rocx build . --release out/ --target x64musl     # or arm64musl, for a Linux server on arm64
+rocx build --target x64musl     # or arm64musl, for a Linux server on arm64
 ```
 
-`out/` then holds what you deploy: `server`, a single executable for Linux, and `static/`, the
-browser's files. Copy `out/` to the server and start it there:
+`dist/` then holds what you deploy: `server`, a single executable for Linux, and `static/`, the
+browser's files. Copy `dist/` to the server and start it there:
 
 ```sh
 PUBLIC_URL=https://app.example.com SMTP_URL=smtps://… APP_SECRET=… ./server --static static
@@ -153,6 +153,14 @@ kept): without it the server doesn't start. The settings may be in a file instea
 
 On SQLite or Turso the database is `data/app.db` beside where it starts: keep that folder between
 deploys, and back it up (or point `DATABASE_URL` at a file elsewhere).
+
+Or as a container image, which rocx writes itself (no Dockerfile, no Docker to build it):
+
+```sh
+rocx build --image             # <name>.tar (the app's directory's name), for this processor's Linux
+docker load -i <name>.tar
+docker run -p 8080:8080 -v <name>-data:/app/data -e PUBLIC_URL=… -e APP_SECRET=… <name>:latest
+```
 
 It listens on 127.0.0.1:8080 (`--port`, `--host`), over plain HTTP. Put a proxy that speaks HTTPS
 in front of it. [Caddy](https://caddyserver.com) gets and renews the certificate itself:

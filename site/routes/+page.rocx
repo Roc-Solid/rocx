@@ -129,7 +129,7 @@ view! = |_| {
 							reported at its line in your file, and the last good build keeps running until you fix it.
 							Sign in with any address: under <code>rocx dev</code>, the dev sign-in needs no mail. The
 							app's <code>README.md</code> says what to change first, and how to test it
-							(<code>rocx test</code>), deploy it (<code>rocx build . --release dist</code>) and upgrade it
+							(<code>rocx test</code>), deploy it (<code>rocx build</code>, or <code>rocx build --image</code>) and upgrade it
 							(<code>rocx upgrade</code>).
 						</p>
 					</div>

@@ -67,6 +67,10 @@ SiteDev := [].{
 		}
 		Dev.run!({
 			label: "rocx site",
+			header!: |{}| {
+				_ = Stderr.line!("rocx site: building")
+				{}
+			},
 			base: rocx,
 			watch: $watch,
 			skip: ["build", "dist", "Generated", "target", "targets", "node_modules"],

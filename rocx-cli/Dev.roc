@@ -20,6 +20,7 @@ import Fs
 import Hosts
 import qr.Qr
 import Remap
+import Term
 import Text
 
 Dev := [].{
@@ -29,9 +30,11 @@ Dev := [].{
 	## but for hidden entries and directories named in `skip`; `edited!` says whether a path that
 	## changed (absolute) is an edit. `build!` builds everything; `serve` is the server and its
 	## arguments; `started!` runs once it is started again (a phone's build is announced then);
-	## `check` the command run beside it after each start (the app's SQL check), if any.
+	## `check` the command run beside it after each start (the app's SQL check), if any; `header!`
+	## what it says first.
 	Plan : {
 		label : Str,
+		header! : {} => {},
 		base : Str,
 		watch : List(Str),
 		skip : List(Str),
@@ -48,7 +51,8 @@ Dev := [].{
 	run! = |plan| {
 		var $server = Down
 		var $checking = Idle
-		_ = Stderr.line!("${plan.label}: building")
+		styled = Term.styled!({})
+		(plan.header!)({})
 		match (plan.build!)({}) {
 			Ok({}) => {
 				$server = Dev.start!(plan)
@@ -62,7 +66,7 @@ Dev := [].{
 			match Watch.dir!(dir, plan.skip) {
 				Ok({}) => {}
 				Err(CantWatch(why)) => {
-					_ = Stderr.line!("${plan.label}: can't watch ${why}")
+					_ = Stderr.line!(Term.red(styled, "${plan.label}: can't watch ${why}"))
 					return Err(Exit(2))
 				}
 			}
@@ -82,7 +86,8 @@ Dev := [].{
 					}
 				}
 				Timeout => {
-					_ = Stderr.line!("${plan.label}: ${$pending} changed")
+					# Plain, the line an editor reads as a build's start (editors/vscode/reports.js).
+					_ = Stderr.line!(if (styled) "  ${Term.cyan(styled, "↻")} ${$pending}" else "${plan.label}: ${$pending} changed")
 					$pending = ""
 					match (plan.build!)({}) {
 						Ok({}) =>
@@ -109,7 +114,12 @@ Dev := [].{
 								$server = Dev.start!(plan)
 								$checking = Dev.check!(plan, $checking)
 							} else {
-								_ = Stderr.line!("${plan.label}: the server stopped (${code.to_str()}); save a file to build and start it again")
+								said = "the server stopped (${code.to_str()}); save a file to build and start it again"
+								if styled {
+									Term.warn!(styled, said)
+								} else {
+									_ = Stderr.line!("${plan.label}: ${said}")
+								}
 								$server = Down
 							}
 						}
@@ -138,7 +148,12 @@ Dev := [].{
 				Up(child)
 			}
 			Err(CantStart(why)) => {
-				_ = Stderr.line!("${plan.label}: the server didn't start: ${why}")
+				styled = Term.styled!({})
+				if styled {
+					Term.warn!(styled, "the server didn't start: ${why}")
+				} else {
+					_ = Stderr.line!("${plan.label}: the server didn't start: ${why}")
+				}
 				Down
 			}
 		}
@@ -264,6 +279,14 @@ Dev := [].{
 		server_flags = $passed.concat(Hosts.env_file!($passed))
 		Dev.run!({
 			label: "rocx dev",
+			header!: |{}| {
+				styled = Term.styled!({})
+				if styled {
+					Dev.banner!(styled, Fs.basename(dir), $port, $lan, Fs.read_or_empty!(main))
+				} else {
+					_ = Stderr.line!("rocx dev: building")
+				}
+			},
 			base: dir,
 			watch: [dir],
 			skip: ["build", "dist", "Generated", "node_modules", "static"],
@@ -287,17 +310,29 @@ Dev := [].{
 	## on an error (rocx build's or the compiler's), 2 on warnings alone, 0 when all is well.
 	check_app! : List(Str), Str => Try({}, [Exit(I32)])
 	check_app! = |args, rocx| {
+		# At a terminal: a header, a step for each program, and what was found (D-107); elsewhere (an
+		# editor's task, a script) the compiler's reports as they come, on standard output.
+		styled = Term.styled!({})
+		if styled {
+			Term.header!(styled, "rocx check", [Fs.basename(Fs.real!(Fs.resolve(Fs.cwd!(), [args.first() ?? "."])))])
+		}
 		ready = Dev.from_sources!(args, rocx, "rocx check")?
 		client_main = Fs.join([ready.client, "main.roc"])
-		programs = [ready.main].concat(if (File.exists!(client_main)) [client_main] else [])
+		programs = [{ path: ready.main, what: "server program" }].concat(if (File.exists!(client_main)) [{ path: client_main, what: "browser program" }] else [])
 		# rocx build's own warnings (`⚠ file:line:col: …`, D-070's arm values read once) count as the
 		# compiler's do: 2.
 		var $code = if (ready.warned) 2 else 0
 		for program in programs {
-			match Commands.checked!(ready.tools.roc, ["check", program]) {
+			step = if (styled) Some(Term.begin!(styled, program.what)) else None
+			match Commands.checked!(ready.tools.roc, ["check", program.path]) {
 				Ok(ran) => {
+					match step {
+						Some(begun) => if (ran.code == 0) Term.done!(begun) else Term.failed!(begun)
+						None => {}
+					}
 					text = Text.trim_end(ran.said)
-					if !text.is_empty() {
+					routine = Text.lines(text).all(|line| line.starts_with("No errors found") or Text.trim(line).is_empty())
+					if !text.is_empty() and !(styled and routine) {
 						_ = Stdout.line!(text)
 					}
 					$code =
@@ -311,6 +346,18 @@ Dev := [].{
 				}
 				Err(CantStart(why)) => return Dev.fail!("rocx check: ${why}")
 			}
+		}
+		if styled {
+			_ = Stderr.line!("")
+			_ = Stderr.line!(
+				if $code == 0 {
+					"  ${Term.green(styled, "No problems.")}"
+				} else if $code == 2 {
+					"  ${Term.yellow(styled, "Warnings, no errors.")}"
+				} else {
+					"  ${Term.red(styled, "Errors: see above.")}"
+				},
+			)
 		}
 		if $code == 0 {
 			Ok({})
@@ -457,7 +504,67 @@ Dev := [].{
 
 	build_all! : { dir : Str, shown : Str, main : Str, client : Str, server : Str, tools : Tools, phone : [On(Phone), Off] } => Try({}, [Failed(Str)])
 	build_all! = |a| {
-		started = Time.now_ms!({})
+		styled = Term.styled!({})
+		if !styled {
+			# Plain, the lines an editor reads as a build's end (editors/vscode/reports.js).
+			started = Time.now_ms!({})
+			Dev.build_steps!(a)?
+			_ = Stderr.line!("rocx dev: built ${a.shown} in ${Dev.seconds(Time.now_ms!({}) - started)} s")
+			return Ok({})
+		}
+		step = Term.begin!(styled, "building")
+		match Dev.build_steps!(a) {
+			Ok({}) => {
+				Term.done_as!(step, "built ${Term.dim(styled, "in ${Term.took(Time.now_ms!({}) - step.started)}")}")
+				Ok({})
+			}
+			Err(failed) => {
+				Term.failed!(step)
+				Err(failed)
+			}
+		}
+	}
+
+	## What `rocx dev` says first: the app, where it is served, and its database.
+	banner! : Bool, Str, Str, Bool, Str => {}
+	banner! = |styled, name, port, lan, main_text| {
+		Term.header!(styled, "rocx dev", [name])
+		_ = Stderr.line!("  ${Term.cyan(styled, "➜")}  ${Term.bold(styled, "http://localhost:${port}")}${if (lan) Term.dim(styled, "  (and on this network)") else ""}")
+		database = Dev.database_said(main_text)
+		if !database.is_empty() {
+			_ = Stderr.line!("     ${Term.dim(styled, database)}")
+		}
+		_ = Stderr.line!("")
+		{}
+	}
+
+	## The app's database as `rocx dev`'s banner says it, from its main.roc: `SQLite · data/app.db`
+	## (App.program's default, D-105, when it names none), `Turso · …`, `Postgres · DATABASE_URL`;
+	## "" when the program names it some other way.
+	database_said : Str -> Str
+	database_said = |text| {
+		lines = Text.lines(text).map(|line| Text.trim(line)).keep_if(|line| !line.starts_with("#"))
+		named = lines.keep_if(|line| line.starts_with("database:") or line.contains(" database:") or line.contains("{ database:"))
+		match named.first() {
+			Err(_) => if (text.contains("App.program({")) "SQLite · data/app.db" else ""
+			Ok(line) => {
+				value = Text.trim(line.split_on("database:").get(1) ?? "")
+				quoted = (value.split_on("\"").get(1) ?? "")
+				if value.starts_with("Sqlite(") {
+					"SQLite · ${quoted}"
+				} else if value.starts_with("Turso(") {
+					"Turso · ${quoted}"
+				} else if value.starts_with("Postgres") {
+					"Postgres · DATABASE_URL"
+				} else {
+					""
+				}
+			}
+		}
+	}
+
+	build_steps! : { dir : Str, shown : Str, main : Str, client : Str, server : Str, tools : Tools, phone : [On(Phone), Off] } => Try({}, [Failed(Str)])
+	build_steps! = |a| {
 		built = match Build.build!([a.dir], { client: Some(a.client), cwd: Fs.cwd!(), dev: Bool.True, rocx: a.tools.rocx }) {
 			Ok(done) => done
 			Err(Problem(message)) => return Err(Failed("Error: ${message}\nrocx dev: rocx build failed; fix it and save again"))
@@ -467,7 +574,7 @@ Dev := [].{
 			return Err(Failed("${Str.join_with(said, "\n")}\nrocx dev: rocx build failed; fix it and save again"))
 		}
 		if !said.is_empty() {
-			_ = Stderr.line!(Str.join_with(said, "\n"))
+			Term.note!(Str.join_with(said, "\n"))
 		}
 		match Hosts.server_host!(a.tools.rocx, a.tools.target) {
 			Ok({}) => {}
@@ -498,7 +605,6 @@ Dev := [].{
 				Err(CantRename(why)) => return Err(Failed("rocx dev: ${why}"))
 			}
 		}
-		_ = Stderr.line!("rocx dev: built ${a.shown} in ${Dev.seconds(Time.now_ms!({}) - started)} s")
 		Ok({})
 	}
 
@@ -828,7 +934,7 @@ Dev := [].{
 		if !lines.any(|line| line.starts_with("0 errors and 0 warnings found")) {
 			rest = lines.keep_if(|line| !Text.trim(line).is_empty())
 			if !rest.is_empty() {
-				_ = Stderr.line!(Str.join_with(rest, "\n"))
+				Term.note!(Str.join_with(rest, "\n"))
 			}
 		}
 		Ok({})
@@ -861,3 +967,8 @@ Dev := [].{
 		"${(ms // 1000).to_str()}.${if (hundredths < 10) "0" else ""}${hundredths.to_str()}"
 	}
 }
+expect Dev.database_said("program = App.program({\n\tinit!: |_| Ok({}),\n\tdatabase: Sqlite(\"data/shop.db\"),\n})") == "SQLite · data/shop.db"
+expect Dev.database_said("program = App.program({ init!: |_| Ok({}), database: Turso(\"data/t.db\") })") == "Turso · data/t.db"
+expect Dev.database_said("program = App.program({\n\tdatabase: Postgres,\n})") == "Postgres · DATABASE_URL"
+expect Dev.database_said("## App.program also takes `database`\nprogram = App.program({ init!: |_| Ok({}) })") == "SQLite · data/app.db"
+expect Dev.database_said("program = App.program(Config.app)") == ""

@@ -25,6 +25,7 @@ import Dev
 import Fs
 import Hosts
 import Static
+import Term
 
 Release := [].{
 
@@ -89,22 +90,33 @@ Release := [].{
 				return Err(Exit(2))
 			}
 		}
+		styled = Term.styled!({})
+		target = if (asked.target.is_empty()) Hosts.native_target!({}) else asked.target
+		Term.header!(styled, "rocx build", ["${Fs.basename(Fs.real!(asked.dir))} → ${Static.shown(cwd, asked.out)}/", target])
 		match Release.made!(asked, cwd, rocx) {
-			Ok(said) => {
-				for line in said {
-					_ = Stderr.line!(line)
-				}
+			Ok(made) => {
+				server = Static.shown(cwd, made.server)
+				served = if (made.static.is_empty()) [] else [{ path: "${Static.shown(cwd, made.static)}/", bytes: Release.bytes!(made.static) }]
+				Term.files!(styled, [{ path: server, bytes: Release.bytes!(made.server) }].concat(served))
+				statics = if (made.static.is_empty()) "" else " --static ${Static.shown(cwd, made.static)}"
+				Term.next!(styled, "Run", ["${server}${statics}", Term.dim(styled, "behind a proxy that speaks TLS; set PORT, DATABASE_URL, PUBLIC_URL…")])
 				Ok({})
 			}
 			Err(Failed(message)) => {
-				_ = Stderr.line!("rocx build --release: ${message}")
+				_ = Stderr.line!("")
+				_ = Stderr.line!("rocx build: ${message}")
 				Err(Exit(1))
 			}
 		}
 	}
 
-	## The build made: what to say.
-	made! : Asked, Str, Str => Try(List(Str), [Failed(Str)])
+	## What a release made: the server and the directory it serves (when it serves files), where
+	## they are, for whom (`target`) and with which engines (D-104), and how long it took.
+	Made : { server : Str, static : Str, target : Str, engines : List(Str), ms : U64 }
+
+	## The build made, each step said as it goes (`Term`): the app's modules, the server's host, the
+	## server, the browser's wasm.
+	made! : Asked, Str, Str => Try(Made, [Failed(Str)])
 	made! = |asked, cwd, rocx| {
 		shown_dir = Static.shown(cwd, asked.dir)
 		if !File.is_dir!(Fs.join([asked.dir, "routes"])) {
@@ -118,6 +130,7 @@ Release := [].{
 		if File.is_dir!(asked.out) and !Fs.entries!(asked.out).is_empty() and !File.exists!(Fs.join([asked.out, "server"])) {
 			return Err(Failed("${shown_out} isn't empty and has no server: the build replaces what is there, so give a directory of its own, or empty this one"))
 		}
+		styled = Term.styled!({})
 		started = Time.now_ms!({})
 		root = Hosts.root_of!(dir, rocx)
 		tools = Dev.tools!(root)?
@@ -128,49 +141,60 @@ Release := [].{
 		}
 		work = Fs.join([dir, "build", "release"])
 		client = Fs.join([work, "client"])
-		# Each step says itself as it starts: the compiler's output is read, not shown, and the
-		# server's build takes minutes.
-		_ = Stderr.line!("rocx: the app's modules (rocx build)…")
-		match Build.build!([dir], { client: Some(client), cwd, dev: Bool.False, rocx: root }) {
-			Ok(built) if built.ok => {
-				said = built.said.keep_if(|line| !Dev.files_written(line))
-				if !said.is_empty() {
-					_ = Stderr.line!(Str.join_with(said, "\n"))
-				}
-			}
-			Ok(built) => return Err(Failed("${Str.join_with(built.said, "\n")}\nrocx build failed"))
-			Err(Problem(message)) => return Err(Failed("Error: ${message}\nrocx build failed"))
+		# Each step is said as it goes: the compiler's output is read, not shown, and the server's
+		# build takes minutes.
+		generated = Term.step!(
+			styled,
+			"app modules",
+			|{}|
+				match Build.build!([dir], { client: Some(client), cwd, dev: Bool.False, rocx: root }) {
+					Ok(built) if built.ok => Ok(built.said.keep_if(|line| !Dev.files_written(line)))
+					Ok(built) => Err(Failed("${Str.join_with(built.said, "\n")}\nrocx build failed"))
+					Err(Problem(message)) => Err(Failed("Error: ${message}\nrocx build failed"))
+				},
+		)?
+		if !generated.is_empty() {
+			_ = Stderr.line!(Str.join_with(generated, "\n"))
 		}
 		# The host has the database engine the app's program names alone (D-104): its own platform
 		# copy, put in the platform's place for this build, when that leaves an engine out.
 		engines = Hosts.engines_of(Fs.read_or_empty!(main))
-		_ = Stderr.line!("rocx: the server's host for ${target} (${Release.engines_said(engines)}), if it changed…")
 		own = Fs.join([root, "server", "platform", "main.roc"])
-		linked = Hosts.release_platform!(root, target, engines, Hosts.stage_for(root, dir, target))?
+		linked = Term.step!(styled, "server host · ${Release.engines_said(engines)}", |{}| Hosts.release_platform!(root, target, engines, Hosts.stage_for(root, dir, target)))?
 		# Roc knows a dependency by its real path, whichever way the app reached it (a `.rocx` link).
 		replaced = if (linked.main == own) [] else ["--replace-dep", Fs.real!(own), linked.main]
 		server = Fs.join([work, "server"])
 		specialize = if (Env.var!("ROCX_SPECIALIZE") == Ok("yes")) "yes" else "no"
-		_ = Stderr.line!("rocx: the server for ${target}, optimized for speed (a few minutes)…")
-		built = Static.roc_build!(tools, ["--target=${target}", "--opt=speed", "--specialize=${specialize}", "--output=${server}", main].concat(replaced), "the server's build")
-		# The platform's copy is linked in now: gone, so an app built once (a test's) leaves none.
-		if linked.main != own {
-			Fs.delete_all!(Fs.dirname(linked.main))
-		}
-		match built {
-			Ok({}) => {}
-			Err(failed) => return Err(failed)
-		}
-		for line in Hosts.strip_debug!(root, target, server)? {
-			_ = Stderr.line!(line)
+		unstripped = Term.step!(
+			styled,
+			"server · optimized",
+			|{}| {
+				built = Static.roc_build!(tools, ["--target=${target}", "--opt=speed", "--specialize=${specialize}", "--output=${server}", main].concat(replaced), "the server's build")
+				# The platform's copy is linked in now: gone, so an app built once (a test's) leaves none.
+				if linked.main != own {
+					Fs.delete_all!(Fs.dirname(linked.main))
+				}
+				match built {
+					Ok({}) => Hosts.strip_debug!(root, target, server)
+					Err(failed) => Err(failed)
+				}
+			},
+		)?
+		for line in unstripped {
+			Term.warn!(styled, line)
 		}
 		client_main = Fs.join([client, "main.roc"])
 		pages = File.exists!(client_main)
 		if pages {
-			_ = Stderr.line!("rocx: the browser's wasm, optimized for size…")
-			Dev.web_host!(tools)?
-			Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]))?
-			Static.shake!(root, dir, client)?
+			Term.step!(
+				styled,
+				"browser wasm · for size",
+				|{}| {
+					Dev.web_host!(tools)?
+					Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]))?
+					Static.shake!(root, dir, client)
+				},
+			)?
 		}
 		stage = "${asked.out}.building"
 		Fs.delete_all!(stage)
@@ -194,11 +218,24 @@ Release := [].{
 			Ok({}) => {}
 			Err(CantRename(why)) => return Err(Failed(why))
 		}
-		statics = if (served.is_empty()) "" else " --static ${Fs.join([shown_out, "static"])}"
-		Ok([
-			"rocx build --release: ${Fs.join([shown_out, "server"])} (${target}, ${Release.engines_said(linked.engines)})${if (served.is_empty()) "" else " and ${Fs.join([shown_out, "static"])}/"} in ${Dev.seconds(Time.now_ms!({}) - started)} s",
-			"Run it as ${Fs.join([shown_out, "server"])}${statics} (PORT, DATABASE_URL, PUBLIC_URL…), behind a proxy that speaks TLS.",
-		])
+		Ok({ server: Fs.join([asked.out, "server"]), static: if (served.is_empty()) "" else Fs.join([asked.out, "static"]), target, engines: linked.engines, ms: Time.now_ms!({}) - started })
+	}
+
+	## The bytes of a file, or of every file under a directory.
+	bytes! : Str => U64
+	bytes! = |path| {
+		if Fs.is_dir!(path) {
+			var $total = 0
+			for file in Static.files_under!(path) {
+				$total = $total + Release.bytes!(file)
+			}
+			$total
+		} else {
+			match File.read_bytes!(path) {
+				Ok(bytes) => bytes.len()
+				Err(_) => 0
+			}
+		}
 	}
 
 	## The database engines a release's host has (D-104), as its message says them.

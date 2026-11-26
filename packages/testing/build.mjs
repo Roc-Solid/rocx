@@ -43,7 +43,7 @@ export async function buildForTests(dir, { out = join(dir, "build", "test"), cli
 	const compiler = roc();
 	const rocx = rocxBinary();
 	const clientDir = join(out, "client");
-	run(rocx, ["build", dir, ...(client ? ["--client", clientDir] : []), ...(dev ? ["--dev"] : [])], { env: { ...process.env, ROC: compiler } });
+	run(rocx, ["generate", dir, ...(client ? ["--client", clientDir] : []), ...(dev ? ["--dev"] : [])], { env: { ...process.env, ROC: compiler } });
 	// An app of endpoints alone has no browser's half: rocx build wrote no main.roc for it.
 	const browser = client && existsSync(join(clientDir, "main.roc"));
 	if (browser) {

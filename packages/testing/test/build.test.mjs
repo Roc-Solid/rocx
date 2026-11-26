@@ -1,6 +1,6 @@
 // An app with a type error, and one with a warning alone. Roc says "… while successfully building"
 // of both and writes an executable for both (the error's crashes where the error is), but exits 1 on
-// an error and 2 on warnings alone. rocx build only writes the app's Roc, so it succeeds either way;
+// an error and 2 on warnings alone. rocx generate only writes the app's Roc, so it succeeds either way;
 // rocx check fails, at the line in the .rocx file, with Roc's exit code, and so does buildForTests,
 // on a warning too (D-044). Needs the toolchain (`just setup`, and the server's host built, as
 // `just test` builds it).
@@ -60,11 +60,11 @@ program = App.program({
 
 const rocx = (...args) => spawnSync(rocxBinary(), args, { encoding: "utf8", env: { ...process.env, ROC: compiler } });
 
-test("a type error: rocx build writes the app's Roc, and rocx check and buildForTests fail at its .rocx line", { skip }, async () => {
+test("a type error: rocx generate writes the app's Roc, and rocx check and buildForTests fail at its .rocx line", { skip }, async () => {
 	// A hole shows text, a number or markup (D-070): a Bool is a value it can't show.
 	const dir = app(PAGE.replace("{visits.to_str()} visits", "{visits > 2} visits"));
 	try {
-		const built = rocx("build", dir);
+		const built = rocx("generate", dir);
 		assert.equal(built.status, 0, `${built.stdout}${built.stderr}`);
 		const checked = rocx("check", "--", compiler, "check", join(dir, "main.roc"));
 		assert.equal(checked.status, 1, checked.stdout);
@@ -84,7 +84,7 @@ test("a type error: rocx build writes the app's Roc, and rocx check and buildFor
 test("a warning alone: rocx check says it (exit 2), and buildForTests fails on it too, at its .rocx line", { skip }, async () => {
 	const dir = app(PAGE.replace("\tvisits = 3.U64\n", "\tvisits = 3.U64\n\tunused = 1\n"));
 	try {
-		assert.equal(rocx("build", dir).status, 0);
+		assert.equal(rocx("generate", dir).status, 0);
 		const checked = rocx("check", "--", compiler, "check", join(dir, "main.roc"));
 		assert.equal(checked.status, 2, checked.stdout);
 		assert.match(checked.stdout, /unused variable/);

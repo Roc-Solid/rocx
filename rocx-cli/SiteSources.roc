@@ -781,12 +781,12 @@ SiteSources := [].{
 		web = Fs.relative(dir, Fs.join([root, "web", "platform", "main.roc"]))
 		_ = Fs.write!(Fs.join([dir, "main.roc"]), "app [main!] { pf: platform ${Value.json_string(web)} }\n\nimport pf.Html\nimport Posts\n\nmain! : {} => Html\nmain! = |{}| Posts.view([])\n")
 		_ = Fs.write!(Fs.join([dir, "Posts.rocx"]), source)
-		built = match Cmd.new(rocx).args(["build", "."]).cwd(dir).merged!() {
+		built = match Cmd.new(rocx).args(["generate", "."]).cwd(dir).merged!() {
 			Ok(ran) => ran
 			Err(CantStart(why)) => return Err(Problem(why))
 		}
 		if built.code != 0 {
-			return Err(Problem("rocx build . failed:\n${built.output}"))
+			return Err(Problem("rocx generate . failed:\n${built.output}"))
 		}
 		checked = match Cmd.new(rocx).args(["check", "--", roc, "check", "Posts.roc"]).cwd(dir).output!() {
 			Ok(ran) => Text.trim(ran.stdout)

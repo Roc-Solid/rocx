@@ -6418,3 +6418,54 @@ for JSON (and doesn't compile, since a response isn't JSON).
 
 **Reversible:** yes: `respond_as_is!` and its branch in the generator go, and the handlers go back
 to `Err(Answer(…))`.
+
+## D-107 `rocx build` is the build to deploy; `rocx generate` writes the code; a CLI that draws its steps
+
+**Status.** Built (2026-11-26), the user's two calls: `rocx build` builds to deploy (dist/, or an
+image or a static copy by its flags), and the look with a mark and a time for each step.
+
+**Context.** Starting an app was to be `rocx new`, `rocx dev`, `rocx build`. The first two held; the
+third didn't: `rocx build` alone printed a 900-character usage line, and `rocx build .` only wrote
+Generated/ and the browser's copy (`3 files written`), the deployable builds being
+`rocx build . --release dist` and `rocx build . --image app.tar`. `rocx --help` was the same line.
+Each command spoke in a style of its own (`rocx: …`, `rocx dev: built . in 0.24 s`, prose), and
+`rocx dev`'s address was in a log line.
+
+**Decision.**
+
+- **`rocx build [dir]`** (here by default) is the release, into `dist/`; `--image` the container
+  image, `<name>.tar` (the app's directory's name); `--static` the static copy, into `dist/`;
+  `--out PATH` says where for each. The words before still read as they did (`BuildArgs`):
+  `--release <out>`, `--image <file.tar>`, `<dir> --static <out>`; and `--client`, `--dev` or more
+  than one directory is code generation.
+- **`rocx generate [dir]… [--client <out>] [--dev]`** is what `rocx build <dir>…` was: Generated/
+  and the browser's copy, nothing compiled; for editors and scripts. The repository's callers moved
+  (packages/testing's `buildForTests`, the tests, the docs site's scripts, the examples' READMEs and
+  bench, the Android build, check-times).
+- **`rocx new [dir]`** asks for the name at a terminal when it isn't given (off one, it says to give
+  it), and asks for the database with a short menu.
+- **Help**: `rocx`, `rocx --help` and `rocx help` list the commands by what they're for (Start, Ship,
+  Check, More); `rocx help <command>` and `rocx <command> --help` show one's usage and options. A
+  command it doesn't know is one line on standard error, pointing at the help (exit 2).
+- **The look (`Term`)**: a header (`  rocx build · shop → dist/ · arm64mac`), then a line for each
+  step, `◌ what…` while it runs, drawn over by `✓ what  12.4 s` (or `✗`) when done, then what was made
+  (sizes) and what to run next (`Run  dist/server --static dist/static`, `docker load -i shop.tar`).
+  `rocx dev` opens with its address on a line of its own and the app's database under it, then
+  `✓ built in 0.3 s`, `↻ routes/+page.rocx` on a save, and the SQL check as `✓ SQL: …`. `rocx check`
+  is a step for each program and a verdict. Notes said in the middle of a step (a compiler's
+  warnings) clear its line first (`Term.note!`).
+- **Only at a terminal**: colour and drawing in place need standard error to be a terminal, NO_COLOR
+  unset and TERM not `dumb` (the CLI platform's `Stderr.is_terminal!`, new). Elsewhere the build
+  commands write the same lines as plain text, a step's start a line of its own; `rocx dev` and
+  `rocx check` write exactly what they did, as the VS Code extension reads those lines
+  (`rocx dev: … changed`, `rocx dev: built …`, the compiler's reports on standard output).
+
+**Tests.** BuildArgs', Term's, Help's and the dev banner's expects; test/new, install, image and
+static read the new lines; the callers above run `rocx generate`.
+
+**Not chosen yet.** A spinner that turns while a step runs (the CLI platform runs a command to its
+end; the `◌` line stays still). The server's own log under `rocx dev` (each plugin's line on each
+restart) is the platform's, unchanged.
+
+**Reversible:** yes: `rocx build <dir>` back to code generation, and Term's lines back to the old
+ones.

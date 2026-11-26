@@ -81,14 +81,15 @@ out yet: until it is, set up from a clone (below).
 rocx new my-app          # asks which database: SQLite (the default), Postgres or Turso (--db to say)
 cd my-app
 rocx dev                 # http://localhost:8080, rebuilt and reloaded as you save
+rocx build               # dist/: the server and what it serves, to deploy (--image: a container image)
 ```
 
 The app signs people in from the start (packages/auth: a link by email, Google and GitHub once
 their keys are set, and under `rocx dev` any address at once; two-factor sign-in for those who turn
 it on), keeps its users in its own table,
 refuses other sites' posts, sends guard's security headers, and limits the sign-in mail. Its
-`README.md` says what to change first, and how to test it (`rocx test`), deploy it (`rocx build .
---release dist`, behind a TLS proxy) and upgrade it (`rocx upgrade`). It names its version of rocx
+`README.md` says what to change first, and how to test it (`rocx test`), deploy it (`rocx build`,
+behind a TLS proxy, or `rocx build --image`) and upgrade it (`rocx upgrade`). It names its version of rocx
 in `.rocx-version` (commit it) and reaches the platform through `.rocx`, a link rocx makes
 (gitignore it).
 
@@ -897,9 +898,10 @@ The docs site's [safety page](https://roc-solid.github.io/safety) shows each rul
 ## Commands
 
 ```sh
-rocx new <dir>           # a new app from rocx's template (sign-in, its users, security headers),
+rocx new [dir]           # a new app from rocx's template (sign-in, its users, security headers),
                          # its .rocx link made, and its .rocx-version (an installed rocx's version;
-                         # from a clone, none, and .rocx links to the clone)
+                         # from a clone, none, and .rocx links to the clone); the name asked for at a
+                         # terminal when not given
   --db sqlite            # its database: sqlite (the default), postgres or turso; asked at a terminal
 rocx dev [dir]           # build the app (a directory with routes/) and serve it at :8080 with the
                          # server's --dev; rebuilt and restarted on each save, open pages reloaded;
@@ -909,32 +911,36 @@ rocx dev [dir]           # build the app (a directory with routes/) and serve it
   --android [--lan]      # each build for the Android dev client too (a phone or emulator over adb;
                          # --lan: phones on this Wi-Fi, a QR code shows the way); see examples/pomodoro
   -- <server options>    # given to the app's server (--database-url URL, …; below)
-rocx build <dir>…        # each .rocx file under the directories becomes the .roc file beside it; an
-                         # app's routes/ become Generated/ (Routes, Paths, Api, Handlers, App, and Root
-                         # for an app with pages); each folder under content/ becomes
-                         # Generated/Content/<Name>.roc (its Markdown files: packages/markdown's README)
-  --client <out>         # and the browser's copy of the app in <out> (main.roc, static/rocx/)
-  --dev                  # and the stories, served at /__rocx/stories
-rocx build <dir> --static <out>   # the app as static files, for a host with no server: every page its
-                         # server answers, as <path>/index.html, with 404.html, static/ and rocx/
+rocx build [dir]         # the app (here, or in dir) built to deploy: dist/server (optimized for
+                         # speed) and dist/static (the app's static/ and the browser's files, its wasm
+                         # optimized for size); run dist/server --static dist/static behind a proxy
+                         # that speaks TLS; its host has the database engine the program names
+                         # alone, and a Linux one no debug info
+  --out dist             # where it goes
+  --target arm64musl     # for another machine (arm64mac, x64mac, arm64musl, x64musl: a musl one is
+                         # a static Linux executable); this one's by default
+rocx build [dir] --image # the release as a container image, which rocx writes itself (no Dockerfile,
+                         # no Docker): <name>.tar, one layer, /app/server and /app/static, run as
+                         # 65532 in /app on PORT 8080, /app/data for a volume; docker load -i it
+  --out app.tar          # where it goes
+  --tag name:tag         # the image's name (the directory's, :latest, by default)
+  --target x64musl       # arm64musl or x64musl; this machine's processor by default
+rocx build [dir] --static  # the app as static files in dist/, for a host with no server: every page
+                         # its server answers, as <path>/index.html, with 404.html, static/ and rocx/
+  --out dist             # where it goes
   --base /docs/          # every URL under a path
   --route /feed.xml      # also ask for a path no page links to (a page with params, a file)
   --built <build>        # use a build already made (its server and client/static)
   -- <server options>    # given to the app's server while it answers
-rocx build <dir> --release <out>  # the app built to deploy: <out>/server (optimized for speed) and
-                         # <out>/static (the app's static/ and the browser's files, its wasm
-                         # optimized for size); run <out>/server --static <out>/static behind a proxy
-                         # that speaks TLS; its host has the database engine the program names
-                         # alone, and a Linux one no debug info
-  --target arm64musl     # for another machine (arm64mac, x64mac, arm64musl, x64musl: a musl one is
-                         # a static Linux executable); this one's by default
-rocx build <dir> --image <file.tar>  # the release as a container image, which rocx writes itself
-                         # (no Dockerfile, no Docker): one layer, /app/server and /app/static, run as
-                         # 65532 in /app on PORT 8080, /app/data for a volume; docker load -i it
-  --tag name:tag         # the image's name (the directory's, :latest, by default)
-  --target x64musl       # arm64musl or x64musl; this machine's processor by default
-rocx check [dir]         # the app (here, or in dir) checked from its sources: rocx build as rocx dev
-                         # runs it, then the compiler on the server's program and the browser's, each
+rocx generate [dir]…     # what rocx build and rocx dev do first, and nothing else: each .rocx file
+                         # under the directories becomes the .roc file beside it; an app's routes/
+                         # become Generated/ (Routes, Paths, Api, Handlers, App, and Root for an app
+                         # with pages); each folder under content/ becomes Generated/Content/<Name>.roc
+                         # (its Markdown files: packages/markdown's README)
+  --client <out>         # and the browser's copy of the app in <out> (main.roc, static/rocx/)
+  --dev                  # and the stories, served at /__rocx/stories
+rocx check [dir]         # the app (here, or in dir) checked from its sources: rocx generate as rocx
+                         # dev runs it, then the compiler on the server's program and the browser's, each
                          # problem at its .rocx line; exit 1 on an error, 2 on warnings alone
 rocx check -- <command>  # run a command (roc check …), its reports pointed into .rocx files
 rocx check --sql [dir]   # the app's SQL checked by its own database engine, and its rows by the
@@ -947,7 +953,7 @@ rocx check --sql [dir]   # the app's SQL checked by its own database engine, and
   --verbose              # also list the calls it can't check (interpolated SQL, SQL in a variable,
                          # Db.unchecked)
   -- <server options>    # given to the app's server (--database-url, or --sql-database for Postgres)
-rocx test [dir]          # rocx build as rocx check runs it, then the app's expects (roc test main.roc,
+rocx test [dir]          # rocx generate as rocx check runs it, then the app's expects (roc test main.roc,
                          # with the compiler rocx has), each failure at its .rocx line
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
 rocx routes <dir>        # list an app's routes: method, path, file, what runs around it
@@ -957,7 +963,11 @@ rocx qr <text>           # the text as a QR code in the terminal (--pbm: as a PB
 rocx upgrade [<version>] # install a version of rocx (the latest by default) and make it the default;
                          # in an app, move the app onto it (.rocx-version, .rocx)
 rocx --version           # which rocx this is (an installed version's VERSION; a clone's commit)
+rocx help [command]      # the commands, or one command's options (rocx <command> --help too)
 ```
+
+At a terminal, rocx draws each step of a build as it runs (`◌`, then `✓` and its time) in colour;
+in a pipe, in CI, or with `NO_COLOR` set, the same lines come as plain text, one each.
 
 An app outside this repository names the version of rocx it is built with in `.rocx-version`
 (committed), and reaches the platform and the packages through `.rocx`, a link to that version
@@ -1056,10 +1066,10 @@ format, plugins and routes.
   plugins, and actors' state and timers are the platform's Roc, written on top of them.
   [roc-pg](https://github.com/niclas-ahden/roc-pg), a Postgres client whose queries are checked at
   build time, runs on the platform's `Tcp`.
-- `rocx build <dir> --release <out> --target arm64musl` builds one static Linux executable (and what
-  it serves), from a Mac too, with the database engine the app's program names alone and no debug
-  info; `rocx build <dir> --image <file.tar>` puts it in a container image with nothing else in it,
-  written by rocx (no Dockerfile, no Docker to build it): a hello world's is 3.7 MB to send.
+- `rocx build --target arm64musl` builds one static Linux executable (and what it serves) into
+  dist/, from a Mac too, with the database engine the app's program names alone and no debug info;
+  `rocx build --image` puts it in a container image with nothing else in it, written by rocx (no
+  Dockerfile, no Docker to build it): a hello world's is 3.7 MB to send.
 
 `server/README.md` has every module's API, and the docs' [platform pages](https://roc-solid.github.io/platform)
 and [reference](https://roc-solid.github.io/platform/reference) cover each part.

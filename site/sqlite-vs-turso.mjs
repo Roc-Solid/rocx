@@ -112,7 +112,7 @@ async function inARow(label, count, ask) {
 
 export async function measure({ size = 100, orders = 1000000, runs = 10, bigRuns = runs } = {}) {
 	const rocx = rocxBinary();
-	run(rocx, ["build", "examples/sqlite-vs-turso"], { env: { ...process.env, ROC: roc() } });
+	run(rocx, ["generate", "examples/sqlite-vs-turso"], { env: { ...process.env, ROC: roc() } });
 	const work = mkdtempSync(join(tmpdir(), "rocx-sqlite-vs-turso-"));
 	const executable = join(work, "app");
 	buildApp(join(root, "examples", "sqlite-vs-turso", "main.roc"), executable, { opt: "speed" });

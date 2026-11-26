@@ -247,7 +247,7 @@ view! = |_|
 			</p>
 			<Code
 				title="A release build"
-				source={"rocx build my-app --release dist [--target arm64musl]\n\ndist/server --port 8080 --static dist/static"}
+				source={"rocx build my-app [--target arm64musl]\n\nmy-app/dist/server --port 8080 --static my-app/dist/static"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
