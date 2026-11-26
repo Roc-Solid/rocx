@@ -245,6 +245,14 @@ View := [].{
 		"${Look.header({ eyebrow, title: Look.escape(heading), actions: "" })}<section class=\"panel\"><div class=\"callout tone-bad\">${Look.icon("alert")}<div><p class=\"problem\">${Look.escape(why)}</p></div></div>${back}</section>"
 	}
 
+	## The page the admin shows while its options name what the schema doesn't have
+	## (`Admin.problems`): each, and nothing of the database.
+	problems_page : Frame, List(Str) -> Str
+	problems_page = |frame, whys| {
+		items = Str.join_with(whys.map(|why| "<li>${Look.escape(why)}</li>"), "")
+		"${Look.header({ eyebrow: Look.escape(frame.title), title: "The admin's options", actions: "" })}<section class=\"panel\"><div class=\"callout tone-bad\">${Look.icon("alert")}<div><p class=\"problem\">They name what the schema doesn't have, so the admin shows nothing until they are mended:</p><ul class=\"problem\">${items}</ul></div></div></section>"
+	}
+
 	## The link to a row: its table, and its key's columns and values (`k.id=7`).
 	row_link : Str, Str, List((Str, Str)) -> Str
 	row_link = |mount, table, key| Form.link(mount, [("table", table)].concat(key.map(|(column, value)| ("k.${column}", value))))
@@ -641,4 +649,8 @@ expect {
 		and html.contains("<strong>Not deleted</strong><p class=\"problem\">23503: still referred to</p>")
 }
 expect View.row_title(Admin.pair(books, { name: "books" }), [("id", "7")], [{ name: "title", value: "", null: Bool.False }]) == "#7"
+expect {
+	html = View.problems_page(frame_of(Edit), ["`<b>`, in books's `hidden`, isn't a column of books."])
+	html.contains("<li>`&lt;b&gt;`, in books&#39;s `hidden`, isn&#39;t a column of books.</li>") and !html.contains("<b>")
+}
 expect View.notice("saved") == "Saved." and View.notice("<script>") == ""

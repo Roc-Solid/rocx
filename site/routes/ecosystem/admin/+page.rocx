@@ -234,8 +234,10 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				<code>Admin.Table</code> holds a table's options. Columns are named as the table names them; a name
-				the table doesn't have is ignored.
+				<code>Admin.Table</code> holds a table's options. Columns are named as the table names them. A table
+				or a column the schema doesn't have stops the admin: its pages say what is wrong and show nothing
+				else until it is mended, since a misspelt <code>hidden</code> would show the column it was meant to
+				hide.
 			</p>
 			<TableWrap>
 				<table>

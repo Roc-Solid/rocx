@@ -19,8 +19,9 @@ import Widget
 ## ```
 Admin := [].{
 
-	## A table's options. Columns are named as the table names them; a name it doesn't have is
-	## ignored.
+	## A table's options. Columns are named as the table names them; a name it doesn't have stops
+	## the admin, which shows only what is wrong (`problems`) until it is mended: a misspelt
+	## `hidden` would otherwise show the column it was meant to hide.
 	##
 	## - `label`: what the pages call it ("" — its name, readable: `book_tags` is "Book tags").
 	## - `list`: the columns its list of rows shows ([] — the first seven it has), each with a
@@ -80,6 +81,32 @@ Admin := [].{
 
 	## A table the admin shows: what the catalog says of it, and the app's options.
 	Shown : { table : Catalog.Table, options : Table }
+
+	## What the app's options name that the schema doesn't have, each a sentence: a table in
+	## `tables` that isn't there, and a column a table's options name (`list`, `search`,
+	## `ordering`, `read_only`, `hidden`, `labels`, `widgets`, `title`) that it doesn't have. While
+	## there are any, the admin's pages say so and show nothing else.
+	problems : Config(context), List(Catalog.Table) -> List(Str)
+	problems = |config, tables|
+		config.tables.join_map(
+			|options|
+				match Catalog.table(tables, options.name) {
+					Err(NotFound) => ["`${options.name}`, in `tables`, isn't a table of the schema."]
+					Ok(table) => {
+						named = [
+							("list", options.list),
+							("search", options.search),
+							("ordering", options.ordering.map(|each| each.drop_prefix("-"))),
+							("read_only", options.read_only),
+							("hidden", options.hidden),
+							("labels", options.labels.map(|(name, _)| name)),
+							("widgets", options.widgets.map(|(name, _)| name)),
+							("title", if (options.title.is_empty()) [] else [options.title]),
+						]
+						named.join_map(|(field, names)| names.drop_if(|name| table.columns.any(|column| column.name == name)).map(|name| "`${name}`, in ${options.name}'s `${field}`, isn't a column of ${options.name}."))
+					}
+				},
+		)
 
 	## The tables the admin shows: those listed that the schema has, in order; with `include: All`,
 	## then every other table of the schema, but the platform's (`rocx_…`), by name.
@@ -237,6 +264,22 @@ expect {
 	config : Admin.Config({})
 	config = { mount: "/db", access: |_| Edit, tables: [{ name: "tags" }, { name: "nope" }, { name: "books", label: "Our books" }] }
 	Admin.showing(config, tables).map(|each| each.table.name) == ["tags", "books"]
+}
+expect {
+	config : Admin.Config({})
+	config = { mount: "/db", access: |_| Edit, tables: [{ name: "books", list: ["id", "title"], ordering: ["-id"], hidden: ["secret"], labels: [("len", "Length")], title: "title" }, { name: "tags" }] }
+	Admin.problems(config, tables) == []
+}
+expect {
+	config : Admin.Config({})
+	config = { mount: "/db", access: |_| Edit, tables: [{ name: "books", hidden: ["secrett"], ordering: ["-nope"], widgets: [("body", LongText)] }, { name: "athors" }] }
+	Admin.problems(config, tables)
+		== [
+			"`nope`, in books's `ordering`, isn't a column of books.",
+			"`secrett`, in books's `hidden`, isn't a column of books.",
+			"`body`, in books's `widgets`, isn't a column of books.",
+			"`athors`, in `tables`, isn't a table of the schema.",
+		]
 }
 expect {
 	config : Admin.Config({})

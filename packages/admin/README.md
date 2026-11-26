@@ -157,8 +157,10 @@ it.
 | `title : Str` | `"Database"` | what its pages call it |
 | `back : { label : Str, href : Str }` | none (`href` `""`) | a link back to the app's own pages, first in every page's sidebar (`{ label: "Status admin", href: "/admin" }`) |
 
-`Admin.Table`: only `name` is required. Columns are named as the table names them; a name the table
-doesn't have is ignored.
+`Admin.Table`: only `name` is required. Columns are named as the table names them. A table in
+`tables` the schema doesn't have, or a column a table's options name that it doesn't have, stops
+the admin: its pages say what is wrong (a 500) and show nothing else until it is mended, since a
+misspelt `hidden` would show the column it was meant to hide (`Admin.problems`).
 
 | Field | Default | What it is |
 |---|---|---|

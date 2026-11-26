@@ -79,7 +79,11 @@ AdminPage := [].{
 						Err(why) => page(500, empty_frame, Elsewhere, "The database", View.problem_page(empty_frame, "The database can't be read", why))
 						Ok(tables) => {
 							frame = { ..empty_frame, tables: Admin.showing(config, tables), token }
-							if method == "POST" {
+							wrong = Admin.problems(config, tables)
+							if !wrong.is_empty() {
+								# A misspelt name (`hidden: ["pasword_hash"]`) would show what it meant to hide.
+								page(500, empty_frame, Elsewhere, "The admin's options", View.problems_page(empty_frame, wrong))
+							} else if method == "POST" {
 								write!(form, frame, on, effects)
 							} else {
 								read!(Form.fields(request.query), frame, on, effects)
