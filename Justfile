@@ -389,16 +389,15 @@ test-server: server-host web-host
 # Type-checks the site, both programs, with reports pointed into .rocx files, and lints its markup:
 # the server's, and the browser's, built from the copy of the site in which a route file has no
 # middleware and a <NoHydration> no children (site/build/client, whose main.roc rocx build writes).
-# Then each package's modules for the server (packages/*/server/main.roc, a package that names the
-# server platform), which no app here imports, and the example apps' two programs
-# (`examples-check`; `just examples` builds and tests them too). First, that everything is
-# formatted (`just fmt` formats it).
+# Then the example apps' two programs (`examples-check`; `just examples` builds and tests them too).
+# First, that everything is formatted (`just fmt` formats it), and that no package is copied into
+# an app by hand (test/no-copies.test.mjs: an app imports a package's module by the package's name).
 check: (fmt "--check")
+    node --test test/no-copies.test.mjs
     {{ rocx }} site prepare
     {{ rocx }} lint site web/test/app
     {{ rocx }} check -- {{ roc }} check site/main.roc
     {{ rocx }} check -- {{ roc }} check site/build/client/main.roc
-    for package in packages/*/server/main.roc; do {{ roc }} check "$package" || exit 1; done
     just examples-check
 
 # How long checking takes (test/check-times.mjs): each example app's and the docs site's `rocx

@@ -259,9 +259,12 @@ When an item lands, delete its line here in the same commit.
   platform has no refusal for this (a `Failed(why)` that logs `why` with the route and answers a
   plain 500); Endpoint.roc is shared with the browser's platform, which has no log, so it needs a
   decision.
+- **packages/otel/example's browser program doesn't check:** `rocx check packages/otel/example`
+  type-checks its server, then fails on the browser's copy (`build/client`): `Api.openapi does not
+  exist` in Generated/App.roc (an app of endpoints alone; examples/echo, the same, has no browser
+  program). On master before the plugin too; the example isn't in `just examples`.
 - **Stale proposals:** `packages/testing/PROPOSALS.md` (`src/routes.mjs`, `outbox.rs`, `<For>`; item
-  11 is done), `packages/mcp/PROPOSALS.md` #1, `packages/otel/PROPOSALS.md`,
-  `packages/forms/PROPOSALS.md` ("Nothing here is built").
+  11 is done), `packages/forms/PROPOSALS.md` ("Nothing here is built").
 - **sqlite-vs-turso's sale workloads aren't measured yet:** `sale`, `sale-job`, `concurrent-sale`
   and `concurrent-sale-job` (a sale in one transaction, with its receipt job and without) aren't in
   `site/sqlite-vs-turso.json`, so the docs page doesn't show them. `just db-bench`, when the user

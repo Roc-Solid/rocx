@@ -1716,6 +1716,15 @@ one and three plugins, and its tests pass optimized (`ROCX_TEST_OPT=speed`).
 before the first request and listed in the log; and the jobs, the jobs page and email can leave the
 platform (D-034, D-035). **Reversible:** yes.
 
+**Later (2026-11-26):** no package is copied into an app by hand. The last two that were, found by
+an audit of the packages' APIs, are imported by name now: packages/mcp's `McpHttp` (the package
+names the server platform, `browser.roc` the protocol's modules) and packages/otel's `Otel`, a
+plugin (`Otel.plugin({})`) whose sums aren't an actor's state any more (which `rocx build` finds
+only in an app's own files) but its loop's, fed through `Kv`, so a measurement is no database write
+either. `just check` runs test/no-copies.test.mjs: no package has a `server/` folder of modules to
+copy, and no tracked file outside packages/ is a word-for-word copy of a package's module. A
+package that can't be imported is a gap in the platform or `rocx build` to fix, not a copy.
+
 ## D-034 Jobs and cron are a package, and a plugin
 
 **Context.** D-025's rule: a platform module stays only if it needs the host or the transpiler.
