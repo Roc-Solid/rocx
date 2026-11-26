@@ -73,10 +73,16 @@ view! = |_|
 					your signals, as <code>{"data!={rain!()}"}</code> does. Values are <code>Dec</code>, Roc's
 					decimal.
 				</li>
-				<li><code>label</code>, what the chart shows, in words, for screen readers.</li>
+				<li>
+					<code>label</code>, what the chart shows, in words, for screen readers (<code>label!</code> on
+					<code>{"<Sparkline>"}</code>, an accessor, since it changes with the data).
+				</li>
 				<li>
 					<code>format</code>, which writes a value as text for the ticks and the readouts:
 					<code>Format.short</code> (<code>1.3k</code>) unless you give a function of your own.
+					<code>{"<LineChart>"}</code> has <code>format_x</code> too, for its <code>x</code>;
+					<code>{"<ScatterChart>"}</code> has <code>format_x</code> and <code>format_y</code> instead;
+					<code>{"<Sparkline>"}</code> writes no values.
 				</li>
 			</ul>
 			<p>

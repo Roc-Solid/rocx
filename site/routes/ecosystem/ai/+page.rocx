@@ -174,8 +174,10 @@ view! = |_|
 				<code>Failed(problem)</code>. On the server, <code>post!</code> adds the message to the chat's
 				conversation, kept in <a href={Paths.platform_kv}>Kv</a> under the chat's id, and <code>events!</code>
 				answers it with the example's assistant (an <a href="#agents">agent</a>, asked with
-				<code>Agent.chat!</code>): its text as it is written, the name of each agent or tool as it is about to
-				be used, then the notes as they are now.
+				<code>Agent.chat!</code>): its text as it is written, a status line while the team works (a progress
+				note, or an agent or tool at work with what it says it is doing: <a href="#updates">updates</a>), then
+				the notes as they are now. If the team runs out of turns, what it did is kept, so the chat goes on from
+				there.
 			</p>
 			<Code title={Sources.ai_example_chat.file} source={Sources.ai_example_chat.rocx} />
 
@@ -224,9 +226,10 @@ view! = |_|
 				model stops asking, or <code>max_turns</code> turns have gone (<code>TooManyTurns(reply)</code>: what it
 				did, its <code>messages</code> and <code>usage</code>, to keep and to bill). A turn cut off at
 				<code>max_tokens</code> ends the run, and a tool call it was writing isn't run, nor kept in
-				<code>messages</code>.
+				<code>messages</code>, so the conversation can be sent again.
 				<code>heard!</code> is given <code>Text(piece)</code> as the model writes, and <code>Calling(name)</code>
-				as it is about to use a tool.
+				as it is about to use a tool; with <code>updates</code>, <code>Update(…)</code> too
+				(<a href="#updates">below</a>).
 			</p>
 			<p>
 				A tool is <code>packages/tools</code>' <code>Tool</code>, which the <a href={Paths.ecosystem_mcp}>MCP
@@ -277,6 +280,8 @@ view! = |_|
 						<tr><td><code>model</code></td><td>its model (the plugin's)</td></tr>
 						<tr><td><code>effort</code></td><td>how hard it thinks (<code>Medium</code>)</td></tr>
 						<tr><td><code>max_turns</code>, <code>max_tokens</code></td><td>as a request's (10, and 64,000)</td></tr>
+						<tr><td><code>updates</code></td><td>whether it tells its listener what to show while it works (<code>Bool.False</code>; <a href="#updates">updates</a>)</td></tr>
+						<tr><td><code>doing</code></td><td>what a page shows while another agent has it at work (<code>""</code>)</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -297,7 +302,7 @@ view! = |_|
 			<p>
 				The chat's <code>events!</code> (under <a href="#stream">streaming to a page</a>) asks
 				<code>Team.assistant</code> with <code>Agent.chat!</code>, the chat's conversation, and a
-				<code>heard!</code> that sends each piece to the page.
+				<code>heard!</code> that sends each piece of text, and each update, to the page.
 			</p>
 			<ul>
 				<li>
@@ -428,10 +433,12 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				A 408, 409, 429, 500, 502, 503, 504 or 529 answer, or a stream that fails as overloaded before anything was heard,
-				is tried again, twice, after what <code>retry-after</code> says (a minute at most; else half a second,
-				then a second). Each try is
-				logged (<code>ai.retry</code>). Once text has been passed on, nothing is tried again.
+				A 408, 409, 429, 500, 502, 503, 504 or 529 answer, or a stream whose error event stands for one of
+				them (overloaded, a rate limit, a timeout, the API's own error) before anything was heard, is tried
+				again, twice, after
+				what <code>retry-after</code> says (a minute at most; else half a second, then a second). Each try is
+				logged (<code>ai.retry</code>). Once text has been passed on, nothing is tried again. A connection that
+				fails (<code>Unreachable</code>) isn't tried again.
 			</p>
 
 			<Heading id="sends">What it sends</Heading>
@@ -442,7 +449,10 @@ view! = |_|
 				<code>extract!</code>'s format; <code>cache_control</code> asks for the prompt cache. It sends no
 				sampling parameters (that version refuses <code>temperature</code> and the rest), no
 				<code>thinking</code> (the current models think as they need to, and <code>effort</code> says how much),
-				and no forced <code>tool_choice</code> (Claude Opus 5.5 refuses it).
+				and no forced <code>tool_choice</code> (Claude Opus 5.5 refuses it). With <code>updates</code>, on the
+				models that write progress notes, <code>thinking</code> is
+				<code>{"{\"type\": \"adaptive\", \"display\": \"updates\"}"}</code>, and <code>anthropic-beta</code>
+				lists <code>thinking-display-updates-2026-08-18</code>.
 			</p>
 			<p>
 				<code>effort</code> is always sent, so the model must take it. Claude Opus 4.5 and every model from the
@@ -492,7 +502,7 @@ view! = |_|
 				Under <code>--dev</code> it asks <code>claude-haiku-5-5</code>. One chat message to the example's team asked
 				the model six times (the assistant three, the nutritionist once, the notes keeper twice): about 4,400
 				tokens read, most from the cache, and 470 written, well under a tenth of a cent. The package's <code>README.md</code> is the reference. Images and documents in a
-				prompt, batches, counting tokens, the API's own tools (web search, code execution) and an agent's work
+				prompt, batches, counting tokens, the API's own tools (web search, code execution) and an agent's text
 				heard by its caller are not built yet; the package's <code>PROPOSALS.md</code> has them.
 			</p>
 		</NoHydration>

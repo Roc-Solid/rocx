@@ -149,8 +149,9 @@ keeping the package for the pure parts only where the platform doesn't need them
 - **A foreign key in a list.** It shows the value (`author_id` 1, a link to the author), not the
   author's name; showing names costs a join for each foreign key. Worth it by default?
 - **History.** Django's admin keeps a log of who changed what. The admin could write one through
-  `Log.info!` (with server-only modules), or to a table of its own (a migration of the package's:
-  packages can't bring migrations yet). Which, if any?
+  `Log.info!` (with server-only modules), or to a table of its own (a migration of the package's,
+  which a plugin can bring now, as packages/jobs does; the admin would have to become one). Which,
+  if any?
 - **URLs.** Its pages are one path and a query (`/admin/db?table=books&k.id=7`), so an app needs one
   route file. With a rest param in routes (`routes/admin/db/[...rest]/+server.roc`), they could be
   `/admin/db/books/7`. Is that worth a routing feature?

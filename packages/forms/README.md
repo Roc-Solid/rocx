@@ -165,8 +165,8 @@ the server's run the same code, and a test runs it with nothing else.
 |---|---|
 | `Form` | a form: fields by name (`Form.text`, `int`, `dec`, `checkbox`, `choice`, `date`, `field`, `optional`, `list`, `always`), put together with Roc's record builder; `.check`, `.check_at` (across fields), `.map`, `.try_map`, `.message`; `.parse(posted)`, `.parse_body(body)`, `.issues(posted)`; `.attributes(name)` and `.json_schema()`; `.names()`, `.is_list(name)`, `.secrets()`; `Form.decode(body)` |
 | `Value` | one value, read and checked: `Value.text(checks)`, `int`, `dec`, `checkbox`, `choice`, `date`; `.check`, `.map`, `.try_map`, `.parse(raw)`; `.attributes()`, `.schema()`, `.is_required()` |
-| `Issues` | what is wrong: `Issues.Issue` (`field`, `code`, `message`), `Issues.Code`; `english`, `key` and `params` (for translations); `at`, `under`, `messages`; `to_json`, `from_json`, `refusal`, `from_problem` |
-| `Date` | a day, as `<input type="date">` sends it: `from_str`, `to_str`, `year`, `month`, `day`, `days` (since 1970-01-01) and `from_days` (back), `days_between`, `is_before`, `is_after` |
+| `Issues` | what is wrong: `Issues.Issue` (`field`, `code`, `message`), `Issues.Code`; `at_field`; `english`, `key` and `params` (for translations); `at`, `under`, `messages`; `to_json`, `from_json`, `refusal`, `from_problem` |
+| `Date` | a day, as `<input type="date">` sends it: `from_str`, `to_str`, `year`, `month`, `day`, `days` (since 1970-01-01) and `from_days` (back), `days_between`, `is_before`, `is_after`; read and written as its text (`"2026-11-21"`) by JSON and by a form's fields, so a record that holds one can be an endpoint's body |
 | `Regex` | regular expressions in plain Roc, in linear time: `compile`, `must`, `source`, `matches`, `found_in`, `find`, `find_all` |
 
 `roc test packages/forms/main.roc` runs their `expect`s.
@@ -239,6 +239,7 @@ field reads an `I64` or a `Dec`.
 
 | Function | What it does |
 |---|---|
+| `Issues.at_field(field, code)` | an issue at `field`, with the code's English: what a handler refuses with, after the form |
 | `Issues.english(code)` | the default English, a short sentence with no full stop: `"Use at least 3 characters"` |
 | `Issues.key(code)`, `Issues.params(code)` | what a table of translations is keyed by: `"too_short"`, `[{ name: "min", value: "3" }]`; a custom code's own key |
 | `Issues.at(issues, field)`, `under`, `messages` | a field's issues (`under`: its list items' too, `tags[0]`, `tags[1]`…), and their messages |

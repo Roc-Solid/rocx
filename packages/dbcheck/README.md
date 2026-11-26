@@ -20,7 +20,8 @@ The design is D-058 in `DECISIONS.md`.
    whose parameters don't match, itself; that part doesn't involve dbcheck.
 3. **rocx writes a check app.** It writes `build/sql/check/main.roc` beside a copy of the app's
    sources. For each `Db.all!` or `Db.one!` whose row type rocx can read from its annotation
-   (`rows : List(T)`; `row : T` or `Try(T, …)` for `one!`), that app has a constant like this:
+   (`rows : List(T)`; `row : T` or `Try(T, …)` for `one!`), or from the result of the function
+   whose whole body the call is, that app has a constant like this:
 
    ```roc
    ## examples/plate/Store.roc:122:11

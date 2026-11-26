@@ -319,6 +319,8 @@ check that:
 
 - the login limit answers 429 on the sixth try, with `Retry-After` and `RateLimit-Policy`, and a
   plain form's refusal goes back to its page with a flash;
+- clients whose `X-Forwarded-For` isn't an address share one count (`unknown`), so the sixth of
+  them is refused too;
 - the admin endpoint answers 403 to anyone but an admin;
 - an admin's override turns maintenance mode on (503, but not under `/admin`) and the feature route
   on for everyone, and a reset brings the code's rule back;

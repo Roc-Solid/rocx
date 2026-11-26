@@ -347,8 +347,8 @@ node packages/intl/tools/locales.mjs > packages/intl/Locales.roc
 rocx fmt packages/intl
 ```
 
-An app's wasm holds only the locales it names. Measured on a small app in the browser
-(`--opt=size`, brotli):
+An app's wasm holds only the locales it names. Measured on 2026-11-21 on a small app in the browser
+(`--opt=size`, brotli), and not measured again since the browser's host moved to Rust (D-090):
 
 | | brotli |
 |---|---|

@@ -235,9 +235,10 @@ code page rather than the sign-in page. The code page posts `code` (and `then`) 
   to `then`;
 - wrong: back to the code page with `?error=code`; the fifth wrong code ends the sign-in, and the
   sign-in page says `?error=attempts`;
-- the user's tenth wrong code in a row, across sign-ins and the two calls below: the sign-in ends,
-  and the sign-in page says `?error=locked`; their codes are refused for a quarter of an hour after
-  the last, and each wrong one after that starts the wait again;
+- once the user has given ten wrong codes in a row, across sign-ins and the two calls below, their
+  codes are refused for a quarter of an hour after the last, without being looked at: a code then
+  ends the sign-in, and the sign-in page says `?error=locked`; once the wait is over, each wrong
+  code starts it again;
 - after ten minutes, or with no sign-in waiting: the sign-in page, `?error=timeout`.
 
 `waiting!(request)` is the sign-in waiting in this browser: whose, where it goes, how many more
@@ -309,7 +310,7 @@ A sign-in that fails goes to the app's sign-in page with why, and where it was g
 | `state` | back from a provider without the state this browser kept: too late, or another browser |
 | `unavailable` | the database couldn't take it (on the log) |
 | `attempts` | the fifth wrong code ended a sign-in waiting for its code |
-| `locked` | the user's tenth wrong code in a row ended it: codes are refused for a quarter of an hour |
+| `locked` | the user had given ten wrong codes in a row: their codes are refused for a quarter of an hour after the last |
 | `timeout` | no sign-in was waiting for a code in this browser (ten minutes went by) |
 
 A wrong code goes back to the code page with `?error=code`.
@@ -374,13 +375,15 @@ Expired sessions, links and waiting sign-ins are swept as sessions start.
   plugin answers come from the app's pages: list `Middleware.same_origin({})` in the app's
   middleware, as `rocx new` does, so another site's form is refused.
 - **Where a sign-in goes after** is a path of this site, or `home`: never `//elsewhere`,
-  `https://…` or a line break.
+  `/\elsewhere`, `https://…`, or a path with a control character in it (a tab, a line break: a
+  browser drops them from a URL as it reads one, so `/<tab>/elsewhere` would go to `//elsewhere`).
 - **OAuth**: the state is compared in constant time and the state cookie goes whatever happens. PKCE
   (S256) binds the code to this browser, and the nonce binds the ID token to it. The ID token comes
   straight from the provider's token endpoint over TLS, which OpenID Connect accepts in place of
   checking its signature (Core 1.0, 3.1.3.7). Its issuer, audience, expiry and nonce are checked.
 - **Rate limits** are the app's: packages/guard on the sign-in page's endpoint, per address and per
-  client (`Guard.rate_limit`), so nobody mails an address a hundred links.
+  client (`Guard.rate_limit`), so nobody mails an address a hundred links. `rocx new`'s app has them:
+  5 a minute from each client, 5 an hour to each address.
 - **Links in mail** go to the server's public URL, never to a request's `Host`, which whoever asks
   can set.
 - **Two-factor**: the secret sealed (AES-256-GCM, under a key from `APP_SECRET`), never in clear; a

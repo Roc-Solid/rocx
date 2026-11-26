@@ -76,8 +76,10 @@ view! = |_|
 				The plugin adds the queue's table, <code>rocx_jobs</code> (its migration is recorded as
 				<code>jobs/0001_jobs</code>), the workers, the schedules' loop and the sweep. When the server starts,
 				it checks every schedule and queues again the jobs a stop cut short.
-				Without the plugin, queueing a job is an error that says to list it. Without a database, the plugin
-				runs nothing, and queueing a job returns the database's error.
+				Without the plugin, queueing a job is an error that says to list it. Since the plugin has a table, a
+				server on Postgres with no database (no <code>DATABASE_URL</code>) doesn't start, saying why, outside
+				<code>--dev</code> and <code>--debug</code>. Under them it starts with a warning, the plugin runs
+				nothing, and queueing a job returns the database's error.
 			</p>
 
 			<Heading id="jobs">A job</Heading>

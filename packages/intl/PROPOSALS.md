@@ -2,9 +2,18 @@
 
 What the package would like from outside `packages/intl/`, one section each: the problem, the
 options, the change recommended (sketched), what in the package depends on it, and how to undo it.
-Nothing here is built; the package compiles and its tests pass without any of it.
+Nothing here is built for intl; the package compiles and its tests pass without any of it. What
+proposal 1 asked of the platform has landed, in another form (D-033): see there.
 
 ## 1. Server-only modules in packages
+
+**The platform's side landed (D-033), not as option 1 below.** A package may name the server
+platform in its header, as an app does, with a `browser.roc` beside `main.roc` listing the modules
+the browser's half can compile; packages/guard and packages/auth do, and their middleware is
+imported as it is, with nothing copied. intl doesn't yet: its `main.roc` names no platform, so the
+middleware and the endpoint below are still the app's own. What is left is intl's side: an
+`IntlServer` module as sketched, under a header that names the server platform, and a `browser.roc`
+for the pure modules. The rest of this section is the proposal as it was written.
 
 **Problem.** Two pieces of intl's integration run only on the server and use platform modules: a
 middleware that picks the request's locale and says on the answer which it was

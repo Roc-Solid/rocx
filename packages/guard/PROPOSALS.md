@@ -1,8 +1,7 @@
 # guard: proposals
 
-What packages/guard needs from outside its folder. Nothing here is implemented: the package works
-without it today, in the ways README.md's "Status" says, and each proposal says what would get
-better.
+What packages/guard needed from outside its folder. The three proposals have landed (each says
+where); the open questions below are still open.
 
 ## Server-only modules in packages
 
@@ -46,7 +45,7 @@ write the flag's row and change `Kv` in one transaction. Without it, `Kv` alone.
 3. **Which environment variable names the environment.** The package reads `APP_ENV`, or else `dev`
    under `--dev`, or else `production`. Should the platform name it (`Env.name!`), so every
    package reads the same one?
-4. **Failing open.** When a limit's count can't be reached (its actor busy for 30 s), the request is
-   let through and logged, rather than refused. Right for a login form too?
+4. **Failing open.** When a limit's count can't be changed (its tally changed under 50 tries in a
+   row), the request is let through and logged, rather than refused. Right for a login form too?
 5. **HSTS.** The default is a year, without `includeSubDomains` or `preload`, so one site can't put
    its subdomains on HTTPS-only by accident. Stricter by default?

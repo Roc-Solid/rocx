@@ -4,12 +4,19 @@ What packages/forms would change outside its own folder, if the user agrees. The
 today without what is still proposed (see README.md, "Status"), and each proposal says what in the
 package would use it. Since D-093 (2026-11-26), an endpoint's body is read and checked by a form
 the route file names (`post_body = Signup.form`): proposal 3 is done that way, and proposal 2 in
-part (the 422's issues labelled `application/json`, the platform's `Json` refusal). Each section: the problem, the options weighed, the one
-recommended (with a sketch), what depends on it, and how it could be undone.
+part (the 422's issues labelled `application/json`, the platform's `Json` refusal). Proposals 1
+and 5 are done other ways too; 4 and 6 are open. Each section: the problem, the options weighed,
+the one recommended (with a sketch), what depends on it, and how it could be undone.
 
 ---
 
 ## 1. Server-only modules in packages
+
+**Done another way (D-033).** A package whose modules need the server platform names it in its
+header, as an app does, and lists what the browser's half compiles in a `browser.roc` beside
+`main.roc` (the plugins are built so). Forms needs no such module any more: since D-093 the
+platform reads an endpoint's body with the form its route file names (`post_body`), so there is
+no glue for a `FormEndpoint` to hold. What follows is the proposal as it was.
 
 **Problem.** A package is plain Roc on no platform, or `.rocx` components that `rocx build` copies
 into both halves of an app (`components/` → `Generated/<pkg>/`). A module that only the server

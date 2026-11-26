@@ -215,8 +215,8 @@ not. In a new row, an empty input for a column with a default leaves the default
 
 ## How it works
 
-On each request, `AdminPage.respond!` checks `access` and the form's token, reads the catalog, then
-draws the page or runs the form.
+On each request, `AdminPage.respond!` checks `access` and the form's token, reads the catalog, checks
+the options against it (`Admin.problems`), then draws the page or runs the form.
 
 - **The catalog.** On Postgres, four small statements over `pg_catalog`; on SQLite,
   `pragma_table_list`, `pragma_table_xinfo`, `pragma_foreign_key_list`, and each table's
@@ -296,14 +296,14 @@ runs their `expect`s.
 
 | Module | What it does |
 |---|---|
-| `Admin` | the options (`Config`, `Table`, `Access`), and what they mean for a table: `showing`, `listed`, `searchable`, `writable`, `title`, `ordering`, `widget` |
+| `Admin` | the options (`Config`, `Table`, `Access`), what they name that the schema doesn't have (`problems`), and what they mean for a table: `showing`, `listed`, `searchable`, `writable`, `title`, `ordering`, `widget` |
 | `AdminPage` | `respond!(request, context, config, effects)`: the access check, the token, the catalog, then the page or the form; `Effects`, what the route hands it |
 | `Catalog` | the statements that read the schema from `pg_catalog` (or SQLite's pragmas), and `read` (`read_sqlite`): their rows as tables, columns, keys, foreign keys, enums and a check's values |
 | `Sql` | `ident` (a quoted name), `contains` (a search's or a filter's pattern), the conditions (`Equals`, `IsNull`, `NotNull`, `Contains`, `AtLeast`, `AtMost`, `Search`), and the statements: `rows`, `count`, `one`, `insert`, `update`, `delete`, `titles` |
 | `Widget` | `Kind`; a column's widget from its type (`of`), its input (`input`), what a form's text writes (`param`), whether it changed (`same`), a new row's value (`initial`) |
 | `Listing` | a list's search, filters, sort and page, read from the query and written back (`read`, `params`, `conditions`, `order`); each column's filter (`kind`) and the check of its values (`check`) |
 | `Paging` | `of(total, size, asked)`, `offset`, `shows`, `links` (Django's: the first two, three each side, the last two) |
-| `View` | each page's HTML (`index_page`, `list_page`, `row_page`, `delete_page`, `problem_page`), a list's row of filters, and the sidebar of tables (`side`) |
+| `View` | each page's HTML (`index_page`, `list_page`, `row_page`, `delete_page`, `problem_page`, and `problems_page` for options that name what the schema doesn't have), a list's row of filters, and the sidebar of tables (`side`) |
 | `Look` | the admin look (`shared`, the rules every admin page shares, and the helpers), the tables admin's own rules, its `document` and its `headers` |
 | `Form` | a query's or a form's fields, decoded; links, encoded |
 | `JobsPage` | the jobs page (server only): `plugin({ at, guard, back })`, or `respond!(request, { mount, back })` |

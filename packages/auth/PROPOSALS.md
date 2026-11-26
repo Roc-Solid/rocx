@@ -16,12 +16,12 @@ is known or not, and the guard's rate limit named in the README.
 ## 2. Passkeys (WebAuthn)
 
 Later (the user's order). A passkey's signature is ECDSA on P-256. The server platform has P-256
-since D-080 (`P256`, for packages/push), but only signing and ECDH: a passkey needs a signature
-verified, the next primitive (`P256.verify!`, on ring's `ECDSA_P256_SHA256_ASN1`, since WebAuthn
-writes its signatures in DER, not JWS's `r` and `s`). With it: a registration ceremony and a sign-in
-ceremony, each a challenge kept for a few minutes and a script the page loads (as push's is). A
-passkey could also be a second factor beside the authenticator app (§5), on the same waiting sign-in
-and code page.
+since D-080 (`P256`, for packages/push), but only signing, ECDH and making a key pair (D-097): a
+passkey needs a signature verified, the next primitive (`P256.verify!`, on ring's
+`ECDSA_P256_SHA256_ASN1`, since WebAuthn writes its signatures in DER, not JWS's `r` and `s`).
+With it: a registration ceremony and a sign-in ceremony, each a challenge kept for a few minutes and
+a script the page loads (as push's is). A passkey could also be a second factor beside the
+authenticator app (§5), on the same waiting sign-in and code page.
 
 ## 3. A provider's endpoints from its issuer
 
@@ -56,5 +56,6 @@ and nested transactions (D-076). And one more the user asked for: impersonation
 
 ## Open questions
 
-- Should `rocx new` list `Guard.rate_limit` on its sign-in endpoint by default? (Recommended: yes, 5
-  an hour per address and 20 a minute per client.)
+None now. (Whether `rocx new` should list `Guard.rate_limit` on its sign-in endpoint was the last:
+its app does, 5 a minute from each client and 5 an hour to each address, in
+`templates/app/Middlewares.roc`.)

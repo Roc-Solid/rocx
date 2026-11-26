@@ -78,8 +78,9 @@ A URL that begins with `/` is passed through `under`, which the runtime gives ev
 
 The package brings none: the app serves its own, like any other file (`--static`). The docs site's
 are in `site/static/sounds/`, the quiz example's in `examples/quiz/static/sounds/` and the pomodoro
-example's in `examples/pomodoro/static/sounds/`. Each is made by a script beside it (`sounds.mjs`):
-chiptune notes, a mallet, a reed.
+example's in `examples/pomodoro/static/sounds/`. Each app's are made by a script in its folder
+(`site/sounds.mjs`, `examples/quiz/sounds.mjs`, `examples/pomodoro/sounds.mjs`): chiptune notes, a
+mallet, a reed.
 
 ## On a phone
 

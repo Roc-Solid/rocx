@@ -55,8 +55,8 @@ view! = |_|
 			</p>
 			<p>
 				<strong>1. The plugin.</strong> Name the package in the app's header and list its plugin with your
-				<code>admit!</code>. The email plugin sends the links (with no SMTP server, they land in the
-				<a href={"${Paths.ecosystem_email}#mailbox"}>dev mailbox</a>).
+				<code>admit!</code>. The email plugin sends the links (with no SMTP server, under <code>--dev</code>,
+				they land in the <a href={"${Paths.ecosystem_email}#mailbox"}>dev mailbox</a>).
 			</p>
 			<Code title={Sources.auth_example_main.file} source={Sources.auth_example_main.rocx} />
 			<p>
@@ -287,7 +287,7 @@ view! = |_|
 						<tr><td><code>state</code></td><td>back from a provider too late, or in another browser</td></tr>
 						<tr><td><code>unavailable</code></td><td>the database couldn't take it just then</td></tr>
 						<tr><td><code>attempts</code></td><td>the fifth wrong code ended a sign-in waiting for its code</td></tr>
-						<tr><td><code>locked</code></td><td>the user's tenth wrong code in a row ended it: their codes are refused for a quarter of an hour</td></tr>
+						<tr><td><code>locked</code></td><td>the user had given ten wrong codes in a row: their codes are refused for a quarter of an hour after the last</td></tr>
 						<tr><td><code>timeout</code></td><td>no sign-in was waiting for a code in this browser: ten minutes went by</td></tr>
 					</tbody>
 				</table>
@@ -331,7 +331,8 @@ view! = |_|
 			<Note>
 				List <code>Middleware.same_origin</code> in your app's middleware, so a form on another site can't
 				post to yours, and put a <a href={Paths.ecosystem_guard}>rate limit</a> on your sign-in endpoint,
-				per address and per client, so nobody can mail an address a hundred links.
+				per address and per client, so nobody can mail an address a hundred links. The app
+				<code>rocx new</code> makes has both.
 			</Note>
 
 			<Heading id="status">Status</Heading>

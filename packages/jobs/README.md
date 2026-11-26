@@ -96,7 +96,9 @@ The plugin adds:
   short queued again.
 
 Without the plugin in the app's list, `Job.enqueue!` returns a `JobErr` saying so, rather than
-queue a job no worker will run.
+queue a job no worker will run. With it, a server on Postgres started with no database (no
+`--database-url` or `DATABASE_URL`) stops at start, saying the plugin has tables, outside `--dev`
+and `--debug`; under them it starts with a warning, and the plugin runs nothing.
 
 ### Finished jobs are swept
 
@@ -145,7 +147,8 @@ twice that, and so on (doubling at most twenty times), until its kind's `attempt
 runs again`, with its `kind`, `id`, `attempt`, `of`, `again_in_ms` and `error`). When the attempts
 run out, the job is `failed`, with its last error. That is an error on the log (`rocx jobs: a job
 failed for good`, with its `kind`, `id`, `attempts` and `error`), and then the plugin's
-`on_failed!` is called. A failed job stays in `rocx_jobs` until it is retried (`Job.retry!`).
+`on_failed!` is called. A failed job stays in `rocx_jobs` until it is retried (`Job.retry!`) or
+swept, `keep_failed_ms` after it failed (below).
 
 Queueing a job notifies `rocx_jobs` (Postgres's `NOTIFY`, or `Db.notify!` on SQLite), delivered
 when the transaction commits (`Db.listen!` hears it as the live topic `db:rocx_jobs`). A worker

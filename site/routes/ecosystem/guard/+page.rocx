@@ -132,7 +132,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Key</th><th>Counts</th></tr></thead>
 					<tbody>
-						<tr><td><code>Guard.ip(trust)</code></td><td>each address, found as <a href="#proxies">trust</a> says; an IPv6 address by its first 64 bits, the block one household is given</td></tr>
+						<tr><td><code>Guard.ip(trust)</code></td><td>each address, found as <a href="#proxies">trust</a> says; an IPv6 address by its first 64 bits, the block one household is given. Clients whose address can't be told (an <code>X-Forwarded-For</code> that isn't an address, where it is trusted) all count as one, <code>unknown</code>, so a made-up header doesn't make a client unlimited</td></tr>
 						<tr><td><code>{"Guard.user(|context| context.user, trust)"}</code></td><td>each signed-in user, as the context names them; each address when signed out</td></tr>
 						<tr><td><code>Guard.route</code></td><td>each method and path</td></tr>
 						<tr><td><code>Guard.both(key, key)</code></td><td>each pair: <code>Guard.both(Guard.ip(trust), Guard.route)</code> is each address on each route</td></tr>
@@ -191,6 +191,12 @@ view! = |_|
 				</li>
 				<li><code>Header(name)</code> reads one header a proxy sets, such as <code>fly-client-ip</code> or <code>cf-connecting-ip</code>.</li>
 			</ul>
+			<p>
+				<code>Proxies(Ip.private)</code> is right with no proxy in front and behind one in the server's
+				own network, which is why the app <code>rocx new</code> makes uses it. <code>Hops(1)</code> with
+				no proxy in front believes what the client wrote, so anyone could name a new address each time
+				and never be limited.
+			</p>
 
 			<Heading id="flags">Feature flags</Heading>
 			<p>
@@ -339,7 +345,8 @@ view! = |_|
 			<p>
 				Every module of the package is tested by its <code>expect</code>s. The middleware is tested in
 				<code>packages/guard/example/</code>, which builds, runs and is asked over HTTP. Its login limit
-				answers <code>429</code> on the sixth try, with the headers above, and its admin endpoint answers
+				answers <code>429</code> on the sixth try, with the headers above, also to clients whose
+				<code>X-Forwarded-For</code> isn't an address, who share one count. Its admin endpoint answers
 				<code>403</code> to anyone but an admin. Its flags' overrides turn its feature route and its
 				maintenance mode on and off while it runs, and outlive a restart in its SQLite file.
 			</p>

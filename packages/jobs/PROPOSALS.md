@@ -33,7 +33,7 @@ attempt, beside its input.
 A job that wants its lines kept logs them through the package:
 
 ```roc
-sync = Job.define_logged("sync", |{ account }, job| {
+sync = Job.define_logged("sync", |_context, { account }, job| {
     job.log!("fetching", { account })
     ...
 })
@@ -45,8 +45,8 @@ sync = Job.define_logged("sync", |{ account }, job| {
 - After the attempt, `JobWorker.finish!` takes the list (`Kv.list!`, then `Kv.delete!`) and writes
   it to the attempts table (as in Option 2, below).
 - The handler needs the job's id and attempt to know where to push. `Job.Kind`'s `run!` is
-  `input => Try({}, Str)` today, so a second argument comes in through `define_logged`, beside
-  `define`. Existing jobs don't change.
+  `context, input => Try({}, Str)` today, so a third argument comes in through `define_logged`,
+  beside `define`. Existing jobs don't change.
 
 **What it can't do.** It can't catch a line the job didn't write through `job.log!`. A `Log.warn!`
 in a helper module, in another package (Http's retries, otel, email), or from the host itself (a

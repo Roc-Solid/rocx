@@ -83,9 +83,10 @@ view! = |_|
 				<code>remember!</code> sends it to an endpoint that sets a cookie (<a href="#language">below</a>).
 			</p>
 			<p>
-				The demo's catalog is empty. Translated messages work in the browser just the same, but they would
-				add about 13 KB to this site's wasm, which every page of the site loads. So the demo's message is
-				shown under <a href="#messages">Messages</a>, written by the package as this page was built.
+				The demo's catalog is empty. Translated messages work in the browser just the same, but they added
+				about 13 KB to this site's wasm when measured, and every page of the site loads it. So the demo's
+				message is shown under <a href="#messages">Messages</a>, written by the package as this page was
+				built.
 			</p>
 			<Code title={Sources.intl_demo_use.file} source={Sources.intl_demo_use.rocx} />
 			<details>
@@ -418,11 +419,12 @@ view! = |_|
 			</p>
 			<p>
 				An app's wasm holds only the locales it names, under 1 KB (brotli) each. The package's code is the
-				larger part, and grows with what an app calls: on a small app, numbers alone added 12.6 KB, all the
-				formatting 22.1 KB, and messages as well 34.5 KB. The demo at the top of this page adds about 17 KB to
-				this site's wasm: the store, the picker, numbers, money, dates and relative times, in five locales
-				(three would save 1.2 KB). A translated message in it would add about 13 KB more, which is why the
-				messages on this page are written at build time.
+				larger part, and grows with what an app calls. Measured on 2026-11-21, before the browser's host
+				moved to Rust, numbers alone added 12.6 KB to a small app, all the formatting 22.1 KB, and messages
+				as well 34.5 KB. The demo at the top of this page added about 17 KB to this site's wasm: the store,
+				the picker, numbers, money, dates and relative times, in five locales (three would have saved
+				1.2 KB). A translated message in it would have added about 13 KB more, which is why the messages on
+				this page are written at build time.
 			</p>
 
 			<Heading id="status">Status</Heading>

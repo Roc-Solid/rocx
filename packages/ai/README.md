@@ -289,10 +289,11 @@ model's minimum (512 to 4,096 tokens, by model) isn't cached, and costs nothing 
 | `TooManyTurns(reply)` | `run!` took `max_turns` turns and the model still wanted its tools; `reply` is what it did (its `messages`, ending with the last tools' results, and every turn's `usage`) |
 | `Stopped(err)` | `heard!` answered `Err(err)`: from an endpoint's `events!`, the page went (`Stopped(Gone)`) |
 
-A 408, 409, 429, 500, 502, 503, 504 or 529 answer, or a stream that fails as overloaded before anything was heard,
-is tried again, twice, after what `retry-after` says (a minute at most; else half a second, then a
-second); each try is
-logged (`ai.retry`). Once text has been passed on, nothing is tried again.
+A 408, 409, 429, 500, 502, 503, 504 or 529 answer, or a stream whose error event stands for one of
+them (overloaded, a rate limit, a timeout, the API's own error) before anything was heard, is tried
+again, twice, after what `retry-after` says (a minute at most; else half a second, then a second);
+each try is logged (`ai.retry`). Once text has been passed on, nothing is tried again. A connection
+that fails (`Unreachable`) isn't tried again (PROPOSALS.md, 4).
 
 ## What it sends
 
@@ -317,10 +318,10 @@ a request, the API runs it again on the model it names for that kind of refusal,
 
 | Module | What it is |
 |---|---|
-| `Ai` | `plugin`, `Request`, `ask!`, `stream!`, `extract!` and `schema`, `run!` and `tool`, `Heard`, `Reply`, `Problem`, `explain` |
+| `Ai` | `plugin` and its `Options`, `Request` and its `Effort`, `ask!`, `stream!`, `extract!` and `schema` (a `Schema`), `run!` and `tool`, `Heard`, `Reply`, `Problem`, `explain`, `without_calls` (a message without its tool calls, as `run!` keeps a turn cut off at `max_tokens`) |
 | `Agent` | A model with its role and tools: `ask!`, `chat!`, `as_tool` |
 | `Message` | A conversation's message: `user`, `assistant`, `of_blocks`, `role_of`, `blocks`, `text`, `to_json`, `from_json`, `save`, `load` |
-| `Turn` | One turn put together from its stream's events: `step`, `stopped`, `stop_of`, `usage_of`, `model_of`, `message`, `calls`; `Heard`, `Stop`, `Usage` |
+| `Turn` | One turn put together from its stream's events: `start`, `step`, `stopped`, `stop_of`, `usage_of`, `model_of`, `message`, `calls`; `Heard`, `Stop`, `Usage` |
 | `Sse` | Server-sent events read from a stream's bytes as they come: `feed` |
 
 ## Trying it against the API

@@ -86,9 +86,11 @@ made of `Sha1`, `Hmac.sha1` and `Base32` with codes Node makes. `Sha256` wraps R
 
 `packages/storage` (S3's signatures, and the app's signed URLs), `packages/push` (Web Push's HKDF and
 base64url keys), `packages/auth` (tokens' SHA-256, PKCE, and two-factor sign-in's TOTP on
-HMAC-SHA1, Base32 secrets and HKDF's sealing key), `packages/email` (Base64 for SMTP sign-in and
-MIME bodies) and `packages/mcp` (images, audio and blobs as Base64). Each names this package in its own header, so an app that uses
-one of them doesn't have to name this one too.
+HMAC-SHA1, Base32 secrets and HKDF's sealing key), `packages/stripe` (webhook signatures checked
+with HMAC-SHA256, idempotency keys), `packages/email` (Base64 for SMTP sign-in and MIME bodies),
+and `packages/mcp`, `packages/tools` and `packages/ai` (images, audio and blobs as Base64). Each
+names this package in its own header, so an app that uses one of them doesn't have to name this one
+too.
 
 ## What isn't here
 
