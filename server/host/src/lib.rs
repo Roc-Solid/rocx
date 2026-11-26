@@ -34,6 +34,7 @@ mod channels;
 mod client;
 mod coroutine;
 mod db;
+mod dotenv;
 mod files;
 mod hosted;
 mod http;
@@ -108,11 +109,25 @@ pub extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
     }
-    let args = (1..argc.max(1) as usize)
+    let args: Vec<String> = (1..argc.max(1) as usize)
         .map(|index| unsafe { CStr::from_ptr(*argv.add(index)) }.to_string_lossy().into_owned())
         .collect();
+    // `.env` (or `--env-file`'s) into the environment first, while this is the only thread, so the
+    // log's settings (`TZ`, `ROCX_LOG`), the server's (`PORT`, `DATABASE_URL`) and the app's all
+    // see it (D-088).
+    let loaded = dotenv::load(dotenv::named(&args).as_deref());
     logging::start();
-    let code = served(args);
+    let code = match loaded {
+        dotenv::Loaded::Failed { file, why } => {
+            logging::error("rocx server: can't start", &[("error", format!("{}: {why}", dotenv::shown(&file)).into())]);
+            2
+        }
+        dotenv::Loaded::Read { file, set, kept } => {
+            dotenv::noted(&file, &set, &kept);
+            served(args)
+        }
+        dotenv::Loaded::Nothing => served(args),
+    };
     // What is still on the log's queue is written before the process exits.
     logging::flush();
     code

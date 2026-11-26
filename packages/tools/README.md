@@ -25,6 +25,13 @@ which it names itself. `roc test packages/tools/main.roc` runs its expects.
 | `Content` | What a tool answers with: `Text`, `Image` and `Audio` (bytes, sent as Base64), `Link` (to a resource), `Embedded` (a resource's contents). Helpers: `Content.text`, `Content.image`, `Content.link`. |
 | `JsonValue` | Any JSON, read a field at a time (`parse`, `get`, `to_text`, `is_object`, `to_str`). `decode` into a Roc type and `encode` from one, through `Json`. A number keeps the text it came as, so an id or an `I64` goes back exactly. |
 
+What a page can show while a model works is a `Tool.Update` (D-089): `Progress({ agent, says })`, a
+note the model wrote between its tool calls, or `Using({ agent, tool, says })`, a tool as it starts
+to run, with what it says it is doing. A tool says that with `.doing("Looking for your info…")`
+(`doing_of` reads it). A tool that works as a model does (an agent) can also be run with a
+listener it tells its own updates (`with_listener`, `listener_of`), so a model that calls it passes
+them on: packages/ai's agents are such tools.
+
 A tool's hints (`read_only`, `additive`, `idempotent`, `closed_world`), its answer's schema
 (`answers`) and `reporting` are what MCP tells a client; packages/ai sends a model a tool's name,
 description and arguments' schema. `Content.to_json` writes MCP's content block; packages/ai writes

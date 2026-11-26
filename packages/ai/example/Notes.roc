@@ -4,7 +4,8 @@ import tools.Tool
 
 ## The notes the assistant keeps, in the server's memory, and the tools that keep them: each a
 ## function of the app's (`add!`), made a tool in a line (`Ai.tool`), its arguments' schema the
-## platform's. The same `Tool`s (packages/tools) could be an MCP server's (packages/mcp).
+## platform's. The same `Tool`s (packages/tools) could be an MCP server's (packages/mcp). Each says
+## what a page shows while it runs (`doing`).
 Notes := [].{
 
 	## A note: its number, and what it says.
@@ -17,9 +18,9 @@ Notes := [].{
 	## The tools the chat's model has.
 	tools : List(Tool({}))
 	tools = [
-		Ai.tool("list_notes", "Lists every note, oldest first: its id and its text.", listed!, Ai.schema([])),
-		Ai.tool("add_note", "Adds a note of the text given. Answers the note, with its id.", added!, Ai.schema([])),
-		Ai.tool("remove_note", "Removes the note with the id given. Answers how many notes are left.", removed!, Ai.schema([])),
+		Ai.tool("list_notes", "Lists every note, oldest first: its id and its text.", listed!, Ai.schema([])).doing("Looking through your notes…"),
+		Ai.tool("add_note", "Adds a note of the text given. Answers the note, with its id.", added!, Ai.schema([])).doing("Writing that down…"),
+		Ai.tool("remove_note", "Removes the note with the id given. Answers how many notes are left.", removed!, Ai.schema([])).doing("Crossing it out…"),
 	]
 
 	## What the chat's model is told.

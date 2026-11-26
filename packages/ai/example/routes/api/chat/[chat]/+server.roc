@@ -23,15 +23,17 @@ post! = |{ params, body, .. }| {
 
 ## GET /api/chat/<chat>, asked for its events: the assistant's answer to the chat's last message
 ## (`Team.assistant`, which hands notes to the notes keeper and meals to the nutritionist, each an
-## agent it uses as a tool): its text as it is written, each agent or tool as it is about to be
-## used, then the notes as they are now (`done`). When the page goes, the model stops.
-events! : { request : Server.Request, params : { chat : Str }, context : c } => Try(Events({ text : Str, tool : Str, done : Bool, problem : Str, notes : List({ id : U64, text : Str }) }), Endpoint.Refusal)
+## agent it uses as a tool): its text as it is written (`text`); what to show while the team works
+## (`status`, from `agent`: a progress note the model wrote, or a tool or agent at work, with what it
+## says it is doing); then the notes as they are now (`done`). When the page goes, the model stops.
+events! : { request : Server.Request, params : { chat : Str }, context : c } => Try(Events({ text : Str, status : Str, agent : Str, done : Bool, problem : Str, notes : List({ id : U64, text : Str }) }), Endpoint.Refusal)
 events! = |{ params, .. }|
 	Ok(
 		Events.stream(
 			|{ send!, .. }| {
-				said! = |text, tool| send!({ text: text, tool: tool, done: Bool.False, problem: "", notes: [] })
-				finished! = |problem| send!({ text: "", tool: "", done: Bool.True, problem: problem, notes: Notes.all!({}) })
+				said! = |text| send!({ text: text, status: "", agent: "", done: Bool.False, problem: "", notes: [] })
+				shown! = |agent, status| send!({ text: "", status: status, agent: agent, done: Bool.False, problem: "", notes: [] })
+				finished! = |problem| send!({ text: "", status: "", agent: "", done: Bool.True, problem: problem, notes: Notes.all!({}) })
 				conversation = Chats.load!(params.chat)
 				waiting = conversation.last().map_ok(|message| message.role_of() == User) ?? Bool.False
 				if !waiting {
@@ -43,8 +45,10 @@ events! = |{ params, .. }|
 						{},
 						|heard|
 							match heard {
-								Text(text) => said!(text, "")
-								Calling(tool) => said!("", tool)
+								Text(text) => said!(text)
+								Calling(_) => Ok({})
+								Update(Progress({ agent, says })) => shown!(agent, says)
+								Update(Using({ agent, tool, says })) => shown!(agent, if (says.is_empty()) "Using ${tool}…" else says)
 							},
 					)
 					match ran {

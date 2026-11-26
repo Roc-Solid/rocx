@@ -22,7 +22,35 @@ Tool(ctx) := {
 	hints : List((Str, Bool)),
 	reports : Bool,
 	prepare : JsonValue -> Try(ctx => Outcome, Str),
+	doing : Str,
+	listening : Try((JsonValue, ctx, (Tool.Update => Try({}, [Stopped])) => Outcome), [Plain]),
 }.{
+
+	## What a page can show while a model works, as it happens: a progress note the model wrote
+	## between its tool calls (`Progress`), or a tool it is about to use (`Using`), with what the tool
+	## says it is doing (`doing`; "" when it says nothing). Each names the agent it came from (its
+	## name; "" for a call that has none). packages/ai sends them when a call asks for `updates`.
+	Update : [Progress({ agent : Str, says : Str }), Using({ agent : Str, tool : Str, says : Str })]
+
+	## The tool, with what a person is shown while it runs (`"Looking for your info…"`): the `says` of
+	## the `Using` update a model's call sends as it is about to use it.
+	doing : Tool(ctx), Str -> Tool(ctx)
+	doing = |tool, said| { ..tool, doing: said }
+
+	## What the tool says it is doing while it runs ("" for nothing).
+	doing_of : Tool(ctx) -> Str
+	doing_of = |tool| tool.doing
+
+	## The tool, run with a listener when its caller has one: for a tool that works as a model does
+	## (an agent), which tells the listener its own updates as they happen, for the caller to pass on.
+	## `run!` checks its arguments itself (a refusal is a tool error); a caller without a listener runs
+	## the tool as it was.
+	with_listener : Tool(ctx), (JsonValue, ctx, (Tool.Update => Try({}, [Stopped])) => Outcome) -> Tool(ctx)
+	with_listener = |tool, run!| { ..tool, listening: Ok(run!) }
+
+	## The tool's run with a listener, if it takes one (`with_listener`).
+	listener_of : Tool(ctx) -> Try((JsonValue, ctx, (Tool.Update => Try({}, [Stopped])) => Outcome), [Plain])
+	listener_of = |tool| tool.listening
 
 	## A tool: its name, what it does, the JSON Schema of its arguments (`""` takes any object), and
 	## what it does with them, given as any JSON.
@@ -36,6 +64,8 @@ Tool(ctx) := {
 		hints: [],
 		reports: Bool.False,
 		prepare: |arguments| Ok(|ctx| run!(arguments, ctx)),
+		doing: "",
+		listening: Err(Plain),
 	}
 
 	## A tool whose arguments are a Roc type and whose answer is a value of another: its name, what
@@ -67,6 +97,8 @@ Tool(ctx) := {
 					Err(InvalidJson(why)) => Err("Invalid arguments for ${name}: ${why}")
 				}
 			},
+			doing: "",
+			listening: Err(Plain),
 		}
 	}
 
@@ -103,6 +135,8 @@ Tool(ctx) := {
 					(_, Err(InvalidJson(why))) => Err("Invalid arguments for ${name}: ${why}")
 				}
 			},
+			doing: "",
+			listening: Err(Plain),
 		}
 	}
 

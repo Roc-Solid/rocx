@@ -279,7 +279,7 @@ export function hostUnitTests(module, out, host = hostDir) {
 /** Starts a server built on the platform, with `flags`; resolves when it listens: its URL, what it
  * has logged, and how to stop it (SIGTERM; resolves to its exit code). */
 export async function start(executable, flags = []) {
-	const child = spawn(executable, ["--port", "0", ...flags], { stdio: ["ignore", "ignore", "pipe"] });
+	const child = spawn(executable, ["--port", "0", ...flags], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ROCX_ENV_FILE: "" } });
 	let said = "";
 	const url = await new Promise((resolve, reject) => {
 		child.stderr.on("data", (chunk) => {

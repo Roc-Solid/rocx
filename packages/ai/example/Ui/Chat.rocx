@@ -5,9 +5,10 @@ import pf.Endpoint
 import pf.Server as Http
 import ../Generated/Api
 
-## The chat: what the user says is posted to the chat's path, then its events are the model's
-## answer, as it is written (`Ai.run!` on the server, with the notes tools): text, the tool it is
-## about to use, and the notes once it is done. Beside it, the notes, and a button for their summary
+## The chat: what the user says is posted to the chat's path, then its events are the assistant's
+## answer, as it is written (`Agent.chat!` on the server, a team of agents): its text; what to show
+## while the team works (a status line: a progress note, or a tool or agent at work, and which agent
+## it is from); and the notes once it is done. Beside it, the notes, and a button for their summary
 ## (`Ai.ask!`).
 Chat := [].{
 	Line : { id : U64, who : Str, text : Str }
@@ -19,7 +20,7 @@ Chat := [].{
 		(draft!, set_draft!) = create_signal!("")
 		(lines!, set_lines!) = create_signal!([])
 		(reply!, set_reply!) = create_signal!("")
-		(tool!, set_tool!) = create_signal!("")
+		(status!, set_status!) = create_signal!("")
 		(state!, set_state!) = create_signal!(idle)
 		(kept!, set_kept!) = create_signal!(notes)
 		(summary!, set_summary!) = create_signal!("")
@@ -31,14 +32,13 @@ Chat := [].{
 							set_lines!(lines!().append({ id: lines!().len(), who: "assistant", text: reply!() }))
 						}
 						set_reply!("")
-						set_tool!("")
+						set_status!("")
 						set_kept!(said.notes)
 						set_state!(if (said.problem.is_empty()) Idle else Failed(said.problem))
-					} else if !said.tool.is_empty() {
-						set_tool!(said.tool)
+					} else if !said.status.is_empty() {
+						set_status!(if (said.agent.is_empty() or said.agent == "assistant") said.status else "${said.agent}: ${said.status}")
 					} else {
 						set_reply!(Str.concat(reply!(), said.text))
-						set_tool!("")
 					}
 				Ended =>
 					if state!() == Thinking {
@@ -54,7 +54,7 @@ Chat := [].{
 				set_draft!("")
 				set_lines!(lines!().append({ id: lines!().len(), who: "you", text: text }))
 				set_reply!("")
-				set_tool!("")
+				set_status!("")
 				match posted {
 					Ok({}) => {
 						set_state!(Thinking)
@@ -78,7 +78,12 @@ Chat := [].{
 				<ol class="lines" aria-live="polite">
 					{...lines!().map(|line| <li key={line.id.to_str()} class={line.who}>{line.text}</li>)}
 					{if state!() == Thinking {
-						<li class="assistant pending">{pending(reply!(), tool!())}</li>
+						<li class="assistant pending">
+							{if reply!().is_empty() "…" else reply!()}
+							{if !status!().is_empty() {
+								<span class="status" role="status">{status!()}</span>
+							}}
+						</li>
 					}}
 				</ol>
 				<form on:submit={send!}>
@@ -131,6 +136,14 @@ Chat := [].{
 			color: #5b6475;
 		}
 
+		.status {
+			display: block;
+			margin-top: 0.25rem;
+			font-size: 0.85rem;
+			font-style: italic;
+			color: #6b7486;
+		}
+
 		form {
 			display: flex;
 			gap: 0.5rem;
@@ -151,17 +164,6 @@ Chat := [].{
 idle : Chat.State
 idle = Idle
 
-## What the model's turn shows while it comes: its text so far, else the tool it is using.
-pending : Str, Str -> Str
-pending = |reply, tool|
-	if !reply.is_empty() {
-		reply
-	} else if !tool.is_empty() {
-		"Using ${tool}…"
-	} else {
-		"…"
-	}
-
 explain : Http.Problem -> Str
 explain = |problem|
 	match problem {
@@ -169,6 +171,3 @@ explain = |problem|
 		Refused(status_code, text) => "Refused (${status_code.to_str()}): ${text}"
 		BadAnswer(why) => "An answer that didn't fit: ${why}"
 	}
-
-expect pending("", "add_note") == "Using add_note…"
-expect pending("Noted.", "add_note") == "Noted."

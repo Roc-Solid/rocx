@@ -784,7 +784,21 @@ if (Env.dev!({})) dev_sign_in else Server.refused(404, "No page here.")     # st
 ```
 
 `Env.var!` reads the server's environment: the app's secrets and whatever differs between machines,
-read the same way in a request, a job or a schedule (twelve-factor; Phoenix's `runtime.exs`). The
+read the same way in a request, a job or a schedule (twelve-factor; Phoenix's `runtime.exs`).
+
+**`.env`** (D-088): as it starts, before anything else (its own settings, the log's, the app's), the
+server reads `.env` in the directory it starts in, when there is one, into its environment, so a key
+kept there (`ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `SMTP_URL`, `DATABASE_URL`) is read as if the
+shell had exported it, by the app and by every plugin. A variable the environment already has keeps
+its value: the file is the default, the environment says otherwise. `--env-file FILE` names another
+file, read in its place (and which must be there), as does `ROCX_ENV_FILE` when no flag does; set but
+empty, no file is read: the tests' servers start so (`just test`, packages/testing's `startServer`),
+so a developer's `.env` never reaches them. The lines are dotenv's: `NAME=value`, `export
+NAME=value`, `# comments`, a value in single quotes as it is, in double quotes with `\n`, `\t`, `\"`
+and `\\`, either over several lines; no `${NAME}` expansion. A line that isn't a setting stops the
+server, saying which. The log names what was set and what the environment kept, never a value
+(`rocx server: settings read`, as the server listens, in the app's log format). Keep `.env` out of git: the repository's `.gitignore`, and `rocx
+new`'s, list it. The
 context file is for what `init!` is given. `Env.dev!` says whether the server was started with
 `--dev`. `Env.public_url!` is where the app is, for links it sends (Running, below). The
 platform's own settings stay flags or their variables (`DATABASE_URL`, …); a plugin reads its own

@@ -67,7 +67,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Module</th><th>What it has</th></tr></thead>
 					<tbody>
-						<tr><td><code>Tool</code></td><td><code>Tool.typed(name, description, schema, run!)</code> reads the arguments into a Roc type and writes the answer as JSON; <code>Tool.typed_with_params</code> reads two types from one object (an endpoint's path params and its body); <code>Tool.new</code> takes any JSON and answers with content. Hints for an MCP client: <code>read_only</code>, <code>additive</code>, <code>idempotent</code>, <code>closed_world</code>. Also <code>titled</code>, <code>answers(schema)</code> and <code>reporting</code>.</td></tr>
+						<tr><td><code>Tool</code></td><td><code>Tool.typed(name, description, schema, run!)</code> reads the arguments into a Roc type and writes the answer as JSON; <code>Tool.typed_with_params</code> reads two types from one object (an endpoint's path params and its body); <code>Tool.new</code> takes any JSON and answers with content. Hints for an MCP client: <code>read_only</code>, <code>additive</code>, <code>idempotent</code>, <code>closed_world</code>. Also <code>titled</code>, <code>answers(schema)</code> and <code>reporting</code>; <code>doing</code>, what a person is shown while it runs; <code>with_listener</code>, for a tool that tells its caller what it does (an agent); and <code>Tool.Update</code>, what a page can show meanwhile.</td></tr>
 						<tr><td><code>Content</code></td><td>What a tool answers with: text, an image or a sound (bytes), a link to a resource, or a resource's contents held whole (<code>Content.Contents</code>). <code>Content.to_json</code> writes MCP's content block; the AI package writes the Messages API's from the same value.</td></tr>
 						<tr><td><code>JsonValue</code></td><td>Any JSON, read a field at a time (<code>parse</code>, <code>get</code>, <code>to_text</code>, <code>to_str</code>). <code>decode</code> turns it into a Roc type and <code>encode</code> makes one from a Roc value. A number keeps the text it came as, so an id or an <code>I64</code> goes back exactly.</td></tr>
 					</tbody>
@@ -76,6 +76,14 @@ view! = |_|
 			<p>
 				It depends on the crypto package (Base64, for an image's bytes), which it names itself.
 				<code>roc test packages/tools/main.roc</code> runs its <code>expect</code>s.
+			</p>
+
+			<p>
+				A tool can say what a person is shown while it runs: <code>{"tool.doing(\"Looking for your info…\")"}</code>.
+				When a call asks the AI package for <a href={"${Paths.ecosystem_ai}#updates"}>updates</a>, each tool
+				that starts to run is a <code>Tool.Update</code> its page can show (<code>Using</code>, with that line),
+				as is each note the model writes between its tool calls (<code>Progress</code>). An agent used as a
+				tool is run with a listener (<code>with_listener</code>), so its own updates reach the page too.
 			</p>
 
 			<Heading id="limits">What isn't here</Heading>

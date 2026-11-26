@@ -45,9 +45,9 @@ async function say(client, chat, text) {
 	return heard;
 }
 
-/** The text of what was heard, and the tools named. */
+/** The text of what was heard, and the status lines shown meanwhile (`agent|status`). */
 const textOf = (heard) => heard.map((data) => data.text).join("");
-const toolsOf = (heard) => heard.filter((data) => data.tool).map((data) => data.tool);
+const statusesOf = (heard) => heard.filter((data) => data.status).map((data) => `${data.agent}|${data.status}`);
 
 test("the start says which model, and where the API is", async () => {
 	await until(() => JSON.stringify(app.logs()).includes("ai.model"), { ms: 5000 });
@@ -62,6 +62,7 @@ test("a chat: the assistant hands the note to the notes keeper, an agent it uses
 		blocks: [
 			{ type: "thinking", thinking: "", signature: "sig-thinking-1" },
 			{ type: "text", text: "I'll note that. " },
+			{ type: "thinking", thinking: "Handing this to the notes keeper.", signature: "sig-progress-1" },
 			{ type: "tool_use", id: "toolu_01", name: "notes_keeper", input: { task: "Add a note: Buy oat milk" } },
 		],
 		stop: "tool_use",
@@ -73,7 +74,11 @@ test("a chat: the assistant hands the note to the notes keeper, an agent it uses
 	api.turn({ blocks: [{ type: "text", text: "Noted: buy oat milk." }] });
 	const heard = await say(client, "c1", "Remember to buy oat milk");
 	assert.equal(textOf(heard), "I'll note that. Noted: buy oat milk.");
-	assert.deepEqual(toolsOf(heard), ["notes_keeper"], "the keeper's own work isn't streamed: the assistant's listener hears the agent it called");
+	assert.deepEqual(
+		statusesOf(heard),
+		["assistant|Handing this to the notes keeper.", "assistant|Seeing to your notes…", "notes_keeper|Writing that down…"],
+		"the assistant's progress note, then the agent it calls with what the agent says it does, then the keeper's own tool, passed up",
+	);
 	const done = heard.at(-1);
 	assert.equal(done.done, true);
 	assert.equal(done.problem, "");
@@ -83,7 +88,7 @@ test("a chat: the assistant hands the note to the notes keeper, an agent it uses
 	const headers = api.requests[sent].headers;
 	assert.equal(headers["anthropic-version"], "2026-10-21");
 	assert.equal(headers["x-api-key"], KEY);
-	assert.equal(headers["anthropic-beta"], "server-side-fallback-2026-07-01");
+	assert.equal(headers["anthropic-beta"], "server-side-fallback-2026-07-01,thinking-display-updates-2026-08-18", "the fallback's beta, and the progress notes'");
 	assert.equal(assistant1.model, "claude-opus-5-5");
 	assert.equal(assistant1.stream, true);
 	assert.equal(assistant1.max_tokens, 64000);
@@ -91,7 +96,7 @@ test("a chat: the assistant hands the note to the notes keeper, an agent it uses
 	assert.deepEqual(assistant1.cache_control, { type: "ephemeral" });
 	assert.deepEqual(assistant1.output_config, { effort: "low" });
 	assert.match(assistant1.system, /^You are the user's assistant/);
-	assert.equal(assistant1.thinking, undefined);
+	assert.deepEqual(assistant1.thinking, { type: "adaptive", display: "updates" }, "updates asked for: the model's progress notes as text");
 	assert.equal(assistant1.temperature, undefined);
 	assert.deepEqual(assistant1.messages, [{ role: "user", content: [{ type: "text", text: "Remember to buy oat milk" }] }]);
 	assert.deepEqual(assistant1.tools.map((tool) => tool.name), ["notes_keeper", "nutritionist"]);
@@ -100,8 +105,10 @@ test("a chat: the assistant hands the note to the notes keeper, an agent it uses
 	assert.deepEqual(Object.keys(keeperTool.input_schema.properties), ["task"]);
 	assert.deepEqual(keeperTool.input_schema.required, ["task"]);
 
-	// The keeper: its own system prompt, tools and conversation, started from the task alone.
+	// The keeper: its own system prompt, tools and conversation, started from the task alone; asked
+	// for its updates, as its caller listens.
 	assert.match(keeper1.system, /You keep the user's notes/);
+	assert.deepEqual(keeper1.thinking, { type: "adaptive", display: "updates" });
 	assert.deepEqual(keeper1.messages, [{ role: "user", content: [{ type: "text", text: "Add a note: Buy oat milk" }] }]);
 	assert.deepEqual(keeper1.tools.map((tool) => tool.name), ["list_notes", "add_note", "remove_note"]);
 	const add = keeper1.tools.find((tool) => tool.name === "add_note");
@@ -117,6 +124,7 @@ test("a chat: the assistant hands the note to the notes keeper, an agent it uses
 			content: [
 				{ type: "thinking", thinking: "", signature: "sig-thinking-1" },
 				{ type: "text", text: "I'll note that. " },
+				{ type: "thinking", thinking: "Handing this to the notes keeper.", signature: "sig-progress-1" },
 				{ type: "tool_use", id: "toolu_01", name: "notes_keeper", input: { task: "Add a note: Buy oat milk" } },
 			],
 		},
@@ -159,7 +167,13 @@ test("a tool's refusal, arguments that don't fit, input that isn't JSON and an a
 	api.turn({ blocks: [{ type: "text", text: "I couldn't tidy up." }] });
 	const heard = await say(app.client(), "c2", "Tidy up");
 	assert.equal(textOf(heard), "I couldn't tidy up.");
-	assert.deepEqual(toolsOf(heard), ["notes_keeper", "nutritionist"]);
+	assert.deepEqual(statusesOf(heard), [
+		"assistant|Seeing to your notes…",
+		"notes_keeper|Crossing it out…",
+		"notes_keeper|Writing that down…",
+		"notes_keeper|Writing that down…",
+		"assistant|Counting the calories…",
+	], "each tool as it starts to run, in order, the keeper's passed up; none for a tool the app doesn't have");
 	assert.equal(api.requests.length, sent + 4, "the nutritionist, given no task, never asked the API");
 
 	const keeper2 = api.requests[sent + 2].body;
@@ -198,6 +212,8 @@ test("the notes summed up: one answer, whole", async () => {
 	assert.deepEqual(answer.json(), { text: "You need oat milk." });
 	const body = api.requests[sent].body;
 	assert.equal(body.system, "Sum up these notes for the person who wrote them, in one plain sentence that speaks to them as you.");
+	assert.equal(body.thinking, undefined, "no updates asked for: nothing about thinking sent");
+	assert.equal(api.requests[sent].headers["anthropic-beta"], "server-side-fallback-2026-07-01");
 	assert.deepEqual(body.messages, [{ role: "user", content: [{ type: "text", text: "- Buy oat milk" }] }]);
 	assert.equal(body.tools, undefined);
 });

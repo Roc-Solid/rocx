@@ -77,7 +77,11 @@ Ai := [].{
 	##   was kept);
 	## - `max_turns`: how many turns `run!` takes at most (10);
 	## - `label`: what the call is, on the log (`ai.turn`'s `label`: `"summary"`, an agent's name), so
-	##   what each part of the app spends can be told apart.
+	##   what each part of the app spends can be told apart;
+	## - `updates`: whether `run!` tells its listener what to show while the model works (`Update`):
+	##   the progress notes the model writes between tool calls (asked of the models that write them:
+	##   Opus 5.5, Sonnet 5.5, Fable), each of the app's tools as it starts to run, with what it says
+	##   it is doing, and the same from every agent it calls as a tool (no: only text and `Calling`).
 	Request := {
 		prompt : Str ?? "",
 		messages : List(Message) ?? [],
@@ -88,7 +92,14 @@ Ai := [].{
 		cache : Bool ?? Bool.True,
 		max_turns : U64 ?? 10,
 		label : Str ?? "",
+		updates : Bool ?? Bool.False,
 	}
+
+	## What `run!` tells its listener as the model works: its text as it is written (`Text`), each
+	## tool's name as the model is about to use it (`Calling`), and, when the call asks for
+	## `updates`, what a page can show meanwhile (`Update`: packages/tools' `Tool.Update`, a progress
+	## note or a tool in use, from this call's model or an agent it called).
+	Heard : [Text(Str), Calling(Str), Update(Tool.Update)]
 
 	## The answer: its text, the conversation with it (to go on with, or to keep), why the model
 	## stopped (`MaxTokens`: the text is cut off), what it cost (all of `run!`'s turns), and the
@@ -133,7 +144,7 @@ Ai := [].{
 			|heard|
 				match heard {
 					Text(said) => heard!(said)
-					Calling(_) => Ok({})
+					_ => Ok({})
 				},
 		)
 
@@ -195,13 +206,14 @@ Ai := [].{
 	## The model, with the app's tools: each turn that asks for tools has them run (each in turn,
 	## given `context`), their answers sent back, and the model goes on, until it stops asking (or
 	## `max_turns`). `heard!` is given its text as it is written, and each tool's name as the model
-	## is about to use it (`Calling`). A tool's refusal (`Err("No note 7")`), arguments that don't
+	## is about to use it (`Calling`); with `updates`, what to show meanwhile (`Update`, `Heard`). A
+	## tool's refusal (`Err("No note 7")`), arguments that don't
 	## fit its type, and a tool it doesn't have go back to the model as a tool error, which it can
 	## act on; a failure inside (`Failed`) too, its reason logged (`ai.tool`) and not sent.
 	##
 	##     tools = [Tool.typed("find_notes", "Finds the notes that mention a word", schema, Notes.find!)]
 	##     reply = Ai.run!({ prompt: question }, tools, {}, |_| Ok({}))?
-	run! : Request, List(Tool(ctx)), ctx, (Turn.Heard => Try({}, err)) => Try(Reply, Problem(err))
+	run! : Request, List(Tool(ctx)), ctx, (Heard => Try({}, err)) => Try(Reply, Problem(err))
 	run! = |request, tools, context, heard!| {
 		settings = settings!({})
 		if settings.key.is_empty() {
@@ -209,11 +221,19 @@ Ai := [].{
 		}
 		model = model_for(settings, request)
 		described = tools.map(tool_json)
+		betas = betas_for(model, request)
+		# What the turn hears, passed on: with `updates`, its progress notes too.
+		relay! = |heard|
+			match heard {
+				Text(said) => heard!(Text(said))
+				Calling(name) => heard!(Calling(name))
+				Progress(said) => if (request.updates) heard!(Update(Progress({ agent: request.label, says: said }))) else Ok({})
+			}
 		var $messages = conversation_of(request)
 		var $usage = { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 		var $turns = 0
 		while $turns < request.max_turns {
-			turn = turn!(settings, model, request.label, body_of(model, request, $messages, described, Err(NoFormat)), heard!)?
+			turn = turn!(settings, model, betas, request.label, body_of(model, request, $messages, described, Err(NoFormat)), relay!)?
 			message = Turn.message(turn)
 			$messages = $messages.append(message)
 			$usage = added($usage, Turn.usage_of(turn))
@@ -223,7 +243,14 @@ Ai := [].{
 				ToolUse => {
 					var $results = []
 					for call in Turn.calls(turn) {
-						$results = $results.append(called!(tools, context, call))
+						# With `updates`, each tool the app has as it starts to run, with what it says it does.
+						if request.updates and tools.any(|each| each.name == call.name) {
+							match heard!(Update(Using({ agent: request.label, tool: call.name, says: doing_for(tools, call.name) }))) {
+								Ok({}) => {}
+								Err(why) => return Err(Stopped(why))
+							}
+						}
+						$results = $results.append(called!(tools, context, call, if (request.updates) Listening(heard!) else Quiet))
 					}
 					$messages = $messages.append(Message.of_blocks(User, $results))
 				}
@@ -270,6 +297,32 @@ falls_back = |model| ["claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "
 ## The beta that `fallbacks` needs.
 fallback_beta : Str
 fallback_beta = "server-side-fallback-2026-07-01"
+
+## The models that write progress notes between tool calls, sent as text with `display: "updates"`
+## and its beta: Opus 5.5, Sonnet 5.5, Fable and Mythos (not Haiku 5.5, whose notes come as text).
+writes_updates : Str -> Bool
+writes_updates = |model| ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-fable-5", "claude-mythos-5-2", "claude-mythos-5-1"].contains(model)
+
+## The beta that `display: "updates"` needs.
+updates_beta : Str
+updates_beta = "thinking-display-updates-2026-08-18"
+
+## The betas a request needs, as `anthropic-beta` lists them: the fallback's, and the progress
+## notes'.
+betas_for : Str, Ai.Request -> Str
+betas_for = |model, request| {
+	fallback = if (falls_back(model)) [fallback_beta] else []
+	updates = if (request.updates and writes_updates(model)) [updates_beta] else []
+	Str.join_with(fallback.concat(updates), ",")
+}
+
+## What a tool says it is doing while it runs ("" when it says nothing, or there is no such tool).
+doing_for : List(Tool(ctx)), Str -> Str
+doing_for = |tools, name|
+	match tools.find_first(|tool| tool.name == name) {
+		Ok(tool) => Tool.doing_of(tool)
+		Err(_) => ""
+	}
 
 ## Where the plugin keeps its settings.
 settings_key : Str
@@ -347,7 +400,7 @@ asked! = |request, format, heard!| {
 	}
 	model = model_for(settings, request)
 	messages = conversation_of(request)
-	turn = turn!(settings, model, request.label, body_of(model, request, messages, [], format), heard!)?
+	turn = turn!(settings, model, betas_for(model, request), request.label, body_of(model, request, messages, [], format), heard!)?
 	message = Turn.message(turn)
 	match Turn.stop_of(turn) {
 		Refusal(category) => Err(Refused(category))
@@ -356,7 +409,8 @@ asked! = |request, format, heard!| {
 }
 
 ## The request's JSON: the model, the conversation, the tools, how hard to think, the answer's
-## schema, and the cache and fallback the model takes.
+## schema, the cache and fallback the model takes, and, for `updates`, the model's progress notes
+## as text (`display: "updates"`; its reasoning stays hidden).
 body_of : Str, Ai.Request, List(Message), List(JsonValue), Try(JsonValue, [NoFormat]) -> Str
 body_of = |model, request, messages, tools, format| {
 	output = JsonValue.object_of([("effort", Ok(String(effort_name(request.effort)))), ("format", format.map_err(|NoFormat| Absent))])
@@ -371,6 +425,7 @@ body_of = |model, request, messages, tools, format| {
 			("output_config", Ok(output)),
 			("cache_control", if (request.cache) Ok(Object([("type", String("ephemeral"))])) else Err(Absent)),
 			("fallbacks", if (falls_back(model)) Ok(String("default")) else Err(Absent)),
+			("thinking", if (request.updates and writes_updates(model)) Ok(Object([("type", String("adaptive")), ("display", String("updates"))])) else Err(Absent)),
 		]),
 	)
 }
@@ -400,8 +455,8 @@ tool_json = |tool| {
 }
 
 ## A tool the model asked for, run: its result, as the next turn sends it back.
-called! : List(Tool(ctx)), ctx, { id : Str, name : Str, input : Try(JsonValue, [InvalidJson(Str)]) } => JsonValue
-called! = |tools, context, call| {
+called! : List(Tool(ctx)), ctx, { id : Str, name : Str, input : Try(JsonValue, [InvalidJson(Str)]) }, [Listening(Ai.Heard => Try({}, err)), Quiet] => JsonValue
+called! = |tools, context, call, listener| {
 	answered = |content, error|
 		JsonValue.object_of([
 			("type", Ok(String("tool_result"))),
@@ -416,18 +471,34 @@ called! = |tools, context, call| {
 			match call.input {
 				Err(InvalidJson(raw)) => refused("The input for ${call.name} wasn't JSON: ${raw}")
 				Ok(input) => {
-					prepare = tool.prepare
-					match prepare(input) {
-						Err(why) => refused(why)
-						Ok(run_tool!) =>
-							match run_tool!(context) {
-								Answered(done) => answered(done.content.map(content_json), Bool.False)
-								Refused(why) => refused(why)
-								Failed(why) => {
-									Log.error!("ai.tool", { tool: call.name, failure: why })
-									refused("${call.name} failed.")
+					outcome =
+						match (listener, Tool.listener_of(tool)) {
+							# A tool that works as a model does (an agent), its updates passed on.
+							(Listening(heard!), Ok(listening!)) =>
+								listening!(
+									input,
+									context,
+									|update|
+										match heard!(Update(update)) {
+											Ok({}) => Ok({})
+											Err(_) => Err(Stopped)
+										},
+								)
+							_ => {
+								prepare = tool.prepare
+								match prepare(input) {
+									Err(why) => Refused(why)
+									Ok(run_tool!) => run_tool!(context)
 								}
 							}
+						}
+					match outcome {
+						Answered(done) => answered(done.content.map(content_json), Bool.False)
+						Refused(why) => refused(why)
+						Failed(why) => {
+							Log.error!("ai.tool", { tool: call.name, failure: why })
+							refused("${call.name} failed.")
+						}
 					}
 				}
 			}
@@ -450,13 +521,13 @@ text_block = |said| Object([("type", String("text")), ("text", String(said))])
 ## comes), and logged. A 408, 409, 429, 500, 502, 503, 504 or 529, or an overloaded stream, before
 ## anything was heard, is tried again, twice, after what the API's `retry-after` says (a minute at
 ## most; else half a second, then a second).
-turn! : Settings, Str, Str, Str, (Turn.Heard => Try({}, err)) => Try(Turn, Ai.Problem(err))
-turn! = |settings, model, label, body, heard!| {
+turn! : Settings, Str, Str, Str, Str, (Turn.Heard => Try({}, err)) => Try(Turn, Ai.Problem(err))
+turn! = |settings, model, betas, label, body, heard!| {
 	var $attempt = 0
 	var $last = Err(Broken("no attempt"))
 	while $attempt <= 2 {
 		began = Time.now_millis!({})
-		match attempt!(settings, model, body, heard!) {
+		match attempt!(settings, betas, body, heard!) {
 			Ok(turn) => {
 				logged!(turn, label, Time.now_millis!({}) - began)
 				return Ok(turn)
@@ -504,8 +575,8 @@ Reading : { status : U16, retry_after : Str, failure : List(U8), rest : List(U8)
 
 ## One request, its stream read; `Again` for a failure worth trying again.
 attempt! : Settings, Str, Str, (Turn.Heard => Try({}, err)) => Try(Turn, [Final(Ai.Problem(err)), Again(U16, Str, Try(U64, [Unsaid]))])
-attempt! = |settings, model, body, heard!| {
-	betas = if (falls_back(model)) [("anthropic-beta", fallback_beta)] else []
+attempt! = |settings, beta_list, body, heard!| {
+	betas = if (beta_list.is_empty()) [] else [("anthropic-beta", beta_list)]
 	init : Http.Init
 	init = {
 		method: Post,

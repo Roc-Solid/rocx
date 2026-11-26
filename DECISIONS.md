@@ -5204,8 +5204,9 @@ calls for `ask!` and `extract!`: two parsers instead of one, and a timeout to pi
 A provider-neutral `Model` type: the lowest common denominator of APIs that differ in thinking,
 caching, tools and refusals.
 
-**Costs.** The fallback request shape is untested against the API (development used Haiku, which
-has none); the stand-in checks what is sent. A connection that breaks mid-stream is not retried.
+**Costs.** The fallback request was first untested against the API (development used Haiku, which
+has none); one call on `claude-opus-5-5` (2026-11-26) was accepted, fallbacks, beta
+and structured output together. A connection that breaks mid-stream is not retried.
 An app that names packages/ai names packages/tools (and crypto) too; one that imported
 `mcp.Tool`, `mcp.Content` or `mcp.JsonValue` imports `tools.` instead (no re-export: a Roc package
 can't expose another's modules).
@@ -5284,6 +5285,94 @@ app's code for words (`Html.on_point`), so a feature used only through a package
 would need its tag never to be decided off.
 
 **Reversible:** yes: Static.shake! is one call; without it runtime.js ships whole and minified.
+
+## D-088 The server reads `.env` as it starts
+
+**Status.** Built (2026-11-26), the user's call: the platform loads `.env` itself, so reading a
+setting (`Env.var!`) works with a key kept in the file, for the app and for every plugin.
+
+**Context.** A key kept in `.env` beside the checkout (`ANTHROPIC_API_KEY` for packages/ai) reached
+nothing: no part of rocx read the file, so the shell had to export it. A function that read the
+file into a record (`Env.from_file!`) was considered first, but plugins are a value made before any
+effect runs, and read their keys at start with `Env.var!` (`Ai.plugin({})`, Stripe's, SMTP's): a
+record the app reads can't reach them. Reading the file into the environment reaches everything.
+
+**Decision.**
+
+- **The host reads it, in `main`, first**: `.env` in the directory the server starts in, when there
+  is one (as `data/app.db` is relative to it), or the file `--env-file FILE` names, which must be
+  there, or else `ROCX_ENV_FILE`'s. `ROCX_ENV_FILE` set but empty reads none: `just test`'s recipes
+  and packages/testing's `startServer` start servers so, as a developer's `.env` (a `DATABASE_URL`)
+  must never reach a test's server. Before the log's thread or tokio's start, as changing the environment is only sound while
+  one thread runs; so the server's own settings (`PORT`, `DATABASE_URL`, `KV_MAX_MB`), the log's
+  (`TZ`) and the app's all see it. No new hosted function: `Env.var!` is unchanged.
+- **The environment wins**: a variable it already has keeps its value, so a deployment's own
+  settings (and a test's) are never overridden by a file left beside the server.
+- **dotenv's lines** (`server/host/src/dotenv.rs`, no new crate): `NAME=value`, `export NAME=value`,
+  `# comments`, a ` #` after an unquoted value; single quotes as written, double quotes with `\n`,
+  `\t`, `\r`, `\"`, `\\`, either over several lines; a name given twice, its last value. No
+  `${NAME}` expansion.
+- **Loud**: a line that isn't a setting, or a named file that isn't there, stops the server (exit 2),
+  saying which line; the log says what was set and what the environment kept (`rocx server:
+  settings read`), names only, never a value, as the server listens (the app's log format is known
+  then; logged at `main`, it was JSON in an app that asked for pretty lines).
+- **Out of git**: `.env` is in the repository's `.gitignore` (D-085) and in `rocx new`'s template's.
+
+**Alternatives.** `Env.from_file!(path)` into a typed record: can't reach plugins (above). Only under
+`rocx dev`: a release would then need the shell to export what development read from the file, and
+`--env-file` covers a release that wants a file. Walking up from the working directory to find one:
+a file far from the server deciding its settings is a surprise in production.
+
+**Costs.** A `.env` left beside a production server is read (the environment still wins); its log
+line says so. Values with `${NAME}` are kept as written.
+
+**Reversible:** yes: the host stops reading it; `Env.var!` never changed.
+
+## D-089 Updates: what a page shows while a model works
+
+**Status.** Built (2026-11-26), the user's ask: the AI package uses the API's progress updates when a
+call asks, and emits updates a page can show ("looking for your info" while a search tool runs).
+
+**Context.** On Claude Opus 5.5, Sonnet 5.5 and Fable, the notes a model writes between its tool
+calls come back as `thinking` blocks, empty unless the request asks for `display: "updates"` (beta
+`thinking-display-updates-2026-08-18`): a chat that renders text alone goes quiet for the whole
+of a turn of tool calls. And an agent used as a tool (D-085's `as_tool`) worked silently: its
+caller heard its name, then its answer.
+
+**Decision.**
+
+- **Opt-in: `updates : Bool ?? Bool.False`** on `Ai.Request` and on `Agent`. Off, nothing changes.
+- **What is heard: `Ai.Heard : [Text(Str), Calling(Str), Update(Tool.Update)]`**, and
+  `Tool.Update : [Progress({ agent, says }), Using({ agent, tool, says })]`, in packages/tools so
+  that a tool can speak it: `agent` is the request's `label` (an agent's name).
+- **Progress notes**: on the models that write them, the request asks for `thinking: {"type":
+  "adaptive", "display": "updates"}` with its beta (beside the fallback's, comma separated); a
+  `thinking` block with text, when it ends, is a `Progress` note (the interrupted-work sentinel
+  isn't). Haiku 5.5 writes no such blocks: its notes stay `Text`.
+- **Tools say what they are doing**: `Tool.doing(tool, "Looking for your info…")`, a new field of
+  packages/tools' `Tool`; `Using` is sent as each of the app's tools starts to run (not as the model
+  writes the call: a turn's calls are all written before the first runs), with that line. A tool the
+  app doesn't have sends none.
+- **Agents pass their updates up**: `Tool.with_listener(tool, run!)` gives a tool a run that is told
+  a listener; `Ai.run!`, when its call has `updates`, runs such a tool with one that passes each
+  update to its own listener. `as_tool` is such a tool: the agent runs with `updates` on and its
+  `Update`s go up, each by its name, however deep the team. Its text doesn't (its final text is the
+  calling model's tool result). An agent's `doing` is its tool's.
+- **Delivery is the app's**: the listener is a function, so updates go out as an endpoint's events
+  (the example's chat: a `status` and `agent` in each event, a status line under the coming reply)
+  or are published on a channel (`Endpoint.publish!`), documented both ways. No channel of the
+  package's own: a channel is a route of the app's, typed by it.
+
+**Alternatives.** A channel the package publishes to: channels are app routes, so the package would
+need the app's endpoint value and its types; a function is smaller and covers both. Sub-agent updates
+through the app's context (`ctx`): every tool's context would change type. `Using` as the model
+writes the call: a page would show the second tool's line before the first had run.
+
+**Costs.** packages/tools' `Tool` gains two fields (`doing`, `listening`). `Ai.run!`'s listener is
+`Ai.Heard`, not `Turn.Heard` (whose `Progress` is internal). The progress notes are billed as output
+whether shown or not.
+
+**Reversible:** yes: `updates` is off by default; the fields can go.
 
 ## D-090 The browser's host is Rust
 

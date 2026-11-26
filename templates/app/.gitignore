@@ -4,6 +4,8 @@
 # component's .rocx
 Generated/
 components/*.roc
+# Secrets the server reads as it starts (ANTHROPIC_API_KEY=…, SMTP_URL=…): never committed
+.env
 # Builds, and the database's files
 build/
 data/

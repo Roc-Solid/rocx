@@ -21,6 +21,7 @@ meta = {
 		{ id: "extract", label: "Typed answers" },
 		{ id: "tools", label: "Tools" },
 		{ id: "agents", label: "Agents" },
+		{ id: "updates", label: "Updates" },
 		{ id: "conversations", label: "Conversations" },
 		{ id: "cost", label: "What it costs" },
 		{ id: "problems", label: "What went wrong" },
@@ -61,7 +62,9 @@ view! = |_|
 			<Code title={Sources.ai_example_main.file} source={Sources.ai_example_main.rocx} />
 			<p>
 				Then give the server an API key, from <a href="https://console.anthropic.com">console.anthropic.com</a>,
-				as <code>ANTHROPIC_API_KEY</code>. Outside <code>--dev</code> the server doesn't start without one. Under
+				as <code>ANTHROPIC_API_KEY</code>, in the environment or in a <code>.env</code> where the server starts
+				(<a href={"${Paths.platform_settings}#env"}>it reads that file as it starts</a>). Outside
+				<code>--dev</code> the server doesn't start without one. Under
 				<code>--dev</code> (as <code>rocx dev</code> starts it) it starts, and each call answers <code>NoKey</code>.
 			</p>
 			<p>The model it asks:</p>
@@ -115,6 +118,7 @@ view! = |_|
 						<tr><td><code>cache</code></td><td><code>Bool.True</code></td><td>keep what is sent in the API's prompt cache, so the next call that starts the same reads it for a tenth of the price</td></tr>
 						<tr><td><code>max_turns</code></td><td><code>10</code></td><td>how many turns <code>run!</code> takes at most</td></tr>
 						<tr><td><code>label</code></td><td><code>""</code></td><td>what the call is, on the log (<code>ai.turn</code>'s <code>label</code>: <code>"summary"</code>, an agent's name)</td></tr>
+						<tr><td><code>updates</code></td><td><code>Bool.False</code></td><td>whether <code>run!</code> tells its listener what to show while the model works (<a href="#updates">updates</a>)</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -299,9 +303,9 @@ view! = |_|
 					prompt, as the assistant's does.
 				</li>
 				<li>
-					<strong>An agent's own work isn't streamed.</strong> Its caller hears <code>Calling(name)</code>, then
-					the answer. The example's page shows the assistant's text, and while an agent works, its name. The
-					agent's turns are on the log under its name.
+					<strong>An agent's text isn't streamed to its caller.</strong> With <code>updates</code>, its progress
+					notes and its tools are (<a href="#updates">below</a>): the example's page shows the assistant's text,
+					and while an agent works, what it is doing. The agent's turns are on the log under its name.
 				</li>
 				<li>
 					<strong>Its answer is the tool's result.</strong> The agent's final text goes back to the calling
@@ -315,6 +319,44 @@ view! = |_|
 					<strong>An MCP tool too.</strong> Being a <code>Tool</code>, an agent can be an MCP server's tool as well.
 				</li>
 			</ul>
+
+			<Heading id="updates">Updates</Heading>
+			<p>
+				A request, or an agent, with <code>updates: Bool.True</code> tells its listener what a page can show
+				while the model works, as <code>Update(update)</code>: the tools package's <code>Tool.Update</code>.
+			</p>
+			<ul>
+				<li>
+					<code>{"Progress({ agent, says })"}</code> is a note the model wrote between its tool calls (“I'll look
+					through your notes first.”). The package asks for them where the model writes them: Claude Opus 5.5,
+					Sonnet 5.5, Fable and Mythos, whose reasoning stays hidden. Claude Haiku 5.5 writes them as text, which
+					comes as <code>Text</code>, as without <code>updates</code>.
+				</li>
+				<li>
+					<code>{"Using({ agent, tool, says })"}</code> is one of the app's tools as it starts to run, with what the
+					tool says it is doing: <code>{"Ai.tool(…).doing(\"Looking through your notes…\")"}</code>, or an
+					agent's <code>doing</code> field when the tool is an agent.
+				</li>
+				<li>
+					Every agent the call uses as a tool is asked for its updates too, and passes them up, each by its name
+					(<code>agent</code>): a team is heard all the way down.
+				</li>
+			</ul>
+			<p>
+				Where they go is your app's: the listener is a function. The example's chat sends each as an event on
+				the stream its page listens to (its <code>events!</code>, <a href="#stream">above</a>), as a status line
+				under the reply that is coming: “Counting the calories…”, then “Seeing to your notes…”, then
+				“notes_keeper: Writing that down…”. A page that started the work with a form can listen on a
+				<a href={"${Paths.platform_live}#channels"}>channel</a> instead, the work publishing each one:
+			</p>
+			<Code
+				source={"Agent.chat!(Team.assistant, conversation, me, |heard|\n\tmatch heard {\n\t\tUpdate(update) => Ok(Endpoint.publish!(Api.channel_chats_chat_updates({ chat }), update))\n\t\t_ => Ok({})\n\t})"}
+				numbers={Bool.False}
+			/>
+			<p>
+				A progress note is kept in the conversation as the model wrote it, and goes back to the API with it.
+				The notes are billed as output whether or not <code>updates</code> shows them.
+			</p>
 
 			<Heading id="conversations">Conversations</Heading>
 			<p>
@@ -439,9 +481,10 @@ view! = |_|
 			<p>
 				Its tests (<code>example/test/ai.test.mjs</code>) run it against a stand-in for the API
 				(<code>example/test/stand-in.mjs</code>), and check what the app sent as well as what it made of the
-				answer. They never ask the API itself. To try the example against the API, with your key:
+				answer. They never ask the API itself. To try the example against the API, put your key in a
+				<code>.env</code> where you start it, which the server reads as it starts:
 			</p>
-			<Code source={"ANTHROPIC_API_KEY=sk-ant-… bin/rocx dev packages/ai/example --port 8095"} plain numbers={Bool.False} />
+			<Code source={"echo 'ANTHROPIC_API_KEY=sk-ant-…' >> .env\nbin/rocx dev packages/ai/example --port 8095"} plain numbers={Bool.False} />
 			<p>
 				Under <code>--dev</code> it asks <code>claude-haiku-5-5</code>. One chat message to the example's team asked
 				the model six times (the assistant three, the nutritionist once, the notes keeper twice): about 4,400

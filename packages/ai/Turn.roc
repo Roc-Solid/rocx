@@ -23,9 +23,10 @@ Turn := {
 	## `cache_write` written to it) and the tokens written (`output`, thinking too).
 	Usage : { input : U64, output : U64, cache_read : U64, cache_write : U64 }
 
-	## What a turn says while it comes: text, as the model writes it, and the name of a tool it is
-	## about to use.
-	Heard : [Text(Str), Calling(Str)]
+	## What a turn says while it comes: text, as the model writes it; the name of a tool it is about
+	## to use; and a progress note it wrote between its tool calls (a thinking block with text, which
+	## the API sends when a call asks for `display: "updates"`).
+	Heard : [Text(Str), Calling(Str), Progress(Str)]
 
 	## Why a turn stopped: it was done (`EndTurn`); it reached `max_tokens` (`MaxTokens`); it wants
 	## its tools used (`ToolUse`); it paused a long turn, to be sent again to go on (`PauseTurn`); it
@@ -83,6 +84,13 @@ Turn := {
 							_ => quiet(turn)
 						}
 					Err(_) => quiet(turn)
+				}
+			}
+			Ok(String("content_block_stop")) => {
+				index = count_at(event, "index")
+				match turn.blocks.get(index) {
+					Ok(block) if block.kind == "thinking" and is_progress(block.thinking) => Ok({ turn: turn, heard: [Progress(block.thinking.trim())] })
+					_ => quiet(turn)
 				}
 			}
 			Ok(String("message_delta")) => {
@@ -180,6 +188,17 @@ kept = |turn| {
 		Err(NoFallback) => turn.blocks
 	}
 }
+
+## Whether a thinking block's text is a progress note: any text, but the one the API puts where
+## work was cut off (`max_tokens`), which says nothing a page should show.
+is_progress : Str -> Bool
+is_progress = |text| {
+	said = text.trim()
+	!said.is_empty() and said != interrupted
+}
+
+interrupted : Str
+interrupted = "This part of the response was interrupted before it finished."
 
 ## A block as the API wrote it, its deltas in.
 written : Block -> JsonValue
@@ -337,3 +356,23 @@ replaced = |items, index, item| items.set(index, item) ?? items
 ## An object of these fields.
 object : List((Str, JsonValue)) -> JsonValue
 object = |fields| Object(fields)
+
+# A progress note: a thinking block with text, heard when it ends; an empty one (reasoning, hidden)
+# and the interrupted-work sentinel are not.
+expect {
+	events = [
+		"{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}",
+		"{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"a\"}}",
+		"{\"type\":\"content_block_stop\",\"index\":0}",
+		"{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}",
+		"{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"Looking through \"}}",
+		"{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"your notes.\"}}",
+		"{\"type\":\"content_block_stop\",\"index\":1}",
+		"{\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"This part of the response was interrupted before it finished.\",\"signature\":\"b\"}}",
+		"{\"type\":\"content_block_stop\",\"index\":2}",
+	]
+	match played(events) {
+		Ok({ heard, .. }) => heard == [Progress("Looking through your notes.")]
+		Err(_) => Bool.False
+	}
+}

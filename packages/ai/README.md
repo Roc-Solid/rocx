@@ -36,7 +36,8 @@ never the API itself.
    })
    ```
 
-2. Give the server an API key (console.anthropic.com): `ANTHROPIC_API_KEY`. Outside `--dev` the
+2. Give the server an API key (console.anthropic.com): `ANTHROPIC_API_KEY`, in the environment or
+   in a `.env` where the server starts, which it reads as it starts (D-088). Outside `--dev` the
    server doesn't start without one; under `--dev` (as `rocx dev` starts it) it starts, and each call
    answers `NoKey`.
 
@@ -67,6 +68,7 @@ Every call takes an `Ai.Request`, a record whose fields all have defaults but on
 | `cache` | `Bool.True` | Keep what is sent in the API's prompt cache, so the next call that starts the same reads it for a tenth |
 | `max_turns` | `10` | How many turns `run!` takes at most |
 | `label` | `""` | What the call is, on the log (`ai.turn`'s `label`: `"summary"`, an agent's name) |
+| `updates` | `Bool.False` | Whether `run!` tells its listener what to show while the model works ([Updates](#updates)) |
 
 ```roc
 reply = Ai.ask!({ system: "Answer in one sentence.", prompt: question, effort: Low })?
@@ -123,8 +125,9 @@ made where the type is known (as `McpHttp.openapi({})` is).
 
 `Ai.run!(request, tools, context, heard!)` sends the model the tools; each turn that asks for some
 has them run, in order, each given `context`, and their answers sent back, until the model stops
-asking (or `max_turns`, `TooManyTurns`). `heard!` is given `Text(piece)` as the model writes and
-`Calling(name)` as it is about to use a tool.
+asking (or `max_turns`, `TooManyTurns`). `heard!` (an `Ai.Heard`) is given `Text(piece)` as the
+model writes and `Calling(name)` as it is about to use a tool; with `updates`, `Update(…)` too
+([Updates](#updates)).
 
 A tool is packages/tools' `Tool`, which packages/mcp serves too, so one tool serves the app's own
 model and its MCP server alike.
@@ -175,7 +178,8 @@ reply = Agent.chat!(keeper, conversation, {}, heard!)?
 
 Its fields: `name` and `description` (what a model that uses it as a tool reads), `system`,
 `tools` (`[]`), `model` (the plugin's), `effort` (`Medium`), `max_turns` (10), `max_tokens`
-(64,000). `ask!` is a conversation of one message, `chat!` the next turn of one; both are `Ai.run!`
+(64,000), `updates` (`Bool.False`, [Updates](#updates)) and `doing` (`""`: what a page shows while
+another agent has it at work). `ask!` is a conversation of one message, `chat!` the next turn of one; both are `Ai.run!`
 with the agent's settings, its turns logged under its name (`label`).
 
 **Agents as tools.** `agent.as_tool()` is the agent as a packages/tools `Tool`: its name and
@@ -197,9 +201,47 @@ A task is a conversation of its own: the agent sees nothing of the one it was ca
 calling model must put everything needed in the task (say so in its system prompt). The agent's
 final text is the tool's result; what went wrong is a tool error (`"<name> couldn't do it: …"`), and
 a call with no task one too, without asking the API. Every agent in a team gives its tools the
-context it was given. An agent's own work isn't streamed: its caller hears `Calling(name)`, then
-the answer; its turns are on the log under its name. Being a `Tool`, an agent can be an MCP
-server's tool too.
+context it was given. An agent's text isn't streamed to its caller; with `updates`, its progress
+notes and its tools are ([Updates](#updates)). Its turns are on the log under its name. Being a
+`Tool`, an agent can be an MCP server's tool too.
+
+## Updates
+
+A request (or an agent) with `updates: Bool.True` tells its listener what a page can show while the
+model works, as `Update(update)`, packages/tools' `Tool.Update`:
+
+- `Progress({ agent, says })`: a note the model wrote between its tool calls ("I'll look through
+  your notes first."). The package asks for them where the model writes them (Claude Opus 5.5,
+  Sonnet 5.5, Fable and Mythos: `thinking: {"type": "adaptive", "display": "updates"}` with
+  `anthropic-beta: thinking-display-updates-2026-08-18`; the model's reasoning stays hidden). Claude
+  Haiku 5.5 writes them as text, which comes as `Text`, as without `updates`.
+- `Using({ agent, tool, says })`: one of the app's tools as it starts to run, with what the tool says
+  it is doing (`says`: its `doing`, `""` when it says nothing). A tool says it with
+  `.doing("Looking for your info…")`; an agent used as a tool, with its `doing` field.
+- From every agent the call uses as a tool, the same, each by the agent's name (`agent`): the
+  agent is asked for its updates too, and passes them up (`Tool.with_listener`), so a team of
+  agents is heard all the way down.
+
+`agent` is the request's `label` (an agent's name), `""` for a call that has none. Where the
+updates go is the app's: the listener is a function, so they can go out as an endpoint's events
+(as the example's chat sends them) or be published on a channel, for a page that started the work
+with a form and listens for its progress:
+
+```roc
+# routes/chats/[chat]/updates/+server.roc: the channel (`Generated/Api`'s channel_chats_chat_updates)
+channel! : { request : Server.Request, params : { chat : Str }, context : Me } => Try(Channel(Str, Tool.Update, []), Endpoint.Refusal)
+
+# where the work runs
+Agent.chat!(Team.assistant, conversation, me, |heard|
+    match heard {
+        Update(update) => Ok(Endpoint.publish!(Api.channel_chats_chat_updates({ chat }), update))
+        _ => Ok({})
+    })
+```
+
+A progress note is a `thinking` block with text: it stays in the conversation, as the model wrote
+it, and goes back to the API with it. Notes the model never wrote cost nothing; the ones it writes
+are billed as output, whether or not `updates` shows them.
 
 ## Conversations
 
@@ -258,7 +300,10 @@ carries the effort (and `extract!`'s format); `cache_control` asks for the promp
 parameters (`temperature` and the rest are refused on that version), no `thinking` (the current
 models think as they need to, `effort` saying how much), and no forced `tool_choice` (Claude Opus 5.5
 refuses it). `effort` is always sent, so the model must take it: Claude Opus 4.5 and every model
-from the 4.6s on do; Claude Haiku 4.5 and Sonnet 4.5 refuse it (a 400).
+from the 4.6s on do; Claude Haiku 4.5 and Sonnet 4.5 refuse it (a 400). With `updates`, on the
+models that write progress notes, `thinking` is `{"type": "adaptive", "display": "updates"}`, and
+`anthropic-beta` lists `thinking-display-updates-2026-08-18` (beside the fallback's, comma
+separated).
 
 On the models that take it (`claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5-5`,
 `claude-fable-5-2`, `claude-fable-5-1`, and Mythos 5.2 and 5.1) it sends `"fallbacks": "default"`
@@ -270,7 +315,7 @@ a request, the API runs it again on the model it names for that kind of refusal,
 
 | Module | What it is |
 |---|---|
-| `Ai` | `plugin`, `Request`, `ask!`, `stream!`, `extract!` and `schema`, `run!` and `tool`, `Reply`, `Problem`, `explain` |
+| `Ai` | `plugin`, `Request`, `ask!`, `stream!`, `extract!` and `schema`, `run!` and `tool`, `Heard`, `Reply`, `Problem`, `explain` |
 | `Agent` | A model with its role and tools: `ask!`, `chat!`, `as_tool` |
 | `Message` | A conversation's message: `user`, `assistant`, `of_blocks`, `role_of`, `blocks`, `text`, `to_json`, `from_json`, `save`, `load` |
 | `Turn` | One turn put together from its stream's events: `step`, `stopped`, `stop_of`, `usage_of`, `model_of`, `message`, `calls`; `Heard`, `Stop`, `Usage` |
@@ -278,10 +323,12 @@ a request, the API runs it again on the model it names for that kind of refusal,
 
 ## Trying it against the API
 
-`example/test/ai.test.mjs` never asks the API. To try the example against it, with your key:
+`example/test/ai.test.mjs` never asks the API. To try the example against it, put your key in a
+`.env` where you start it (the server reads it as it starts, D-088; `.env` is gitignored):
 
 ```sh
-ANTHROPIC_API_KEY=sk-ant-… bin/rocx dev packages/ai/example --port 8095
+echo 'ANTHROPIC_API_KEY=sk-ant-…' >> .env
+bin/rocx dev packages/ai/example --port 8095
 ```
 
 Under `--dev` it asks `claude-haiku-5-5`. One chat message to the example's team asked the model six
