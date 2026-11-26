@@ -41,13 +41,30 @@ const wire = (method, target, headers, body) => [`${method} ${target}`, ...heade
 
 let ids = 0;
 
-/** What a run makes, as it makes it: child computations, boxes kept for them, what it reads,
- * signals, cleanups (a kept box's id, or the runtime's own function), and what its `is_pending!`
- * calls answered (`queries`). `live` once it read or made something that changes, which the rest
+/** What a run makes, as it makes it: child computations, boxes kept for them, what it reads
+ * (`sources`: see `addSource`), signals, cleanups (a kept box's id, or the runtime's own function),
+ * and what its `is_pending!` calls answered (`queries`). Each list is the one empty `NONE` until
+ * something goes in it (`own`): most runs (a row's holes) make nothing but their answer, and
+ * allocate no lists for it. `live` once it read or made something that changes, which the rest
  * don't show (an endpoint's read; rendering as a server would, an effect, a cleanup…): a hole
  * whose run is none of these is static (`inert`, D-052). `untracked`: how many `untrack!`s it is
  * inside now, its reads not tracked there. */
-const making_ = () => ({ children: [], kept: [], sources: new Set(), signals: [], cleanups: [], queries: [], live: false, untracked: 0 });
+const making_ = () => ({ children: NONE, kept: NONE, sources: NONE, signals: NONE, cleanups: NONE, queries: NONE, live: false, untracked: 0 });
+
+/** What a run reads, added to its `sources`: a short array, searched (most holes read one or two
+ * things), and a Set once it holds more than eight. Either is iterated with `for … of`; how many is
+ * `sourceCount`. */
+function addSource(making, source) {
+	const sources = making.sources;
+	if (sources === NONE) making.sources = [source];
+	else if (sources instanceof Set) sources.add(source);
+	else if (!sources.includes(source)) {
+		if (sources.length < 8) sources.push(source);
+		else (making.sources = new Set(sources)).add(source);
+	}
+}
+
+const sourceCount = (sources) => (sources instanceof Set ? sources.size : sources.length);
 
 /**
  * Whether a run read and made nothing that changes (D-052): no tracked read (a signal, a memo, a
@@ -66,7 +83,16 @@ const spare = (record) => {
 	return record;
 };
 
-const inert = (making) => !making.live && making.sources.size === 0 && making.children.length === 0 && making.signals.length === 0 && making.cleanups.length === 0 && making.queries.length === 0;
+/** What a finished run that made nothing keeps (most holes make nothing but their answer): one of
+ * two records, shared and frozen, as `inert` would read the run's own: `MADE_NONE` for one that read
+ * nothing that changes (a static hole), `MADE_READ` for one that did. Something added to it later
+ * gets its computation a record of its own (`Computation#ownMade`). */
+const MADE_NONE = Object.freeze({ children: NONE, kept: NONE, cleanups: NONE, signals: NONE, queries: NONE, sources: NONE, live: false });
+const MADE_READ = Object.freeze({ children: NONE, kept: NONE, cleanups: NONE, signals: NONE, queries: NONE, sources: NONE, live: true });
+
+const madeNothing = (making) => making.children.length === 0 && making.kept.length === 0 && making.cleanups.length === 0 && making.signals.length === 0 && making.queries.length === 0;
+
+const inert = (making) => !making.live && sourceCount(making.sources) === 0 && making.children.length === 0 && making.signals.length === 0 && making.cleanups.length === 0 && making.queries.length === 0;
 
 /** A hole, attribute, memo, fallback or the root: a box Roc made, run again when what it read changes. */
 class Computation {
@@ -78,11 +104,12 @@ class Computation {
 		this.scope = scope;
 		this.target = target;
 		this.name = name;
-		this.sources = new Set();
+		/** What its last run read (`addSource`). */
+		this.sources = NONE;
 		/** What reads it (made by the first: nothing reads most holes). */
 		this.observers = null;
 		/** What the last complete run made: child computations, boxes kept for them, cleanups. */
-		this.made = { children: NONE, kept: NONE, cleanups: NONE };
+		this.made = MADE_NONE;
 		/** Its requests' answers, by method, URL and body: a run again reads them. Made by the first
 		 * request (most computations make none: a row's holes, a page's text). */
 		this.calls = null;
@@ -94,7 +121,13 @@ class Computation {
 	}
 
 	adopt(child) {
-		own(this.making ?? this.made, "children").push(child);
+		own(this.making ?? this.ownMade(), "children").push(child);
+	}
+
+	/** What its last complete run made, its own to add to (not the shared `MADE_NONE`). */
+	ownMade() {
+		if (this.made === MADE_NONE || this.made === MADE_READ) this.made = { ...this.made };
+		return this.made;
 	}
 }
 
@@ -1265,7 +1298,8 @@ export class Runtime {
 			js_keep: (ptr) => {
 				const id = ++ids;
 				this.kept.set(id, ptr);
-				(this.current?.making?.kept ?? []).push(id);
+				const making = this.current?.making;
+				if (making) own(making, "kept").push(id);
 				return id;
 			},
 			js_signal_new: (ptr) => {
@@ -1273,7 +1307,8 @@ export class Runtime {
 				const id = ++ids;
 				this.signals.set(id, { id, value: ptr, observers: new Set() });
 				// It belongs to the run that made it: when that run's part goes, it goes too.
-				this.current?.making?.signals?.push(id);
+				const making = this.current?.making;
+				if (making) own(making, "signals").push(id);
 				return id;
 			},
 			js_signal_get: (id) => {
@@ -1411,8 +1446,8 @@ export class Runtime {
 				}
 				const id = ++ids;
 				this.kept.set(id, ptr);
-				making.kept.push(id);
-				making.queries.push({ probe: id, memos, answer });
+				own(making, "kept").push(id);
+				own(making, "queries").push({ probe: id, memos, answer });
 				for (const memo of memos) this.track(memo.pending);
 				return answer ? 1 : 0;
 			},
@@ -1460,7 +1495,8 @@ export class Runtime {
 			js_context_value: (ptr) => {
 				const id = ++ids;
 				this.kept.set(id, ptr);
-				(this.current?.making?.kept ?? []).push(id);
+				const making = this.current?.making;
+				if (making) own(making, "kept").push(id);
 				return id;
 			},
 			js_context_find: (ptr, len) => this.current?.scope?.contexts?.[text(ptr, len)] ?? 0,
@@ -1511,7 +1547,7 @@ export class Runtime {
 			js_location: () => {
 				this.touch(true);
 				const reader = this.current;
-				if (reader?.making && reader.making.untracked === 0) reader.making.sources.add(this.locationSource);
+				if (reader?.making && reader.making.untracked === 0) addSource(reader.making, this.locationSource);
 				// An `if`'s or `match`'s part (D-070) reads its condition again as it is made, to pick its
 				// branch: its case computation follows that read, so it isn't one made once.
 				if (reader && !choosing(reader) && (reader.kind === "component" || reader.making?.untracked > 0 || reader.untracked)) this.readOnce?.(reader);
@@ -1761,7 +1797,7 @@ export class Runtime {
 
 	/** Where a cleanup made now goes: the running computation's run, or an effect's apply. */
 	cleanupsOf(current) {
-		return current?.making?.cleanups ?? current?.cleanups ?? null;
+		return current?.making ? own(current.making, "cleanups") : (current?.cleanups ?? null);
 	}
 
 	/** Runs cleanups, the last first, and empties the list: a kept box's id is run as a handler (it
@@ -2081,7 +2117,7 @@ export class Runtime {
 	track(source) {
 		const reader = this.current;
 		if (!reader?.making || reader.making.untracked > 0) return;
-		reader.making.sources.add(source);
+		addSource(reader.making, source);
 		if (this.place && reader.kind === "component" && !this.onServer) this.warnRead(this.place);
 	}
 
@@ -2546,7 +2582,7 @@ export class Runtime {
 			scope: listener.scope,
 			owner: listener.owner,
 			making,
-			adopt: (child) => making.children.push(child),
+			adopt: (child) => own(making, "children").push(child),
 		};
 		const previous = this.current;
 		this.current = probe;
@@ -3113,7 +3149,7 @@ export class Runtime {
 				this.stopTimer(id);
 				this.releaseKept(id);
 			});
-		else if (this.current?.owner?.made) own(this.current.owner.made, "kept").push(id);
+		else if (this.current?.owner?.made) own(this.current.owner.ownMade?.() ?? this.current.owner.made, "kept").push(id);
 		const scope = this.current?.scope ?? null;
 		const owner = this.owner();
 		const fire = () => {
@@ -3425,7 +3461,7 @@ export class Runtime {
 		// What it reads now is what it depends on, whatever the outcome; an untracked run depends on
 		// nothing (a read that waits runs it again, above).
 		for (const source of computation.sources) source.observers?.delete(computation);
-		computation.sources = computation.untracked ? new Set() : making.sources;
+		computation.sources = computation.untracked ? NONE : making.sources;
 		for (const source of computation.sources) (source.observers ??= new Set()).add(computation);
 		if (outcome === "ok") {
 			computation.making = making;
@@ -3435,7 +3471,7 @@ export class Runtime {
 				// Even if settling threw (hydrating found a mismatch): what it made is the computation's
 				// now, so disposing it lets go of all of it.
 				const old = computation.made;
-				computation.made = spare(making);
+				computation.made = !madeNothing(making) ? spare(making) : inert(making) ? MADE_NONE : MADE_READ;
 				computation.queries = making.queries;
 				computation.making = null;
 				this.drop(old);
@@ -4152,11 +4188,13 @@ export class Runtime {
 		// of what the run keeps in one pass (one search a row was quadratic in the rows).
 		const kept = computation.making.kept;
 		// (A row the page shows already comes with none: `Host.row_set!` said it is kept.)
-		const runners = new Set();
-		for (const { r } of entries) if (r) runners.add(r);
-		let left = 0;
-		for (const id of kept) if (!runners.has(id)) kept[left++] = id;
-		kept.length = left;
+		if (kept !== NONE) {
+			const runners = new Set();
+			for (const { r } of entries) if (r) runners.add(r);
+			let left = 0;
+			for (const id of kept) if (!runners.has(id)) kept[left++] = id;
+			kept.length = left;
+		}
 		const rows = new Map();
 		// Where each row was, by its place now: -1 for a row that wasn't on the page (see `steady`).
 		const was = new Array(entries.length).fill(-1);

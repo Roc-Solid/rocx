@@ -175,7 +175,11 @@ When an item lands, delete its line here in the same commit.
   Clearing 1,000 rows went from 17.4 ms to 19.8 in both runs that night, its script time the same
   (about 3 ms by hand): not found yet. Since 2026-11-26 a list whose rows all go is emptied at once
   (its parent's content, as vanillajs clears; spike/wasm-engine's step 6 brought back): 13% less
-  script by hand; the next run says what it does to the runner's clear.
+  script by hand; the next run says what it does to the runner's clear. Also since 2026-11-26 a
+  computation keeps less (its sources a short array, a run's lists and a finished run's record
+  shared while empty): the JS heap with 1,000 rows 11% smaller, with 10,000 15%, the speed the same
+  (profiled: a few tenths of a millisecond of 30). A row's holes run in one call, and rows without
+  their comments, were measured and not taken (about 4% and 3%, for their cost).
   What is left, measured: each hole is a computation of its own, run by a call into wasm (about 4
   calls a row, each with the runtime's bookkeeping: a computation, its sources' Sets, its frame);
   a row is still a range between two comments; a list read again runs Roc over every item (its key
