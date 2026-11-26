@@ -149,3 +149,14 @@ included.
 Of the engine's code now (opt-level s, 374 KB): engine.rs 41%, Roc's 33%, formatting 4% (14 KB),
 the maps' hashing and hashbrown's copies of it some 5%. What would shrink it next: no formatted
 messages (`format!` in warnings and logs), and wasm-opt.
+
+**wasm-opt, measured (Binaryen 133, 2026-11-26):** it doesn't pay. On the engine's page
+(397,640 bytes, 118,520 with brotli) its best of -Oz, -Os, -O2, -O3, --converge,
+--merge-similar-functions, --gufa and -O4 saved 1.6 KB raw and 475 bytes with brotli (0.4%); on
+today's page 52 bytes with brotli (0.1%). At -O3 neither page was faster or slower beyond the noise,
+and their tables were the same. Both compilers optimize the whole program for size already (Roc's
+LLVM, Rust's LTO at opt-level s), and the files are code and data alone: nothing to strip. (Its
+inputs need `--enable-bulk-memory --enable-bulk-memory-opt --enable-sign-ext --enable-mutable-globals
+--enable-nontrapping-float-to-int --enable-simd`: Roc's builtins use SIMD, and the link keeps no
+features section.) Formatted messages stay too: std's panic messages keep most of core::fmt in
+whatever the engine does, and the messages are worth their bytes.
