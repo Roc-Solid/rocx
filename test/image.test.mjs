@@ -62,12 +62,10 @@ before(() => {
 	const files = {
 		"main.roc": `app [program] { pf: platform "./.rocx/server/platform/main.roc" }
 
-import pf.Middleware
 import Generated/App
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middleware.make(|request, context, next!| next!(request, context)),
 })
 `,
 		"routes/+page.rocx": `import pf.Html

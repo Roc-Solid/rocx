@@ -66,12 +66,14 @@ view! = |_|
 
 			<Heading id="first">A first guard</Heading>
 			<p>
-				The app's default middleware runs around every request, and a route file can name its own, which
-				runs around that route alone. Here every answer gets security headers, a body over a megabyte is
-				refused, the site can be put into maintenance, everything under <code>/api</code> is limited for
-				each user, and the login route is limited for each address:
+				A guard goes in the <a href={"${Paths.routing}#middleware"}>middleware</a> of the directory it
+				guards: <code>routes/+middleware.roc</code> runs around every request, and a directory's
+				<code>+middleware.roc</code> around the routes in it and below it. Here every answer gets security
+				headers, a body over a megabyte is refused, the site can be put into maintenance, everything under
+				<code>/api</code> is limited for each user, and the login route is limited for each address:
 			</p>
 			<Code title={Sources.guard_middlewares.file} source={Sources.guard_middlewares.rocx} />
+			<Code title={Sources.guard_api_middleware.file} source={Sources.guard_api_middleware.rocx} />
 			<Code title={Sources.guard_route.file} source={Sources.guard_route.rocx} />
 			<p>
 				The sixth try in a minute is answered <code>429 Too Many Requests</code>, with

@@ -71,7 +71,7 @@ test("rocx build --static: every page as a file under the base, what a link or a
 	assert.deepEqual(said.slice(1), [
 		"a link on / to /gone answered 404: not in the copy",
 		"not in the copy, as only a server answers them: POST /api/notes",
-		"not in the copy, as their own middleware answers each request as it comes: /account",
+		"not in the copy, as a directory's middleware answers each request as it comes: /account",
 		"no page of /drafts/[id] was written: link to one from a page, or name it (--route /drafts/<id>)",
 	]);
 	assert.deepEqual(files(copy), ["404.html", "about/index.html", "api/hello", "blog/first-post/index.html", "index.html", "robots.txt", "rocx/app.wasm", "rocx/runtime.js", "rocx/start.js", "tags/roc/index.html"]);

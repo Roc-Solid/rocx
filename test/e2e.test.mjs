@@ -508,9 +508,9 @@ function contractApp() {
 	put("routes/publish/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport pf.Actor\nimport jobs.Job\nimport ../../Generated/Api\nimport ../../Room\nimport ../../Jobs\n\n## Publishes on the news, from here, from the actor, and from a job.\npost! : { request : Server.Request, params : {}, context : {}, body : { n : U64 } } => Try(Str, Endpoint.Refusal)\npost! = |{ request, body, .. }| {\n\tEndpoint.publish!(Api.channel_news({}), { from: "route", n: body.n })\n\t_ = Room.bump.ask!("lobby", {})\n\tqueued = if (request.query.contains("job=yes")) Job.enqueue!(Jobs.shout, { n: body.n }, { when: Now }) else Ok({})\n\tmatch queued {\n\t\tOk({}) => Ok("published")\n\t\tErr(JobErr(why)) => Err(Status(503, why))\n\t}\n}\n');
 	// A page that reads an endpoint, and sends one: typed by the contract in both copies.
 	put("routes/hello/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../News\n\n## The latest news.\nget! : { request : Server.Request, params : {}, context : {} } => Try(News.Said, Endpoint.Refusal)\nget! = |_| Ok({ from: "hello", n: 7 })\n');
-	// A route of respond! alone, which Handlers doesn't import, so it may import Handlers (an MCP route
-	// would): it runs another route's handler there and then.
-	put("routes/raw/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../Generated/Handlers\n\n## Every method: the hello endpoint\'s answer, run here.\nrespond! : { request : Server.Request, params : {}, context : {} } => Server.Response\nrespond! = |{ request, context, .. }|\n\tmatch Endpoint.run!(Handlers.get_hello({}), request, context, {}) {\n\t\tOk(said) => Server.response(200, [], "${said.from} ${said.n.to_str()}")\n\t\tErr(_) => Server.response(500, [], "no answer")\n\t}\n');
+	// A route of respond! alone (as an MCP route is): it sends another route's endpoint, which the
+	// server answers in-process, through that route (D-103).
+	put("routes/raw/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../Generated/Api\n\n## Every method: the hello endpoint\'s answer, sent from here.\nrespond! : { request : Server.Request, params : {}, context : {} } => Server.Response\nrespond! = |_|\n\tmatch Endpoint.send!(Api.get_hello({}), {}) {\n\t\tOk(said) => Server.response(200, [], "${said.from} ${said.n.to_str()}")\n\t\tErr(_) => Server.response(500, [], "no answer")\n\t}\n');
 	put("routes/+page.rocx", 'import pf.Html\nimport pf.Endpoint\nimport ../Generated/Api\n\nview! = |_| {\n\tlatest = Api.get_hello({}).read!()\n\tsend! = || {\n\t\t_ = Api.post_publish({}).send!({ n: latest.n })\n\t\t{}\n\t}\n\t<button type="button" on:click={send!}>{latest.from}</button>\n}\n');
 	return dir;
 }
@@ -554,7 +554,7 @@ test("the contract (D-037): a route, an actor and a job each import Generated/Ap
 				buffered += read.value;
 			}
 		};
-		assert.equal(await (await fetch(`${server.url}/raw`)).text(), "hello 7", "a respond! route ran a handler of Handlers'");
+		assert.equal(await (await fetch(`${server.url}/raw`)).text(), "hello 7", "a respond! route sent another route's endpoint, answered in-process");
 		assert.deepEqual(await next(), { event: "resync", url: "/news", said: null });
 		const publish = (n, job) => fetch(`${server.url}/publish${job ? "?job=yes" : ""}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ n }) });
 		const answered = await publish(1, false);

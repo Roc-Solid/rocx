@@ -49,10 +49,11 @@ view! = |_|
 				wire it into the program in three places:
 			</p>
 			<Code title={"${Sources.posthog_program.file}, in part"} source={Sources.posthog_program.rocx} numbers={Bool.False} />
+			<Code title={Sources.posthog_middleware.file} source={Sources.posthog_middleware.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>The middleware</strong>, <code>PostHog.middleware(user)</code>, goes after the middleware that
-					knows who is asking. <code>user</code> is a function from that middleware's context to the person's
+					<strong>The middleware</strong>, <code>PostHog.middleware(user)</code>, goes in
+					<code>routes/+middleware.roc</code>, after the middleware that knows who is asking. <code>user</code> is a function from that middleware's context to the person's
 					id. Return <code>""</code> when nobody is known; with no such middleware, put PostHog's first, with
 					<code>{"|_| \"\""}</code>.
 				</li>

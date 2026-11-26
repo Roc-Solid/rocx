@@ -85,6 +85,11 @@ view! = |_|
 			</p>
 			<Code title="Middlewares.roc, in part" source={Sources.stripe_example_gates.rocx} numbers={Bool.False} />
 			<p>
+				Each guards a group, a directory in brackets that adds nothing to the paths: the Pro page and its
+				endpoint are in <code>routes/(subscribers)/</code>, behind its <code>+middleware.roc</code>:
+			</p>
+			<Code title={Sources.stripe_example_subscribers.file} source={Sources.stripe_example_subscribers.rocx} numbers={Bool.False} />
+			<p>
 				<strong>6. The portal.</strong> A button on the account page goes to Stripe's Customer Portal, which
 				comes back when they are done. What they change there comes back as events.
 			</p>

@@ -653,39 +653,11 @@ test("unsafe or unclear markup is refused at its line and column", () => {
 	assert.match(failure(`x = <a rel??="x" />`).reason, /always there/);
 });
 
-test("the browser's copy drops an import only its middleware used, though a comment or a string names it", () => {
-	const source = [
-		"import pf.Html",
-		"import ../Middlewares",
-		"import ../Labels",
-		"import ../Copy",
-		"",
-		"## For members only (`Middlewares.member`): \"Labels.x\" in a doc comment.",
-		"middleware = Middlewares.member # Labels.too, Copy.too",
-		"",
-		"view! = |_| {",
-		"\tsaid = \"Middlewares.member \\\" Copy.no ${Labels.title} and ${Str.concat(\"Copy.no\", \"}\")} Copy.no\"",
-		"\tchar = '\"'",
-		"\t<p>{said} {Copy.yes}</p>",
-		"}",
-		"",
-	].join("\n");
-	const file = "routes/+page.rocx";
-	const server = transpileModule(source, file, { module: "Generated/RootPage" }).code;
-	assert.match(server, /^import \.\.\/Middlewares$/m);
-	const browser = transpileModule(source, file, { module: "Generated/RootPage", client: true, route: true }).code.split("\n");
-	assert.deepEqual(browser.slice(0, 4), ["import pf.Html", "", "import ../Labels", "import ../Copy"], "Middlewares gone, its line left empty; Labels used in a string's ${…}; Copy used in markup");
-	assert.equal(browser.length, transpileModule(source, file, { module: "Generated/RootPage" }).code.split("\n").length, "lines stay lines");
-});
-
-test("a channel's route file (channel! and its hooks, plain Roc) is left as it is, but for the browser's copy, which drops its middleware and the imports only that used", () => {
+test("a channel's route file (channel! and its hooks, plain Roc) is left as it is, in both copies (its middleware is its directory's, D-103)", () => {
 	const source = [
 		"import pf.Server",
 		"import pf.Endpoint",
 		"import pf.Channel",
-		"import ../../Members",
-		"",
-		"middleware = Members.signed_in",
 		"",
 		"## An org's news.",
 		"channel! : { request : Server.Request, params : { org : Str }, context : { org : Str, name : Str } } => Try(Channel(Str, { title : Str }, []), Endpoint.Refusal)",
@@ -696,9 +668,8 @@ test("a channel's route file (channel! and its hooks, plain Roc) is left as it i
 	].join("\n");
 	const file = "routes/org/[org]/news/+server.roc";
 	const server = transpileModule(source, file, { module: "Generated/OrgOrgNewsServer" }).code;
-	assert.match(server, /^middleware = Members\.signed_in$/m);
 	assert.match(server, /^channel! = \|\{ params, context, \.\. \}\| if context\.org == params\.org Ok\(Channel\.allow\(context\.name\)\) else Err\(Forbidden\)$/m, "the check, as written");
 	const browser = transpileModule(source, file, { module: "Generated/OrgOrgNewsServer", client: true, route: true }).code;
-	assert.doesNotMatch(browser, /middleware|import \.\.\/\.\.\/Members/, "no middleware, nor what only it imported");
+	assert.match(browser, /^channel! = /m, "the check, as written: nothing in the browser calls it");
 	assert.match(browser, /^on_open! = \|\{ who, \.\. \}\| \[\{ title: "welcome, \$\{who\}" \}\]$/m, "the hooks, as written: nothing in the browser calls them");
 });

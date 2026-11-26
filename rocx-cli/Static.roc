@@ -701,7 +701,7 @@ Static := [].{
 		unreached = table.pages.keep_if(|page| !page.params.is_empty() and !guarded.contains(page.path) and !written.any(|path| Routes.matches(page.path, path))).map(
 			|page| "no page of ${page.path} was written: link to one from a page, or name it (--route ${Static.example_path(page.path)})",
 		)
-		guarded_note = if (guarded.is_empty()) [] else ["not in the copy, as their own middleware answers each request as it comes: ${Str.join_with(guarded, ", ")}"]
+		guarded_note = if (guarded.is_empty()) [] else ["not in the copy, as a directory's middleware answers each request as it comes: ${Str.join_with(guarded, ", ")}"]
 		server_note.concat(guarded_note).concat(unreached)
 	}
 
