@@ -153,7 +153,7 @@ test("routes: Routes answers a request: a page (Root's) for a browser's GET; an 
 	assert.match(routes, /^import BlogNewMiddleware\nimport BlogSlugMiddleware$/m, "the directories' middleware");
 	assert.doesNotMatch(routes, /^import (FeedServer|BlogSlugServer)$/m, "an endpoint's module only for its respond! or a channel's hooks");
 	assert.deepEqual(
-		routeList(table, sources).map((row) => Object.values(row).join(" ")),
+		routeList(table, sources).map((row) => [row.method, row.path, row.file, row.middleware].join(" ")),
 		["GET / routes/+page.rocx ", "GET /blog routes/blog/+page.rocx ", "GET /blog/[slug] routes/blog/[slug]/+page.rocx Guards.member", "GET /blog/[slug] routes/blog/[slug]/+server.rocx Guards.member", "PUT /blog/[slug] routes/blog/[slug]/+server.rocx Guards.member", "GET /blog/new routes/blog/new/+page.rocx Guards.writer", "GET /feed routes/feed/+server.roc ", "GET /getting-started routes/getting-started/+page.rocx ", "* (anything else) routes/+error.rocx "],
 	);
 	const paths = pathsModule(table);
@@ -202,6 +202,38 @@ test("routes: what each method's comment says: the ## lines right above it, or, 
 	assert.deepEqual(definitions(source).docs, { "get!": "What the post is.\nIn **markdown**." }, "a method with no comment right above it has none");
 	assert.deepEqual(definitions("## GET /words: the words.\n\nget! = |_| Ok([])\n").docs, { "get!": "GET /words: the words." }, "one method: the file's comment, at its top");
 	assert.deepEqual(definitions("import pf.Server\n\n## The member.\nmiddleware = Guards.member\n\nget! = |_| Ok(1)\n").docs, { "get!": "The member." }, "one method: the file's first comment");
+});
+
+test("rocx routes: each route's comment in brief (an endpoint's, what OpenAPI says of it), and only the endpoints or the pages", () => {
+	assert.deepEqual(definitions("import pf.Html\n\n## The front page: every list.\n## And a form.\nmeta = {}\n\n## Not this.\nview! = |_| x\n").about, "The front page: every list.\nAnd a form.", "a file's first comment");
+	assert.deepEqual(definitions("## The lobby, a channel.\nchannel! = |_| Ok(x)\n\n## Each wave.\nreceive! = |_| []\n").docs, { "channel!": "The lobby, a channel." }, "a channel's");
+	assert.deepEqual(definitions("## The MCP endpoint.\n\nmiddleware = Guards.bearer\n\nrespond! = |_| x\n").docs, { "respond!": "The MCP endpoint." }, "respond! alone: the file's");
+	assert.deepEqual(definitions("## The file's.\n\n## The post.\npost! = |_| Ok({})\n\nrespond! = |_| x\n").docs, { "post!": "The post." }, "beside a method, respond! has only its own");
+	const dir = mkdtempSync(join(tmpdir(), "rocx-routes-list-"));
+	const put = (path, text) => {
+		mkdirSync(dirname(join(dir, path)), { recursive: true });
+		writeFileSync(join(dir, path), text);
+	};
+	try {
+		put("routes/+page.rocx", "import pf.Html\n\n## The page at /: rendered by the server, then live in the browser.\nview! = |_| <p>Hi</p>\n");
+		put("routes/+error.rocx", "import pf.Html\n\n## What a path no page has shows.\nview! = |_| <p>No</p>\n");
+		put("routes/hello/+server.roc", "import pf.Server\n\n## GET /hello: a greeting, as JSON. Nothing else.\nget! = |_| Ok(\"Hello\")\n\n## POST /hello (`name`: who): a greeting for `name`, written down for good and kept on the server forever.\npost! = |_| Ok({})\n");
+		put("routes/quiet/+server.roc", "import pf.Server\n\nget! = |_| Ok(1)\n");
+		const lines = (text) => text.split("\n").map((line) => line.split(/ {2,}/));
+		assert.deepEqual(lines(routesTable(dir)), [
+			["METHOD", "PATH", "FILE", "MIDDLEWARE (outermost first)", "DESCRIPTION"],
+			["GET", "/", "routes/+page.rocx", "-", "The page at /: rendered by the server, then live in the browser."],
+			["GET", "/hello", "routes/hello/+server.roc", "-", "A greeting, as JSON."],
+			["POST", "/hello", "routes/hello/+server.roc", "-", "A greeting for `name`, written down for good and kept on the server…"],
+			["GET", "/quiet", "routes/quiet/+server.roc", "-"],
+			["*", "(anything else)", "routes/+error.rocx", "-", "What a path no page has shows."],
+		]);
+		assert.deepEqual(lines(routesTable(dir, "server")).map((row) => `${row[0]} ${row[1]}`), ["METHOD PATH", "GET /hello", "POST /hello", "GET /quiet"], "--server: the endpoints");
+		assert.deepEqual(lines(routesTable(dir, "client")).map((row) => `${row[0]} ${row[1]}`), ["METHOD PATH", "GET /", "* (anything else)"], "--client: the pages, and the error page");
+		assert.ok(routesTable(dir).split("\n").every((line) => line === line.trimEnd()), "no spaces at a line's end");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("routes: the names that could be tags: capitalized, outside comments and strings, not before a `.`", () => {
@@ -921,8 +953,8 @@ test("channels: a +server.roc's channel! is Api's channel_<path> (CHANNEL, its U
 	assert.deepEqual(
 		routeList(table, sources).filter((row) => row.method === "CHANNEL"),
 		[
-			{ method: "CHANNEL", path: "/news", file: "routes/news/+server.roc", middleware: null },
-			{ method: "CHANNEL", path: "/rooms/[room]", file: "routes/rooms/[room]/+server.roc", middleware: "Members.signed_in" },
+			{ method: "CHANNEL", path: "/news", file: "routes/news/+server.roc", middleware: null, doc: "", side: "server" },
+			{ method: "CHANNEL", path: "/rooms/[room]", file: "routes/rooms/[room]/+server.roc", middleware: "Members.signed_in", doc: "", side: "server" },
 		],
 	);
 	// rocx build: a +server.roc with a channel alone is fine; a hook with no channel isn't.

@@ -38,7 +38,7 @@ main! = |args| {
 	# An app's command runs on the version of rocx the app names (`.rocx-version`), through its
 	# `.rocx` link: another version runs it in this one's place.
 	if Versions.app_commands.contains(words.first() ?? "") {
-		Versions.dispatch!(home, Fs.resolve(Fs.cwd!(), [Versions.app_dir(words.drop_first(1))]), words)?
+		Versions.dispatch!(home, Fs.resolve(Fs.cwd!(), [Versions.app_dir(words.first() ?? "", words.drop_first(1))]), words)?
 	}
 	# `rocx <command> --help` (before any `--`, past which the words are another program's).
 	asked_help = BuildArgs.until_dashes(words).any(|word| word == "--help" or word == "-h")
@@ -73,7 +73,7 @@ main! = |args| {
 		}
 		Ok("test") => Dev.test_app!(words.drop_first(1), home)
 		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
-		Ok("routes") if words.len() == 2 => routes!(words.get(1) ?? ".")
+		Ok("routes") => routes!(words.drop_first(1))
 		Ok("build") => build_command!(words.drop_first(1), home)
 		Ok("generate") => build!(words.drop_first(1), home)
 		Ok("dev") => Dev.app!(words.drop_first(1), home)
@@ -284,10 +284,18 @@ fmt! = |args, home| {
 	if ($failed) Err(Exit(1)) else Ok({})
 }
 
-## `rocx routes <dir>`: every route the app's routes/ has: the methods each answers, and the
-## middleware each file names.
-routes! = |dir| {
-	match Routes.routes_table!(Fs.resolve(Fs.cwd!(), [dir])) {
+## `rocx routes [dir] [--server] [--client]`: every route the app's routes/ has (the app here's,
+## without `dir`): the methods each answers, what runs around it, and what its comment says, in
+## brief. `--server`: only the endpoints; `--client`: only the pages (the error page too).
+routes! = |args| {
+	server = args.contains("--server")
+	client = args.contains("--client")
+	dirs = args.keep_if(|arg| arg != "--server" and arg != "--client")
+	if dirs.len() > 1 or dirs.any(|arg| arg.starts_with("-")) {
+		return usage!("routes")
+	}
+	shown = if (server == client) All else if (server) Server else Client
+	match Routes.routes_table!(Fs.resolve(Fs.cwd!(), [dirs.first() ?? "."]), shown) {
 		Ok(table) => {
 			Stdout.line!(table)?
 			Ok({})

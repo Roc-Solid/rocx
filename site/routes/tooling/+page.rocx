@@ -243,11 +243,15 @@ view! = |_|
 					</p>
 				</div>
 				<div class="command">
-					<p class="command-usage">rocx routes {"<dir>"}</p>
+					<p class="command-usage">rocx routes {"[dir]"}<span>--server</span><span>--client</span></p>
 					<p>
-						Lists an app's routes: each method and path, the file that answers it, and the middleware
-						that file adds after the app's default
-						(<a href={"${Paths.routing}#middleware"}>what runs, in what order</a>).
+						Lists an app's routes: each method and path, the file that answers it, the middleware
+						that runs around it, outermost first
+						(<a href={"${Paths.routing}#middleware"}>what runs, in what order</a>), and the first
+						sentence of the route's <code>##</code> comment: an endpoint's is what its OpenAPI
+						operation says, without the method and path it may start with; a page's is its file's
+						first comment. <code>--server</code> lists only the endpoints, and <code>--client</code>
+						only the pages (the error page too).
 					</p>
 				</div>
 				<div class="command">
@@ -310,7 +314,7 @@ view! = |_|
 			</p>
 			<p>Here is what <code>rocx routes</code> prints for the <a href={Paths.examples_hello}>hello</a> example:</p>
 			<Code
-				source={"$ rocx routes examples/hello\nMETHOD  PATH    FILE                      MIDDLEWARE (after the app's default)\nGET     /       routes/+page.rocx         -\nGET     /hello  routes/hello/+server.roc  -"}
+				source={"$ rocx routes examples/hello\nMETHOD  PATH    FILE                      MIDDLEWARE (outermost first)  DESCRIPTION\nGET     /       routes/+page.rocx         -                             The page at /: rendered by the server, then live in the browser.\nGET     /hello  routes/hello/+server.roc  -                             A greeting, as JSON."}
 				numbers={Bool.False}
 				plain
 			/>

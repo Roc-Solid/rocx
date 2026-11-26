@@ -305,10 +305,11 @@ Versions := [].{
 	}
 
 	## The app directory a command's words name (the words after the command): the first that isn't
-	## an option or an option's value, before `--`; else here (`.`).
-	app_dir : List(Str) -> Str
-	app_dir = |words| {
-		valued = ["--port", "--client", "--base", "--route", "--built", "--release", "--target", "--engine", "--server", "--out", "--tag"]
+	## an option or an option's value, before `--`; else here (`.`). `rocx routes`'s options
+	## (`--server`, `--client`) take no value.
+	app_dir : Str, List(Str) -> Str
+	app_dir = |command, words| {
+		valued = if (command == "routes") [] else ["--port", "--client", "--base", "--route", "--built", "--release", "--target", "--engine", "--server", "--out", "--tag"]
 		var $value_next = Bool.False
 		var $previous = ""
 		for word in words {
@@ -330,15 +331,17 @@ Versions := [].{
 	}
 }
 
-expect Versions.app_dir(["--port", "9000", "app", "--", "--dev"]) == "app"
-expect Versions.app_dir(["--sql", "examples/notes", "--engine", "turso"]) == "examples/notes"
-expect Versions.app_dir(["--", "roc", "check", "x/main.roc"]) == "."
-expect Versions.app_dir([]) == "."
-expect Versions.app_dir(["site", "--release", "out", "--target", "arm64musl"]) == "site"
+expect Versions.app_dir("dev", ["--port", "9000", "app", "--", "--dev"]) == "app"
+expect Versions.app_dir("check", ["--sql", "examples/notes", "--engine", "turso"]) == "examples/notes"
+expect Versions.app_dir("check", ["--", "roc", "check", "x/main.roc"]) == "."
+expect Versions.app_dir("dev", []) == "."
+expect Versions.app_dir("build", ["site", "--release", "out", "--target", "arm64musl"]) == "site"
+expect Versions.app_dir("build", ["--client", "out", "site"]) == "site"
+expect Versions.app_dir("routes", ["--client", "site"]) == "site"
 expect Versions.first_word("2026.11.25 1714d3c rocx-fork-4674b5973d\n") == "2026.11.25"
 expect Versions.is_version("2026.11.25.2")
 expect !Versions.is_version("../x")
 expect !Versions.is_version("1.0/2")
 expect !Versions.is_version("")
-expect Versions.app_dir(["--image", "build/app.tar", "--tag", "app:1"]) == "."
-expect Versions.app_dir(["--static", "--out", "site/dist", "site"]) == "site"
+expect Versions.app_dir("build", ["--image", "build/app.tar", "--tag", "app:1"]) == "."
+expect Versions.app_dir("build", ["--static", "--out", "site/dist", "site"]) == "site"

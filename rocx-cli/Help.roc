@@ -35,7 +35,7 @@ Help := [].{
 				{ usage: "check --sql [dir]", what: "check its SQL on its own database engine" },
 				{ usage: "test [dir]", what: "run its tests" },
 				{ usage: "lint <dir>…", what: "refuse Html.source_text in hand-written Roc" },
-				{ usage: "routes <dir>", what: "list its routes and their middleware" },
+				{ usage: "routes [dir]", what: "list its routes, their middleware and what each does" },
 				{ usage: "fmt [--check] <path>…", what: "format .roc and .rocx files" },
 			],
 		},
@@ -171,9 +171,14 @@ Help := [].{
 			"routes" =>
 				Str.join_with(
 					[
-						"rocx routes <dir>",
+						"rocx routes [dir] [--server] [--client]",
 						"",
-						"The app's routes, each with its methods and its middleware's chain.",
+						"The app's routes, each with its method, its file, its middleware's chain and what its",
+						"comment says: the first sentence of an endpoint's (what its OpenAPI operation says), or",
+						"of a page's file's first.",
+						"",
+						"  --server         only the endpoints",
+						"  --client         only the pages (the error page too)",
 					],
 					"\n",
 				)

@@ -113,7 +113,7 @@ export const migrationsIn = (dir) => call("migrationsIn", dir);
 export const appModule = ({ jobs = [], actors = [], migrations = [], endpoints = false, jobsPackage = "", middleware = null } = {}) => call("appModule", { jobs, actors, migrations, endpoints, jobsPackage, middleware });
 export const clientMainModule = ({ web, packages = [], dir = "." }) => call("clientMainModule", { web, packages, dir });
 export const routeList = (table, sources) => call("routeList", table, plain(sources));
-export const routesTable = (dir) => call("routesTable", dir);
+export const routesTable = (dir, only = null) => call("routesTable", dir, only);
 export const matches = (route, path) => call("matches", route, path);
 
 // ---- the docs site's reference (SiteReference.roc), for its test ----

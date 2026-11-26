@@ -699,7 +699,7 @@ SiteSources := [].{
 	## What `rocx routes site` prints.
 	route_list! : Str => Try(Source, [Problem(Str)])
 	route_list! = |root| {
-		table = Routes.routes_table!(Fs.join([root, "site"]))?
+		table = Routes.routes_table!(Fs.join([root, "site"]), All)?
 		Ok(SiteSources.shown("route_list", "rocx routes site", "$ rocx routes site\n${table}"))
 	}
 

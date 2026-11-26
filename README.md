@@ -958,7 +958,10 @@ rocx check --sql [dir]   # the app's SQL checked by its own database engine, and
 rocx test [dir]          # rocx generate as rocx check runs it, then the app's expects (roc test main.roc,
                          # with the compiler rocx has), each failure at its .rocx line
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
-rocx routes <dir>        # list an app's routes: method, path, file, what runs around it
+rocx routes [dir]        # list an app's routes: method, path, file, what runs around it, and the
+                         # first sentence of each one's comment (an endpoint's, what OpenAPI shows)
+  --server               # only the endpoints
+  --client               # only the pages (the error page too)
 rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc files with roc fmt
   --check                # only say which files aren't formatted
 rocx qr <text>           # the text as a QR code in the terminal (--pbm: as a PBM image)
