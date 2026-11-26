@@ -129,6 +129,15 @@ if [ -d "$installed/templates/app" ]; then
 else
 	fail "no templates/app in the install"
 fi
+# What an app's AGENTS.md points at, as .rocx/agents/guide.md (D-108), and the references the guide
+# points into.
+for doc in agents/block.md agents/guide.md server/README.md web/README.md; do
+	if [ -f "$installed/$doc" ]; then
+		pass "$doc in the install"
+	else
+		fail "no $doc in the install"
+	fi
+done
 roc=$installed/bin/roc
 said=$(env HOME="$home" PATH="$bare_path" "$roc" version 2>&1) || true
 case "$said" in

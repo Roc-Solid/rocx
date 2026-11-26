@@ -6469,3 +6469,65 @@ restart) is the platform's, unchanged.
 
 **Reversible:** yes: `rocx build <dir>` back to code generation, and Term's lines back to the old
 ones.
+
+## D-108 rocx's rules for coding agents: a block in the app's AGENTS.md, a guide in each version
+
+**Status.** Built (2026-11-27), the user's call: "injecting our own stuff into AGENTS.md in a way
+that allows us to update them easily over time".
+
+**Context.** Agents write much of an app's code, and an app teaches them nothing about rocx: they
+pair a page with an endpoint in one folder, name middleware in a route file, answer a file as
+`Err(Answer(…))`, key a view on its whole answer so every live refresh remounts it (a video
+reloads, focus is lost), or edit `Generated/`. What rocx would tell them changes with each
+version, and an app's AGENTS.md is the app's own file, with its own notes.
+
+**Options.**
+1. A line in AGENTS.md pointing at a guide in `.rocx/`: always the app's version, but an agent that
+   doesn't follow the link reads none of it.
+2. The whole guide copied into AGENTS.md: every session reads all of it, and every upgrade is a long
+   diff in a file the app owns.
+3. A Claude Code skill: one agent's.
+4. A short block of the rules that matter most, between markers rocx owns, pointing at the full
+   guide in `.rocx/`; a command that rewrites the block and nothing else.
+
+**Decision.** 4.
+
+- **`agents/block.md`** is the block's text (about 35 lines: what the app is, where the guide is,
+  the rules that matter most). **`agents/guide.md`** is the guide: an app's layout, the commands,
+  routes, endpoints, middleware, components, data, forms, navigation, the database, settings,
+  plugins, deploying, and the mistakes to avoid, each pointing into the references. An app reaches
+  it as `.rocx/agents/guide.md`, the guide for the version it builds with, so it needs no update
+  step. A release packs `agents/`, and now `server/README.md` and `web/README.md`, which the guide
+  points into (release/test-install.sh checks they are there).
+- **`rocx agents [dir] [--force]`** (`Agents.roc`) writes the block into AGENTS.md between
+  `<!-- rocx:start <fingerprint> · … -->` and `<!-- rocx:end -->`: it makes AGENTS.md (a heading,
+  then the block) where there is none, adds the block at the end of one without it, replaces a block
+  of another rocx, and does nothing to a current one. Nothing outside the markers is touched. It
+  writes a CLAUDE.md of one line, `@AGENTS.md`, where there is none, for Claude Code; a CLAUDE.md of
+  the app's own that doesn't name AGENTS.md gets a hint, never a change.
+- **The fingerprint** is the first 16 hex digits of the block text's SHA-256 (line endings as
+  `\n`). Read against the text between the markers, it says whether someone edited the block;
+  against this rocx's text, whether the block is current. An edited block, or a start marker with no
+  end, is refused (exit 1, saying what to do) unless `--force`. A clone has no version number, so
+  the marker holds the text's fingerprint, not a version.
+- **`rocx check`** says when the block is another rocx's or was edited (`! AGENTS.md's rocx block
+  is from another version of rocx: rocx agents rewrites it`), and never counts it against the check.
+  An app with no block hears nothing.
+- **`rocx new`** writes both files; the template's README lists them, and says to run `rocx agents`
+  after `rocx upgrade`. Nothing writes AGENTS.md but these two commands: no build does.
+
+**Tests.** `Agents.roc`'s expects (a new file, the block added, replaced with the notes around it
+kept, unchanged, edited, unclosed, line endings); test/agents.test.mjs runs the command on files
+(new, the app's own AGENTS.md and CLAUDE.md, a stale block, an edited one with and without
+`--force`, an unclosed one); test/new.test.mjs checks a new app's AGENTS.md and CLAUDE.md, that its
+checks say nothing of them, and that `rocx check` says so of a stale block and still passes.
+
+**Why.** The rules an agent most needs are in the file it reads first; the rest is one link away
+and always the app's version; and an upgrade's change to them is one command and a short diff.
+
+**Costs.** A file rocx writes into the app's repository, under rocx's markers; an app that wants
+none doesn't run the command (or deletes the block: nothing writes it back). The guide is prose to
+keep true as rocx changes: a decision that changes a rule changes the block or the guide too.
+
+**Reversible:** yes: the command, the check's line and `rocx new`'s call go; an app's block stays
+as plain text.

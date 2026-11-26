@@ -280,6 +280,18 @@ view! = |_|
 					</p>
 				</div>
 				<div class="command">
+					<p class="command-usage">rocx agents {"[dir]"}<span>--force</span></p>
+					<p>
+						Writes rocx's rules for coding agents into the app's <code>AGENTS.md</code>, as a block between two
+						markers, and a <code>CLAUDE.md</code> that imports <code>AGENTS.md</code> where there is none. The
+						block points at <code>.rocx/agents/guide.md</code>, the guide for the version the app builds with.
+						Run it again after an upgrade: it rewrites the block and nothing outside it, so the app's own notes
+						stay. It refuses a block someone edited unless given <code>--force</code>, and{" "}
+						<code>rocx check</code> says when the block is from another version. <code>rocx new</code> writes both
+						files.
+					</p>
+				</div>
+				<div class="command">
 					<p class="command-usage">rocx help {"[command]"}</p>
 					<p>The commands, or one command's usage and options (<code>rocx {"<command>"} --help</code> too).</p>
 				</div>

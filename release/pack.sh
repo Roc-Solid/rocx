@@ -143,6 +143,11 @@ trap 'rm -rf "$tmp"' EXIT
 	git ls-files server/platform | grep '\.roc$'
 	git ls-files packages | grep -v -E '^packages/[^/]+/(example|test)/' | grep -v '\.mjs$'
 	git ls-files templates/app
+	# The guide for coding agents an app's AGENTS.md points at (.rocx/agents/guide.md, D-108), and
+	# the references it points into.
+	git ls-files agents
+	echo server/README.md
+	echo web/README.md
 } > "$tmp/files"
 
 echo "release/pack.sh: NOTICES" >&2

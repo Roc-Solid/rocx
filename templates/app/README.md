@@ -26,6 +26,7 @@ and reloads the page when you save a file. Under `rocx dev`:
 | File | What it is |
 | --- | --- |
 | `main.roc` | The server's program: the plugins (mail and sign-in), the database |
+| `AGENTS.md`, `CLAUDE.md` | Notes for coding agents: rocx's rules in a block `rocx agents` keeps up to date, and yours outside it; `CLAUDE.md` imports `AGENTS.md` |
 | `Middlewares.roc` | What requests go through: `default` (every request), `signed_in`, `anyone`, `mail_limit`; each `+middleware.roc` under `routes/` names one |
 | `Accounts.roc` | The app's users: who may sign in (`admit!`), and reading a user (`user!`) |
 | `migrations/` | The database's tables, as SQL, applied in order as the server starts |
@@ -201,7 +202,8 @@ rocx upgrade
 ```
 
 installs the newest version of Roc Solid, and writes it to `.rocx-version`. Commit that file: anyone
-who builds the app gets the same version. `rocx upgrade <version>` picks one.
+who builds the app gets the same version. `rocx upgrade <version>` picks one. Then `rocx agents`
+brings the rocx block in `AGENTS.md` up to date (`rocx check` says when it isn't).
 
 ## More
 

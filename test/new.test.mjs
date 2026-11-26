@@ -9,6 +9,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,10 +50,24 @@ test("rocx new from a clone: the template filled in, .rocx linked to the clone; 
 	assert.match(main, /"acme_books_session"/);
 	assert.match(main, /auth: "\.\/\.rocx\/packages\/auth\/main\.roc"/);
 	assert.match(readFileSync(join(app, "README.md"), "utf8"), /Acme books/);
+	// rocx's rules for coding agents (D-108): AGENTS.md with rocx's block, CLAUDE.md importing it.
+	assert.match(made.said, /✓ AGENTS\.md and CLAUDE\.md: rocx's rules for coding agents/);
+	const agents = readFileSync(join(app, "AGENTS.md"), "utf8");
+	assert.ok(agents.includes(readFileSync(join(root, "agents", "block.md"), "utf8")), "the block's text");
+	assert.match(agents, /<!-- rocx:start [0-9a-f]{16} /);
+	assert.equal(readFileSync(join(app, "CLAUDE.md"), "utf8"), "@AGENTS.md\n");
 	for (const [args, what] of [[["check", app], "rocx check"], [["check", "--sql", app], "rocx check --sql"], [["test", app], "rocx test"]]) {
 		const ran = rocx(args);
 		assert.equal(ran.code, 0, `${what}: ${ran.said}`);
+		assert.doesNotMatch(ran.said, /AGENTS\.md/, `${what}: the block is this rocx's`);
 	}
+	// A block of another rocx: rocx check says so, and still passes.
+	const old = "old rules\n";
+	const print = createHash("sha256").update(old).digest("hex").slice(0, 16);
+	writeFileSync(join(app, "AGENTS.md"), agents.replace(/<!-- rocx:start [\s\S]*<!-- rocx:end -->/, `<!-- rocx:start ${print} · an older rocx's -->\n${old}<!-- rocx:end -->`));
+	const stale = rocx(["check", app]);
+	assert.equal(stale.code, 0, stale.said);
+	assert.match(stale.said, /AGENTS\.md's rocx block is from another version of rocx: rocx agents rewrites it/);
 });
 
 test("rocx new: each database's line in main.roc; at no terminal, SQLite, said", { skip }, () => {

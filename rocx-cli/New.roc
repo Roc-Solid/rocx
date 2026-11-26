@@ -2,6 +2,7 @@ import pf.File
 import pf.Stdin
 import pf.Stdout
 import pf.Stderr
+import Agents
 import Fs
 import Term
 import Text
@@ -13,7 +14,8 @@ import Versions
 ## the platform and packages are (`./.rocx`, the app's link to this version of rocx), its name as
 ## code writes it and as people read it, and its database (SQLite unless `--db` says otherwise, or
 ## the answer to the question, at a terminal). Then the app's `.rocx-version` (an installed rocx's
-## version; a clone has none to write) and its `.rocx` link, and how to start it.
+## version; a clone has none to write) and its `.rocx` link, its AGENTS.md and CLAUDE.md (rocx's
+## rules for coding agents, `Agents`), and how to start it.
 New := [].{
 
 	## A database an app may start on.
@@ -54,6 +56,11 @@ New := [].{
 				match Versions.link!(target, home) {
 					Ok(_) => Term.ok!(styled, if (version.is_empty()) "on this clone of rocx (.rocx links to it)" else "on rocx ${version} (.rocx-version: commit it)")
 					Err(Failed(why)) => return Versions.failed!(why)
+				}
+				# rocx's rules for coding agents (D-108), which `rocx agents` keeps up to date.
+				match Agents.write!(target, home, Bool.False) {
+					Ok(_) => Term.ok!(styled, "AGENTS.md and CLAUDE.md: rocx's rules for coding agents")
+					Err(why) => Term.warn!(styled, "AGENTS.md: ${why}")
 				}
 				Term.next!(styled, "Next", New.next_lines(styled, dir, database))
 				Ok({})

@@ -91,7 +91,9 @@ refuses other sites' posts, sends guard's security headers, and limits the sign-
 `README.md` says what to change first, and how to test it (`rocx test`), deploy it (`rocx build`,
 behind a TLS proxy, or `rocx build --image`) and upgrade it (`rocx upgrade`). It names its version of rocx
 in `.rocx-version` (commit it) and reaches the platform through `.rocx`, a link rocx makes
-(gitignore it).
+(gitignore it). Its `AGENTS.md` holds rocx's rules for coding agents, in a block `rocx agents`
+rewrites as rocx changes, pointing at `.rocx/agents/guide.md`, the guide for the version the app
+builds with; its `CLAUDE.md` imports `AGENTS.md` (D-108).
 
 ### From a clone
 
@@ -962,6 +964,11 @@ rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc
 rocx qr <text>           # the text as a QR code in the terminal (--pbm: as a PBM image)
 rocx upgrade [<version>] # install a version of rocx (the latest by default) and make it the default;
                          # in an app, move the app onto it (.rocx-version, .rocx)
+rocx agents [dir]        # rocx's rules for coding agents in the app's AGENTS.md: a block between two
+                         # markers, rewritten as rocx changes (nothing outside it), and a CLAUDE.md
+                         # importing AGENTS.md where there is none; rocx check says when the block is
+                         # another rocx's (D-108)
+  --force                # replace a block that was edited since rocx wrote it
 rocx --version           # which rocx this is (an installed version's VERSION; a clone's commit)
 rocx help [command]      # the commands, or one command's options (rocx <command> --help too)
 ```
@@ -1089,6 +1096,7 @@ browser runtime's engine. See `spike/native-apps/README.md` and `examples/pomodo
 |---|---|
 | `rocx-cli/` | rocx itself, in Roc on the CLI platform: the command (`main.roc`), the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), the build (`Build.roc`) and its warning when the browser's copy reaches server-only code (`ServerOnly.roc`), stories, error remapping (`Remap.roc`), `rocx fmt`, `rocx dev` (`Dev.roc`; `SiteDev.roc` for `just dev`), `rocx check --sql` (`CheckSql.roc`), `--static` (`Static.roc`) and `--release` (`Release.roc`), the runtime minified and shaken for them (`Minify.roc`, `Shake.roc`), `rocx new` (`New.roc`), versions and `rocx upgrade` (`Versions.roc`), the hosts and compiler it builds with (`Hosts.roc`), and the docs site's generated modules (`Site.roc`, `SiteSources.roc`, `SiteReference.roc`). Built into `bin/rocx`. `rocx-cli/rocx.mjs` lets the JavaScript tests call its functions by name (`rocx internal`) |
 | `cli/` | The command-line platform rocx runs on: its Roc modules (`cli/platform`: output, files, commands, a watched directory tree, signals, and `Events.next!`, the one wait) and its Rust host (`cli/host`); see its README |
+| `agents/` | What rocx tells coding agents (D-108): `block.md`, the block `rocx agents` writes into an app's AGENTS.md, and `guide.md`, the guide it points at (`.rocx/agents/guide.md` in an app). Both ship with each version |
 | `server/` | The server platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`); see `server/README.md` |
 | `web/` | The browser platform: the modules components are written with (`Html`, `Solid`, `Store`, `Router`, …) and HTTP's (`Server`, `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server platform shares; its Rust host (`web/host`, built for wasm32) and the memory it shares with the phone's host (`web/memory`); `runtime.js` and `start.js`; see `web/README.md` |
 | `packages/` | The ecosystem. Each package has a README, a `PROPOSALS.md` of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees |

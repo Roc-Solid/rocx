@@ -44,6 +44,7 @@ Help := [].{
 			entries: [
 				{ usage: "generate [dir]…", what: "write Generated/ and the browser's copy, and build nothing" },
 				{ usage: "upgrade [version]", what: "move the app to another version of rocx" },
+				{ usage: "agents [dir]", what: "rocx's rules for coding agents, in the app's AGENTS.md" },
 				{ usage: "qr <text>", what: "a QR code in the terminal" },
 				{ usage: "--version", what: "this rocx's version" },
 			],
@@ -193,6 +194,21 @@ Help := [].{
 						"",
 						"Installs another version of rocx (the latest by default) and makes it the default; in an",
 						"app (a .rocx-version here), moves the app onto it.",
+					],
+					"\n",
+				)
+			"agents" =>
+				Str.join_with(
+					[
+						"rocx agents [dir] [--force]",
+						"",
+						"Writes rocx's rules for coding agents into the app's AGENTS.md (made if missing), as a",
+						"block between two markers, and a CLAUDE.md that imports AGENTS.md when the app has none.",
+						"Run it again after an upgrade: it rewrites the block and nothing outside it. The block",
+						"points at .rocx/agents/guide.md, the guide for the rocx the app builds with. rocx check",
+						"says when the block is from another rocx.",
+						"",
+						"  --force          replace a block that was edited since rocx wrote it",
 					],
 					"\n",
 				)

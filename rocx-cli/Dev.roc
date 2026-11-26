@@ -14,6 +14,7 @@ import pf.Stderr
 import pf.Stdout
 import pf.Time
 import pf.Watch
+import Agents
 import Build
 import Commands
 import Fs
@@ -346,6 +347,13 @@ Dev := [].{
 				}
 				Err(CantStart(why)) => return Dev.fail!("rocx check: ${why}")
 			}
+		}
+		# AGENTS.md's rocx block (D-108), when the app has one: said when it is another rocx's or was
+		# edited, never counted against the check.
+		match Agents.standing!(Fs.dirname(ready.main), rocx) {
+			Stale => Term.warn!(styled, "AGENTS.md's rocx block is from another version of rocx: rocx agents rewrites it")
+			Edited => Term.warn!(styled, "AGENTS.md's rocx block was edited since rocx wrote it: rocx agents --force rewrites it")
+			_ => {}
 		}
 		if styled {
 			_ = Stderr.line!("")

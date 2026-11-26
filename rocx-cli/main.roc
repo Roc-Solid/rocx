@@ -18,6 +18,7 @@ import Build
 import CheckSql
 import Sql
 import Dev
+import Agents
 import Site
 import Hosts
 import SiteDev
@@ -61,6 +62,7 @@ main! = |args| {
 		}
 		Ok("upgrade") => Versions.upgrade!(words.drop_first(1), home)
 		Ok("new") => New.run!(words.drop_first(1), home)
+		Ok("agents") => Agents.run!(words.drop_first(1), home)
 		Ok("check") if words.get(1) == Ok("--sql") => CheckSql.run!(words.drop_first(2), home)
 		# `rocx check [dir]`: an app, checked from its sources; `rocx check -- <command>`, a command's
 		# reports pointed into .rocx files.
