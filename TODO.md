@@ -18,8 +18,8 @@ When an item lands, delete its line here in the same commit.
   spike is in master, as an experiment: one screen as native views, typed calls to the server, and
   a dev mode (`rocx dev --android [--lan]`, about a second from a save to the phone, each reload a
   fresh start) (`spike/native-apps/README.md`). Next (§13): phase 0's conformance suite (the engine
-  on `web/test/app` against Chromium), freeing what a waiting run leaves behind, Taffy, CSS at build
-  time, HTTPS and cookies, navigation, `rocx build --android`; then Plate on Android, then iOS (a
+  on `web/test/app` against Chromium), Taffy, CSS at build time, HTTPS and cookies, navigation,
+  `rocx build --android` (what a waiting run leaves behind is freed since D-091); then Plate on Android, then iOS (a
   fork target for Xcode's link). The fork's dev backend puts some `arm64mac` string literals where
   Roc's refcounting misreads them (README.md's gaps, 12). Open questions: 3 and 9 in DESIGN.md §15.
   Since examples/pomodoro (2026-11-24) the phone draws SVG, takes percentage sizes and `:where()`
@@ -79,10 +79,6 @@ When an item lands, delete its line here in the same commit.
   own code (41% of it) and opt-level z (about 13% smaller, 5 to 10% slower). Its nodes are freed only
   when a list's row goes (a hole's replaced markup stays), and it lacks what the browser needs of
   runtime.js (hydration, navigation, drags, transitions, actions, channels, head tags, SVG).
-- **native/mac never shows a first frame when the app's stylesheet can't be fetched** (an origin
-  with no server, `--origin http://127.0.0.1:9`): the first frame waits for the sheet, which "one
-  that fails doesn't hold the screen" says it shouldn't. Seen on master's engine too; against the
-  app's own server it shows.
 - **More of the web platform's hosts shared (after D-091's rocx-memory).** The browser's host and
   the phone's share Roc's memory now; the hosted functions themselves would be next if the
   reactive graph moves into the wasm (`spike/wasm-engine/REPORT.md`): then web/host's would be the

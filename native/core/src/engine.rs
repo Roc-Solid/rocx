@@ -2617,9 +2617,15 @@ pub fn fetch_for(method: &str, url: &str, headers: &str, body: &str) -> Result<S
 
 /// Sends the requests made since the last time (`fetch_for` notes them while it holds the engine).
 pub fn send_requests() {
-    let outbox = with(|engine| std::mem::take(&mut engine.outbox));
-    for (id, method, url, headers, body) in outbox {
-        crate::http::send(id, method, url, headers, body);
+    let outbox = with(|engine| {
+        let outbox = std::mem::take(&mut engine.outbox);
+        outbox.into_iter().map(|request| (matches!(engine.asked.get(&request.0), Some(Asked::Sheet(_))), request)).collect::<Vec<_>>()
+    });
+    for (sheet, (id, method, url, headers, body)) in outbox {
+        // A stylesheet holds the first frame (`native::render`): one its server refuses is given up
+        // on at once, as a browser shows the page unstyled when a stylesheet's connection is
+        // refused, not after the 3 s a read waits for a server being restarted.
+        crate::http::send(id, method, url, headers, body, !sheet);
     }
 }
 
