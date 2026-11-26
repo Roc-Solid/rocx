@@ -8,7 +8,9 @@
 // its message as the browser would (RFC 8291), and answers as a push service might (a subscription
 // gone, a refusal). The server runs with `--dev`, which lets a subscription's endpoint be on this
 // machine, and with that push service as its HTTPS proxy, which refuses every connection: nothing
-// reaches a real push service. A pair of VAPID keys that isn't one stops the server. And in Chromium,
+// reaches a real push service. A pair of VAPID keys that isn't one stops the server, and so do no
+// keys, but under `--dev` (D-097): there the server makes a pair for the run, logs it, and sends with
+// it, and /__rocx/push/keys answers a new pair each time. And in Chromium,
 // on SQLite, behind a guard that refuses every script (`.js`) the app would answer: the plugin's
 // script and service worker come all the same, the worker registers at the root with the whole site
 // as its scope, and the button subscribes (the browser's push service stood in for, as headless
@@ -101,6 +103,13 @@ function p256() {
 	return { public: ecdh.getPublicKey().toString("base64url"), private: Buffer.from(ecdh.getPrivateKey("hex").padStart(64, "0"), "hex").toString("base64url") };
 }
 
+/** The public key of a P-256 private key (32 bytes, base64url), by Node: the same base64url. */
+function publicOf(privateKey) {
+	const ecdh = createECDH("prime256v1");
+	ecdh.setPrivateKey(Buffer.from(privateKey, "base64url"));
+	return ecdh.getPublicKey().toString("base64url");
+}
+
 /** A browser's subscription at Chrome's push service, as the page posts it. */
 function subscription(name) {
 	return { endpoint: `https://fcm.googleapis.com/fcm/send/${name}`, keys: { p256dh: p256().public, auth: randomBytes(16).toString("base64url") } };
@@ -115,9 +124,11 @@ function subscription(name) {
  * (`decrypt`), then kept (`received`), each with its headers; its answer is 201, or what `answers`
  * says for that name. A message that fails a check is answered 400 and kept with its `problem`.
  * It is the server's HTTPS proxy too: every CONNECT is refused, and where to is kept (`connects`).
+ * `expect(key)` checks tokens against another key from then on (a server's that made its own).
  */
 async function pushService(vapidPublic) {
 	const browsers = new Map();
+	let expected = vapidPublic;
 	const received = [];
 	const connects = [];
 	const answers = new Map();
@@ -131,7 +142,7 @@ async function pushService(vapidPublic) {
 			return;
 		}
 		try {
-			received.push({ name, headers: request.headers, token: vapid(request.headers.authorization, vapidPublic), ...decrypt(Buffer.concat(chunks), browser) });
+			received.push({ name, headers: request.headers, token: vapid(request.headers.authorization, expected), ...decrypt(Buffer.concat(chunks), browser) });
 		} catch (error) {
 			received.push({ name, problem: error.message });
 			response.writeHead(400).end(error.message);
@@ -158,6 +169,9 @@ async function pushService(vapidPublic) {
 			const auth = randomBytes(16);
 			browsers.set(name, { ecdh, auth });
 			return { endpoint: `${origin}/push/${name}`, keys: { p256dh: ecdh.getPublicKey().toString("base64url"), auth: auth.toString("base64url") } };
+		},
+		expect(key) {
+			expected = key;
 		},
 		close: () => new Promise((resolve) => server.close(resolve)),
 	};
@@ -388,6 +402,82 @@ for (const database of databases) {
 				startServer(built.server, { database: db.url, env: { VAPID_PUBLIC_KEY: keys.public, VAPID_PRIVATE_KEY: other.private, VAPID_SUBJECT: "mailto:push@example.com" } }),
 				/VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY aren't a pair/,
 			);
+		});
+
+		test("without --dev, no VAPID keys (or one alone, or no contact) stop the server as it starts, saying how to make a pair; /__rocx/push/keys isn't there", async () => {
+			const subject = { VAPID_SUBJECT: "mailto:push@example.com" };
+			await assert.rejects(
+				startServer(built.server, { database: db.url, env: { VAPID_PUBLIC_KEY: "", VAPID_PRIVATE_KEY: "", ...subject } }),
+				/push: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY aren't set, and push needs a pair .*`rocx dev` makes one: without keys it makes a pair and logs the lines for \.env, and GET \/__rocx\/push\/keys on it answers a new pair each time/,
+			);
+			await assert.rejects(
+				startServer(built.server, { database: db.url, env: { VAPID_PUBLIC_KEY: keys.public, VAPID_PRIVATE_KEY: "", ...subject } }),
+				/push: VAPID_PRIVATE_KEY isn't a P-256 private key in base64url \(32 bytes\): `rocx dev` makes one/,
+			);
+			await assert.rejects(
+				startServer(built.server, { database: db.url, env: { VAPID_PUBLIC_KEY: keys.public, VAPID_PRIVATE_KEY: keys.private, VAPID_SUBJECT: "" } }),
+				/push: VAPID_SUBJECT isn't a contact/,
+			);
+			const plain = await startServer(built.server, { database: db.url, env: { VAPID_PUBLIC_KEY: keys.public, VAPID_PRIVATE_KEY: keys.private, ...subject } });
+			try {
+				assert.equal((await fetch(`${plain.url}/__rocx/push/keys`)).status, 404, "the app's path, which it hasn't");
+				assert.equal(await plain.client().read("/push/key"), keys.public);
+			} finally {
+				await plain.stop();
+			}
+		});
+
+		test("under --dev, no VAPID keys: the server makes a pair for the run, logs the lines that keep it, and sends with it; /__rocx/push/keys answers a new pair each time; one key alone still stops it", async () => {
+			const own = database === "sqlite" ? testSqlite() : await testDatabase();
+			const service = await pushService("");
+			const env = { VAPID_PUBLIC_KEY: "", VAPID_PRIVATE_KEY: "", VAPID_SUBJECT: "", HTTPS_PROXY: service.origin, https_proxy: service.origin, HTTP_PROXY: "", http_proxy: "", NO_PROXY: "", no_proxy: "" };
+			const dev = await startServer(built.server, { database: own.url, dev: true, env });
+			try {
+				const made = dev.logs().filter((event) => event.msg?.startsWith("push: no VAPID keys"));
+				assert.equal(made.length, 1, `one pair made, at start: ${dev.said()}`);
+				assert.equal(made[0].level, "warn");
+				assert.match(made[0].msg, /^push: no VAPID keys, so this run made a pair, which the next start replaces \(a browser subscribed with it then subscribes again\); to keep it, put these in \.env, a line each: VAPID_PUBLIC_KEY=[\w-]{87} VAPID_PRIVATE_KEY=[\w-]{43}$/);
+				const [, publicKey, privateKey] = /VAPID_PUBLIC_KEY=([\w-]+) VAPID_PRIVATE_KEY=([\w-]+)$/.exec(made[0].msg);
+				assert.equal(publicOf(privateKey), publicKey, "a pair: Node computes the logged public key from the logged private one");
+				assert.ok(
+					dev.logs().some((event) => event.level === "warn" && event.msg === "push: VAPID_SUBJECT isn't set, so this run tells push services mailto:dev@example.com: set it in .env to a mailto: or https: contact of yours"),
+					"the subject's default, said",
+				);
+				const devClient = dev.client();
+				assert.equal(await devClient.read("/push/key"), publicKey, "the page subscribes with the run's pair");
+
+				// A message is signed with it: the push service checks the token against the logged key.
+				service.expect(publicKey);
+				assert.equal((await devClient.json("/push/subscribe", service.subscribe("dev"))).status, 200);
+				assert.equal((await devClient.json("/push/announce", {})).json(), "Queued: 1");
+				await until(async () => service.received.length === 1, { ms: 20_000, what: "the delivery" });
+				assert.deepEqual(service.received.map((message) => message.problem), [undefined], "the push service's checks passed");
+				assert.equal(service.received[0].token.claims.sub, "mailto:dev@example.com");
+				assert.deepEqual(JSON.parse(service.received[0].data), { title: "Hello", body: "A notification from the example", url: "/" });
+				assert.equal(dev.logs().filter((event) => event.msg?.startsWith("push: no VAPID keys")).length, 1, "the run's pair, made once");
+
+				// A new pair each time it is asked, never the run's.
+				const ask = async () => {
+					const answer = await fetch(`${dev.url}/__rocx/push/keys`);
+					assert.equal(answer.status, 200);
+					assert.equal(answer.headers.get("content-type"), "text/plain; charset=utf-8");
+					assert.equal(answer.headers.get("cache-control"), "no-store");
+					const [, pair, secret] = /^VAPID_PUBLIC_KEY=([\w-]{87})\nVAPID_PRIVATE_KEY=([\w-]{43})\n$/.exec(await answer.text());
+					assert.equal(publicOf(secret), pair, "a pair");
+					return pair;
+				};
+				const first = await ask();
+				const second = await ask();
+				assert.notEqual(first, second, "a new pair each time");
+				assert.ok(first !== publicKey && second !== publicKey, "never the run's");
+				assert.equal(await devClient.read("/push/key"), publicKey, "the run's pair unchanged");
+			} finally {
+				await dev.stop();
+				await service.close();
+				await own.drop();
+			}
+			// One key alone is a mistake, not a missing pair: it stops the server under --dev too.
+			await assert.rejects(startServer(built.server, { database: db.url, dev: true, env: { ...env, VAPID_PUBLIC_KEY: keys.public } }), /push: VAPID_PRIVATE_KEY isn't a P-256 private key/);
 		});
 	});
 }

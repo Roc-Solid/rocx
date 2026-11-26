@@ -17,9 +17,9 @@ Vapid := [].{
 	Keys : { public_key : List(U8), private_key : List(U8), subject : Str }
 
 	## The keys from the text an app keeps them as (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
-	## `VAPID_SUBJECT`): base64url keys, as `web-push generate-vapid-keys` and this package's
-	## `vapid-keys.mjs` print them, and a `mailto:` or `https:` contact. Which part is wrong, when
-	## one is.
+	## `VAPID_SUBJECT`): base64url keys, as the plugin's `/__rocx/push/keys` (under `--dev`) and
+	## `web-push generate-vapid-keys` print them, and a `mailto:` or `https:` contact. Which part is
+	## wrong, when one is.
 	from_text : { public_key : Str, private_key : Str, subject : Str } -> Try(Keys, [BadPublicKey, BadPrivateKey, BadSubject])
 	from_text = |{ public_key, private_key, subject }| {
 		public = Base64.url_decode(public_key.trim()) ?? []

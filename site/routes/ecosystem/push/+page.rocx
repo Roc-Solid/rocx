@@ -52,13 +52,30 @@ view! = |_|
 				site is static files and Web Push needs a server.
 			</p>
 			<p>
-				<strong>1. Keys.</strong> Web Push identifies your server by a key pair, called the VAPID keys.
-				<code>node packages/push/vapid-keys.mjs</code> prints one. Give the server
-				<code>VAPID_PUBLIC_KEY</code>, <code>VAPID_PRIVATE_KEY</code> and <code>VAPID_SUBJECT</code>
-				(<code>mailto:</code> and an address, or an <code>https:</code> URL) in its environment. The private
-				key never leaves the server. A browser that subscribed with one public key can only be sent to with
-				that pair, so keep the keys once you have users. The plugin needs all three: if one is missing, or
-				the two keys don't belong together, the server doesn't start, and says why.
+				<strong>1. Keys.</strong> Web Push identifies your server by a key pair, called the VAPID keys. Under
+				<code>rocx dev</code> you need none to start: with no keys, the server makes a pair for that run and
+				logs the two settings that keep it, for the app's <code>.env</code>:
+			</p>
+			<Code title="The server's log" source={"WARN  push: no VAPID keys, so this run made a pair, which the next start replaces (a browser subscribed with it then subscribes again); to keep it, put these in .env, a line each: VAPID_PUBLIC_KEY=BKx… VAPID_PRIVATE_KEY=3q…"} plain numbers={Bool.False} />
+			<p>
+				The pair is gone when the server restarts, and <code>rocx dev</code> restarts it at each change to
+				the server's code. A browser subscribed with the old pair can't be sent to, so its button shows off
+				and has to be clicked again. Copy the two settings into <code>.env</code>, a line each, to keep the
+				pair. Without <code>VAPID_SUBJECT</code> the run tells push services
+				<code>mailto:dev@example.com</code>, and its log says so.
+			</p>
+			<p>
+				A deployed server needs all three in its environment: <code>VAPID_PUBLIC_KEY</code>,
+				<code>VAPID_PRIVATE_KEY</code> and <code>VAPID_SUBJECT</code> (<code>mailto:</code> and an address, or
+				an <code>https:</code> URL). Give it a pair of its own: while <code>rocx dev</code> runs, its
+				<code>/__rocx/push/keys</code> answers a new pair each time, as the two lines to set.
+			</p>
+			<Code source={"curl -s localhost:8080/__rocx/push/keys\nVAPID_PUBLIC_KEY=BNc…\nVAPID_PRIVATE_KEY=Hw…"} plain numbers={Bool.False} />
+			<p>
+				The private key never leaves the server. A browser that subscribed with one public key can
+				only be sent to with that pair, so keep the keys once you have users. Without <code>--dev</code>, if
+				a key or the subject is missing, or the two keys don't belong together, the server doesn't start,
+				and says why and how to make a pair.
 			</p>
 			<p>
 				<strong>2. The plugin.</strong> Name the package in the app's header and list its plugin, together
@@ -75,8 +92,9 @@ view! = |_|
 				<li>its job, <code>push.deliver</code>, which the jobs plugin's workers run;</li>
 				<li>
 					the service worker at <code>/push-sw.js</code>, and a script every page loads. Both are served before
-					the app's middleware, so a guard never blocks them.
+					the app's middleware, so a guard never blocks them;
 				</li>
+				<li>under <code>--dev</code> only, <code>GET /__rocx/push/keys</code>: a new pair of keys each time.</li>
 			</ul>
 			<p>Two options change the defaults:</p>
 			<ul>
@@ -310,7 +328,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Push</code></td><td><code>plugin(setup)</code>, the plugin (<code>at</code>, <code>owner</code>); <code>subscribe!(body, owner)</code> and <code>unsubscribe!(endpoint, owner)</code>, which its endpoints call; <code>notify!</code> and <code>broadcast!</code>; <code>public_key!</code> and <code>keys!</code> (from the environment); <code>deliver</code>, the job; <code>send!</code>, one attempt</td></tr>
+						<tr><td><code>Push</code></td><td><code>plugin(setup)</code>, the plugin (<code>at</code>, <code>owner</code>); <code>subscribe!(body, owner)</code> and <code>unsubscribe!(endpoint, owner)</code>, which its endpoints call; <code>notify!</code> and <code>broadcast!</code>; <code>public_key!</code> and <code>keys!</code> (from the environment, or under <code>--dev</code> without keys the pair the run made); <code>deliver</code>, the job; <code>send!</code>, one attempt</td></tr>
 						<tr><td><code>PushStore</code></td><td>the <code>push_subscriptions</code> table: <code>save!</code> (a row for each endpoint), <code>remove!</code>, <code>remove_id!</code>, <code>find!</code>, <code>of_owner!</code>, <code>everyone!</code>, and <code>delivered!</code> and <code>refused!</code>, which the job calls</td></tr>
 					</tbody>
 				</table>
@@ -334,7 +352,10 @@ view! = |_|
 					<code>--dev</code> (as <code>rocx dev</code> starts it), it also accepts an <code>http:</code> URL on
 					this machine, for a stand-in push service.
 				</li>
-				<li>The private key never leaves the server. The page gets only the public key.</li>
+				<li>
+					The private key never leaves the server. The page gets only the public key. Only under
+					<code>--dev</code>, on your machine, is a pair logged or answered; a deployed server never makes one.
+				</li>
 				<li>A click on a notification opens only this site's pages.</li>
 				<li>Messages are encrypted for the browser: the push service sees only bytes.</li>
 			</ul>
@@ -346,7 +367,8 @@ view! = |_|
 					Everything that is plain Roc, checked by <code>expect</code>s against the RFCs' own examples: the
 					keys, the VAPID token's claims and signing input, the content coding, the message's key derivation,
 					the request's headers, and what each answer means. The server platform's tests check its AES
-					against RFC 8291's and RFC 8188's examples, and its ECDH and ES256 against Node's crypto.
+					against RFC 8291's and RFC 8188's examples, and its ECDH, ES256 and key pairs against Node's
+					crypto.
 				</li>
 				<li>
 					The plugin, built into the example app and run on SQLite, and on Postgres when one is available. It
@@ -354,7 +376,9 @@ view! = |_|
 					on the curve. A broadcast is delivered to a push service the test runs, which plays the browsers
 					too: it checks each request's VAPID token and signature, decrypts each message as a browser
 					would, and answers as a push service might, so a subscription that is gone is deleted and a
-					refusal is noted on its row. VAPID keys that aren't a pair stop the server as it starts.
+					refusal is noted on its row. VAPID keys that aren't a pair stop the server as it starts, and so
+					do none without <code>--dev</code>. Under <code>--dev</code> with none, the server makes a pair,
+					logs it and sends with it, and <code>/__rocx/push/keys</code> answers a new pair each time.
 				</li>
 				<li>
 					The button, the page's script and the service worker, tried in Chromium behind a guard that refuses

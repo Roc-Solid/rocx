@@ -6001,6 +6001,11 @@ unsafe extern "C" {
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_p256_ecdh(arg0: RocListWith<u8, false>) -> HostAesGcmOpenResult;
 
+    /// Hosted symbol for Host.p256_generate!
+    /// Roc signature: {} => List(U8)
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_p256_generate() -> RocListWith<u8, false>;
+
     /// Hosted symbol for Host.p256_sign!
     /// Roc signature: List(U8), List(U8), List(U8) => Try(List(U8), Str)
     /// Owned arguments. Release each exactly once before returning, unless it is

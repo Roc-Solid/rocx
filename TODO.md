@@ -63,11 +63,6 @@ When an item lands, delete its line here in the same commit.
 - **echo's benchmark again:** the examples page's numbers (8f7abc5) are of its server built
   specialized; since D-064 it ships boxy, so `just example-apps --bench` (a run on the user's go, on
   a quiet machine) would measure what ships.
-- **VAPID keys without Node** (found landing D-080, 2026-11-25): packages/push's setup makes its
-  key pair with `node packages/push/vapid-keys.mjs`, which a release leaves out (`release/pack.sh`
-  drops every `*.mjs`), so an installed rocx has only `npx web-push generate-vapid-keys`. Ship the
-  script, or add `P256.generate!` (one hosted function) and have the push plugin print a fresh pair
-  when the keys are missing under `--dev`?
 
 ## Framework work, decided but not built
 

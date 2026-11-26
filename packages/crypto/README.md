@@ -97,5 +97,5 @@ one of them doesn't have to name this one too.
   for `AesGcm` comes from `Random.bytes!(32)`, or from the app's secret through `Hkdf`.
 - Password hashing (bcrypt, scrypt, Argon2): not yet. SHA-256 and HKDF are too fast for passwords.
 - Public-key cryptography is the server platform's too, as much as Web Push needs: `P256` (ES256
-  signatures, and ECDH with a key pair made for one call: D-080). Verifying a signature, other
-  curves and RSA: not yet.
+  signatures, ECDH with a key pair made for one call, D-080; and a new key pair, D-097). Verifying a
+  signature, other curves and RSA: not yet.

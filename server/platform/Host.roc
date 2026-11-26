@@ -135,6 +135,11 @@ Host := [].{
 	## the peer's isn't an uncompressed point on the curve.
 	p256_ecdh! : List(U8) => Try(List(U8), Str)
 
+	## A new P-256 key pair from the system's random bytes (`P256.generate!`): its public key (65
+	## bytes, uncompressed), then its private key (the 32-byte scalar). It crashes the call only
+	## when the operating system gives no random bytes, as `random_bytes!` does.
+	p256_generate! : {} => List(U8)
+
 	## ES256 (`P256.sign!`): the signature of the message (the third) by the private key (the first,
 	## 32 bytes) whose public key is the second (65 bytes), 64 bytes, `r` then `s`; or "bad key"
 	## when the keys aren't a pair.

@@ -971,12 +971,11 @@ format, plugins and routes.
   Turso's: `Db`, migrations, transactions, notifications); plugins (what a package adds to an app:
   routes, tables, loops, paths for development, checked when the server starts); requests to other
   servers (`Http.fetch!(url, init)`, like JavaScript's `fetch`); bodies as bytes, and forwarded from
-  elsewhere (`Server.forward`); cookies; settings (`Env`, `Setting`); encryption (`AesGcm`),
-  P-256's ES256 and ECDH (`P256`) and random bytes; values in memory by key (`Kv`: TTLs, atomic
+  elsewhere (`Server.forward`); cookies; settings (`Env`, `Setting`); encryption (`AesGcm`), P-256's
+  key pairs, ES256 and ECDH (`P256`) and random bytes; values in memory by key (`Kv`: TTLs, atomic
   counters, a size limit); channels (typed live updates, one stream per tab, told when a
-  subscription was dropped or its tab went);
-  and actors (typed asks, tells and timers, one message at a time, their state and timers kept in
-  the database when there is one).
+  subscription was dropped or its tab went); and actors (typed asks, tells and timers, one message
+  at a time, their state and timers kept in the database when there is one).
 - Some things are packages rather than platform features: files (`packages/storage`: S3, a
   directory or memory), crypto written in Roc (`packages/crypto`), jobs and cron (`packages/jobs`, a
   plugin, with a jobs page in `packages/admin`) and email (`packages/email`, a plugin: SMTP, or a

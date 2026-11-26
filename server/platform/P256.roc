@@ -1,12 +1,22 @@
 import Host
 
 ## Elliptic-curve cryptography on P-256 (secp256r1, prime256v1), by the host (`ring`): what Web Push
-## needs (packages/push): ECDH with a key pair made for one message (RFC 8291), and ES256
-## signatures (its VAPID token, RFC 8292; any JWT signed with ES256). A public key is an
-## uncompressed point, 65 bytes (4, then `x` and `y`), and a private key its 32-byte scalar, as
-## browsers, Web Crypto's raw and JWK formats and `web-push generate-vapid-keys` write them (in
-## base64url: `Base64.url_decode`).
+## needs (packages/push): ECDH with a key pair made for one message (RFC 8291), ES256 signatures
+## (its VAPID token, RFC 8292; any JWT signed with ES256), and a key pair to sign with (its VAPID
+## keys). A public key is an uncompressed point, 65 bytes (4, then `x` and `y`), and a private key
+## its 32-byte scalar, as browsers, Web Crypto's raw and JWK formats and
+## `web-push generate-vapid-keys` write them (in base64url: `Base64.url_decode`).
 P256 := [].{
+
+	## A new key pair, made by the host from the operating system's random bytes: `public_key`, an
+	## uncompressed point (65 bytes), and `private_key`, its 32-byte scalar, which `sign!` signs
+	## with and anyone with `public_key` can check. Keep the private key secret: in the server's
+	## environment, not in the app's code.
+	generate! : {} => { public_key : List(U8), private_key : List(U8) }
+	generate! = |{}| {
+		both = Host.p256_generate!({})
+		{ public_key: both.take_first(65), private_key: both.drop_first(65) }
+	}
 
 	## ECDH with a key pair the host makes for this call alone and then forgets, as RFC 8291 wants
 	## for each message: its public key (65 bytes, for the other side), and the 32-byte secret it

@@ -108,7 +108,7 @@ view! = |_|
 				<li>Password hashing (bcrypt, scrypt, Argon2): not yet. SHA-256 and HKDF are too fast to protect passwords.</li>
 				<li>
 					Public-key cryptography: the server platform's <code>P256</code> has as much as Web Push needs
-					(ES256 signatures, and ECDH with a key pair made for one call). Verifying a signature, other
+					(ES256 signatures, ECDH with a key pair made for one call, and a new key pair). Verifying a signature, other
 					curves and RSA: not yet.
 				</li>
 			</ul>

@@ -4895,7 +4895,8 @@ job failed, saying so. Elliptic curves in Roc were ruled out (slow, not constant
   subscription's key and refuses one off the curve, so a kept subscription can be sent to.
 - **Not built, for want of a user:** ECDH with a given private key (RFC 8291's appendix replayed; it
   is checked by agreeing with Node instead), `P256.generate!` (VAPID keys still come from
-  `vapid-keys.mjs` or `web-push`; TODO has the release gap), `open_with_nonce!`, and verifying. The
+  `vapid-keys.mjs` or `web-push`; TODO has the release gap; built since, D-097),
+  `open_with_nonce!`, and verifying. The
   natural next primitive is `P256.verify!(public_key, message, signature)` for passkeys
   (packages/auth's PROPOSALS.md §2), on ring's `ECDSA_P256_SHA256_ASN1`: WebAuthn's signatures are
   DER, not JWS's `r` and `s`.
@@ -5488,3 +5489,72 @@ set.
 64-bit machine's marks are a hash set, not a bitmap.
 
 **Reversible:** yes: native/core's own allocator and guard are in git's history.
+
+## D-097 VAPID keys without Node: `P256.generate!`, and the push plugin's own pair under `--dev`
+
+**Status.** Built (2026-11-26): TODO's "VAPID keys without Node", found landing D-080.
+
+**Context.** packages/push's setup made its VAPID pair with `node packages/push/vapid-keys.mjs`,
+which a release leaves out (`release/pack.sh` drops every `*.mjs`), so an installed rocx had only
+`npx web-push generate-vapid-keys`: Node again. And the plugin's needs (`Env("VAPID_PUBLIC_KEY")`
+and the other two) stopped `rocx dev` on an app before anything could be tried.
+
+**Decision.**
+
+- **`P256.generate!({})`**, a third effect of the server platform's `P256`: a new pair from the
+  operating system's random bytes, `{ public_key, private_key }` (the 65-byte uncompressed point,
+  the 32-byte scalar), the forms `sign!` takes. One hosted function, `Host.p256_generate! : {} =>
+  List(U8)` (the point, then the scalar, split in Roc), which crashes the call when the system
+  gives no random bytes, as `random_bytes!` does: no `Try` for a failure no caller could handle.
+  ring makes the pair (`EcdsaKeyPair::generate_pkcs8`) but hands it out only as PKCS#8, which for
+  P-256 it writes from one template; the host takes the scalar and the point from where the
+  template puts them, checks the bytes around them, and has ring check the two are a pair
+  (`from_private_key_and_public_key`) before answering. No new crate; the regenerated glue only
+  adds the declaration. It starts `let _host = preempt::host();`.
+- **Under `--dev`, no keys is no refusal.** The plugin's `needs` lose the three `Env`s and its start
+  checks the keys instead (as packages/auth's start checks `APP_SECRET`, D-081), so `rocx dev` runs
+  an app as it is. With neither key set, `Push.keys!` gives the run's own pair: made by the first to
+  ask (the start), kept in `Kv` (`push:dev-keys`, until the server stops; `Kv.add!`, so two at once
+  agree), and logged once, a warning with the two settings for `.env`, saying that the next start
+  replaces it and a browser subscribed with it then subscribes again (`rocx dev` restarts the
+  server at each change to its code; the page's script makes a new subscription when the server's
+  key changed). With no `VAPID_SUBJECT`, the run tells push services `mailto:dev@example.com`, and
+  logs that too. One key without the other still stops the server: a mistake, not a missing pair.
+- **Outside `--dev`, as before**: a key missing or malformed, keys that aren't a pair, or no
+  contact stop the server at start. Each message about the keys now says how to make a pair
+  (`` `rocx dev` makes one: … ``).
+- **A deployed server's pair: `GET /__rocx/push/keys`**, an early path of the plugin's (D-033),
+  answered under `--dev` alone: a new pair each time, as the two lines that set it (`text/plain`,
+  `no-store`), never the run's own, never kept. With `rocx dev` running, `curl -s
+  localhost:8080/__rocx/push/keys` gives production a pair of its own, with nothing else installed.
+- **`vapid-keys.mjs` is gone**: a release couldn't ship it, and two ways to make keys meant docs
+  for both. `npx web-push generate-vapid-keys` still works, and the README says so.
+
+**Considered.**
+
+- The dev log line alone: the smallest change, but a second pair (production's) meant taking the
+  keys out of `.env` and restarting.
+- A `rocx` command (`rocx vapid-keys`): the CLI's host (`cli/host`) has no crypto (libc alone), so
+  it would gain `ring`, a hosted function and its glue, and rocx would know one package's settings,
+  which belong in the package.
+- The deployed server printing a new pair when it refuses to start: a private key on a production
+  log, which may be shipped elsewhere.
+- One development pair written in the package, as packages/auth's development secret: subscriptions
+  would survive restarts, but every app's dev server would sign with one published private key.
+
+**Tests.** server/test: `generate!` answers 65 bytes (starting 4) and 32, a new pair each call;
+Node computes the same public key from the private one; `sign!` takes the pair and Node verifies
+its signature, while another pair's private key is refused; `ecdh!` takes the public key as a
+peer's, and the secret is the one Node computes with the private key. packages/push's example, on
+SQLite and Postgres: without `--dev`, no keys, the public key alone and no subject each stop the
+server, saying why (and how to make a pair), and `/__rocx/push/keys` is the app's 404. Under
+`--dev` with none, the start logs one pair (Node checks it is one) and the subject's default;
+`GET /push/key` answers it; a broadcast is delivered, the push service checking each token against
+the logged key, `sub` the dev contact; still one pair logged after; `/__rocx/push/keys` answers two
+different pairs, neither the run's; and the public key alone still stops it.
+
+**Costs.** Under `--dev`, a private key on the log and at a path, on the developer's machine (an
+early path isn't answered without the flag). An app without keys in `.env` unsubscribes its test
+browsers at each restart of `rocx dev`.
+
+**Reversible:** yes: the needs back, the dev pair and the path out; `P256.generate!` stands alone.

@@ -832,6 +832,7 @@ sealed = AesGcm.seal!(app_key, plaintext)?                         # nonce ++ ci
 opened = AesGcm.open!(app_key, sealed)                             # Try(List(U8), [BadKey, Forged])
 signature = P256.sign!(private_key, public_key, message)?          # ES256: 64 bytes, r ++ s
 { public_key, secret } = P256.ecdh!(peer)?                         # a key pair for this call alone
+{ public_key, private_key } = P256.generate!({})                   # a new pair: 65 and 32 bytes
 record = AesGcm.seal_with_nonce!(key, nonce, plaintext)?           # ciphertext ++ tag
 ```
 
@@ -839,14 +840,15 @@ record = AesGcm.seal_with_nonce!(key, nonce, plaintext)?           # ciphertext 
 12-byte nonce for each seal. Its output is Web Crypto's with the nonce in front, so each can open
 the other's. Make the key with `Random.bytes!`, or derive it from the app's secret with HKDF.
 
-`P256` is the elliptic curve P-256, also `ring`'s, as much as Web Push needs (packages/push,
-D-080): ES256 signatures by a key pair (the private key's 32-byte scalar, the public key's 65-byte
+`P256` is the elliptic curve P-256, also `ring`'s, as much as Web Push needs (packages/push, D-080):
+ES256 signatures by a key pair (the private key's 32-byte scalar, the public key's 65-byte
 uncompressed point; `BadKey` unless they are a pair), and ECDH with a key pair the host makes for
 one call and forgets, answering its public key and the 32-byte shared secret (`BadKey` unless the
-peer's key is on the curve). `AesGcm.seal_with_nonce!` is AES-GCM with the caller's 12-byte nonce,
-for a protocol that derives its own (RFC 8188's `aes128gcm`): AES-128 under a 16-byte key, AES-256
-under a 32-byte one, the ciphertext then the tag. Anything else should use `seal!`: a nonce used
-twice under one key gives the key away.
+peer's key is on the curve). `P256.generate!` makes a pair to keep, in those two forms (D-097: the
+push plugin's VAPID keys under `--dev`). `AesGcm.seal_with_nonce!` is AES-GCM with the caller's
+12-byte nonce, for a protocol that derives its own (RFC 8188's `aes128gcm`): AES-128 under a 16-byte
+key, AES-256 under a 32-byte one, the ciphertext then the tag. Anything else should use `seal!`: a
+nonce used twice under one key gives the key away.
 
 The rest is pure Roc, so it is a package on no platform (`packages/crypto`, D-025), which a page in
 the browser may use too: `Sha256`, `Hmac` (with a constant-time comparison), `Hkdf`, `Base64` (both

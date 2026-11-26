@@ -11,12 +11,32 @@ is the reference.
 
 ## Installing it
 
-1. **Keys.** `node packages/push/vapid-keys.mjs` (in a clone of Roc Solid) or `npx web-push
-   generate-vapid-keys` prints a VAPID key pair. Give the server
-   `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (secret) and `VAPID_SUBJECT` (`mailto:` and an address,
-   or an `https:` URL) in its environment. A browser that subscribed with one public key can only be
-   sent to with that pair. The plugin needs all three: if one is missing, or the keys don't belong
-   together, the server doesn't start, and says why.
+1. **Keys.** Under `rocx dev` there is nothing to do at first: with no keys, each run of the
+   server makes a VAPID pair of its own (`P256.generate!`) and logs the two settings that keep it:
+
+   ```
+   WARN  push: no VAPID keys, so this run made a pair, which the next start replaces (a browser subscribed with it then subscribes again); to keep it, put these in .env, a line each: VAPID_PUBLIC_KEY=BKx… VAPID_PRIVATE_KEY=3q…
+   ```
+
+   A pair made for a run is gone when the server restarts (`rocx dev` restarts it at each change to
+   the server's code), and a browser subscribed with it then has to subscribe again (its button
+   shows off). Put the two settings in the app's `.env`, a line each, to keep it. Without
+   `VAPID_SUBJECT` such a server tells push services `mailto:dev@example.com`, and says so on its
+   log.
+
+   A deployed server needs all three in its environment: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
+   (secret) and `VAPID_SUBJECT` (`mailto:` and an address, or an `https:` URL). Give it a pair of
+   its own, from the running dev server, which answers a new one each time it is asked:
+
+   ```sh
+   curl -s localhost:8080/__rocx/push/keys
+   VAPID_PUBLIC_KEY=BNc…
+   VAPID_PRIVATE_KEY=Hw…
+   ```
+
+   (`npx web-push generate-vapid-keys` makes a pair too.) A browser that subscribed with one public
+   key can only be sent to with that pair. Outside `--dev`, if a key or the subject is missing, or
+   the keys don't belong together, the server doesn't start, and says why and how to make a pair.
 
 2. **The plugin.** Name the package in the app's header and list its plugin, with the jobs plugin
    (`packages/jobs`), whose workers run the `push.deliver` job:
@@ -35,8 +55,8 @@ is the reference.
    ```
 
    That is all the server needs: the endpoints (`GET /push/key`, `POST /push/subscribe`,
-   `POST /push/unsubscribe`), the table, the job, the service worker and the page's script. The
-   plugin needs a database.
+   `POST /push/unsubscribe`), the table, the job, the service worker and the page's script, and
+   under `--dev` `GET /__rocx/push/keys`. The plugin needs a database.
 
 3. **A button**, on any page:
 
@@ -145,7 +165,7 @@ id for a user, as text, or `""` for a visitor.
 
 | Module | What it has |
 |---|---|
-| `Push` | `plugin(setup)`, the plugin ([options](#plugin-options)). `subscribe!(body, owner)`: saves a subscription the page posted, if its endpoint is at a browser's push service (`Invalid(why)` if not). `unsubscribe!(endpoint, owner)`. `notify!(owner, notification, options)` and `broadcast!(notification, options)`: queue a `deliver` job per subscription, and answer how many. `public_key!` and `keys!` (from the environment). `deliver`: the job (`push.deliver`, 5 attempts, a minute each). `send!(keys, subscription, data, options)`: one attempt, encrypted (`P256.ecdh!`, `AesGcm.seal_with_nonce!`) and signed (`P256.sign!`), and what the push service's answer means |
+| `Push` | `plugin(setup)`, the plugin ([options](#plugin-options)). `subscribe!(body, owner)`: saves a subscription the page posted, if its endpoint is at a browser's push service (`Invalid(why)` if not). `unsubscribe!(endpoint, owner)`. `notify!(owner, notification, options)` and `broadcast!(notification, options)`: queue a `deliver` job per subscription, and answer how many. `public_key!` and `keys!` (from the environment; under `--dev` without keys, the pair the run made, kept in `Kv`). `deliver`: the job (`push.deliver`, 5 attempts, a minute each). `send!(keys, subscription, data, options)`: one attempt, encrypted (`P256.ecdh!`, `AesGcm.seal_with_nonce!`) and signed (`P256.sign!`), and what the push service's answer means |
 | `PushStore` | The `push_subscriptions` table: `save!` (one row per endpoint; subscribing again updates it), `remove!`, `remove_id!`, `find!`, `of_owner!`, `everyone!`, `delivered!`, `refused!`. Each statement runs on Postgres and SQLite; `delivered!` asks `Db.backend!` which to run |
 
 The table's migration is `migrations/0001_push_subscriptions.sql` on Postgres and
@@ -181,7 +201,9 @@ the table only if it isn't there, so a table an app made by hand is kept.
   a subscription it keeps can be sent to.
 - A new ECDH key pair and a new salt for each message, as RFC 8291 asks; the pair's private key is
   the host's for that one call, and never reaches Roc.
-- The private key never leaves the server; the page gets only the public key.
+- The private key never leaves the server; the page gets only the public key. Under `--dev` alone
+  a pair is logged (one the run made) and answered (at `/__rocx/push/keys`), on the developer's
+  machine; a deployed server never makes, logs or answers one.
 - A click on a notification opens only this site's pages.
 - Messages are encrypted for the browser: the push service sees only bytes.
 
@@ -195,7 +217,8 @@ What works today:
   reproduced up to the AES), the request's headers (RFC 8030), reading a `PushSubscription`'s
   JSON, and what each answer from a push service means. The server platform's tests check the rest
   (server/test/server.test.mjs): `AesGcm.seal_with_nonce!` gives RFC 8291's and RFC 8188's
-  ciphertexts, `P256.ecdh!` agrees with Node's ECDH, and Node verifies `P256.sign!`'s signatures.
+  ciphertexts, `P256.ecdh!` agrees with Node's ECDH, Node verifies `P256.sign!`'s signatures, and
+  `P256.generate!`'s pairs are pairs Node takes (its public key the private key's).
 - The plugin, in `example/test/push.test.mjs`, which builds the example on SQLite (always) and on
   Postgres (when `DATABASE_URL` is set) and asks it over HTTP: the key, subscribing (and a
   subscription at an unknown service, or with a key off the curve, refused), each of `PushStore`'s
@@ -205,7 +228,11 @@ What works today:
   and its ES256 signature against `VAPID_PUBLIC_KEY`), decrypts each message as RFC 8291 says, and
   checks the notification inside. It answers 201, 410 (the subscription is deleted) or 403 (noted
   on its row). The server's HTTPS proxy is that push service, which refuses every connection, so
-  nothing reaches a real one. VAPID keys that aren't a pair stop the server as it starts. In
+  nothing reaches a real one. VAPID keys that aren't a pair stop the server as it starts, and so do
+  none (or one alone, or no subject) without `--dev`, saying how to make a pair. Under `--dev` with
+  none, the server makes a pair, logs it (Node checks it is one), sends with it (the push service
+  checks the token against the logged key) and tells push services `mailto:dev@example.com`;
+  `/__rocx/push/keys` answers a new pair each time. In
   Chromium (when there is one), behind a guard that refuses every script the app would serve, the
   plugin's script and service worker come through, the worker registers at the root with the whole
   site as its scope, and the button subscribes (the browser's push service stood in for, as headless

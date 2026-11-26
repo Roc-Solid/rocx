@@ -1563,6 +1563,35 @@ pub extern "C" fn roc_host_p256_sign(private_key: RocListWith<u8, false>, public
     bytes_or_error(guarded(|| p256_sign(&private_key, &public_key, &message)))
 }
 
+/// A new P-256 key pair: its public key (65 bytes, uncompressed), then its private key (the 32-byte
+/// scalar). Crashes the call when the operating system gives no random bytes, as random bytes do.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_p256_generate() -> RocListWith<u8, false> {
+    let _host = preempt::host();
+    match guarded(p256_generate) {
+        Ok(both) => roc_bytes(&both),
+        Err(why) => roc::crash_outward(why),
+    }
+}
+
+/// ring makes the pair (`generate_pkcs8`) but hands it out only as PKCS#8, which for P-256 it
+/// writes from one template: 36 bytes (PrivateKeyInfo's start, then ECPrivateKey's, RFC 5208 and
+/// RFC 5915), the scalar, 5 bytes (the `[1]` public key's BIT STRING), the point. Both are taken
+/// from where the template puts them, its bytes around them checked, and the pair checked again
+/// by ring as `sign!` takes it.
+fn p256_generate() -> Result<Vec<u8>, String> {
+    use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair};
+    let random = ring::rand::SystemRandom::new();
+    let document = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &random).map_err(|_| "the operating system gave no random bytes".to_string())?;
+    let pkcs8 = document.as_ref();
+    if pkcs8.len() != 138 || pkcs8[34..36] != [0x04, 0x20] || pkcs8[68..73] != [0xa1, 0x44, 0x03, 0x42, 0x00] || pkcs8[73] != 4 {
+        return Err("ring's PKCS#8 for P-256 isn't laid out as it was".into());
+    }
+    let (private_key, public_key) = (&pkcs8[36..68], &pkcs8[73..138]);
+    EcdsaKeyPair::from_private_key_and_public_key(&ECDSA_P256_SHA256_FIXED_SIGNING, private_key, public_key, &random).map_err(|_| "ring's PKCS#8 for P-256 isn't laid out as it was".to_string())?;
+    Ok([public_key, private_key].concat())
+}
+
 fn p256_ecdh(peer: &[u8]) -> Result<Vec<u8>, String> {
     use ring::agreement::{ECDH_P256, EphemeralPrivateKey, UnparsedPublicKey, agree_ephemeral};
     let random = ring::rand::SystemRandom::new();

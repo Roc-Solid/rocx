@@ -23,7 +23,9 @@ isn't implemented. Each section says what the package does meanwhile.
 
 **Status (2026-11-25).** Done, leaner than proposed (D-080): `P256.ecdh!` (this section's
 `ecdh_ephemeral!`), `P256.sign!` and `AesGcm.seal_with_nonce!` (`seal_with!`), on `ring`; the rest
-(`generate!`, `verify!`, `open_with!`) waits for something that needs it. `Push.send!` calls them
+(`verify!`, `open_with!`) waits for something that needs it. `P256.generate!` came later (D-097),
+for VAPID keys without Node: the plugin makes a pair under `--dev`, and answers new ones at
+`/__rocx/push/keys`. `Push.send!` calls them
 itself, so `Primitives` and `Push.host` are gone; the plugin's start signs once to check the VAPID
 pair, and `subscribe!` refuses a key that isn't on the curve. What follows is the problem as it was.
 
@@ -212,7 +214,8 @@ host = {
 ```
 
 `Vapid.from_text` could then also check that the two keys are a pair (sign and verify once), and
-`vapid-keys.mjs` could become `P256.generate!` behind a dev page or a CLI command.
+`vapid-keys.mjs` could become `P256.generate!` behind a dev page or a CLI command. (It did, a dev
+path, D-097, and `vapid-keys.mjs` is gone.)
 
 **How it could be undone.** The additions are new functions and a new module, and nothing else
 calls them. Removing them removes `Push.host`'s implementation, and the package goes back to

@@ -7,7 +7,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Crypto",
-	description: "The Roc Solid server platform's crypto: secure random bytes, AES-GCM and P-256 (ECDH, ES256) from the host, with the crypto package's SHA-256, HMAC, HKDF, Base64 and Hex, for tokens, signed links, sealed secrets and Web Push.",
+	description: "The Roc Solid server platform's crypto: secure random bytes, AES-GCM and P-256 (key pairs, ECDH, ES256) from the host, with the crypto package's SHA-256, HMAC, HKDF, Base64 and Hex, for tokens, signed links, sealed secrets and Web Push.",
 	toc: [
 		{ id: "tokens", label: "Tokens, and their digests" },
 		{ id: "links", label: "Signed links" },
@@ -76,6 +76,12 @@ view! = |_|
 			</p>
 			<ul>
 				<li>
+					<code>{"P256.generate!({})"}</code> makes a new key pair from the operating system's random bytes:
+					<code>{"{ public_key, private_key }"}</code>, 65 and 32 bytes, which <code>sign!</code> signs
+					with. The push plugin makes its VAPID keys with it under <code>--dev</code>. Keep a private key in
+					the server's environment, never in the app's code.
+				</li>
+				<li>
 					<code>P256.sign!(private_key, public_key, message)</code> is an ES256 signature (ECDSA on P-256
 					over SHA-256): 64 bytes, <code>r</code> then <code>s</code>, as a JWT carries it. Each signature
 					is different, since ECDSA draws a random number, and each verifies. It answers <code>BadKey</code>
@@ -103,7 +109,7 @@ view! = |_|
 				<thead><tr><th>Module</th><th>What</th></tr></thead>
 				<tbody>
 					<tr><td><code>AesGcm</code></td><td><code>seal!</code>, <code>open!</code>: AES-256-GCM, by the host; <code>seal_with_nonce!</code>: AES-128-GCM or AES-256-GCM with the caller's nonce</td></tr>
-					<tr><td><code>P256</code></td><td><code>sign!</code>: ES256 signatures; <code>ecdh!</code>: a shared secret with a key pair made for one call</td></tr>
+					<tr><td><code>P256</code></td><td><code>generate!</code>: a new key pair; <code>sign!</code>: ES256 signatures; <code>ecdh!</code>: a shared secret with a key pair made for one call</td></tr>
 					<tr><td><code>Random</code></td><td><code>bytes!(count)</code>, <code>seed_u64!</code>: the operating system's randomness</td></tr>
 					<tr><td><code>crypto.Sha256</code></td><td><code>hash</code>: 32 bytes; <code>hex</code>: 64 hex digits</td></tr>
 					<tr><td><code>crypto.Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code> and <code>equal</code>, in constant time</td></tr>

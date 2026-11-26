@@ -1088,6 +1088,11 @@ route! = |request, context| {
 				Ok({ public_key, secret }) => text(200, "${numbers(public_key)}\n${numbers(secret)}")
 				Err(BadKey) => text(400, "BadKey")
 			}
+		("POST", "/p256/generate") => {
+			# A new pair: its public key and its private key, as numbers, a line each.
+			{ public_key, private_key } = P256.generate!({})
+			text(200, "${numbers(public_key)}\n${numbers(private_key)}")
+		}
 		("POST", "/p256/sign") =>
 		# The keys in the query, as numbers; the message the body.
 			match P256.sign!(from_numbers(param(request.query, "private")), from_numbers(param(request.query, "public")), request.body) {

@@ -2498,6 +2498,45 @@ test("p256: ES256 signatures, 64 bytes r and s, that Node verifies; a new one ea
 	assert.equal(await sign(privateKey, publicKey.subarray(0, 64), input), "400 BadKey", "a public key cut short");
 });
 
+test("p256: a new key pair each time, 65 and 32 bytes, that Node takes as one: sign! signs with it, Node verifies, and ecdh! takes its public key", { skip }, async () => {
+	const list = (bytes) => [...bytes].join(",");
+	const numbers = (line) => Buffer.from(line.split(",").map(Number));
+	const generate = async () => {
+		const response = await get("/p256/generate", { method: "POST" });
+		assert.equal(response.status, 200);
+		const [publicKey, privateKey] = (await response.text()).split("\n").map(numbers);
+		return { publicKey, privateKey };
+	};
+	const { publicKey, privateKey } = await generate();
+	assert.equal(publicKey.length, 65);
+	assert.equal(publicKey[0], 4, "uncompressed");
+	assert.equal(privateKey.length, 32);
+	// The point is the scalar's: Node computes it from the private key alone.
+	const node = createECDH("prime256v1");
+	node.setPrivateKey(privateKey);
+	assert.deepEqual(node.getPublicKey(), publicKey, "the public key is the private key's");
+	const other = await generate();
+	assert.notDeepEqual(other.privateKey, privateKey, "a new pair each time");
+	assert.notDeepEqual(other.publicKey, publicKey);
+
+	// sign! takes the pair, and Node verifies its ES256 signature with the public key.
+	const message = "signed with a pair the host made";
+	const signed = await get(`/p256/sign?private=${list(privateKey)}&public=${list(publicKey)}`, { method: "POST", body: message });
+	assert.equal(signed.status, 200);
+	const signature = numbers(await signed.text());
+	assert.equal(signature.length, 64);
+	const key = createPublicKey({ key: { kty: "EC", crv: "P-256", x: publicKey.subarray(1, 33).toString("base64url"), y: publicKey.subarray(33).toString("base64url") }, format: "jwk" });
+	assert.ok(cryptoVerify("sha256", Buffer.from(message), { key, dsaEncoding: "ieee-p1363" }, signature), "Node verifies it");
+	// Not with the other pair's halves.
+	assert.equal((await get(`/p256/sign?private=${list(other.privateKey)}&public=${list(publicKey)}`, { method: "POST", body: message })).status, 400);
+
+	// ecdh! takes the public key as a peer's: the secret is the one the private key's holder computes.
+	const agreed = await get("/p256/ecdh", { method: "POST", body: list(publicKey) });
+	assert.equal(agreed.status, 200);
+	const [hostPublic, secret] = (await agreed.text()).split("\n").map(numbers);
+	assert.deepEqual(node.computeSecret(hostPublic), secret);
+});
+
 test("random: so many bytes from the operating system, different each time", { skip }, async () => {
 	const bytes = async (count) => {
 		const said = await text(`/random?count=${count}`);

@@ -1,6 +1,8 @@
+import crypto.Base64
 import pf.AesGcm
 import pf.Env
 import pf.Http
+import pf.Kv
 import pf.Log
 import pf.P256
 import pf.Plugin
@@ -33,9 +35,12 @@ import "static/push.js" as script : List(U8)
 ## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ owner: |context| context.member })]   # each user's own
 ## ```
 ##
-## The keys come from the environment: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (base64url, as
-## `node packages/push/vapid-keys.mjs` prints them) and `VAPID_SUBJECT` (`mailto:` or `https:`):
-## the plugin needs all three, and a pair that isn't one stops the server at start, saying why.
+## The keys come from the environment: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (a P-256 pair in
+## base64url) and `VAPID_SUBJECT` (`mailto:` or `https:`). Under `--dev` the plugin makes a pair
+## when neither key is set, for that run alone (`keys!`), and logs the lines that keep it in `.env`;
+## there `GET /__rocx/push/keys` answers a new pair each time, for a deployed server's environment.
+## Elsewhere a key missing, keys that aren't a pair, or no contact stop the server at start, saying
+## why.
 ##
 ## The elliptic curves are the server platform's (`P256`: the ECDH that encrypts, the ES256
 ## signature VAPID wants), and so is the AES (`AesGcm.seal_with_nonce!`, AES-128-GCM): D-080.
@@ -52,7 +57,8 @@ Push := [].{
 	## `push.unsubscribe` effects `<PushButton>` calls), both served before the app and its
 	## middleware; its table (`push/0001_push_subscriptions`, on Postgres or SQLite); and its job,
 	## `push.deliver`, which the jobs plugin's workers run. It needs the jobs plugin, a database and
-	## the VAPID keys; its start checks the keys.
+	## the VAPID keys; its start checks the keys (or, under `--dev` without them, makes a pair), and
+	## under `--dev`, `GET /__rocx/push/keys` answers a new pair (`new_keys!`).
 	plugin : Setup(ctx) -> Plugin.Value(context, ctx)
 	plugin = |setup| {
 		at = setup.at
@@ -64,6 +70,7 @@ Push := [].{
 				{ method: "POST", path: "${at}/subscribe", kind: Endpoint, answer!: |request, context| subscribed!(request, owner(context)) },
 				{ method: "POST", path: "${at}/unsubscribe", kind: Endpoint, answer!: |request, context| unsubscribed!(request, owner(context)) },
 			],
+			early: [{ method: "GET", path: "/__rocx/push/keys", under: [Dev], answer!: |_| new_keys!({}) }],
 			files: [
 				{ path: "push-sw.js", at: Root, content_type: "text/javascript", body: worker },
 				{ path: "push.js", at: Plugin, content_type: "text/javascript", body: script },
@@ -72,22 +79,36 @@ Push := [].{
 			migrations: [{ name: "0001_push_subscriptions", sql: table, on: Postgres }, { name: "0001_push_subscriptions", sql: lite_table, on: Sqlite }],
 			calls: [Job.call(Push.deliver)],
 			starts: [|_context| started!({})],
-			needs: [Plugin("jobs"), Database, Env("VAPID_PUBLIC_KEY"), Env("VAPID_PRIVATE_KEY"), Env("VAPID_SUBJECT")],
+			needs: [Plugin("jobs"), Database],
 		}
 	}
 
-	## The server's VAPID keys, from its environment; or what is wrong with them.
+	## The server's VAPID keys, from its environment (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+	## `VAPID_SUBJECT`); or what is wrong with them, and how to make a pair. Under `--dev`, with
+	## neither key set, the pair this run made, kept in the server's memory (`Kv`) until it stops,
+	## so a restart makes another, and every browser subscribed with this one must subscribe again
+	## (the log says so, with the lines that keep it in `.env`); and with no `VAPID_SUBJECT`,
+	## `mailto:dev@example.com`.
 	keys! : {} => Try(Vapid.Keys, Str)
 	keys! = |{}| {
-		text = {
-			public_key: Env.var!("VAPID_PUBLIC_KEY") ?? "",
-			private_key: Env.var!("VAPID_PRIVATE_KEY") ?? "",
-			subject: Env.var!("VAPID_SUBJECT") ?? "",
-		}
+		dev = Env.dev!({})
+		given = { public_key: setting!("VAPID_PUBLIC_KEY"), private_key: setting!("VAPID_PRIVATE_KEY"), subject: setting!("VAPID_SUBJECT") }
+		subject = if (given.subject.is_empty() and dev) dev_subject else given.subject
+		text =
+			if given.public_key.is_empty() and given.private_key.is_empty() {
+				if dev {
+					pair = dev_pair!({})
+					{ public_key: pair.public_key, private_key: pair.private_key, subject: subject }
+				} else {
+					return Err("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY aren't set, and push needs a pair (and VAPID_SUBJECT, a mailto: or https: contact): ${making}")
+				}
+			} else {
+				{ ..given, subject: subject }
+			}
 		match Vapid.from_text(text) {
 			Ok(keys) => Ok(keys)
-			Err(BadPublicKey) => Err("VAPID_PUBLIC_KEY isn't a P-256 public key in base64url (65 bytes, uncompressed): `node packages/push/vapid-keys.mjs` makes a pair")
-			Err(BadPrivateKey) => Err("VAPID_PRIVATE_KEY isn't a P-256 private key in base64url (32 bytes): `node packages/push/vapid-keys.mjs` makes a pair")
+			Err(BadPublicKey) => Err("VAPID_PUBLIC_KEY isn't a P-256 public key in base64url (65 bytes, uncompressed): ${making}")
+			Err(BadPrivateKey) => Err("VAPID_PRIVATE_KEY isn't a P-256 private key in base64url (32 bytes): ${making}")
 			Err(BadSubject) => Err("VAPID_SUBJECT isn't a contact: write mailto: and an address, or an https: URL")
 		}
 	}
@@ -95,7 +116,11 @@ Push := [].{
 	## The public key in base64url, for the page to subscribe with (`applicationServerKey`); ""
 	## when the server has no keys.
 	public_key! : {} => Str
-	public_key! = |{}| (Env.var!("VAPID_PUBLIC_KEY") ?? "").trim()
+	public_key! = |{}|
+		match Push.keys!({}) {
+			Ok(keys) => Base64.url_encode(keys.public_key)
+			Err(_) => ""
+		}
 
 	## Saves the subscription a page posted (an endpoint's body), for `owner` (the app's id for a
 	## user, or "" for a visitor). It must be at a browser's push service
@@ -194,14 +219,66 @@ anyone : ctx -> Str
 anyone = |_| ""
 
 ## The plugin's start: the keys checked (keys that aren't a pair stop the server, saying why: a
-## signature by them is tried), and the jobs plugin told of `push.deliver`.
+## signature by them is tried), or, under `--dev` without them, a pair made for the run; and the
+## jobs plugin told of `push.deliver`.
 started! : {} => Try({}, Str)
 started! = |{}| {
 	keys = Push.keys!({})?
+	if Env.dev!({}) and setting!("VAPID_SUBJECT").is_empty() {
+		Log.warn!("push: VAPID_SUBJECT isn't set, so this run tells push services ${dev_subject}: set it in .env to a mailto: or https: contact of yours", {})
+	}
 	match P256.sign!(keys.private_key, keys.public_key, []) {
 		Ok(_) => Job.adopt!(Push.deliver)
 		Err(BadKey) => Err(not_a_pair)
 	}
+}
+
+## The environment variable `name`, trimmed; "" when it isn't set.
+setting! : Str => Str
+setting! = |name| (Env.var!(name) ?? "").trim()
+
+## How to make a VAPID pair, for a message that wants one.
+making : Str
+making = "`rocx dev` makes one: without keys it makes a pair and logs the lines for .env, and GET /__rocx/push/keys on it answers a new pair each time"
+
+## The contact a push service is given under `--dev` when `VAPID_SUBJECT` isn't set.
+dev_subject : Str
+dev_subject = "mailto:dev@example.com"
+
+## Where the pair a `--dev` run made is kept (`Kv`).
+dev_kept : Str
+dev_kept = "push:dev-keys"
+
+## The pair this `--dev` run made, in base64url, for a server with no VAPID keys: made by the first
+## to ask, kept in the server's memory until it stops, and logged, with the lines that keep it.
+dev_pair! : {} => { public_key : Str, private_key : Str }
+dev_pair! = |{}|
+	match Kv.get!(dev_kept) {
+		Ok(kept) => kept
+		Err(_) => {
+			made = P256.generate!({})
+			pair = { public_key: Base64.url_encode(made.public_key), private_key: Base64.url_encode(made.private_key) }
+			match Kv.add!(dev_kept, pair, {}) {
+				Ok({}) => {
+					Log.warn!("push: no VAPID keys, so this run made a pair, which the next start replaces (a browser subscribed with it then subscribes again); to keep it, put these in .env, a line each: VAPID_PUBLIC_KEY=${pair.public_key} VAPID_PRIVATE_KEY=${pair.private_key}", {})
+					pair
+				}
+				Err(Exists) => Kv.get!(dev_kept) ?? pair
+			}
+		}
+	}
+
+## `GET /__rocx/push/keys`, under `--dev`: a new VAPID pair each time, as the lines that set it, for
+## `.env` or a deployed server's environment (`curl -s localhost:8080/__rocx/push/keys >> .env`).
+## Never the running server's pair, and never kept.
+new_keys! : {} => Server.Response
+new_keys! = |{}| {
+	made = P256.generate!({})
+	Server.response(
+		200,
+		[{ name: "content-type", value: "text/plain; charset=utf-8" }, { name: "cache-control", value: "no-store" }],
+		"VAPID_PUBLIC_KEY=${Base64.url_encode(made.public_key)}\nVAPID_PRIVATE_KEY=${Base64.url_encode(made.private_key)}\n",
+	)
 }
 
 ## `GET <at>/key`: the public key, as JSON, for the page to subscribe with.
@@ -250,7 +327,7 @@ refused = |status, why| Server.response(status, [{ name: "content-type", value: 
 
 ## What a VAPID pair that isn't one is said to be.
 not_a_pair : Str
-not_a_pair = "VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY aren't a pair: `node packages/push/vapid-keys.mjs` makes one"
+not_a_pair = "VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY aren't a pair: ${making}"
 
 ## `data` encrypted for `subscription` (RFC 8291): a new key pair, a new salt, one record.
 encrypted! : Subscription, List(U8) => Try(List(U8), Str)

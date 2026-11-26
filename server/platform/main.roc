@@ -162,6 +162,7 @@ platform ""
 		"roc_host_now_millis": Host.now_millis!,
 		"roc_host_now_nanos": Host.now_nanos!,
 		"roc_host_p256_ecdh": Host.p256_ecdh!,
+		"roc_host_p256_generate": Host.p256_generate!,
 		"roc_host_p256_sign": Host.p256_sign!,
 		"roc_host_page_scripts": Host.page_scripts!,
 		"roc_host_plugin_file": Host.plugin_file!,
