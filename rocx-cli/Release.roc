@@ -1,13 +1,15 @@
 ## `rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl]` (D-078): the app
 ## built to deploy, with no Node and no `roc` of the app's own. rocx builds the app (rocx build, with
 ## the browser's copy in build/release/client), the server's host when it changed (an installed
-## version has it built), the server optimized for speed with boxy lowering (`--specialize=no`,
+## version has it built) with the database engine the app's program names alone (D-104:
+## `Hosts.release_platform!`), the server optimized for speed with boxy lowering (`--specialize=no`,
 ## D-064; `ROCX_SPECIALIZE=yes` asks for specialization) for the target (this machine's by
 ## default; a musl target is a static Linux executable), and the browser's wasm optimized for size,
 ## its lambda sets specialized (as `rocx build --static` builds it). Then `<out>` holds what is
 ## deployed:
 ##
-## - `server`, the app's executable (its migrations and its plugins' files are in it);
+## - `server`, the app's executable (its migrations and its plugins' files are in it; a musl one's
+##   debug info taken out, D-104);
 ## - `static/`, what it serves as files: the app's `static/`, and the browser's copy's (`rocx/`:
 ##   start.js, runtime.js, the wasm, the stylesheet), which wins where both have a file, as the
 ##   server's first `--static` does under `rocx dev`.
@@ -139,12 +141,29 @@ Release := [].{
 			Ok(built) => return Err(Failed("${Str.join_with(built.said, "\n")}\nrocx build failed"))
 			Err(Problem(message)) => return Err(Failed("Error: ${message}\nrocx build failed"))
 		}
-		_ = Stderr.line!("rocx: the server's host for ${target}, if it changed…")
-		Hosts.server_host!(root, target)?
+		# The host has the database engine the app's program names alone (D-104): its own platform
+		# copy, put in the platform's place for this build, when that leaves an engine out.
+		engines = Hosts.engines_of(Fs.read_or_empty!(main))
+		_ = Stderr.line!("rocx: the server's host for ${target} (${Release.engines_said(engines)}), if it changed…")
+		own = Fs.join([root, "server", "platform", "main.roc"])
+		linked = Hosts.release_platform!(root, target, engines, Hosts.stage_for(root, dir, target))?
+		# Roc knows a dependency by its real path, whichever way the app reached it (a `.rocx` link).
+		replaced = if (linked.main == own) [] else ["--replace-dep", Fs.real!(own), linked.main]
 		server = Fs.join([work, "server"])
 		specialize = if (Env.var!("ROCX_SPECIALIZE") == Ok("yes")) "yes" else "no"
 		_ = Stderr.line!("rocx: the server for ${target}, optimized for speed (a few minutes)…")
-		Static.roc_build!(tools, ["--target=${target}", "--opt=speed", "--specialize=${specialize}", "--output=${server}", main], "the server's build")?
+		built = Static.roc_build!(tools, ["--target=${target}", "--opt=speed", "--specialize=${specialize}", "--output=${server}", main].concat(replaced), "the server's build")
+		# The platform's copy is linked in now: gone, so an app built once (a test's) leaves none.
+		if linked.main != own {
+			Fs.delete_all!(Fs.dirname(linked.main))
+		}
+		match built {
+			Ok({}) => {}
+			Err(failed) => return Err(failed)
+		}
+		for line in Hosts.strip_debug!(root, target, server)? {
+			_ = Stderr.line!(line)
+		}
 		client_main = Fs.join([client, "main.roc"])
 		pages = File.exists!(client_main)
 		if pages {
@@ -177,9 +196,16 @@ Release := [].{
 		}
 		statics = if (served.is_empty()) "" else " --static ${Fs.join([shown_out, "static"])}"
 		Ok([
-			"rocx build --release: ${Fs.join([shown_out, "server"])} (${target})${if (served.is_empty()) "" else " and ${Fs.join([shown_out, "static"])}/"} in ${Dev.seconds(Time.now_ms!({}) - started)} s",
+			"rocx build --release: ${Fs.join([shown_out, "server"])} (${target}, ${Release.engines_said(linked.engines)})${if (served.is_empty()) "" else " and ${Fs.join([shown_out, "static"])}/"} in ${Dev.seconds(Time.now_ms!({}) - started)} s",
 			"Run it as ${Fs.join([shown_out, "server"])}${statics} (PORT, DATABASE_URL, PUBLIC_URL…), behind a proxy that speaks TLS.",
 		])
+	}
+
+	## The database engines a release's host has (D-104), as its message says them.
+	engines_said : List(Str) -> Str
+	engines_said = |engines| {
+		names = engines.map(|engine| if (engine == "turso") "Turso" else if (engine == "postgres") "Postgres" else engine)
+		if (engines == Hosts.all_engines) "every database engine" else Str.join_with(["SQLite"].concat(names), " and ")
 	}
 }
 

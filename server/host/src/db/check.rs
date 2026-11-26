@@ -15,7 +15,11 @@
 //! `numeric`, `date`), `blob` and `unreadable` (what the host refuses to read), or none, for an
 //! expression SQLite doesn't type.
 
-use super::{Client, postgres, sqlite, turso};
+use super::{Client, sqlite};
+#[cfg(feature = "postgres")]
+use super::postgres;
+#[cfg(feature = "turso")]
+use super::turso;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
@@ -30,6 +34,7 @@ enum Made {
     /// A SQLite or Turso file's directory, with the file's log beside it.
     Dir(PathBuf),
     /// A Postgres database, on the server `server` (a URL) names.
+    #[cfg(feature = "postgres")]
     Postgres { server: String, name: String },
 }
 
@@ -49,6 +54,7 @@ pub async fn scratch_for(url: &str) -> Result<String, String> {
         return Ok(url.to_string());
     }
     let stamp = format!("{}_{}", std::process::id(), nanos());
+    #[cfg(feature = "postgres")]
     if url.starts_with("postgres://") || url.starts_with("postgresql://") {
         let name = format!("rocx_check_{stamp}");
         postgres::create_database(url, &name).await.map_err(|why| {
@@ -76,6 +82,7 @@ pub async fn finish() {
         Some(Made::Dir(dir)) => {
             let _ = std::fs::remove_dir_all(dir);
         }
+        #[cfg(feature = "postgres")]
         Some(Made::Postgres { server, name }) => {
             if let Err(why) = postgres::drop_database(&server, &name).await {
                 crate::logging::warn(&format!("rocx server: the check's scratch database {name} stays: {why}"), &[]);
@@ -89,8 +96,10 @@ pub async fn finish() {
 /// or `{ "error": … }`.
 pub async fn describe(sql: &str) -> Value {
     let described = match super::client().await {
+        #[cfg(feature = "postgres")]
         Ok(Client::Postgres(client)) => postgres::describe(&client, sql).await,
         Ok(Client::Sqlite(client)) => sqlite::describe(&client, sql).await,
+        #[cfg(feature = "turso")]
         Ok(Client::Turso(client)) => turso::describe(&client, sql).await,
         Err(why) => Err(why),
     };

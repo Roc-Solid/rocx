@@ -338,7 +338,9 @@ view! = |_|
 			<p>
 				The URL picks the engine: <code>--database-url turso:data/plate.db</code> runs a SQLite app on
 				Turso, and <code>sqlite:</code> runs a Turso app on SQLite, which is how you try one against the
-				other.
+				other under <code>rocx dev</code>. A release (<code>rocx build --release</code>,
+				<code>--image</code>) has the engine its program names alone, which keeps it small: it refuses
+				another as it starts.
 			</p>
 			<p>
 				<strong>What Turso adds: writes at the same time.</strong> Its file is in MVCC mode. A transaction

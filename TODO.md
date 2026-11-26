@@ -189,6 +189,12 @@ When an item lands, delete its line here in the same commit.
   runs `.github/workflows/release.yml` (hosts, packs, smoke on macOS and Alpine arm64/x86_64,
   publish). Once it is out: drop "the first release isn't out yet" from README.md's Getting
   started and the front page, and redeploy the docs site.
+- **Smaller releases from an installed version (D-104):** a clone's `--release` and `--image` build
+  the host with the app's database engine alone, but an installed version has only the full host
+  (release/hosts.sh) and links it. Ship a host per engine in the bundles (SQLite alone, with Turso,
+  with Postgres) for `Hosts.release_platform!` to pick. Then, measured: the host with link-time
+  optimization (`lto = "fat"`, one codegen unit: 12 MB less on disk and 2.6 MB less to send on the
+  full host, for minutes more per host build).
 - **The examples' READMEs build with `node server/build.mjs`**: `rocx build <dir> --release <out>`
   does it now (D-078).
 - **rocx on Linux** (D-062, D-069, D-078): on arm64 it runs (CI's), its watching polls (inotify is

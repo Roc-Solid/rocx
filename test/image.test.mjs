@@ -4,8 +4,10 @@
 // tar with Docker's manifest.json beside it; every blob is named by its SHA-256 and has the size its
 // descriptor says; the configuration runs the server as 65532 in /app on PORT 8080, its layer's
 // diff_id the SHA-256 of the layer unzipped; the layer holds the server (0755), the files it
-// serves, /app/data owned by 65532, /etc/passwd naming that user, and /tmp (1777). Where Docker
-// answers, `docker load` takes the file and the image serves the app's page.
+// serves, /app/data owned by 65532, /etc/passwd naming that user, and /tmp (1777). The app names no
+// database, so it is a Postgres one (App.program's default), and its server's host has Postgres and
+// SQLite, but none of Turso's code (D-104), and no debug info. Where Docker answers, `docker load`
+// takes the file and the image serves the app's page.
 //
 // Needs the toolchain (`just setup`) and Rust's musl target for this machine (`just setup` adds it).
 import { test, before, after } from "node:test";
@@ -54,6 +56,20 @@ function untar(bytes) {
 }
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+/** The names of a 64-bit little-endian ELF file's sections. */
+function sections(elf) {
+	const at = Number(elf.readBigUInt64LE(0x28));
+	const size = elf.readUInt16LE(0x3a);
+	const count = elf.readUInt16LE(0x3c);
+	const header = (i) => elf.subarray(at + i * size, at + (i + 1) * size);
+	const names = header(elf.readUInt16LE(0x3e));
+	const table = elf.subarray(Number(names.readBigUInt64LE(0x18)), Number(names.readBigUInt64LE(0x18) + names.readBigUInt64LE(0x20)));
+	return Array.from({ length: count }, (_, i) => {
+		const start = header(i).readUInt32LE(0);
+		return table.subarray(start, table.indexOf(0, start)).toString();
+	});
+}
 
 before(() => {
 	if (skip) return;
@@ -124,6 +140,12 @@ test("rocx build --image: an OCI image of the app's release, with no Dockerfile,
 	const server = files.get("app/server");
 	assert.deepEqual([server.type, server.mode, server.uid], ["0", 0o755, 0]);
 	assert.deepEqual([...server.bytes.subarray(0, 4)], [0x7f, 0x45, 0x4c, 0x46], "a Linux executable (ELF)");
+	const names = sections(Buffer.from(server.bytes));
+	assert.ok(names.includes(".text") && names.includes(".symtab"), `its code, and its symbols for a backtrace: ${names}`);
+	assert.deepEqual(names.filter((name) => name.startsWith(".debug")), [], "no debug info");
+	assert.ok(!server.bytes.includes("turso_core"), "no Turso in the host of an app that doesn't name it");
+	assert.ok(server.bytes.includes("tokio_postgres"), "Postgres, the database of an app that names none");
+	assert.ok(server.bytes.includes("rusqlite"), "SQLite's in every host");
 	assert.deepEqual([files.get("app/data/").type, files.get("app/data/").uid, files.get("app/data/").owner], ["5", 65532, "nonroot"]);
 	assert.deepEqual([files.get("tmp/").type, files.get("tmp/").mode], ["5", 0o1777]);
 	assert.match(files.get("etc/passwd").bytes.toString(), /^nonroot:x:65532:65532:/m);

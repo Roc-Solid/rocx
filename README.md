@@ -742,7 +742,8 @@ program = App.program({
   `routes/+middleware.roc`, and each directory's.)
 - `database`: `Postgres` (the default, at `--database-url` or `DATABASE_URL`), `Sqlite(path)` (a
   file in the server's process), or `Turso(path)` (the same SQL on Turso's engine).
-  `--database-url sqlite:<path>` or `turso:<path>` overrides the path or the engine.
+  `--database-url sqlite:<path>` or `turso:<path>` overrides the path or the engine (under `rocx
+  dev`: a release's server has the program's engine alone, D-104).
 - `openapi`: whether to serve the endpoints' OpenAPI document (`Off` by default; see below).
 - `plugins`: what packages add to the app (their routes answer behind `routes/+middleware.roc`,
   before the app's own).
@@ -922,7 +923,8 @@ rocx build <dir> --static <out>   # the app as static files, for a host with no 
 rocx build <dir> --release <out>  # the app built to deploy: <out>/server (optimized for speed) and
                          # <out>/static (the app's static/ and the browser's files, its wasm
                          # optimized for size); run <out>/server --static <out>/static behind a proxy
-                         # that speaks TLS
+                         # that speaks TLS; its host has the database engine the program names
+                         # alone, and a Linux one no debug info
   --target arm64musl     # for another machine (arm64mac, x64mac, arm64musl, x64musl: a musl one is
                          # a static Linux executable); this one's by default
 rocx build <dir> --image <file.tar>  # the release as a container image, which rocx writes itself
@@ -1054,8 +1056,9 @@ format, plugins and routes.
   [roc-pg](https://github.com/niclas-ahden/roc-pg), a Postgres client whose queries are checked at
   build time, runs on the platform's `Tcp`.
 - `rocx build <dir> --release <out> --target arm64musl` builds one static Linux executable (and what
-  it serves), from a Mac too; `rocx build <dir> --image <file.tar>` puts it in a container image
-  with nothing else in it, written by rocx (no Dockerfile, no Docker to build it).
+  it serves), from a Mac too, with the database engine the app's program names alone and no debug
+  info; `rocx build <dir> --image <file.tar>` puts it in a container image with nothing else in it,
+  written by rocx (no Dockerfile, no Docker to build it): a hello world's is 4.4 MB to send.
 
 `server/README.md` has every module's API, and the docs' [platform pages](https://roc-solid.github.io/platform)
 and [reference](https://roc-solid.github.io/platform/reference) cover each part.

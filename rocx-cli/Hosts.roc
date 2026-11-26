@@ -196,7 +196,27 @@ Hosts := [].{
 		Hosts.sync_shared!(rocx)
 		triple = Hosts.rust_target(target)
 		musl = target.ends_with("musl")
-		var $cargo = Hosts.rust_env!(Cmd.new("cargo").args(["build", "--release", "--target", triple]).cwd(host_dir), rocx, musl)
+		dir = Fs.join([rocx, "server", "platform", "targets", target])
+		# Nothing under server/host newer than the library Roc links: cargo would do nothing, and
+		# takes a tenth of a second to say so, on every build.
+		if !musl and Hosts.not_newer!(host_dir, File.modified!(Fs.join([dir, "libhost.a"]))) {
+			return Ok({})
+		}
+		Hosts.cargo_host!(rocx, target, [])?
+		Hosts.copy_if_changed!(Fs.join([host_dir, "target", triple, "release", "librocx_server_host.a"]), Fs.join([dir, "libhost.a"]))?
+		if musl {
+			Hosts.musl_runtime!(rocx, triple, dir)?
+		}
+		Ok({})
+	}
+
+	## `cargo build --release --target <target's triple>` in server/host, with `args` after it; for a
+	## musl target, its C compiled by Zig and Rust's target added first.
+	cargo_host! : Str, Str, List(Str) => Try({}, [Failed(Str)])
+	cargo_host! = |rocx, target, args| {
+		triple = Hosts.rust_target(target)
+		musl = target.ends_with("musl")
+		var $cargo = Hosts.rust_env!(Cmd.new("cargo").args(["build", "--release", "--target", triple].concat(args)).cwd(Fs.join([rocx, "server", "host"])), rocx, musl)
 		if musl {
 			zig = Hosts.zig!(rocx)
 			under = Str.join_with(triple.split_on("-"), "_")
@@ -207,27 +227,169 @@ Hosts := [].{
 					.env("CRATE_CC_NO_DEFAULTS", "1")
 					.env("CFLAGS_${under}", "-O2 -fPIC -fno-sanitize=all")
 					# A musl host is linked into what is deployed (`--release`, `--image`), never run
-					# under `rocx dev`: no debug info (the symbols stay, for a backtrace's names), as a
-					# release's hosts are stripped (release/hosts.sh). It was 140 MB of a 180 MB server.
+					# under `rocx dev`: no debug info of its own crates (the symbols stay, for a
+					# backtrace's names). It was 140 MB of a 180 MB server. Rust's std brings its own,
+					# which `strip_debug!` takes out of the server (D-104).
 					.env("CARGO_PROFILE_RELEASE_DEBUG", "0")
 			_ = Hosts.run!(Hosts.rust_env!(Cmd.new("rustup").args(["target", "add", triple]), rocx, musl), "rustup target add ${triple}")?
 		}
-		dir = Fs.join([rocx, "server", "platform", "targets", target])
-		# Nothing under server/host newer than the library Roc links: cargo would do nothing, and
-		# takes a tenth of a second to say so, on every build.
-		if !musl and Hosts.not_newer!(host_dir, File.modified!(Fs.join([dir, "libhost.a"]))) {
-			return Ok({})
-		}
-		_ = Hosts.run!($cargo, "cargo build --release --target ${triple}")?
-		Hosts.copy_if_changed!(Fs.join([host_dir, "target", triple, "release", "librocx_server_host.a"]), Fs.join([dir, "libhost.a"]))?
-		if musl {
-			sysroot = Text.trim(Hosts.run!(Hosts.rust_env!(Cmd.new("rustc").args(["--print", "sysroot"]), rocx, musl), "rustc --print sysroot")?)
-			crt = Fs.join([sysroot, "lib", "rustlib", triple, "lib", "self-contained"])
-			for file in ["rcrt1.o", "libunwind.a", "libc.a"] {
-				Hosts.copy_if_changed!(Fs.join([crt, file]), Fs.join([dir, file]))?
-			}
+		_ = Hosts.run!($cargo, Str.join_with(["cargo build --release --target ${triple}"].concat(args), " "))?
+		Ok({})
+	}
+
+	## A musl target's C runtime, from Rust's own musl target (`triple`), into `dir` beside its host.
+	musl_runtime! : Str, Str, Str => Try({}, [Failed(Str)])
+	musl_runtime! = |rocx, triple, dir| {
+		sysroot = Text.trim(Hosts.run!(Hosts.rust_env!(Cmd.new("rustc").args(["--print", "sysroot"]), rocx, Bool.True), "rustc --print sysroot")?)
+		crt = Fs.join([sysroot, "lib", "rustlib", triple, "lib", "self-contained"])
+		for file in ["rcrt1.o", "libunwind.a", "libc.a"] {
+			Hosts.copy_if_changed!(Fs.join([crt, file]), Fs.join([dir, file]))?
 		}
 		Ok({})
+	}
+
+	## The database engines a server's host can have besides SQLite, which every host has: server/host's
+	## cargo features (D-104). `rocx dev`'s host, the tests' and an installed version's have both.
+	all_engines : List(Str)
+	all_engines = ["postgres", "turso"]
+
+	## The engines a release of the app whose main.roc is `text` needs (D-104): none for
+	## `database: Sqlite(…)` (SQLite is in every host), Turso's for `database: Turso(…)`, Postgres's for
+	## `database: Postgres` or an `App.program({ … })` that names none (its default); all of them when
+	## the program names its database some other way (a value, a call), names two, or is given its
+	## record from elsewhere (`App.program(config)`). Comment lines don't count.
+	engines_of : Str -> List(Str)
+	engines_of = |text| {
+		var $named = []
+		for line in Text.lines(text) {
+			trimmed = Text.trim(line)
+			pieces = trimmed.split_on("database:")
+			var $i = 1
+			while !trimmed.starts_with("#") and $i < pieces.len() {
+				before = (pieces.get($i - 1) ?? "").to_utf8()
+				# `sql_database:` and the like are other fields.
+				if before.is_empty() or !Text.is_word(Text.at(before, before.len() - 1)) {
+					value = Text.trim(pieces.get($i) ?? "")
+					engines =
+						if value.starts_with("Sqlite(") {
+							[]
+						} else if value.starts_with("Turso(") {
+							["turso"]
+						} else if value == "Postgres" or value == "Postgres," or value.starts_with("Postgres ") or value.starts_with("Postgres,") {
+							["postgres"]
+						} else {
+							Hosts.all_engines
+						}
+					$named = $named.append(engines)
+				}
+				$i = $i + 1
+			}
+		}
+		match $named.first() {
+			Err(_) => if (text.contains("App.program({")) ["postgres"] else Hosts.all_engines
+			Ok(first) => if ($named.all(|each| each == first)) first else Hosts.all_engines
+		}
+	}
+
+	## The server platform's `main.roc` a release for `target` links with, and the engines its host
+	## has (D-104): the platform's own,
+	## its host built with every engine (`server_host!`), when `engines` is all of them or this is an
+	## installed version (its host is built); else a copy of the platform's modules in `stage`, with a
+	## host built with `engines` alone (cargo's features, in a target directory of their own beside
+	## the full host's) in its `targets/<target>/`, for `roc build --replace-dep` to put in the
+	## platform's place. The platform's own targets/ stay as they are, so a `rocx dev` or a test
+	## linking against them meanwhile is unaffected. `stage` is `stage_for`'s.
+	release_platform! : Str, Str, List(Str), Str => Try({ main : Str, engines : List(Str) }, [Failed(Str)])
+	release_platform! = |rocx, target, engines, stage| {
+		modules = Fs.join([rocx, "server", "platform"])
+		host_dir = Fs.join([rocx, "server", "host"])
+		if engines == Hosts.all_engines or !File.is_dir!(host_dir) {
+			Hosts.server_host!(rocx, target)?
+			return Ok({ main: Fs.join([modules, "main.roc"]), engines: Hosts.all_engines })
+		}
+		Hosts.sync_shared!(rocx)
+		triple = Hosts.rust_target(target)
+		variant = if (engines.is_empty()) "sqlite" else Str.join_with(engines, "-")
+		target_dir = Fs.join([host_dir, "target", "engines-${variant}"])
+		features = if (engines.is_empty()) [] else ["--features", Str.join_with(engines, ",")]
+		Hosts.cargo_host!(rocx, target, ["--no-default-features", "--target-dir", target_dir].concat(features))?
+		Fs.delete_all!(stage)
+		inputs = Fs.join([stage, "targets", target])
+		Fs.make_dirs!(inputs)
+		for name in Fs.entries!(modules) {
+			if name.ends_with(".roc") {
+				match File.copy!(Fs.join([modules, name]), Fs.join([stage, name])) {
+					Ok({}) => {}
+					Err(CantCopy(why)) => return Err(Failed(why))
+				}
+			}
+		}
+		Hosts.copy_if_changed!(Fs.join([target_dir, triple, "release", "librocx_server_host.a"]), Fs.join([inputs, "libhost.a"]))?
+		if target.ends_with("musl") {
+			Hosts.musl_runtime!(rocx, triple, inputs)?
+		}
+		Ok({ main: Fs.join([stage, "main.roc"]), engines })
+	}
+
+	## Where a release of the app in `dir` for `target` copies the platform (D-104): under the host's
+	## cargo target directory, outside the app, whose files rocx's checks and editors read; one for
+	## each app and target, deleted once the server is linked.
+	stage_for : Str, Str, Str -> Str
+	stage_for = |rocx, dir, target| {
+		key = Text.cut(Crypto.SHA256.hash(dir.to_utf8()).to_hex().to_utf8(), 0, 12)
+		Fs.join([rocx, "server", "host", "target", "release-platforms", "${Fs.basename(dir)}-${key}-${target}"])
+	}
+
+	## Takes the debug info out of `server`, a release's executable for a musl target, with LLVM's
+	## `llvm-strip --strip-debug` (D-104): Rust's std brings its own into the host (12 MB of it), which
+	## nothing in a container reads; the symbols stay, for a backtrace's names. A Mac's executable has
+	## none (it stays in the objects it was linked from), and an installed version's hosts are
+	## stripped already (release/hosts.sh). Its llvm-strip is rustup's (`llvm-tools`, added when
+	## missing), else $LLVM_STRIP or one on PATH; with none, what to say instead.
+	strip_debug! : Str, Str, Str => Try(List(Str), [Failed(Str)])
+	strip_debug! = |rocx, target, server| {
+		if !target.ends_with("musl") or !File.is_dir!(Fs.join([rocx, "server", "host"])) {
+			return Ok([])
+		}
+		strip = match Hosts.llvm_strip!(rocx) {
+			Ok(found) => found
+			Err(NotFound) => return Ok(["rocx build: the server keeps its debug info, as there is no llvm-strip: `rustup component add llvm-tools`, or set LLVM_STRIP"])
+		}
+		_ = Hosts.run!(Cmd.new(strip).args(["--strip-debug", server]), "llvm-strip --strip-debug")?
+		Ok([])
+	}
+
+	## LLVM's llvm-strip: $LLVM_STRIP; else rustup's (the `llvm-tools` component, added if it can be:
+	## its LLVM is the one the hosts were compiled with); else one on PATH.
+	llvm_strip! : Str => Try(Str, [NotFound])
+	llvm_strip! = |rocx| {
+		match Env.var!("LLVM_STRIP") {
+			Ok(given) if !given.is_empty() => return Ok(given)
+			_ => {}
+		}
+		match Hosts.rustup_llvm_strip!(rocx) {
+			Ok(found) => return Ok(found)
+			Err(NotFound) => {}
+		}
+		_ = Hosts.run!(Hosts.rust_env!(Cmd.new("rustup").args(["component", "add", "llvm-tools"]), rocx, Bool.True), "rustup component add llvm-tools") ?? ""
+		match Hosts.rustup_llvm_strip!(rocx) {
+			Ok(found) => Ok(found)
+			Err(NotFound) => if (Hosts.on_path!("llvm-strip")) Ok("llvm-strip") else Err(NotFound)
+		}
+	}
+
+	## rustup's llvm-strip (`llvm-tools`), in the sysroot of the Rust a musl host is built with.
+	rustup_llvm_strip! : Str => Try(Str, [NotFound])
+	rustup_llvm_strip! = |rocx| {
+		sysroot = Text.trim(Hosts.run!(Hosts.rust_env!(Cmd.new("rustc").args(["--print", "sysroot"]), rocx, Bool.True), "rustc --print sysroot") ?? "")
+		rustlib = Fs.join([sysroot, "lib", "rustlib"])
+		for host in Fs.entries!(rustlib) {
+			found = Fs.join([rustlib, host, "bin", "llvm-strip"])
+			if File.exists!(found) {
+				return Ok(found)
+			}
+		}
+		Err(NotFound)
 	}
 
 	## The browser's host (web/host, Rust with no std), built when its Rust is newer than the object
@@ -442,3 +604,12 @@ expect Hosts.env_file([], Bool.True) == ["--env-file", ".env"]
 expect Hosts.env_file(["--debug"], Bool.False) == []
 expect Hosts.env_file(["--env-file", "staging.env"], Bool.True) == []
 expect Hosts.env_file(["--env-file=staging.env"], Bool.True) == []
+expect Hosts.engines_of("app [program] { pf: platform \"x\" }\n\nprogram = App.program({\n\tinit!: |_| Ok({}),\n\tdatabase: Sqlite(\"data/app.db\"),\n})\n") == []
+expect Hosts.engines_of("program = App.program({\n\tdatabase: Turso(\"data/app.db\"),\n})\n") == ["turso"]
+expect Hosts.engines_of("program = App.program({\n\tdatabase: Postgres,\n})\n") == ["postgres"]
+expect Hosts.engines_of("program = App.program({ init!: |_| Ok({}), database: Postgres })\n") == ["postgres"]
+expect Hosts.engines_of("## App.program also takes `plugins`, `openapi`, `database` and `cross_site`.\nprogram = App.program({ init!: |_| Ok({}) })\n") == ["postgres"]
+expect Hosts.engines_of("# database: Turso(\"x\") on a comment's line\nprogram = App.program({ database: Sqlite(\"a.db\") })\n") == []
+expect Hosts.engines_of("program = App.program({ database: chosen, sql_database: Turso(\"x\") })\n") == Hosts.all_engines
+expect Hosts.engines_of("a = { database: Sqlite(\"a\") }\nb = { database: Turso(\"b\") }\n") == Hosts.all_engines
+expect Hosts.engines_of("import Config\n\nprogram = App.program(Config.app)\n") == Hosts.all_engines

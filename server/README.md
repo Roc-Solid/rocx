@@ -321,6 +321,10 @@ The host has one backend per kind in `host/src/db/`, behind the same functions (
   on the file, so no other program (`sqlite3`) can open it. Turso has no FTS5, and no `order by`
   inside an aggregate (`json_group_array(value order by key)`, which examples/board uses).
 
+SQLite is in every host; Postgres and Turso are cargo features of server/host (`postgres`,
+`turso`), both on by default. `rocx build --release` and `--image` build the host with the engine
+the app's program names alone (D-104), so a release refuses another as it starts.
+
 **Turso writes concurrently (D-049).** Its file is in MVCC mode. `Db.transaction!` begins
 `concurrent`, each transaction on its own snapshot. When it loses to another transaction's write
 to the same row (`Conflict: …`), the host notes it (`Host.db_conflicted!`) and `transaction!` runs

@@ -6257,3 +6257,68 @@ directory isn't guarded by it (`JobsPage.plugin({ guard })`, or `Guard.under` in
 call is a second request through the app's middleware (its log, its limits) inside the MCP request.
 
 **Reversible:** yes: the field back in `App.program`, the line back in route files.
+
+## D-104 A release's host has the app's database engine alone, and no debug info
+
+**Status.** Built (2026-11-26), the user's call: the images `rocx build --image` (D-099) wrote were
+big (a large app's 19 MB to send, a hello world's 15), and a release should carry SQLite alone where
+that's all it needs. Per app rather than SQLite for all: an app names one engine, and gets that one.
+
+**Context.** Measured for linux/arm64 (gzipped, as sent; on disk in brackets): a hello world was
+14.6 MB (43.3), the large app 19.3 (56.9). The app's own Roc was 0.6 MB of hello's code (9.6 of
+the large app's); the rest was the host, and every host had all three engines. Turso's was two-thirds of
+the host's code once the generic code it brings is counted (16 MB of code, 5 without it); Postgres's
+client about 1 MB. Then 12 MB was debug info that Rust's std brings into the host (the host's own
+crates have had none since D-099), which nothing in a container reads. For comparison: Go's
+`net/http` hello world is 2.2 MB to send stripped (4.4 as `go build` leaves it), Rust's
+tokio+hyper one 0.4; before an app is in it, Node's alpine image is 62 MB, Python's slim 43, Bun's
+distroless 59, .NET's chiseled ASP.NET 50.
+
+**Decision.**
+
+- **SQLite is in every host; Postgres and Turso are cargo features** of server/host (`postgres`,
+  `turso`), both on by default: `rocx dev`'s host, the tests', `rocx check --sql`'s and an installed
+  version's have every engine. `src/db/` leaves out what a build hasn't, and a server built without
+  an engine refuses it as it starts, saying what to write in the program: a SQLite app's release
+  given `--database-url turso:…` says it was built without Turso. (Trying a SQLite app on Turso is
+  for `rocx dev`, or `rocx check --sql --engine turso`.)
+- **`rocx build --release` and `--image` build the host with the engine the app's program names**,
+  read from its main.roc (`Hosts.engines_of`): SQLite alone for `database: Sqlite(…)`, Turso for
+  `Turso(…)`, Postgres for `Postgres` or for an `App.program({ … })` that names none (its default).
+  A program that names it some other way (a value, a call), names two, or is given its record from
+  another module (`App.program(config)`) gets every engine. Each set is
+  built in a cargo target directory of its own (`server/host/target/engines-<name>`), beside the full
+  host's. The release's message says which engines its server has.
+- **The platform's own `targets/` stay as they are.** The release links against a copy of the
+  platform's modules, with that host in its `targets/<target>/`, put in the platform's place by
+  `roc build --replace-dep` (the fork's flag; it knows a dependency by its real path, and replaces it
+  for the packages that name the platform too). The copy is one per app and target, under the host's
+  cargo target directory (`server/host/target/release-platforms/<app>-<hash>-<target>/`, deleted
+  once the server is linked), not in the app, whose files `rocx lint`, `rocx fmt` and editors read (the platform's `Html.source_text`
+  tripped the lint there). A `rocx dev`, a test or another app's build linking against the platform
+  meanwhile is unaffected, so nothing takes a lock.
+- **A musl release's server loses its debug info**: `llvm-strip --strip-debug`, from rustup's
+  `llvm-tools` (added when missing, as the musl target is), else `$LLVM_STRIP` or one on PATH; with
+  none, the build says so and keeps it. Its symbols stay, for a backtrace's names. A Mac's
+  executable has none to lose, and an installed version's hosts are stripped already
+  (release/hosts.sh).
+
+**Results** (linux/arm64, to send, on disk in brackets): hello world 14.6 → 4.4 MB (43.3 → 11.5),
+as a Postgres app by default; 3.6 (9.5) with `database: Sqlite(…)`. The tasks example (SQLite) 15 →
+4.8 (13.0); the same app on Turso 11.5 (32.1), on Postgres 5.6 (15.0). The large app (SQLite) 19.3 → 9.0
+(57 → 25.2), its own Roc 9.6 MB of that.
+
+**Tests.** test/image.test.mjs: the server has no `.debug_*` section and keeps `.symtab`, and the
+app (which names no database, so Postgres) has no Turso in it, and Postgres and SQLite. Hosts.roc's
+expects read programs' engines. All four combinations of the features build with no warnings.
+
+**Not chosen yet.** Prebuilt bundles with a host per engine: an installed version links its full
+host for now. Link-time optimization of the host (on the full host 12 MB less on disk and 2.6 less to
+send, for minutes more per host build). Stripping the symbols too (0.4 MB less to send, backtraces
+without names).
+
+**Costs.** A release can't be pointed at another engine by its URL. The first release of each
+engine's host compiles the host's crates again, in its own target directory (a minute or so).
+
+**Reversible:** yes: `release_platform!` gives the platform's own main.roc for every engine, and
+the features stay on by default.

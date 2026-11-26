@@ -1,7 +1,8 @@
 ## `rocx build <dir> --image <file.tar> [--tag name:tag] [--target arm64musl|x64musl]` (D-099): the
 ## app's release (`Release`, a static Linux executable and the files it serves) as a container
 ## image, written by rocx itself: no Dockerfile, and no Docker to build it. The server is static
-## (musl, its TLS roots inside it), so the image has no base: one layer with
+## (musl, its TLS roots inside it; its host has the database engine the app's program names alone,
+## and no debug info, D-104), so the image has no base: one layer with
 ##
 ## - `/app/server` and `/app/static/`, as `--release` makes them;
 ## - `/app/data/`, the working directory's `data/` (a SQLite or Turso app's file, `data/app.db`),

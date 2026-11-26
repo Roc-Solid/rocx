@@ -15,7 +15,7 @@ bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 chrono-tz = "0.10.4"
 corosensei = { version = "0.3", default-features = false, features = ["unwind"] }
-deadpool-postgres = "0.14"
+deadpool-postgres = { version = "0.14", optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "client", "http1"] }
@@ -28,15 +28,22 @@ rusqlite = { version = "0.43.0", features = ["bundled", "column_decltype", "colu
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde_json = "1"
 # Turso (D-046): its engine alone, the SQLite flavor of SQL in Rust; no global allocator, no FTS.
-turso_core = { version = "0.8.4", default-features = false, features = ["fs", "json", "time", "series", "uuid", "percentile", "pure-rust-crypto"] }
+turso_core = { version = "0.8.4", optional = true, default-features = false, features = ["fs", "json", "time", "series", "uuid", "percentile", "pure-rust-crypto"] }
 # Its statements' result columns, as turso_core plans them: where each comes from (D-058's check).
-turso_parser = "0.8.4"
+turso_parser = { version = "0.8.4", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "fs", "signal", "io-util"] }
-tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
-tokio-postgres-rustls = "0.13"
+tokio-postgres = { version = "0.7", optional = true, features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
+tokio-postgres-rustls = { version = "0.13", optional = true }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
-uuid = "1"
+uuid = { version = "1", optional = true }
 webpki-roots = "1"
+
+# The database engines an app may name besides SQLite, which every host has: `rocx build --release`
+# and `--image` build the host with the one the app's program names alone (rocx dev's has both).
+[features]
+default = ["postgres", "turso"]
+postgres = ["dep:deadpool-postgres", "dep:tokio-postgres", "dep:tokio-postgres-rustls", "dep:uuid"]
+turso = ["dep:turso_core", "dep:turso_parser"]
 
 [build-dependencies]
 cc = "1"
