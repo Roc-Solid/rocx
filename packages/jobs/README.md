@@ -65,6 +65,9 @@ Job.Options(context) := {
     workers : U64 ?? 4,                                            # jobs run at once
     retry_ms : U64 ?? 1000,                                        # a failed job's first wait, doubled after
     on_failed! : (Job.Failure => {}) ?? ignored!,                  # a job that failed for good
+    keep_done_ms : U64 ?? 604_800_000,                             # a done job kept a week after it finished
+    keep_failed_ms : U64 ?? 2_592_000_000,                         # a failed or canceled one, 30 days
+    sweep_ms : U64 ?? 3_600_000,                                   # how often finished jobs are swept: an hour
 }
 Job.Failure : { kind : Str, id : I64, attempts : U64, error : Str }
 Job.plugin : Job.Options(context) -> Plugin.Value(context, ctx)
@@ -81,19 +84,35 @@ The plugin adds:
 - **The table**, `rocx_jobs`, recorded as the migration `jobs/0001_jobs` (applied after the
   platform's migrations, before the app's).
 - **The workers** (`jobs.worker`, `workers` of them; each ends at once without a database or a kind
-  to run) and **the schedules' loop** (`jobs.schedules`, when there is a schedule; it ends at once
-  without a database).
+  to run), **the schedules' loop** (`jobs.schedules`, when there is a schedule; it ends at once
+  without a database), and **the sweep** (`jobs.sweep`, ending at once without a database; below).
 - **A call**, `jobs.run`, in which each job runs, isolated (`Plugin.isolated!`).
 - **Under `--dev` or `--debug`**, `POST /__rocx/jobs/wake`, which tells the workers to look for a
   due job now, as queueing one does. It is for a job another process wrote into `rocx_jobs`
   directly, which on SQLite can't wake them: packages/testing's `enqueue` and `settleJobs` use it.
 - **At start**: the kinds and schedules kept, for `Job.kinds!`, `Cron.schedules!` and the jobs
   page; every schedule checked (one it can't read, or one whose job the plugin doesn't run, stops
-  the server, saying why); and, with a database, the jobs a stop cut short queued again, and done
-  jobs older than a week deleted.
+  the server, saying why, as a `sweep_ms` of 0 does); and, with a database, the jobs a stop cut
+  short queued again.
 
 Without the plugin in the app's list, `Job.enqueue!` returns a `JobErr` saying so, rather than
 queue a job no worker will run.
+
+### Finished jobs are swept
+
+A finished job's row stays in `rocx_jobs` for a while, for the jobs page and for trying a failed one
+again, then the sweep deletes it: a done job `keep_done_ms` after it finished (a week), a failed or
+canceled one `keep_failed_ms` after (30 days), since someone may still want to read why it failed.
+The sweep runs when the server starts and every `sweep_ms` after (an hour), so a row outlives its
+keep by at most that. It deletes a thousand rows a statement, so on SQLite a large sweep lets other
+writes in between, and says on the log how many went (`rocx jobs: finished jobs swept`). It sweeps
+every kind, a kind the app no longer runs too, and never a queued or running job.
+
+An app whose schedule runs often keeps its done jobs for less:
+
+```roc
+Job.plugin({ jobs: App.jobs, crons: [Cron.every("*/10 * * * * *", Jobs.due, {})], keep_done_ms: 60 * 60 * 1000 })
+```
 
 ### A plugin's own kinds
 
@@ -209,6 +228,7 @@ Job.retry!(id)                     # failed or canceled: queued again, due now, 
 Job.cancel_id!(id)                 # queued: canceled
 Job.run_now!(id)                   # queued for later (or for its next attempt): due now
 Job.kinds!({})                     # the kinds the plugin runs, with their attempts and time limits
+Job.keeps!({})                     # how long finished jobs are kept: { keep_done_ms, keep_failed_ms }
 Job.changes                        # the live topic the workers say what they start and finish on
 Cron.schedules!({})                # each schedule, its job, and when it comes round next (next_at)
 Cron.run_now!(name)                # the schedule's job, queued now
@@ -225,13 +245,14 @@ with `before_id` set to the last row's id. An action on a job in a state it does
 
 | Module | What it has |
 |---|---|
-| `Job` | kinds (`define`, `define_with`, `handler`; a plugin's, `call` and `adopt!`), queueing (`enqueue!`, `enqueue_keyed!`, `cancel!`, `move!`), reading and acting on the queue (`list!`, `get!`, `counts!`, `retry!`, `cancel_id!`, `run_now!`), `kinds!`, `changes`, and the plugin (`Options`, `plugin`) |
+| `Job` | kinds (`define`, `define_with`, `handler`; a plugin's, `call` and `adopt!`), queueing (`enqueue!`, `enqueue_keyed!`, `cancel!`, `move!`), reading and acting on the queue (`list!`, `get!`, `counts!`, `retry!`, `cancel_id!`, `run_now!`), `kinds!`, `keeps!`, `changes`, and the plugin (`Options`, `plugin`) |
 | `Cron` | `every`, the parser (`parse`, `after`), `check`, `schedules!`, `run_now!` |
 | `Calendar` | days since the epoch as a date (`civil`) and a weekday, in UTC |
-| `JobWorker`, `CronTicker`, `Registry`, `Queue` | the package's own: the workers, the schedules' loop, what the plugin keeps at start, and what the queue's statements share across the two databases |
+| `JobWorker`, `CronTicker`, `JobSweeper`, `Registry`, `Queue` | the package's own: the workers, the schedules' loop, the sweep, what the plugin keeps at start, and what the queue's statements share across the two databases |
 
-`roc test packages/jobs/main.roc` runs the `expect`s (the cron parser, the calendar, the backoff).
-The server's tests (`server/test`) run the plugin on Postgres and on SQLite.
+`roc test packages/jobs/main.roc` runs the `expect`s (the cron parser, the calendar, the backoff,
+the sweep's cutoff). The server's tests (`server/test`) run the plugin on Postgres and on SQLite,
+the sweep on rows they age past a short keep.
 
 ## Not yet
 

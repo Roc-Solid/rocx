@@ -66,13 +66,16 @@ view! = |_|
 						<tr><td><code>workers</code></td><td>4</td><td>how many jobs run at once</td></tr>
 						<tr><td><code>retry_ms</code></td><td>1000</td><td>how long a failed job waits before its second attempt; doubled for each attempt after</td></tr>
 						<tr><td><code>on_failed!</code></td><td>nothing more</td><td>what to do with a job that failed for good, after it is logged: given its kind, id, attempts and error (for an error tracker, <a href={Paths.ecosystem_posthog}>packages/posthog</a>'s <code>PostHog.job_failed!</code>)</td></tr>
+						<tr><td><code>keep_done_ms</code></td><td>a week</td><td>how long a done job is kept after it finished, then swept (<a href="#swept">below</a>)</td></tr>
+						<tr><td><code>keep_failed_ms</code></td><td>30 days</td><td>how long a failed or canceled job is kept after it finished</td></tr>
+						<tr><td><code>sweep_ms</code></td><td>an hour</td><td>how often finished jobs are swept, as well as when the server starts</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
 				The plugin adds the queue's table, <code>rocx_jobs</code> (its migration is recorded as
-				<code>jobs/0001_jobs</code>), the workers and the schedules' loop. When the server starts, it checks
-				every schedule, queues again the jobs a stop cut short, and deletes done jobs older than a week.
+				<code>jobs/0001_jobs</code>), the workers, the schedules' loop and the sweep. When the server starts,
+				it checks every schedule and queues again the jobs a stop cut short.
 				Without the plugin, queueing a job is an error that says to list it. Without a database, the plugin
 				runs nothing, and queueing a job returns the database's error.
 			</p>
@@ -163,7 +166,7 @@ view! = |_|
 					<strong>Again, and later.</strong> A job that fails (an <code>Err</code>, a crash, or its time limit
 					passing) runs again after <code>retry_ms</code>, then twice that, and so on, until its kind's attempts
 					are used up. Then it is <code>failed</code>, with its last error, and stays in
-					<code>rocx_jobs</code> until you retry it. Each failure is logged as a warning, and a job that failed
+					<code>rocx_jobs</code> until you retry it or it is swept. Each failure is logged as a warning, and a job that failed
 					for good as an error, before <code>on_failed!</code> is called.
 				</li>
 				<li>
@@ -177,6 +180,15 @@ view! = |_|
 				<li>
 					<strong>Across restarts.</strong> A job that was running when the server stopped runs again at the
 					next start.
+				</li>
+				<li id="swept">
+					<strong>Swept when old.</strong> A finished job's row is kept for the jobs page, and so a failed one
+					can be retried, then deleted: a done job <code>keep_done_ms</code> after it finished (a week), a
+					failed or canceled one <code>keep_failed_ms</code> after (30 days). The sweep runs when the server
+					starts and every <code>sweep_ms</code> (an hour), a thousand rows a statement, on Postgres and SQLite
+					alike. A schedule that runs every ten seconds leaves 8,640 done jobs a day, so an app with one keeps
+					its done jobs for less (<code>keep_done_ms: 60 * 60 * 1000</code>). Queued and running jobs are
+					never swept.
 				</li>
 				<li>
 					<strong>Another plugin's jobs.</strong> A package can bring its own kind of job, as
@@ -199,7 +211,7 @@ view! = |_|
 				<li><code>Job.get!(id)</code> reads one job, and <code>{"Job.counts!({})"}</code> counts the jobs of each kind in each state.</li>
 				<li><code>Job.retry!(id)</code> queues a failed or canceled job again, <code>Job.cancel_id!(id)</code> cancels a queued one, and <code>Job.run_now!(id)</code> makes a queued one due now.</li>
 				<li><code>{"Cron.schedules!({})"}</code> lists the schedules with when each comes round next, and <code>Cron.run_now!(name)</code> queues a schedule's job now.</li>
-				<li><code>{"Job.kinds!({})"}</code> lists the kinds the plugin runs, and <code>Job.changes</code> is the live topic on which the workers say what they start and finish.</li>
+				<li><code>{"Job.kinds!({})"}</code> lists the kinds the plugin runs, <code>{"Job.keeps!({})"}</code> says how long it keeps finished jobs, and <code>Job.changes</code> is the live topic on which the workers say what they start and finish.</li>
 			</ul>
 
 			<Heading id="page">The jobs page</Heading>

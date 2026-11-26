@@ -8,7 +8,7 @@
 // jobs run, retry and fail for good, and are queued only if their transaction commits; a kind says
 // how many times its jobs are tried and how long each may take; a key is one pending job's, by
 // which it is cancelled or moved; jobs are listed and acted on, and the jobs page shows them behind
-// the app's guard; cron queues its jobs;
+// the app's guard; finished jobs are swept as they age; cron queues its jobs;
 // email is kept in the dev mailbox (in memory: Kv), or sent over SMTP (to
 // a server this file runs); live rooms count who is in them; actors answer one message at a time,
 // take tells and timers, log what they do not take, and keep their state across a restart (and an
@@ -1387,6 +1387,23 @@ test("the jobs page mounted by the app itself (JobsPage.respond!), at its own pa
 	assert.doesNotMatch(html, /class="back"/, "no link back unless the app gives one");
 });
 
+test("jobs: finished ones are swept once older than the plugin keeps them (done an hour, failed and canceled two), every half second, whatever their kind; queued ones never", { skip: skipDb }, async () => {
+	const minutes = 60_000;
+	const aged = [
+		["done", 90, "done-old"],
+		["done", 30, "done-young"],
+		["failed", 180, "failed-old"],
+		["failed", 90, "failed-young"],
+		["canceled", 180, "canceled-old"],
+		["canceled", 90, "canceled-young"],
+		["queued", 180, "queued-old"],
+	];
+	for (const [state, age, key] of aged) assert.equal(await post(`/jobs/aged?state=${state}&age=${age * minutes}&key=${run}${key}`), "added");
+	const left = async () => (await jobRows("kind=aged")).filter((row) => row.key.startsWith(run)).map((row) => row.key.slice(run.length));
+	await until(async () => (await left()).length === 4, 3000);
+	assert.deepEqual(await left(), ["queued-old", "canceled-young", "failed-young", "done-young"], "newest first");
+});
+
 test("JobsPage.plugin without a guard doesn't compile: the record is missing the field guard (the hint lists the fields left out, defaulted ones too)", { skip }, () => {
 	const at = join(root, "server", "test", "build", "guardless");
 	mkdirSync(at, { recursive: true });
@@ -1669,7 +1686,7 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 			.filter((event) => event.msg === "rocx plugins: added")
 			.map(({ level, plugin, adds }) => `${level} ${plugin}: ${adds}`),
 		[
-			"info jobs: 1 early route, 1 migration, 1 call, 5 loops, 1 start",
+			"info jobs: 1 early route, 1 migration, 1 call, 6 loops, 1 start",
 			"info email: 4 early routes, 1 start, 1 check",
 			"info jobs-page: 2 routes",
 			"info fixture: 5 routes, 1 early route, 2 files, 1 script, 1 migration, 1 call, 1 loop, 1 start, 1 check",

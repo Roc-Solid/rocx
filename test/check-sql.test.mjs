@@ -82,7 +82,7 @@ test("rocx check --sql on Postgres: the server's test app, on a scratch database
 	]
 		.sort((a, b) => a.offset - b.offset)
 		.map(({ line }) => line);
-	assert.deepEqual(out.trimEnd().split("\n"), [...problems, "rocx check --sql: 55 statements checked on Postgres (the rows of 26 against their records): 8 problems"]);
+	assert.deepEqual(out.trimEnd().split("\n"), [...problems, "rocx check --sql: 56 statements checked on Postgres (the rows of 26 against their records): 8 problems"]);
 });
 
 test("rocx dev's check (rocx check --sql --server --quiet): the server it built, none built again; what is wrong said the same; an app with no SQL says nothing", { skip }, () => {

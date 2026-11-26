@@ -31,7 +31,8 @@ program = App.program({
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/uptime.db"),
 	plugins: [
-		Job.plugin({ jobs: App.jobs, crons: [Cron.every("*/10 * * * * *", Jobs.due, {}), Cron.every("0 3 * * *", Jobs.nightly, {})] }),
+		# A job each ten seconds (`Jobs.due`): done ones are kept an hour, not the plugin's week.
+		Job.plugin({ jobs: App.jobs, crons: [Cron.every("*/10 * * * * *", Jobs.due, {}), Cron.every("0 3 * * *", Jobs.nightly, {})], keep_done_ms: 60 * 60 * 1000 }),
 		JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin, back: { label: "Status admin", href: "/admin" } }),
 		Email.plugin({ from: "Status <status@example.com>" }),
 		Auth.plugin({ sign_in: "/admin/sign-in", home: "/admin", cookie: "uptime_admin", session_ms: 12 * 60 * 60 * 1000 }),

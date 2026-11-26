@@ -40,15 +40,20 @@ program = {
 	routes: [],
 }
 
-## The jobs (packages/jobs), with a schedule each second and a short first retry; the jobs page
-## (packages/admin), open to all; and a plugin that works with SQLite alone (`needs`), with a
-## migration for each database (the server applies SQLite's) and one for any.
+## The jobs (packages/jobs), with a schedule each second, a short first retry and a sweep twice a
+## second; the jobs page (packages/admin), open to all; and a plugin that works with SQLite alone
+## (`needs`), with a migration for each database (the server applies SQLite's) and one for any.
 plugins : List(Plugin.Value(Str, Str))
 plugins = [
 	Job.plugin({
 		jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(slow_job), Job.handler(tick_job)],
 		crons: [Cron.every("* * * * * *", tick_job, {})],
 		retry_ms: 20,
+		# Finished jobs kept an hour when done, two when failed or canceled, and swept twice a
+		# second: what the sweep's test ages its rows past (`/jobs/aged`).
+		keep_done_ms: 3_600_000,
+		keep_failed_ms: 7_200_000,
+		sweep_ms: 500,
 	}),
 	JobsPage.plugin({ at: "/admin/jobs", guard: Middleware.make(|request, context, next!| next!(request, context)), back: { label: "Tests", href: "/" } }),
 	{
@@ -535,6 +540,25 @@ route! = |request, context| {
 				Ok(Exists) => text(200, "exists")
 				Err(JobErr(why)) => text(500, why)
 			}
+		}
+		# A job of a kind no worker runs (`aged`), keyed `key`, in `state`, finished (or, queued,
+		# made) `age` milliseconds ago: what the sweep keeps or deletes; and the keys of those left.
+		("POST", "/jobs/aged") => {
+			state = param(query, "state")
+			at = Time.now_millis!({}).to_i64_wrap() - (I64.from_str(param(query, "age")) ?? 0)
+			added = Db.run!(
+				"insert into rocx_jobs (kind, input, state, unique_key, run_at, finished_at, created_at) values ('aged', '{}', $1, $2, $3, case when $1 = 'queued' then null else $3 end, $3)",
+				[Text(state), Text(param(query, "key")), Int(at)],
+			)
+			match added {
+				Ok(_) => text(201, "added")
+				Err(DbErr(why)) => text(500, why)
+			}
+		}
+		("GET", "/jobs/aged") => {
+			keys : Try(List({ key : Str }), [DbErr(Str), BadRow(Str)])
+			keys = Db.all!("select coalesce(unique_key, '') as key from rocx_jobs where kind = 'aged' order by id", [])
+			lines(keys, |row| row.key)
 		}
 		("POST", "/jobs/cancel") => counted(Job.cancel!(param(query, "key")))
 		("POST", "/jobs/move") => counted(Job.move!(param(query, "key"), Now))

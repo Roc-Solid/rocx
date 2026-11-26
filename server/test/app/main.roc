@@ -85,6 +85,11 @@ plugins = [
 			jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(crash_job), Job.handler(mail_job), Job.handler(tick_job), Job.handler(env_job), Job.handler(twice_job), Job.handler(slow_job)],
 			crons: [Cron.every("* * * * * *", tick_job, {})],
 			retry_ms: 20,
+			# Finished jobs kept an hour when done, two when failed or canceled, and swept twice a
+			# second: what the sweep's test ages its rows past (`/jobs/aged`).
+			keep_done_ms: 3_600_000,
+			keep_failed_ms: 7_200_000,
+			sweep_ms: 500,
 		},
 	),
 	# Email (packages/email): SMTP_URL and MAIL_FROM from the environment, the dev mailbox under --dev.
@@ -720,6 +725,20 @@ route! = |request, context| {
 				Ok(Exists) => text(200, "exists")
 				Err(JobErr(why)) => text(500, why)
 			}
+		# A job of a kind no worker runs (`aged`), keyed `key`, in `state`, finished (or, queued,
+		# made) `age` milliseconds ago: what the sweep keeps or deletes.
+		("POST", "/jobs/aged") => {
+			state = param(request.query, "state")
+			age = I64.from_str(param(request.query, "age")) ?? 0
+			added = Db.run!(
+				"insert into rocx_jobs (kind, input, state, unique_key, run_at, finished_at, created_at) values ('aged', '{}', $1, $2, now() - ($3::bigint * interval '1 millisecond'), case when $1 = 'queued' then null else now() - ($3::bigint * interval '1 millisecond') end, now() - ($3::bigint * interval '1 millisecond'))",
+				[Text(state), Text(param(request.query, "key")), Int(age)],
+			)
+			match added {
+				Ok(_) => text(201, "added")
+				Err(DbErr(why)) => text(500, why)
+			}
+		}
 		("POST", "/jobs/cancel") =>
 			match Job.cancel!(param(request.query, "key")) {
 				Ok(count) => text(200, count.to_str())

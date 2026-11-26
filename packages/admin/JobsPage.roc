@@ -134,6 +134,7 @@ shown! = |mount, back, query| {
 	wanted = I64.from_str(AdminHtml.param(query, "id"))
 	now = Time.now_millis!({}).to_i64_wrap()
 	kinds = Job.kinds!({})
+	keeps = Job.keeps!({})
 	note = queue_note(Db.engine!({}))
 	read =
 		match (Job.counts!({}), Job.list!({ state, kind, before_id: before, limit: per_page })) {
@@ -153,7 +154,7 @@ shown! = |mount, back, query| {
 			overview = state.is_empty() and kind.is_empty() and before == 0
 			opened =
 				match wanted {
-					Ok(id) => drawer!(mount, query, here, id, now, kinds)
+					Ok(id) => drawer!(mount, query, here, id, now, kinds, keeps)
 					Err(_) => { status: 200, html: "" }
 				}
 			refresh =
@@ -208,7 +209,7 @@ shown! = |mount, back, query| {
 					Ok(id) => "Job #${id.to_str()} · Jobs"
 					Err(_) => if (kind.is_empty()) titled else "${kind} · Jobs"
 				}
-			AdminHtml.page(opened.status, { title, events: AdminHtml.link(mount, [("events", "1")]), now, side: sidebar(mount, back, note, counts, kinds, state, kind), body })
+			AdminHtml.page(opened.status, { title, events: AdminHtml.link(mount, [("events", "1")]), now, side: sidebar(mount, back, note, counts, kinds, keeps, state, kind), body })
 		}
 	}
 }
@@ -225,9 +226,10 @@ queue_note = |engine|
 	}
 
 ## The sidebar: the link back to the app (`back`, if it has one), the overview, each state and each
-## kind, with how many jobs each has. `note` is what it says of the queue (`queue_note`).
-sidebar : Str, { label : Str, href : Str }, Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), Str, Str -> Str
-sidebar = |mount, back, note, counts, kinds, state, kind| {
+## kind, with how many jobs each has. `note` is what it says of the queue (`queue_note`); at its
+## foot, how long finished jobs are kept (`keeps`, the plugin's).
+sidebar : Str, { label : Str, href : Str }, Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), { keep_done_ms : U64, keep_failed_ms : U64 }, Str, Str -> Str
+sidebar = |mount, back, note, counts, kinds, keeps, state, kind| {
 	overview = Look.nav_link({ href: mount, icon: "overview", tone: "accent", label: "Overview", count: "", on: state.is_empty() and kind.is_empty() })
 	by_state = states.map(
 		|each| {
@@ -238,7 +240,7 @@ sidebar = |mount, back, note, counts, kinds, state, kind| {
 	by_kind = kind_names(kinds, counts).map(|name| Look.nav_link({ href: AdminHtml.link(mount, [("kind", name)]), icon: "layers", tone: "neutral", label: "<code>${Look.escape(name)}</code>", count: count_of(counts, name, "").to_str(), on: kind == name }))
 	kinds_nav = if (by_kind.is_empty()) "" else "${Look.nav_label("Kinds")}${Str.join_with(by_kind, "")}"
 	nav = "${Look.back_link(back)}${overview}${Look.nav_label("States")}${Str.join_with(by_state, "")}${kinds_nav}"
-	Look.side({ name: "Jobs", note, home: mount, nav, foot: "Times are UTC. Done jobs are kept for a week." })
+	Look.side({ name: "Jobs", note, home: mount, nav, foot: "Times are UTC. Done jobs are kept for ${AdminHtml.span(keeps.keep_done_ms.to_i64_wrap())}, failed and canceled ones for ${AdminHtml.span(keeps.keep_failed_ms.to_i64_wrap())}." })
 }
 
 ## How many jobs are in each state (of the kind shown), each a link to them.
@@ -445,11 +447,11 @@ jobs_panel = |mount, query, { state, kind, before, selected }, rows, now| {
 
 ## One job, in a drawer over the list (`close` is the list): everything the queue knows of it, and
 ## what may be done to it.
-drawer! : Str, Str, Str, I64, I64, List(Job.KindInfo) => { status : U16, html : Str }
-drawer! = |mount, query, close, id, now, kinds| {
+drawer! : Str, Str, Str, I64, I64, List(Job.KindInfo), { keep_done_ms : U64, keep_failed_ms : U64 } => { status : U16, html : Str }
+drawer! = |mount, query, close, id, now, kinds, keeps| {
 	frame = |eyebrow, title, content| "<a class=\"scrim\" href=\"${Look.escape(close)}\" tabindex=\"-1\" aria-hidden=\"true\"></a><aside class=\"drawer\" role=\"dialog\" aria-labelledby=\"job-title\"><header class=\"drawer-head\"><div><p class=\"eyebrow\">${eyebrow}</p><h2 id=\"job-title\">${title}</h2></div><a class=\"icon-btn\" href=\"${Look.escape(close)}\" data-close aria-label=\"Close\" title=\"Close (Esc)\">${Look.icon("close")}</a></header>${content}</aside>"
 	match Job.get!(id) {
-		Err(NotFound) => { status: 404, html: frame("Job #${id.to_str()}", "No job #${id.to_str()}", Look.empty("layers", "No job #${id.to_str()}", "It may have been done more than a week ago.")) }
+		Err(NotFound) => { status: 404, html: frame("Job #${id.to_str()}", "No job #${id.to_str()}", Look.empty("layers", "No job #${id.to_str()}", "It may have been swept: a done job goes ${AdminHtml.span(keeps.keep_done_ms.to_i64_wrap())} after it finished, a failed or canceled one ${AdminHtml.span(keeps.keep_failed_ms.to_i64_wrap())} after.")) }
 		Err(JobErr(why)) => { status: 500, html: frame("Job #${id.to_str()}", "Job #${id.to_str()}", "<div class=\"callout tone-bad\">${Look.icon("alert")}<div><strong>The queue can't be read</strong><p class=\"problem\">${Look.escape(why)}</p></div></div>") }
 		Ok(row) => {
 			limit =
@@ -672,6 +674,9 @@ expect described("0 0 1 * *") == "monthly, on day 1, at 00:00"
 expect described("0 3 * 1 *") == ""
 
 # The link back to the app, first in the sidebar, when the app gives one.
-expect sidebar("/admin/jobs", { label: "Status", href: "/admin" }, "The queue, in SQLite", [], [], "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
-expect !sidebar("/admin/jobs", { label: "", href: "" }, "The queue", [], [], "", "").contains("class=\"back\"")
-expect sidebar("/admin/jobs", { label: "", href: "" }, "The queue, in SQLite", [], [], "", "").contains("The queue, in SQLite")
+expect sidebar("/admin/jobs", { label: "Status", href: "/admin" }, "The queue, in SQLite", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
+expect !sidebar("/admin/jobs", { label: "", href: "" }, "The queue", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("class=\"back\"")
+
+# How long finished jobs are kept, at its foot, as the plugin says.
+expect sidebar("/admin/jobs", { label: "", href: "" }, "The queue", [], [], { keep_done_ms: 3_600_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("Done jobs are kept for 1 h, failed and canceled ones for 30 d.")
+expect sidebar("/admin/jobs", { label: "", href: "" }, "The queue, in SQLite", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("The queue, in SQLite")

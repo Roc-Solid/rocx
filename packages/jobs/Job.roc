@@ -3,6 +3,7 @@ import pf.Plugin
 import pf.Server
 import Cron
 import CronTicker
+import JobSweeper
 import JobWorker
 import Queue
 import Registry
@@ -60,27 +61,35 @@ Job := [].{
 	## once (each a background loop), how long a failed job waits before its second attempt
 	## (milliseconds; doubled for each after), and what is done when a job has failed for good,
 	## after it is logged (`on_failed!`: nothing more, unless the app says; an error tracker's
-	## report, `PostHog.job_failed!`).
+	## report, `PostHog.job_failed!`). And how long finished jobs are kept (`JobSweeper`), in
+	## milliseconds after they finished: a done one a week (`keep_done_ms`), a failed or canceled
+	## one 30 days (`keep_failed_ms`), swept when the server starts and every hour after
+	## (`sweep_ms`, more than 0).
 	Options(context) := {
 		jobs : List(Handler(context)),
 		crons : List({ name : Str, schedule : Str, job : Str, input : Str }) ?? [],
 		workers : U64 ?? 4,
 		retry_ms : U64 ?? 1000,
 		on_failed! : (Failure => {}) ?? ignored!,
+		keep_done_ms : U64 ?? 604_800_000,
+		keep_failed_ms : U64 ?? 2_592_000_000,
+		sweep_ms : U64 ?? 3_600_000,
 	}
 
 	## A job that failed for good, as the plugin's `on_failed!` is given it: its kind, its id, how
 	## many times it was tried and why the last attempt failed (its `Err`, a crash, or "timed out
-	## after …"). Its row stays in `rocx_jobs`, failed, until it is tried again (`retry!`).
+	## after …"). Its row stays in `rocx_jobs`, failed, until it is tried again (`retry!`) or swept
+	## (`keep_failed_ms` after it failed).
 	Failure : { kind : Str, id : I64, attempts : U64, error : Str }
 
 	## The jobs plugin: the queue's table (`jobs/0001_jobs`), the workers (`jobs.worker`, with a
-	## database and a kind to run: the app's, and those other plugins bring, `Job.adopt!`) and the
-	## schedules' loop (`jobs.schedules`, with one), the call
-	## a job runs in (`jobs.run`), and at start the kinds and schedules kept (`kinds!`,
-	## `Cron.schedules!`), every schedule checked (a bad one, or one naming a job the plugin doesn't
-	## run, stops the server), and the jobs a stop cut short queued again. Under `--dev` or
-	## `--debug`, `POST /__rocx/jobs/wake` tells the workers to look for a due job now, as queuing
+	## database and a kind to run: the app's, and those other plugins bring, `Job.adopt!`), the
+	## schedules' loop (`jobs.schedules`, with one) and the sweep (`jobs.sweep`, with a database:
+	## `JobSweeper`), the call a job runs in (`jobs.run`), and at start what the jobs page reads kept
+	## (the kinds, the schedules, how long finished jobs stay: `kinds!`, `Cron.schedules!`, `keeps!`),
+	## every schedule checked (a bad one, or one naming a job the plugin doesn't run, stops the
+	## server, as a `sweep_ms` of 0 does), and the jobs a stop cut short queued again. Under `--dev`
+	## or `--debug`, `POST /__rocx/jobs/wake` tells the workers to look for a due job now, as queuing
 	## one does: for a job another process wrote into the queue itself, which on SQLite can't tell
 	## them (a test's: packages/testing's `enqueue` and `settleJobs`).
 	plugin : Options(context) -> Plugin.Value(context, ctx)
@@ -95,13 +104,16 @@ Job := [].{
 		# has run): one with none to run ends at once.
 		workers = List.repeat({ name: "jobs.worker", run!: |_context| JobWorker.run!(own, retry_ms, on_failed!) }, options.workers)
 		ticker = if (crons.is_empty()) [] else [{ name: "jobs.schedules", run!: |_context| CronTicker.run!(crons) }]
+		kept = { keep_done_ms: options.keep_done_ms, keep_failed_ms: options.keep_failed_ms, sweep_ms: options.sweep_ms }
+		keeps = { keep_done_ms: kept.keep_done_ms, keep_failed_ms: kept.keep_failed_ms }
+		sweeper = { name: "jobs.sweep", run!: |_context| JobSweeper.run!(kept) }
 		{
 			name: "jobs",
 			migrations: [{ name: "0001_jobs", sql: jobs_table, on: Postgres }, { name: "0001_jobs", sql: lite_jobs_table, on: Sqlite }],
 			early: [{ method: "POST", path: "/__rocx/jobs/wake", under: [Dev, Debug], answer!: woken! }],
 			calls: [{ name: "jobs.run", run!: |context, input| ran!(handlers, context, input) }],
-			loops: workers.concat(ticker),
-			starts: [|_context| started!(kinds, crons)],
+			loops: workers.concat(ticker).append(sweeper),
+			starts: [|_context| started!(kinds, crons, keeps, kept.sweep_ms)],
 		}
 	}
 
@@ -145,6 +157,11 @@ Job := [].{
 	## The kinds of job the plugin runs.
 	kinds! : {} => List(KindInfo)
 	kinds! = |{}| Registry.kinds!({})
+
+	## How long the plugin keeps finished jobs, in milliseconds after they finished, before the sweep
+	## deletes them (its `keep_done_ms` and `keep_failed_ms`): what the jobs page says.
+	keeps! : {} => { keep_done_ms : U64, keep_failed_ms : U64 }
+	keeps! = |{}| Registry.keeps!({})
 
 	## The live topic (`Live.listen!`) the workers say on what they start and finish: `<id> running`,
 	## `<id> done`, `<id> queued`, `<id> failed`. (The database notifies `rocx_jobs` too, when a job
@@ -441,13 +458,16 @@ ran! = |handlers, context, input| {
 	}
 }
 
-## The plugin's start: what it runs kept, its schedules checked, and (with a database) the jobs a
-## stop cut short queued again.
-started! : List(Registry.Kind), List(Registry.Schedule) => Try({}, Str)
-started! = |kinds, crons| {
+## The plugin's start: what it runs and how long it keeps finished jobs kept, its schedules and how
+## often it sweeps checked, and (with a database) the jobs a stop cut short queued again.
+started! : List(Registry.Kind), List(Registry.Schedule), Registry.Keeps, U64 => Try({}, Str)
+started! = |kinds, crons, keeps, sweep_ms| {
 	names = kinds.map(|kind| kind.name)
-	Registry.keep!(kinds, crons)
+	Registry.keep!(kinds, crons, keeps)
 	Cron.check(crons, names)?
+	if sweep_ms == 0 {
+		return Err("jobs: sweep_ms is 0: say how often finished jobs are swept, in milliseconds (an hour unless the plugin's options say)")
+	}
 	if Db.connected!({}) {
 		JobWorker.recover!(names)
 	} else {

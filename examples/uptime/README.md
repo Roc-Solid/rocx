@@ -106,7 +106,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 
 | Feature | Where |
 |---|---|
-| packages/jobs as a plugin: `Job.plugin({ jobs: App.jobs, crons })` in `main.roc`. A cron every 10 seconds queues the checks that are due, and another runs a roll-up each night at 03:00 UTC. | `main.roc`, `Jobs.roc` |
+| packages/jobs as a plugin: `Job.plugin({ jobs: App.jobs, crons, keep_done_ms })` in `main.roc`. A cron every 10 seconds queues the checks that are due, and another runs a roll-up each night at 03:00 UTC; done jobs are kept an hour, not a week. | `main.roc`, `Jobs.roc` |
 | Job kinds with their own retries and time limits (`Job.define_with`): a check is tried three times; an alert (`Job.define`, five tries) is tried again, waiting longer each time, while the mail server doesn't answer. | `Jobs.roc` |
 | The sweep: one `update … returning` claims the monitors that are due, and their checks are queued in the same transaction. Each check is keyed by its monitor (`Job.enqueue_keyed!`), so a check still waiting isn't queued twice. | `sweep!` in `Jobs.roc`, `Store.claim_due!` |
 | A check: `Http.fetch!` with the monitor's method and time limit, timed with `Time.now_nanos!`, then judged by `Checks.judge` (which has its own `expect` tests). | `Checks.roc` |
@@ -248,17 +248,14 @@ node --test 'examples/uptime/test/*.test.mjs'
 Writing the app turned up gaps in the platform and the packages. Most are fixed now; these are still
 worth knowing.
 
-1. **A sweep on a cron leaves a job row each run.** Every 10 seconds is 8,640 finished jobs a day,
-   kept for a week by the plugin's tidy-up: about 60,000 rows that say nothing. A schedule that runs
-   a function without a row, or a shorter keep for one kind, would suit a sweep better.
-2. **A job kind is a value in the module that defines it, so a module that module imports can't
+1. **A job kind is a value in the module that defines it, so a module that module imports can't
    queue it.** `Jobs.check` runs `Checks.run!`, and a check queues alerts (`Jobs.alert`). To avoid an
    import cycle, `Jobs` passes its own `alert!` down as an argument. Queueing a kind by its name,
    typed, would let any module queue any kind.
-3. **Wrong passwords are counted for everyone together**, ten tries a minute. The app was written
+2. **Wrong passwords are counted for everyone together**, ten tries a minute. The app was written
    before the server passed on the client's address; `Server.Request` now has `peer` (the
    connection's address), so a per-client limit is possible.
-4. **Roc and rocx gotchas met on the way:**
+3. **Roc and rocx gotchas met on the way:**
    - A one-field record written short is a block: `UptimeStrip.view({ days })` passes the list
      itself, so it has to be `{ days: days }`.
    - A parameter or a lambda's argument can't have the name of a member of the module's block.
@@ -272,6 +269,10 @@ worth knowing.
 
 Fixed since, and visible in the code:
 
+- A sweep on a cron leaves a job row each run: every 10 seconds is 8,640 done jobs a day, which the
+  jobs plugin kept for a week (about 60,000 rows that say nothing) and swept only when the server
+  started. The plugin sweeps finished jobs every hour now, and how long it keeps them is its
+  options': the app keeps its done jobs an hour (`keep_done_ms` in `main.roc`), some 360 rows.
 - The admin's sessions are packages/auth's (`Auth.sign_in!`, `Auth.required`, `/auth/sign-out`).
   They were kept in `Kv`, in the server's memory, so every restart signed the admin out; now they
   are rows in the database, kept as their token's hash.

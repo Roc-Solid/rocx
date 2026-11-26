@@ -1823,6 +1823,22 @@ platform by a path, so the app names the same file (D-033). The dev mailbox's lo
 until D-035. **Why.** The platform keeps what needs the host; jobs are Roc on general effects, and
 now an example of a plugin that brings tables, loops, a call and a start. **Reversible:** yes.
 
+**Later (2026-11-26):** finished jobs are swept by a loop of the plugin's own, `jobs.sweep`
+(`JobSweeper`), when the server starts and every `sweep_ms` after (an hour), instead of done jobs
+alone at start (failed and canceled ones were kept for ever, and a cron every ten seconds left some
+60,000 rows a week between restarts). `Job.Options` gains `keep_done_ms ?? 604_800_000` (the week
+the start kept), `keep_failed_ms ?? 2_592_000_000` (30 days: failed and canceled, kept longer,
+since someone may want to read why or retry one) and `sweep_ms ?? 3_600_000` (a row outlives its
+keep by at most that; 0 stops the server at start, as a sweep that never waits would hammer the
+database). The sweep is on `finished_at`, for every kind (one the app no longer runs too), never a
+queued or running job, a thousand rows a statement so that on SQLite other writes come in between,
+on Postgres (its times compared through `to_timestamp`) and SQLite (milliseconds) alike; it logs
+how many went. `sweep_ms` is an option of its own, as Oban's pruner has an interval, so an app (and
+the server's tests, which age rows past keeps of an hour and two, swept twice a second) says how
+often rather than the sweep working it out from the keeps. The keeps are kept at start with the
+kinds (`Job.keeps!`), so the jobs page says them ("Done jobs are kept for 1 h, …") rather than "a
+week".
+
 ## D-035 Email is a package, and a plugin
 
 **Context.** D-025's rule, and the user's decision of 2026-11-22 (D-034). Email was the platform's

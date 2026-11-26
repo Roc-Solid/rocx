@@ -9,8 +9,8 @@
 // the one before) while reads go on beside one; what is notified is heard once its transaction
 // commits, and never if it rolls back or crashes; the platform's tables and a plugin's for SQLite
 // alone are made, once; an actor's state is kept across a restart; a plugin that needs Postgres is
-// refused; transactions inside transactions are savepoints (D-076, nested-checks.mjs), on Turso in
-// WAL mode too.
+// refused; the jobs plugin's finished jobs are swept as they age; transactions inside transactions
+// are savepoints (D-076, nested-checks.mjs), on Turso in WAL mode too.
 //
 // Needs the toolchain (`just setup`: Roc, and Rust for the host); no database server.
 import { describe, test, before, after } from "node:test";
@@ -418,6 +418,23 @@ function suite({ engine, name, tag, run, server, home }) {
 		assert.match(page, /Finished jobs/);
 		assert.doesNotMatch(page, /class="problem"/);
 		assert.match(page, new RegExp(`The queue, in ${name}`));
+	});
+
+	test("jobs: finished ones are swept once older than the plugin keeps them (done an hour, failed and canceled two), every half second; queued ones never", { skip }, async () => {
+		const minutes = 60_000;
+		const aged = [
+			["done", 90, "done-old"],
+			["done", 30, "done-young"],
+			["failed", 180, "failed-old"],
+			["failed", 90, "failed-young"],
+			["canceled", 180, "canceled-old"],
+			["canceled", 90, "canceled-young"],
+			["queued", 180, "queued-old"],
+		];
+		for (const [state, age, key] of aged) assert.equal(await server().post(`/jobs/aged?state=${state}&age=${age * minutes}&key=${key}`), "added");
+		const left = async () => (await server().text("/jobs/aged")).split("\n").filter(Boolean);
+		await until(async () => (await left()).length === 4, 3000);
+		assert.deepEqual(await left(), ["done-young", "failed-young", "canceled-young", "queued-old"]);
 	});
 
 	// ---- Transactions inside transactions (D-076) ----

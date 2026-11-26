@@ -24,8 +24,9 @@ attempt, beside its input.
   and put back when it resumes, so the host knows which call wrote each line.
 - `rocx_jobs` keeps one row per job: `attempts` is a count, and `last_error` is the last attempt's
   error. Earlier attempts leave nothing behind.
-- Done jobs older than a week are deleted when the server starts (`JobWorker.recover!`). Failed
-  and canceled ones stay.
+- Finished jobs are swept (`JobSweeper`, every hour and at start): done ones a week after they
+  finished, failed and canceled ones 30 days after (the plugin's `keep_done_ms` and
+  `keep_failed_ms`).
 
 ### Option 1: the package alone
 
@@ -85,8 +86,8 @@ thread, each keeping only its own lines.
 - `JobWorker.attempt!` calls `isolated_logged!`. `finish!` writes the attempt's row beside the
   job's own update, after the attempt and outside the job's transactions, so a failed attempt's
   lines are kept.
-- The start-up sweep that deletes done jobs deletes their attempts too. A retried job's earlier
-  runs stay, and its new attempts are numbered on from them.
+- The sweep that deletes finished jobs (`JobSweeper`) deletes their attempts too. A retried job's
+  earlier runs stay, and its new attempts are numbered on from them.
 - `Job.attempts!(id)` reads them, for the page.
 
 **packages/admin.** The job drawer gets an "Attempts" section. It lists each attempt, newest
@@ -123,8 +124,8 @@ platform module stays only if it needs the host or the transpiler). No Roc code 
 3. **Levels.** Keep debug lines too? stderr writes every level today.
 4. **One isolated call.** Should `isolated_logged!` become the only `isolated!`, with one answer
    type for every plugin?
-5. **Keeping failed jobs.** Failed jobs are never swept today. With their logs kept as well, should
-   failed jobs older than a month go?
+5. **Keeping failed jobs.** Settled since (2026-11-26): failed and canceled jobs are swept 30 days
+   after they finished (`keep_failed_ms`), and their attempts would go with them.
 
 **Related.**
 

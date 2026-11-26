@@ -60,7 +60,8 @@ JobWorker := [].{
 	}
 
 	## When the server starts (with a database): a job of the plugin's kinds that was running when it
-	## last stopped was cut short, so it is queued again; done jobs older than a week go.
+	## last stopped was cut short, so it is queued again. (Finished jobs are the sweep's:
+	## `JobSweeper`.)
 	recover! : List(Str) => Try({}, Str)
 	recover! = |kinds| {
 		lite = Queue.lite!({})
@@ -74,16 +75,7 @@ JobWorker := [].{
 			Err(DbErr(why)) => Err("jobs: ${why}")
 			Ok(count) => {
 				if (count > 0) Log.warn!("rocx jobs: jobs cut short by the last stop, queued again", { count: count }) else {}
-				swept =
-					if lite {
-						Db.run!("delete from rocx_jobs where state = 'done' and finished_at < $1", [Int(Queue.now!({}) - 7 * 24 * 3_600_000)])
-					} else {
-						Db.run!("delete from rocx_jobs where state = 'done' and finished_at < now() - interval '7 days'", [])
-					}
-				match swept {
-					Ok(_) => Ok({})
-					Err(DbErr(why)) => Err("jobs: ${why}")
-				}
+				Ok({})
 			}
 		}
 	}
