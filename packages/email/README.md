@@ -113,16 +113,21 @@ mailbox's pages, the check and the refusal at start are missing (each send fails
 |---|---|---|
 | `smtps://user:password@host` | TLS from the start | 465 |
 | `smtp://user:password@host?tls=required` | STARTTLS; fails if the server doesn't offer it | 587 |
-| `smtp://host?tls=opportunistic` | STARTTLS if offered, plain otherwise | 25 |
+| `smtp://user:password@host` | STARTTLS, required as above: a password never goes in clear | 25 |
+| `smtp://host?tls=opportunistic` | STARTTLS if offered, plain otherwise (with a user: refused if not offered) | 25 |
 | `smtp://host` | plain | 25 |
+| `smtp://user:password@host?tls=never` | plain, the password too (a relay on this machine) | 25 |
 
 A port in the URL overrides the default. With a user in the URL the client signs in with
-`AUTH PLAIN`; the user and the password are `%`-decoded.
+`AUTH PLAIN`; the user and the password are `%`-decoded. The password goes in clear only when the
+URL says `?tls=never`.
 
 ## How it works
 
 - **The message** (`Email.roc`): `Date`, `From`, `To`, `Subject`, `Message-ID` and `MIME-Version`
   headers, then the text alone (`text/plain`) or the text and the HTML (`multipart/alternative`).
+  A subject, or a name in `From` or `To`, that isn't printable ASCII is an encoded word (RFC 2047),
+  so a CR or LF in one (a name a user typed) can't start a header of its own.
   A subject that isn't printable ASCII is an encoded word (RFC 2047). A body that is ASCII with
   short lines is sent as it is (7bit); any other is sent as Base64 (packages/crypto's
   `Base64.lines`).

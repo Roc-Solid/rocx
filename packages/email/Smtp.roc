@@ -3,9 +3,14 @@ import crypto.Base64
 
 ## Just enough SMTP to hand a message to a server: plain, STARTTLS (`?tls=required`, or
 ## `opportunistic`), or TLS from the start (`smtps://`), and AUTH PLAIN when the URL has a user.
+## A password never goes in clear unless the URL says `?tls=never`: a URL with a user and no `tls`
+## requires STARTTLS, and with `opportunistic` a server that doesn't offer it is refused.
 Smtp := [].{
 
 	## Where to send: `smtp://user:password@host:587?tls=required`, `smtps://user:password@host:465`.
+	## `tls`: `Implicit` (`smtps://`); `Required` (`?tls=required`, and a URL with a user that says
+	## nothing); `Opportunistic` (`?tls=opportunistic`); `Never` (`?tls=never`, and a URL without a
+	## user that says nothing: a relay on this machine, a test's server).
 	Url : { tls : [Implicit, Required, Opportunistic, Never], host : Str, port : U16, user : Str, password : Str }
 
 	parse : Str -> Try(Url, Str)
@@ -28,16 +33,19 @@ Smtp := [].{
 					}
 				asked =
 					if query.contains("tls=required") {
-						Required
+						Asked(Required)
 					} else if query.contains("tls=opportunistic") {
-						Opportunistic
+						Asked(Opportunistic)
+					} else if query.contains("tls=never") {
+						Asked(Never)
 					} else {
-						Never
+						Unsaid
 					}
 				tls =
-					match scheme {
-						"smtps" => Ok(Implicit)
-						"smtp" => Ok(asked)
+					match (scheme, asked) {
+						("smtps", _) => Ok(Implicit)
+						("smtp", Asked(how)) => Ok(how)
+						("smtp", Unsaid) => Ok(if (user.is_empty()) Never else Required)
 						_ => Err("SMTP_URL: smtp://… or smtps://…, not ${scheme}://")
 					}
 				(host, port_text) =
@@ -45,7 +53,7 @@ Smtp := [].{
 						Ok({ before, after }) => (before, after)
 						Err(_) => (host_port, "")
 					}
-				default_port = if (scheme == "smtps") 465 else if (asked == Required) 587 else 25
+				default_port = if (scheme == "smtps") 465 else if (asked == Asked(Required)) 587 else 25
 				port =
 					if port_text.is_empty() {
 						Ok(default_port)
@@ -100,7 +108,9 @@ open! = |url| {
 	offered = features.any(|line| line.with_ascii_uppercased().starts_with("STARTTLS"))
 	secured =
 		if url.tls == Required and !offered {
-			Err("the server doesn't offer STARTTLS, and the URL requires it")
+			Err("the server doesn't offer STARTTLS, and the URL requires it (a URL with a user does, unless it says ?tls=never)")
+		} else if url.tls == Opportunistic and !offered and !url.user.is_empty() {
+			Err("the server doesn't offer STARTTLS, so the password would go in clear: say ?tls=never in SMTP_URL to send it so anyway (a relay on this machine)")
 		} else if (url.tls == Required or url.tls == Opportunistic) and offered {
 			_ = command!(tcp, "STARTTLS", 220)?
 			match tcp.start_tls!(url.host) {
@@ -257,6 +267,10 @@ hex = |digit|
 	}
 
 expect Smtp.parse("smtp://127.0.0.1:2525") == Ok({ tls: Never, host: "127.0.0.1", port: 2525, user: "", password: "" })
+expect Smtp.parse("smtp://u:p@mail.example.com:587") == Ok({ tls: Required, host: "mail.example.com", port: 587, user: "u", password: "p" })
+expect Smtp.parse("smtp://u:p@mail.example.com").map_ok(|url| (url.tls, url.port)) == Ok((Required, 25))
+expect Smtp.parse("smtp://u:p@127.0.0.1:2525?tls=never").map_ok(|url| url.tls) == Ok(Never)
+expect Smtp.parse("smtp://u:p@mail.example.com?tls=opportunistic").map_ok(|url| url.tls) == Ok(Opportunistic)
 expect Smtp.parse("smtp://ada%40x:p%3Ass@mail.example.com?tls=required") == Ok({ tls: Required, host: "mail.example.com", port: 587, user: "ada@x", password: "p:ss" })
 expect Smtp.parse("smtps://u:p@mail.example.com") == Ok({ tls: Implicit, host: "mail.example.com", port: 465, user: "u", password: "p" })
 expect Smtp.parse("http://nope").is_err()

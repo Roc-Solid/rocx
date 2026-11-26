@@ -190,13 +190,17 @@ is_address = |address|
 unquoted : Str -> Str
 unquoted = |name| if (name.starts_with("\"") and name.ends_with("\"") and name.to_utf8().len() >= 2) name.drop_prefix("\"").drop_suffix("\"") else name
 
-## A mailbox as a header has it: `"Ada Lovelace" <ada@example.com>`, or the bare address.
+## A mailbox as a header has it: `"Ada Lovelace" <ada@example.com>`, or the bare address. A name
+## that isn't printable ASCII (`Zażółć`, or one with a CR or LF in it, which would start a header
+## of its own) is an encoded word (RFC 2047), as the subject is, so nothing in it ends the line.
 header_mailbox : Addressee -> Str
 header_mailbox = |box|
 	if box.name.is_empty() {
 		box.address
-	} else {
+	} else if box.name.to_utf8().all(|byte| byte >= ' ' and byte < 127) {
 		"\"${box.name.replace_each("\\", "\\\\").replace_each("\"", "\\\"")}\" <${box.address}>"
+	} else {
+		"${encoded_header(box.name)} <${box.address}>"
 	}
 
 ## The message as SMTP's DATA carries it: headers, then the text alone (`text/plain`), or the text
@@ -290,6 +294,12 @@ expect mailbox("rocx <rocx@localhost>") == Ok({ name: "rocx", address: "rocx@loc
 expect mailbox("not-an-address").is_err()
 expect mailbox("a b@example.com").is_err()
 expect header_mailbox({ name: "Rocx Tests", address: "tests@rocx.example" }) == "\"Rocx Tests\" <tests@rocx.example>"
+expect header_mailbox({ name: "Zażółć", address: "z@example.com" }) == "=?utf-8?b?WmHFvMOzxYLEhw==?= <z@example.com>"
+expect !header_mailbox({ name: "Ada\r\nBcc: everyone@example.com", address: "ada@example.com" }).contains("\n")
+expect {
+	data = compose({ name: "", address: "a@x.example" }, { name: "Ada\r\nBcc: everyone@example.com", address: "ada@example.com" }, { to: "ada@example.com", subject: "Hi\r\nBcc: them@example.com", text: "one", html: "" }, 1795211647000, 1)
+	!data.contains("\r\nBcc:")
+}
 expect encoded_header("Hello") == "Hello"
 expect encoded_header("Zażółć") == "=?utf-8?b?WmHFvMOzxYLEhw==?="
 expect hex(255) == "ff"

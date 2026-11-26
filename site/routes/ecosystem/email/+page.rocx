@@ -98,15 +98,18 @@ view! = |_|
 					<tbody>
 						<tr><td><code>smtps://user:password@host</code></td><td>TLS from the start</td><td>465</td></tr>
 						<tr><td><code>smtp://user:password@host?tls=required</code></td><td>STARTTLS; fails if the server doesn't offer it</td><td>587</td></tr>
-						<tr><td><code>smtp://host?tls=opportunistic</code></td><td>STARTTLS if the server offers it, plain otherwise</td><td>25</td></tr>
+						<tr><td><code>smtp://user:password@host</code></td><td>STARTTLS, required as above: a password never goes in clear</td><td>25</td></tr>
+						<tr><td><code>smtp://host?tls=opportunistic</code></td><td>STARTTLS if the server offers it, plain otherwise (with a user: refused if it isn't offered)</td><td>25</td></tr>
 						<tr><td><code>smtp://host</code></td><td>plain, no TLS (a local relay, or a test server)</td><td>25</td></tr>
+						<tr><td><code>smtp://user:password@host?tls=never</code></td><td>plain, the password too (a relay on this machine)</td><td>25</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
 				A port in the URL (<code>host:2525</code>) overrides the default. When the URL has a user, the
 				client signs in with <code>AUTH PLAIN</code>; write any special characters in the user or the
-				password with <code>%</code> escapes, as in any URL.
+				password with <code>%</code> escapes, as in any URL. The password goes in clear only when the URL
+				says <code>?tls=never</code>.
 			</p>
 			<p>
 				Once the server has started, the plugin connects to the SMTP server (TLS and all), says goodbye,

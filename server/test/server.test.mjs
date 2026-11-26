@@ -1422,6 +1422,7 @@ test("email: without an SMTP server, kept in the outbox and logged", { skip }, a
 /** An SMTP server that takes every message and keeps it: just enough of the protocol. */
 async function smtpServer() {
 	const received = [];
+	const commands = [];
 	const server = createServer((socket) => {
 		socket.setEncoding("utf8");
 		let buffered = "";
@@ -1447,6 +1448,7 @@ async function smtpServer() {
 				const line = buffered.slice(0, end);
 				buffered = buffered.slice(end + 2);
 				const verb = line.slice(0, 4).toUpperCase();
+				commands.push(verb);
 				if (verb === "EHLO" || verb === "HELO") socket.write("250-rocx-test\r\n250 8BITMIME\r\n");
 				else if (verb === "MAIL") (envelope.from = line), socket.write("250 ok\r\n");
 				else if (verb === "RCPT") envelope.to.push(line), socket.write("250 ok\r\n");
@@ -1457,7 +1459,7 @@ async function smtpServer() {
 		});
 	});
 	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-	return { port: server.address().port, received, close: () => new Promise((resolve) => server.close(resolve)) };
+	return { port: server.address().port, received, commands, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 test("email: over SMTP, from a request and from a job, as text and HTML", { skip }, async () => {
@@ -1498,6 +1500,18 @@ test("email: over SMTP, from a request and from a job, as text and HTML", { skip
 		assert.match(await failed.text(), /^email to ada@example\.com: /);
 	} finally {
 		await nowhere.stop();
+	}
+	// A URL with a password and no `tls`: STARTTLS required, so a server that doesn't offer it (as
+	// this one doesn't) never sees the password; `?tls=never` sends it in clear, as asked.
+	const authsBefore = smtp.commands.filter((verb) => verb === "AUTH").length;
+	const guarded = await start([], app, { ...mailEnv(), SMTP_URL: `smtp://ada:secret@127.0.0.1:${smtp.port}` });
+	try {
+		const refused = await guarded.get("/mail?to=ada@example.com", { method: "POST", body: "x" });
+		assert.equal(refused.status, 500);
+		assert.match(await refused.text(), /doesn't offer STARTTLS/);
+		assert.equal(smtp.commands.filter((verb) => verb === "AUTH").length, authsBefore, "no AUTH in clear");
+	} finally {
+		await guarded.stop();
 	}
 });
 
