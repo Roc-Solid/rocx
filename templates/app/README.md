@@ -60,7 +60,7 @@ people through: a signed-out page visit goes to the sign-in page, and comes back
 else is refused (401). `(signed-in)` is a group, a folder in brackets: it adds nothing to the path
 (`routes/(signed-in)/account/+page.rocx` is `/account`), so the page and its endpoints under
 `api/` sit in it together, and the sign-in pages outside it. A new page or endpoint in the group is
-guarded with no line of its own; `rocx routes .` says what runs around each.
+guarded with no line of its own; `rocx routes` says what runs around each.
 
 ## Settings in `.env`
 

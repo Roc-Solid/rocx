@@ -584,7 +584,7 @@ signed in); a handler reads it as `context`, typed: one that reads `context.user
 behind a middleware that adds it. `Middleware.when(Server.changes, guard)` runs `guard` for writes
 alone. Before any of them, the platform refuses a change another site's page sends (a POST, PUT,
 PATCH or DELETE whose `Origin` isn't the server's), unless the app says `cross_site: Allowed`.
-`rocx routes <dir>` lists what runs around each route.
+`rocx routes` (in the app's folder) lists what runs around each route.
 
 ### How a page is put together
 
