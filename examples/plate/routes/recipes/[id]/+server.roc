@@ -1,6 +1,5 @@
 import pf.Server
 import pf.Endpoint
-import forms.Issues
 import ../../../Plate
 import ../../../PlateForm
 import ../../../Query
@@ -16,10 +15,10 @@ get! = |{ request, params, .. }| {
 	Ok({ recipe, query, hits })
 }
 
+## What POST /recipes/:id is sent: the recipe's name, servings and notes, read and checked by
+## `PlateForm.recipe_edit` (D-093).
+post_body = PlateForm.recipe_edit
+
 ## POST /recipes/:id, from the recipe's form: its name, servings and notes changed.
-post! : { request : Server.Request, params : { id : Str }, context : {}, body : { name : Str, servings : Str, notes : Str } } => Try({}, Endpoint.Refusal)
-post! = |{ request, params, .. }|
-	match PlateForm.recipe_edit.parse_body(Server.text_of(request)) {
-		Ok(recipe) => Store.save_recipe!(params.id, recipe).map_err!(Store.refusal!)
-		Err(issues) => Err(Issues.refusal(issues))
-	}
+post! : { request : Server.Request, params : { id : Str }, context : {}, body : PlateForm.RecipeEdit } => Try({}, Endpoint.Refusal)
+post! = |{ params, body, .. }| Store.save_recipe!(params.id, body).map_err!(Store.refusal!)

@@ -28,10 +28,17 @@ import Host
 ##
 ## A form's fields may be given ahead of time (`with_fields`, Solid Router's `action.with`): they go in the
 ## URL the form posts to, and its own fields after them.
-Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Request, context, arg => Try(result, Endpoint.Refusal), form : [Typed(List({ name : Str, value : Str }) -> Try(arg, Str)), Untyped], bound : Str }.{
+##
+## Its arg may be checked as well as typed (`checked`, D-093): read by rules of the app's (a form of
+## packages/forms), from a form's fields or a JSON object alike, and refused with their issues
+## (422, as JSON) when it doesn't pass them. Generated/Api makes it so for a method whose route
+## file names its body's rules (`post_body = Signup.form`).
+Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Request, context, arg => Try(result, Endpoint.Refusal), form : [Typed(List({ name : Str, value : Str }) -> Try(arg, Str)), Checked({ read : List({ name : Str, value : Str }) -> Try(arg, Str), schema : Str }), Untyped], bound : Str }.{
 
-	## What a handler may answer instead of its result: a status, and why; or exactly this answer.
-	Refusal : [BadRequest(Str), Unauthorized, Forbidden, NotFound, Conflict(Str), Status(U16, Str), Answer(Server.Response)]
+	## What a handler may answer instead of its result: a status, and why (as text); a status, and a
+	## body of JSON (`Json`: what packages/forms' `Issues.refusal` answers, a 422 of a form's issues),
+	## sent as `application/json`; or exactly this answer.
+	Refusal : [BadRequest(Str), Unauthorized, Forbidden, NotFound, Conflict(Str), Status(U16, Str), Json(U16, Str), Answer(Server.Response)]
 
 	## An endpoint of the app's own, with its handler, outside the routes: its method, its URL and
 	## what it does (a test's, or one made for `run!` alone). Its reader of a form (`FormBody`) is
@@ -70,12 +77,53 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	read_params : List({ name : Str, value : Str }) -> Try(params, Str) where [params.FormBody.Readable]
 	read_params = |parts| FormBody.parse(parts)
 
-	## Its reader of a form's fields as its arg (`FormBody`), or why it can't: what a submission of a
-	## form to it reads what was typed with (`Router.use_submission!`, `Submission.input!`).
+	## The endpoint, its arg read and checked by `rules` (D-093): a form's fields, or a JSON object's
+	## (as `with_fields` has them: text, numbers and yes-or-no as written, a list's items each a
+	## value), are given to `rules.parse`, which answers the arg or its issues; the issues are its
+	## refusal, 422, as JSON (`application/json`). Its body's schema in /openapi.json is
+	## `rules.json_schema()`. Anything with those two methods is rules: packages/forms' `Form(a)`
+	## (`Endpoint.checked(Endpoint.remote("POST", "/signup"), Signup.form)`), which the platform
+	## doesn't know. Generated/Api makes a method's contract so when its route file names its body's
+	## rules (`post_body = Signup.form`), in both copies, so a submission in the browser reads what
+	## was typed by them too (`Submission.input!`: nothing while it doesn't pass).
+	checked : Endpoint(context, arg, result), rules -> Endpoint(context, arg, result)
+		where [
+			rules.parse : rules, List({ name : Str, value : Str }) -> Try(arg, issues),
+			rules.json_schema : rules -> Str,
+			issues.Json.Encodable(e),
+		]
+	checked = |endpoint, rules| {
+		# The crash's words name no endpoint: a reader that captures the endpoint (whose `run` is a
+		# function) segfaults the fork's compiler in boxy_lowering (4674b5973d).
+		read = |fields|
+			match rules.parse(fields) {
+				Ok(arg) => Ok(arg)
+				Err(issues) =>
+					match Json.to_str_try(issues) {
+						Ok(json) => Err(json)
+						Err(_) => crash "a checked endpoint's issues ${Server.unwritable}"
+					}
+			}
+		{ ..endpoint, form: Checked({ read: read, schema: rules.json_schema() }) }
+	}
+
+	## Its body's JSON Schema, when it is checked (`checked`): what its rules say it takes.
+	## `Err(Unchecked)` for one read by its arg's type alone.
+	checked_schema : Endpoint(context, arg, result) -> Try(Str, [Unchecked])
+	checked_schema = |endpoint|
+		match endpoint.form {
+			Checked(rules) => Ok(rules.schema)
+			_ => Err(Unchecked)
+		}
+
+	## Its reader of a form's fields as its arg (`FormBody`, or its rules when it is `checked`: then
+	## why is the issues' JSON), or why it can't: what a submission of a form to it reads what was
+	## typed with (`Router.use_submission!`, `Submission.input!`).
 	form_of : Endpoint(context, arg, result) -> (List({ name : Str, value : Str }) -> Try(arg, Str))
 	form_of = |endpoint|
 		match endpoint.form {
 			Typed(reader) => reader
+			Checked(rules) => rules.read
 			Untyped => |_| Err("${endpoint.method} ${endpoint.url} reads JSON alone (Endpoint.local_json)")
 		}
 
@@ -281,10 +329,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 					match received!(who, tab, Server.text_of(request)) {
 						Ok({}) => Server.response(204, [], "")
 						Err(Answer(own)) => own
-						Err(refusal) => {
-							(status, why) = Endpoint.refused(refusal)
-							text(status, why)
-						}
+						Err(refusal) => refusal_answer(refusal)
 					}
 				} else {
 					match Json.to_str_try(who) {
@@ -294,10 +339,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 				}
 			}
 			Err(Answer(own)) => own
-			Err(refusal) => {
-				(status, why) = Endpoint.refused(refusal)
-				text(status, why)
-			}
+			Err(refusal) => refusal_answer(refusal)
 		}
 	}
 
@@ -432,8 +474,11 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## the arg's type, `FormBody`; a field it lacks or can't read is a 400 naming it). Any other body
 	## (an upload: `application/octet-stream`, `video/mp4`, or no type at all) isn't read: the arg is
 	## `{}`, and the handler reads `request.body`, the bytes as they came.
-	## No body is `{}` too. Its result is sent as JSON, a refusal as its status and why, or as the
-	## answer it is. A body it doesn't read, for a handler that wants an arg, is 415.
+	## No body is `{}` too. A checked endpoint (`checked`) reads a form's fields, or a JSON object's,
+	## by its rules instead, and refuses what doesn't pass them with their issues (422, JSON); a JSON
+	## body that isn't an object of fields is a 400. Its result is sent as JSON, a refusal as its
+	## status and why (text; JSON for `Json`), or as the answer it is. A body it doesn't read, for a
+	## handler that wants an arg, is 415.
 	##
 	## A form a browser posted without the runtime (a plain `<form method="post">`: a form's body,
 	## `accept: text/html`) gets neither its result nor its refusal, which would be a page of JSON or
@@ -446,22 +491,40 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
 	respond! = |endpoint, request, context| {
 		read = input_of(request)
-		parsed : Try(arg, Str)
+		parsed : Try(arg, [Unreadable(Str), Unchecked(Str)])
 		parsed =
-			match read {
-				Fields(fields) =>
-					match endpoint.form {
-						Typed(reader) => reader(fields)
-						Untyped => Json.parse(Server.form_json(Server.text_of(request))).map_err(|InvalidJson(why)| why)
+			match endpoint.form {
+				Checked(rules) => {
+					checks = rules.read
+					match read {
+						Fields(fields) => checks(fields).map_err(|why| Unchecked(why))
+						Read(json) =>
+							match json_fields(json) {
+								Ok(fields) => checks(fields).map_err(|why| Unchecked(why))
+								Err(why) => Err(Unreadable(why))
+							}
+						Unread(_) => Err(Unreadable(""))
 					}
-				Read(json) => Json.parse(json).map_err(|InvalidJson(why)| why)
-				Unread(_) => Json.parse("{}").map_err(|InvalidJson(why)| why)
+				}
+				Typed(reader) =>
+					match read {
+						Fields(fields) => reader(fields).map_err(|why| Unreadable(why))
+						Read(json) => Json.parse(json).map_err(|InvalidJson(why)| Unreadable(why))
+						Unread(_) => Json.parse("{}").map_err(|InvalidJson(why)| Unreadable(why))
+					}
+				Untyped =>
+					match read {
+						Fields(_) => Json.parse(Server.form_json(Server.text_of(request))).map_err(|InvalidJson(why)| Unreadable(why))
+						Read(json) => Json.parse(json).map_err(|InvalidJson(why)| Unreadable(why))
+						Unread(_) => Json.parse("{}").map_err(|InvalidJson(why)| Unreadable(why))
+					}
 			}
 		posted = Endpoint.posted_by(request)
-		reply! = |status, body|
+		# A plain form goes back to its page with what it was answered, whatever it is.
+		reply! = |status, kind, body|
 			match posted {
 				PlainForm => Server.flash_back!(request, { url: endpoint.url, input: form_input(read), status, body })
-				_ => if (status == 200) Server.response(200, [{ name: "content-type", value: "application/json" }], body) else text(status, body)
+				_ => Server.response(status, [{ name: "content-type", value: kind }], body)
 			}
 		match parsed {
 			Ok(arg) => {
@@ -469,8 +532,8 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 				match handler(request, context, arg) {
 					Ok(result) =>
 						match Json.to_str_try(result) {
-							Ok(json) => reply!(200, json)
-							Err(_) => reply!(500, "${endpoint.method} ${request.path}'s answer: ${Server.unwritable}")
+							Ok(json) => reply!(200, json_type, json)
+							Err(_) => reply!(500, text_type, "${endpoint.method} ${request.path}'s answer: ${Server.unwritable}")
 						}
 					Err(Answer(own)) =>
 						match posted {
@@ -479,14 +542,15 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 						}
 					Err(refusal) => {
 						(status, why) = Endpoint.refused(refusal)
-						reply!(status, why)
+						reply!(status, type_of(refusal), why)
 					}
 				}
 			}
-			Err(why) =>
+			Err(Unchecked(issues)) => reply!(422, json_type, issues)
+			Err(Unreadable(why)) =>
 				match read {
 					Unread(type) => text(415, "${endpoint.method} ${request.path} reads JSON (application/json) or a form, not ${if (type.is_empty()) "a body with no content-type" else type}")
-					_ => reply!(400, "${endpoint.method} ${request.path} can't read its body: ${why}")
+					_ => reply!(400, text_type, "${endpoint.method} ${request.path} can't read its body: ${why}")
 				}
 		}
 	}
@@ -511,10 +575,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 					),
 				)
 			Err(Answer(own)) => own
-			Err(refusal) => {
-				(status, why) = Endpoint.refused(refusal)
-				text(status, why)
-			}
+			Err(refusal) => refusal_answer(refusal)
 		}
 	}
 
@@ -534,7 +595,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			Other
 		}
 
-	## A refusal's status, and why.
+	## A refusal's status, and why (a `Json` refusal's, its JSON).
 	refused : Refusal -> (U16, Str)
 	refused = |refusal|
 		match refusal {
@@ -544,6 +605,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			NotFound => (404, "Not found")
 			Conflict(why) => (409, why)
 			Status(status, why) => (status, why)
+			Json(status, json) => (status, json)
 			Answer(own) => (own.status, Server.body_text(own))
 		}
 
@@ -765,7 +827,32 @@ has_body : Str -> Bool
 has_body = |method| method == "POST" or method == "PUT" or method == "PATCH"
 
 text : U16, Str -> Server.Response
-text = |status, body| Server.response(status, [{ name: "content-type", value: "text/plain; charset=utf-8" }], body)
+text = |status, body| Server.response(status, [{ name: "content-type", value: text_type }], body)
+
+text_type : Str
+text_type = "text/plain; charset=utf-8"
+
+json_type : Str
+json_type = "application/json"
+
+## What a refusal's body is: JSON for a `Json` refusal, else text.
+type_of : Endpoint.Refusal -> Str
+type_of = |refusal|
+	match refusal {
+		Json(_, _) => json_type
+		_ => text_type
+	}
+
+## A refusal as an answer: its status, and why, as text, or its JSON as JSON (`Json`).
+refusal_answer : Endpoint.Refusal -> Server.Response
+refusal_answer = |refusal|
+	match refusal {
+		Answer(own) => own
+		_ => {
+			(status, why) = Endpoint.refused(refusal)
+			Server.response(status, [{ name: "content-type", value: type_of(refusal) }], why)
+		}
+	}
 
 shout : Endpoint({}, Str, Str)
 shout = Endpoint.local("POST", "/shout", |_, _, said| if (said.is_empty()) Err(BadRequest("say something")) else Ok(said.with_ascii_uppercased()))
@@ -813,3 +900,36 @@ expect Endpoint.url_of(Endpoint.with_fields(Endpoint.with_query(shout, "weeks=1"
 expect input_of(Server.from_http("POST", "/todos/toggle?id=7", "content-type: application/x-www-form-urlencoded", "done=on".to_utf8())) == Fields([{ name: "id", value: "7" }, { name: "done", value: "on" }])
 expect input_of(Server.from_http("POST", "/photos", "content-type: multipart/form-data; boundary=b", "--b\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"a.png\"\r\n\r\nPNG\r\n--b--".to_utf8())) == Fields([{ name: "photo", value: "a.png" }])
 expect Endpoint.posted_by(Server.from_http("POST", "/photos", "content-type: multipart/form-data; boundary=b\naccept: text/html", [])) == PlainForm
+
+## Rules of an app's own (packages/forms' `Form` is such): an age of at least `min`, and a name.
+Adult := { min : U64 }.{
+	parse : Adult, List({ name : Str, value : Str }) -> Try({ name : Str, age : U64 }, List({ field : Str, message : Str }))
+	parse = |rules, fields| {
+		name = fields.find_first(|field| field.name == "name").map_ok(|field| field.value) ?? ""
+		age = fields.find_first(|field| field.name == "age").map_ok(|field| U64.from_str(field.value) ?? 0) ?? 0
+		if age < rules.min {
+			Err([{ field: "age", message: "Enter ${rules.min.to_str()} or more" }])
+		} else {
+			Ok({ name: name, age: age })
+		}
+	}
+
+	json_schema : Adult -> Str
+	json_schema = |rules| "{\"type\":\"object\",\"properties\":{\"age\":{\"type\":\"integer\",\"minimum\":${rules.min.to_str()}}}}"
+}
+
+adult : Adult
+adult = { min: 18 }
+
+signing : Endpoint({}, { name : Str, age : U64 }, Str)
+signing = Endpoint.checked(Endpoint.local("POST", "/sign", |_, _, said| Ok(said.name)), adult)
+
+expect Endpoint.form_of(signing)([{ name: "name", value: "Ada" }, { name: "age", value: "36" }]) == Ok({ name: "Ada", age: 36 })
+expect Endpoint.form_of(signing)([{ name: "name", value: "Ada" }, { name: "age", value: "12" }]) == Err("[{\"field\":\"age\",\"message\":\"Enter 18 or more\"}]")
+expect Endpoint.checked_schema(signing) == Ok("{\"type\":\"object\",\"properties\":{\"age\":{\"type\":\"integer\",\"minimum\":18}}}")
+expect Endpoint.checked_schema(shout) == Err(Unchecked)
+expect Endpoint.url_of(Endpoint.with_query(signing, "x=1")) == "/sign?x=1"
+expect Endpoint.refused(Json(422, "[]")) == (422, "[]")
+expect type_of(Json(422, "[]")) == "application/json" and type_of(Status(422, "no")) == "text/plain; charset=utf-8"
+expect refusal_answer(Json(422, "[]")).headers == [{ name: "content-type", value: "application/json" }]
+expect refusal_answer(NotFound).status == 404

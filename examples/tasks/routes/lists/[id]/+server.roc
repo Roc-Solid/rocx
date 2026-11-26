@@ -18,25 +18,25 @@ get! = |{ params, context, .. }| {
 	Ok({ id: list.id, name: list.name, tasks, people, me: context.me, today })
 }
 
+## What POST /lists/:id is sent: a new task, read and checked by `TaskForm.adding` (D-093), from
+## the form or as JSON. The page reads what the form sent with it too, to show the task in the
+## list while it is on its way (`use_submissions!`).
+post_body = TaskForm.adding
+
 ## POST /lists/:id, from the form under the list (`components/AddTask.rocx`): a new task, last on
-## the list; its id. `body` is what the form posted, field by field, as strings: the page shows it
-## in the list while it is on its way (`use_submissions!`). `TaskForm.adding` reads the form again,
-## checked, into a title, a day and a person, or refuses it with each field's issues (422).
-post! : { request : Server.Request, params : { id : Str }, context : Middlewares.Context, body : Tasks.Adding } => Try(Str, Endpoint.Refusal)
-post! = |{ request, params, .. }|
-	match TaskForm.adding.parse_body(Server.text_of(request)) {
-		Ok(task) => {
-			# Who it is for is checked here, against the team in the database: a form can't know.
-			known =
-				match task.assignee {
-					Ok(person) => Store.is_person!(person).map_err!(Store.refusal!)?
-					Err(Missing) => Bool.True
-				}
-			if known {
-				Store.add!(params.id, task).map_err!(Store.refusal!)
-			} else {
-				Err(Issues.refusal([{ field: "assignee", code: Custom("unknown", "Choose someone on the team"), message: "Choose someone on the team" }]))
-			}
+## the list; its id. `body` is the form's record, checked: a title, and maybe a day and a person.
+## A form that doesn't pass is refused with each field's issues (422) before this runs.
+post! : { request : Server.Request, params : { id : Str }, context : Middlewares.Context, body : TaskForm.Adding } => Try(Str, Endpoint.Refusal)
+post! = |{ params, body, .. }| {
+	# Who it is for is checked here, against the team in the database: a form can't know.
+	known =
+		match body.assignee {
+			Ok(person) => Store.is_person!(person).map_err!(Store.refusal!)?
+			Err(Missing) => Bool.True
 		}
-		Err(issues) => Err(Issues.refusal(issues))
+	if known {
+		Store.add!(params.id, body).map_err!(Store.refusal!)
+	} else {
+		Err(Issues.refusal([{ field: "assignee", code: Custom("unknown", "Choose someone on the team"), message: "Choose someone on the team" }]))
 	}
+}

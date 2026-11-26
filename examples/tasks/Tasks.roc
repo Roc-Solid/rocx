@@ -1,4 +1,5 @@
 import forms.Date
+import TaskForm
 
 ## The app's rules: what a task is, which tasks a filter shows, and what each change the page
 ## sends (a toggle, a move, a delete, an add) does to a list. Plain Roc on no platform, so the
@@ -40,10 +41,10 @@ Tasks := [].{
 	Toggle : { id : Str, done : Bool }
 	Move : { id : Str, to : U64 }
 	Remove : { id : Str }
-	Adding : { title : Str, due : Str, assignee : Str }
 
-	## The changes on their way to the server, as `use_submissions!` lists them.
-	Pending : { toggles : List(Toggle), moves : List(Move), removes : List(Remove), adds : List(Adding) }
+	## The changes on their way to the server, as `use_submissions!` lists them: an add as its form
+	## reads it (`TaskForm.adding`, which its endpoint's body is checked by, D-093).
+	Pending : { toggles : List(Toggle), moves : List(Move), removes : List(Remove), adds : List(TaskForm.Adding) }
 
 	## How soon a task is due, for its badge.
 	Due : { label : Str, tone : [Overdue, Today, Soon, Later] }
@@ -121,8 +122,8 @@ Tasks := [].{
 
 	## Tasks being added, at the end, as they will be once the server has them. Until then each has
 	## an id of its own, `new-0`, `new-1`…, which no task in the database has (`Tasks.is_saving`).
-	added : List(Task), List(Adding) -> List(Task)
-	added = |tasks, adding| tasks.concat(adding.map_with_index(|new, index| { id: "new-${index.to_str()}", title: new.title.trim(), notes: "", due: new.due, assignee: new.assignee, done: Bool.False }))
+	added : List(Task), List(TaskForm.Adding) -> List(Task)
+	added = |tasks, adding| tasks.concat(adding.map_with_index(|new, index| { id: "new-${index.to_str()}", title: new.title, notes: "", due: new.due.map_ok(Date.to_str) ?? "", assignee: new.assignee ?? "", done: Bool.False }))
 
 	## Whether a task is on its way to the server, not in it yet.
 	is_saving : Task -> Bool
@@ -259,8 +260,8 @@ expect Tasks.place_above(sample, sample, "1") == Err(Top)
 expect ids(Tasks.moved(sample, { id: "1", to: (Tasks.place_below(sample, Tasks.visible(sample, Open, ""), "1") ?? 0) })) == "2,3,1,4"
 expect Tasks.place_below(sample, sample, "4") == Err(Bottom)
 
-expect ids(Tasks.showing(sample, { toggles: [], moves: [{ id: "3", to: 0 }], removes: [{ id: "2" }], adds: [{ title: " Milk ", due: "", assignee: "" }] })) == "3,1,4,new-0"
-expect Tasks.showing(sample, { toggles: [], moves: [], removes: [], adds: [{ title: " Milk ", due: "", assignee: "" }] }).last().map_ok(|each| each.title) == Ok("Milk")
+expect ids(Tasks.showing(sample, { toggles: [], moves: [{ id: "3", to: 0 }], removes: [{ id: "2" }], adds: [{ title: "Milk", due: Err(Missing), assignee: Err(Missing) }] })) == "3,1,4,new-0"
+expect Tasks.showing(sample, { toggles: [], moves: [], removes: [], adds: [{ title: "Milk", due: Err(Missing), assignee: Ok("jun") }] }).last().map_ok(|each| (each.title, each.due, each.assignee)) == Ok(("Milk", "", "jun"))
 
 expect Tasks.due("2026-11-20", "2026-11-22") == Ok({ label: "Overdue · Nov 20", tone: Overdue })
 expect Tasks.due("2026-11-22", "2026-11-22") == Ok({ label: "Today", tone: Today })

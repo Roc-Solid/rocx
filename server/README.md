@@ -716,6 +716,41 @@ ignored.
 as strings. In the browser, submissions read a form the runtime sent with the same reader
 (`input!`, `pending_inputs!`).
 
+### Checked bodies (D-093)
+
+A route file may name the rules its method's body is read with, beside the handler: a value of
+another module's with `parse(fields)` and `json_schema()`, which packages/forms' `Form(a)` is.
+
+```roc
+# routes/signup/+server.roc
+## What POST /signup is sent: an account, read and checked by the form.
+post_body = Signup.form
+
+post! : { request : Server.Request, params : {}, context : c, body : Signup.Account } => Try({ welcome : Str }, Endpoint.Refusal)
+post! = |{ body, .. }| Ok({ welcome: "Welcome, ${body.name}" })
+```
+
+`Generated/Api` makes the contract `Endpoint.checked(Endpoint.remote("POST", "/signup"),
+Signup.form)` (in both copies, importing `Signup`, so the platform never depends on packages/forms),
+and then:
+
+- a form's fields (URL-encoded or multipart, with the URL's) or a JSON object's (text, numbers and
+  yes-or-no as written, a list's items each a value, `null` none) are given to the rules, and what
+  they read is the handler's `body`; a JSON body that isn't an object of such fields is a 400;
+- what doesn't pass is refused before the handler runs: a 422 whose body is the issues as JSON,
+  `application/json` (a plain form's comes back to its page in the flash, as any refusal does);
+- in the browser, a submission to it is read with the same rules (`input!`, `pending_inputs!`:
+  nothing for one that doesn't pass);
+- `/openapi.json` documents the body with `rules.json_schema()`, as JSON, URL-encoded and
+  multipart.
+
+The body's type is the rules' record, the endpoint's arg, so it is a type JSON reads and writes (a
+forms `Date` is its text; a `Try(x, [Missing])` field is one JSON may leave out). `Endpoint.send!`
+and an action send it as JSON, which the rules read again. `post_body` must be `Module.name` (Api
+copies it, and imports no route file), and only `post!`, `put!` and `patch!` have one; rocx build
+says so at its line. A handler refuses what only it can check with the same shape:
+`Err(Issues.refusal(issues))`, the platform's `Json(422, json)` refusal, sent as `application/json`.
+
 ### Files and fields in the URL (D-054)
 
 A form with files (`multipart/form-data`: a form with an `<input type="file">`, or an action given

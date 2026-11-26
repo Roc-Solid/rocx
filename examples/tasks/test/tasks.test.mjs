@@ -165,6 +165,27 @@ test("a task the form refuses comes back with its issues in place, and what was 
 	const nobody = await person.submit(`/lists/${id}`, { title: "Hire someone", due: "", assignee: "zed" });
 	assert.equal(nobody.status, 422);
 	assert.match(nobody.text, /Choose someone on the team/);
+	assert.equal(nobody.headers.get("content-type"), "application/json", "a form's issues are JSON, and say so (D-093)");
+});
+
+test("a task's body is checked by its form whatever it comes as (D-093): JSON is read by the same rules, and refused with the same issues, as JSON", { skip }, async () => {
+	const person = app.client();
+	const id = await newList(person, "From a script");
+	await person.get(`/lists/${id}`);
+	const added = await person.json(`/lists/${id}`, { title: "  Call   the  printer ", due: "2030-03-01" });
+	assert.equal(added.status, 200, added.text);
+	const [row] = await db.sql`select title, due, assignee from tasks where id = ${Number(added.json())}`;
+	assert.deepEqual(row, { title: "Call the printer", due: "2030-03-01", assignee: null }, "trimmed and collapsed by the form's rules, an assignee left out none");
+	const refused = await person.json(`/lists/${id}`, { title: " ", due: "2030-02-30", assignee: "mila" });
+	assert.equal(refused.status, 422);
+	assert.equal(refused.headers.get("content-type"), "application/json");
+	assert.deepEqual(refused.json().map((issue) => [issue.field, issue.message]), [["title", "Fill this in"], ["due", "Enter a date, like 2026-01-31"]]);
+	// What a form can't say: a record inside a field is a 400, before the rules.
+	assert.equal((await person.json(`/lists/${id}`, { title: { text: "x" } })).status, 400);
+	// The new list's name is checked so too.
+	const unnamed = await person.json("/", { name: "  " });
+	assert.equal(unnamed.status, 422);
+	assert.deepEqual(unnamed.json().map((issue) => [issue.field, issue.message]), [["name", "Fill this in"]]);
 });
 
 test("completing a task without JavaScript: its box is a form, and the list comes back with it done", { skip }, async () => {

@@ -5610,6 +5610,91 @@ part that doesn't read, as for any path nothing answers.
 
 **Reversible:** yes: write `Str` in the annotations; nothing else changes.
 
+## D-093 A body read and checked by the app's rules
+
+**Status.** Built (2026-11-26).
+
+**Context.** An endpoint that validated with packages/forms declared `body : {}` (or a record of
+strings, for the page's pending rows), so the platform left the body alone, and re-read the raw
+text in the handler: `match TaskForm.adding.parse_body(Server.text_of(request)) { Ok(task) => …,
+Err(issues) => Err(Issues.refusal(issues)) }` (sixteen endpoints in tasks, plate, quiz and the
+docs' demo). `parse_body` read URL-encoded text alone, so a JSON post failed; `/openapi.json`
+described such a body as `{}`; and the 422's issues, JSON, went out labelled `text/plain`
+(forms' PROPOSALS 2 and 3).
+
+**Decision.** The route file names the rules, the platform runs them, and the platform never
+depends on packages/forms:
+
+```roc
+# routes/lists/[id]/+server.roc
+post_body = TaskForm.adding          # a value of a module's: Form(TaskForm.Adding)
+
+post! : { request : Server.Request, params : { id : Str }, context : c, body : TaskForm.Adding } => Try(Str, Endpoint.Refusal)
+post! = |{ params, body, .. }| Store.add!(params.id, body)
+
+# Generated/Api.roc, both copies
+post_lists_id = |params| Endpoint.checked(Endpoint.remote("POST", "/lists/…"), TaskForm.adding)
+
+# web/platform/Endpoint.roc (shared)
+Endpoint.checked : Endpoint(c, arg, r), rules -> Endpoint(c, arg, r)
+	where [rules.parse : rules, List({ name : Str, value : Str }) -> Try(arg, issues), rules.json_schema : rules -> Str, issues.Json.Encodable(e)]
+Endpoint.Refusal : [… Status(U16, Str), Json(U16, Str), Answer(Server.Response)]
+```
+
+- **Rules are a shape, not a package**: anything with `parse(fields)` and `json_schema()`. Forms'
+  `Form(a)` has both; the platform calls them by static dispatch, so it imports nothing of forms.
+- **Read from a form or JSON alike**: `respond!` gives a checked endpoint's rules the form's fields
+  (URL-encoded or multipart, the URL's first, as D-054 has them) or a JSON object's, flattened as
+  `with_fields` flattens one (text, numbers and yes-or-no as written, a list's items each a value,
+  `null` none). A JSON body that isn't an object of such fields is a 400; a type it doesn't read,
+  415.
+- **Refused with the issues, as JSON**: what the rules refuse never reaches the handler; it is a
+  422 whose body is the issues' JSON, `application/json`. A plain form's comes back to its page in
+  the flash, as any refusal (LiveForm shows it, as before). A new refusal, `Json(U16, Str)`, is a
+  status and a JSON body, sent as `application/json` by `respond!`, `stream!` and `channel!`;
+  forms' `Issues.refusal` answers it, for what only the handler can check after the rules (a person
+  not on the team).
+- **The contract has them, in both copies**: `post_body = M.name` (rocx build refuses another
+  shape, a method sent no body, or one the file doesn't define, at its line); Api copies it and
+  imports `M` as it imports the types the handler names, so the browser's submissions read what was
+  typed with the same rules (`input!`, `pending_inputs!`: tasks' pending rows are now the checked
+  record), and `/openapi.json` documents the body with the rules' schema (`OpenApi.sent` of a
+  checked endpoint: JSON, URL-encoded and multipart, `Endpoint.checked_schema`).
+- **The handler's body is the rules' record**, the contract's arg, so it is a type JSON reads and
+  writes and FormBody names, as any arg: forms' `Date` gained a codec, its text; a
+  `Try(x, [Missing])` field is one JSON may leave out. An action or `Endpoint.send!` sends it as
+  JSON, which the rules read again (a flat record comes through: a day as its text, a missing
+  optional left out).
+
+Converted: examples/tasks (3), quiz (3), plate (9) and the docs' forms demo, each to its form
+(`post_body`) and a typed `body`; `parse_body` is gone from every endpoint.
+
+**Alternatives.**
+
+1. *A nominal type whose own FormBody/Json parser runs the rules* (`body : TaskForm.Adding`, one
+   declaration). A type can't hold a value, so each form would need a type and a parser of its own;
+   and the parser, generic over the format, can't do the job: it can't list a form's fields
+   (FormBody yields only the names a record type's `FieldNames` give it, which the compiler makes),
+   can't refuse with issues (the format's error is its own: Json's `[InvalidJson(Str)]`, so a 400),
+   and OpenAPI's format would see what it reads, not the rules' constraints.
+2. *The rules in Handlers only* (the server): the browser's submissions would read by type alone
+   (a form's `Try(Date, [Missing])` doesn't read so), and `Api.openapi` couldn't name them.
+3. *`<method>_schema` beside a hand-written handler* (forms' proposal 3): documents, but still
+   reads the body twice and JSON not at all.
+4. *RFC 9457 problem details for issues* (forms' proposal 2): a platform shape for field issues and
+   a new `Server.Problem` case; kept as a proposal. The issues stay forms' JSON array, which LiveForm
+   and `Issues.from_problem` already read, now labelled as JSON.
+
+**Costs.** Two declarations, the rules and the body's type, which the compiler checks agree (the
+rules' record is the contract's arg). The rules are a value of a module's, not the route file's.
+McpHttp's tools run a handler with `Endpoint.run!`, which reads its arg by type and skips the rules
+(TODO). A nested record in a checked body can't come as JSON (a form has no records); its rules
+would read it from fields anyway. `Endpoint.checked` names no endpoint in its one crash (a JSON
+writer that fails, for an `F64` NaN in the issues): a reader that captured the endpoint crashed the
+fork's compiler in boxy_lowering.
+
+**Reversible:** yes: drop `post_body`, and the handler reads its body as before.
+
 ## D-094 A setter's function form: `update!`
 
 **Status.** Built (2026-11-26).

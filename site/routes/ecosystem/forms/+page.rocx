@@ -1,6 +1,7 @@
 import pf.Html
 import pf.Server
 import pf.Endpoint
+import pf.OpenApi
 import forms.Issues
 import forms.Regex
 import ../../../Demos/FormsDemo
@@ -96,11 +97,20 @@ view! = |_|
 
 			<Heading id="endpoint">At the endpoint</Heading>
 			<p>
-				An <a href={"${Paths.routing}#endpoints"}>endpoint</a> parses the form's body with the same schema.
-				When the body doesn't read, it refuses with a <code>422</code> and the issues as JSON
-				(<code>Issues.refusal</code>). Its <code>body</code> type is <code>{"{}"}</code>, so the platform
-				leaves the body alone and the form parses it. That way a box left unticked, which a browser doesn't
-				send at all, is the form's to judge.
+				An <a href={"${Paths.routing}#endpoints"}>endpoint</a> reads its body with the same schema. Its
+				route file names the form beside the handler, and the handler's <code>body</code> is the form's
+				record (D-093):
+			</p>
+			<Code title="routes/signup/+server.roc" source={signup_route} numbers={Bool.False} />
+			<p>
+				The platform reads a form's fields, URL-encoded or multipart, or a JSON object's, with the form, and
+				gives <code>post!</code> the account. What doesn't pass never reaches it: the endpoint refuses it with
+				a <code>422</code> and the issues as JSON (<code>application/json</code>). A box left unticked, which
+				a browser doesn't send at all, is the form's to judge. <code>Generated/Api</code> makes the endpoint
+				so in both copies (<code>{"Endpoint.checked(Endpoint.remote(\"POST\", \"/signup\"), Signup.form)"}</code>), so a
+				page's submission is read with the form too, and <code>/openapi.json</code> documents the body with
+				the form's schema. A handler refuses what only it can check (a name already taken) with
+				<code>Issues.refusal</code>. This site's handler:
 			</p>
 			<Code title={Sources.forms_endpoint.file} source={Sources.forms_endpoint.rocx} />
 			<p>
@@ -118,7 +128,10 @@ view! = |_|
 			</TableWrap>
 			<p>
 				A body that passes every check gets the handler's result: <code>{answered!(good_post)}</code>.
+				So does the same as JSON: <code>{answered!(good_json)}</code>. Its body in
+				<code>/openapi.json</code>, the form's schema three ways:
 			</p>
+			<Code source={pretty("{${OpenApi.sent(FormsSignup.signup, [])}}", 2)} plain numbers={Bool.False} />
 
 			<Heading id="page">In the page</Heading>
 			<p>
@@ -299,32 +312,24 @@ view! = |_|
 
 			<Heading id="status">Not yet</Heading>
 			<p>
-				Everything above works today, with no change to the platform. <code>roc test
-				packages/forms/main.roc</code> runs the package's <code>expect</code>s. A few things wait on
-				proposals in <code>packages/forms/PROPOSALS.md</code>:
+				Everything above works today. <code>roc test packages/forms/main.roc</code> runs the package's
+				<code>expect</code>s. A few things wait on proposals in <code>packages/forms/PROPOSALS.md</code>:
 			</p>
 			<ul>
 				<li>
-					A refusal with field issues of the platform's own. Today it is a <code>422</code> whose text is
-					the issues' JSON, which <code>Issues.from_problem</code> reads back.
-				</li>
-				<li>
-					The form's rules in <code>/openapi.json</code>. The document describes an endpoint whose
-					<code>body</code> is <code>{"{}"}</code> as taking an empty object; <code>form.json_schema()</code>
-					is ready to fill it in.
+					A refusal with field issues of the platform's own (RFC 9457's problem details). Today it is a
+					<code>422</code> whose body is the issues' JSON, labelled <code>application/json</code>, which
+					<code>Issues.from_problem</code> reads back.
 				</li>
 				<li>
 					Holding a send back in the browser when the form has issues. Today it always goes to the
 					endpoint, which refuses it with the same issues.
 				</li>
-				<li>
-					A ready-made endpoint handler. Today the glue is the few lines of <code>post!</code> above, in
-					your route file.
-				</li>
 			</ul>
 			<p>
-				And for now: a URL-encoded form body only (not JSON, and not files); decimals written with a
-				<code>.</code>; patterns with no flags and no captures.
+				And for now: decimals written with a <code>.</code>; patterns with no flags and no captures;
+				<code>form.parse_body(text)</code>, for a page that has a form's text, reads it URL-encoded only
+				(an endpoint's body is read for the form by the platform, JSON too).
 			</p>
 			<details>
 				<summary>The demo: <code>{Sources.forms_demo_file.file}</code></summary>
@@ -350,30 +355,36 @@ bad_post = "name=&email=ada%40&age=12&password=short&confirm=shirt"
 good_post : Str
 good_post = "name=Ada&email=Ada%40Example.com&age=36&password=correct+horse&confirm=correct+horse&terms=on"
 
-## What `FormsSignup.post!` answers a form's body: its status, and what it sends.
+## The same, as JSON.
+good_json : Str
+good_json = "{\"name\":\"Ada\",\"email\":\"ada@example.com\",\"age\":36,\"password\":\"correct horse\",\"confirm\":\"correct horse\",\"terms\":true}"
+
+## What an app's route file says for the endpoint.
+signup_route : Str
+signup_route = "import pf.Server\nimport pf.Endpoint\nimport ../../Signup\n\n## What POST /signup is sent: an account, read and checked by the form.\npost_body = Signup.form\n\npost! : { request : Server.Request, params : {}, context : c, body : Signup.Account } => Try({ welcome : Str }, Endpoint.Refusal)\npost! = |{ body, .. }| Ok({ welcome: \"Welcome, \${body.name}\" })"
+
+## The endpoint's answer to a body (a form's, or JSON's when it starts with `{`), as the server
+## answers it (`Endpoint.respond!`): its status, its type when it is JSON, and what it sends.
 answered! : Str => Str
 answered! = |body| {
-	request = Server.from_http("POST", "/signup", "content-type: application/x-www-form-urlencoded", body.to_utf8())
-	match FormsSignup.post!({ request, params: {}, context: {}, body: {} }) {
-		Ok(done) => "200 ${Json.to_str(done)}"
-		Err(refusal) => {
-			(status, why) = Endpoint.refused(refusal)
-			"${status.to_str()}\n${pretty(why, 1)}"
-		}
+	type = if (body.starts_with("{")) "application/json" else "application/x-www-form-urlencoded"
+	request = Server.from_http("POST", "/signup", "content-type: ${type}\naccept: application/json", body.to_utf8())
+	answer = Endpoint.respond!(FormsSignup.signup, request, {})
+	said = Server.body_text(answer)
+	if answer.status == 200 {
+		"200 ${said}"
+	} else {
+		kind = answer.headers.find_first(|header| header.name == "content-type").map_ok(|header| header.value) ?? ""
+		"${answer.status.to_str()} ${kind}\n${pretty(said, 1)}"
 	}
 }
 
-## The issues `FormsSignup.post!` refuses a form's body with, read back as a page reads them.
+## The issues the endpoint refuses a form's body with, read back as a page reads them.
 refused! : Str => List(Issues.Issue)
 refused! = |body| {
-	request = Server.from_http("POST", "/signup", "content-type: application/x-www-form-urlencoded", body.to_utf8())
-	match FormsSignup.post!({ request, params: {}, context: {}, body: {} }) {
-		Ok(_) => []
-		Err(refusal) => {
-			(status, why) = Endpoint.refused(refusal)
-			Issues.from_problem(Refused(status, why))
-		}
-	}
+	request = Server.from_http("POST", "/signup", "content-type: application/x-www-form-urlencoded\naccept: application/json", body.to_utf8())
+	answer = Endpoint.respond!(FormsSignup.signup, request, {})
+	if (answer.status == 200) [] else Issues.from_problem(Refused(answer.status, Server.body_text(answer)))
 }
 
 ## A code as it is written, and the code.

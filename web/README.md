@@ -691,7 +691,10 @@ why, when there was no answer). Then:
 A form's fields are read by the endpoint's body type (D-038, `FormBody`), in the browser as on the
 server. `Endpoint.remote` makes the reader and `Endpoint.form_of` gives it, and it goes with the
 submissions `use_submission!` and `use_submissions!` make. So `input!` and `pending_inputs!` of a
-form the runtime sent are the arg the endpoint reads.
+form the runtime sent are the arg the endpoint reads. An endpoint whose body is checked by rules
+(`post_body = Signup.form`, `Endpoint.checked`, D-093) reads them with those rules here too: a
+submission that doesn't pass them has no input (`Err(NoInput)`; `pending_inputs!` leaves it out),
+as the server refuses it (422, the issues as JSON).
 
 ### Actions and optimistic values (D-030)
 

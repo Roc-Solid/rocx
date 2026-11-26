@@ -101,7 +101,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 | Feature | Where |
 |---|---|
 | Rules written once and run on both sides (filters, toggles, moves, places, due badges), with expects | [`Tasks.roc`](Tasks.roc) |
-| Forms with packages/forms: one schema for the page and the endpoint, issues shown in place with what was typed | [`TaskForm.roc`](TaskForm.roc), [`components/AddTask.rocx`](components/AddTask.rocx) (`LiveForm`, `<TextField>`), [`routes/lists/[id]/+server.roc`](routes/lists/[id]/+server.roc) (`Issues.refusal`) |
+| Forms with packages/forms: one schema for the page and the endpoint, issues shown in place with what was typed | [`TaskForm.roc`](TaskForm.roc), [`components/AddTask.rocx`](components/AddTask.rocx) (`LiveForm`, `<TextField>`), [`routes/lists/[id]/+server.roc`](routes/lists/[id]/+server.roc) (`post_body = TaskForm.adding`: the body read and checked by the form, D-093) |
 | An edit form that starts filled in, and an add form that starts afresh once the endpoint accepts it | [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) (`LiveForm.filled!`), [`components/AddTask.rocx`](components/AddTask.rocx) (`accepted!` and `reset!`, in an effect) |
 | Working without JavaScript: every control is a plain `<form>` that posts, then a 303 back | [`components/AddTask.rocx`](components/AddTask.rocx), [`components/TaskRow.rocx`](components/TaskRow.rocx) |
 | A form's fields read into the endpoint's body type. `Tasks.Toggle` is `{ id : Str, done : Bool }`, whether a row's form posts it or an action sends it as JSON | [`Tasks.roc`](Tasks.roc), [`routes/api/tasks/toggle/+server.roc`](routes/api/tasks/toggle/+server.roc) |
@@ -184,16 +184,14 @@ moving before they click.
 
 Building this app showed what the platform didn't do yet. Most of it has been fixed since, in the
 platform or in packages/forms: forms that start filled in or start afresh, form fields read into
-typed bodies, `Endpoint.get!` of a refusal answered as the error page, and a favicon as a `data:`
-URL. What remains, and what the app does about it:
+typed bodies, bodies read and checked by the form itself (D-093: a form's endpoint read its body
+twice, once typed as strings for the list's pending tasks, once with the form), `Endpoint.get!` of a
+refusal answered as the error page, and a favicon as a `data:` URL. What remains, and what the app
+does about it:
 
-1. **A form's endpoint reads its body twice.** The add form's body type, `Tasks.Adding`, is its
-   fields as plain strings, so the list can show a new task while it is on its way
-   (`pending_inputs!` gives the endpoint's body as sent). The endpoint then reads the same body again,
-   checked, with `TaskForm.adding.parse_body(Server.text_of(request))`.
-2. **`node --test <dir>` finds no tests on Node 24.** Use the glob,
+1. **`node --test <dir>` finds no tests on Node 24.** Use the glob,
    `node --test 'examples/tasks/test/*.test.mjs'`, as `just examples` does.
-3. **Roc, met on the way:**
+2. **Roc, met on the way:**
     - `{ me }` alone is a block, not a record: write `{ me: me }`.
     - A record update can't add a field (`{ ..fields, error }`).
     - It is `Str.join_with(list, ", ")`, not `list.join_with`.

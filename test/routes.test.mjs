@@ -1044,6 +1044,39 @@ test("typed path params (D-092): the types handlers give a path's params are Api
 	]);
 });
 
+test("checked bodies (D-093): a route file's <method>_body makes its contract Endpoint.checked by those rules, in both copies, which import their module; rocx build refuses rules it can't copy", () => {
+	const source = [
+		"import pf.Server",
+		"import pf.Endpoint",
+		"import ../../Signup",
+		"",
+		"## What POST /signup is sent.",
+		"post_body = Signup.form",
+		"",
+		"post! : { request : Server.Request, params : {}, context : c, body : Signup.Account } => Try(Str, Endpoint.Refusal)",
+		"post! = |{ body, .. }| Ok(body.name)",
+		"",
+	].join("\n");
+	const defs = definitions(source);
+	assert.deepEqual(defs.bodies, { "post!": { rules: "Signup.form", line: 6 } });
+	assert.deepEqual(definitions("post_body =\n\tSignup.form\n\npost! = |_| Ok(1)\n").bodies, { "post!": { rules: "Signup.form", line: 1 } }, "on the lines after its =");
+	const table = routeTable(["signup/+server.roc"]);
+	const sources = new Map([["signup/+server.roc", defs]]);
+	assert.deepEqual(contractProblems(table, sources), []);
+	for (const client of [false, true]) {
+		const api = apiModule(table, { sources, client });
+		assert.match(api, /^import \.\.\/Signup$/m, "the rules' module, as the types' are");
+		assert.match(api, /\tpost_signup : \{\} -> Endpoint\(context, Signup\.Account, Str\)\n\tpost_signup = \|_params\| Endpoint\.checked\(Endpoint\.remote\("POST", "\/signup"\), Signup\.form\)\n/);
+	}
+	assert.doesNotMatch(apiModule(routeTable(["a/+server.roc"]), { sources: new Map([["a/+server.roc", definitions("post! : { request : Server.Request, params : {}, context : c, body : {} } => Try(Str, Endpoint.Refusal)\npost! = |_| Ok(\"\")\n")]]) }), /checked/, "none named: read by its type, as before");
+	const refused = (text) => contractProblems(table, new Map([["signup/+server.roc", definitions(text)]]));
+	assert.deepEqual(refused(source.replace("post_body = Signup.form", "post_body = Form.text(\"name\", [])")), [
+		"routes/signup/+server.roc:6: post_body names its rules as a value of another module's (`post_body = Signup.form`), which Generated/Api copies and imports (it imports no route file): move the rules into a module of the app's, and name them so (D-093)",
+	]);
+	assert.deepEqual(refused(source.replace("post_body", "put_body")), ["routes/signup/+server.roc:6: put_body names the rules put!'s body is read with, and the file has no put!"]);
+	assert.deepEqual(refused(source + "\nget_body = Signup.form\n"), ["routes/signup/+server.roc:11: get_body names rules for a body, and GET is sent none: only post!, put! and patch! are (D-093)"]);
+});
+
 test("rocx build (D-037): refuses an unannotated handler; a type's module that imports Api is a cycle, said at that import; the browser's copy reaching pf.Db through Api's types is an error at the route", () => {
 	const dir = mkdtempSync(join(tmpdir(), "rocx-contract-"));
 	const put = (path, text) => {

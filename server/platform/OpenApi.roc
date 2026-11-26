@@ -26,18 +26,24 @@ OpenApi := [].{
 	## one a form has (a record of strings, numbers, yes-or-no, choices and lists of them: what
 	## `FormBody` reads), a form's fields too, URL-encoded (`application/x-www-form-urlencoded`) or
 	## as a browser sends a form with files (`multipart/form-data`), the same schema, but a yes-or-no
-	## and a list not required (a box left unticked isn't sent).
+	## and a list not required (a box left unticked isn't sent). A checked endpoint's (D-093) is its
+	## rules' schema (`Endpoint.checked_schema`: what they require, their lengths, patterns and
+	## ranges), the same three ways, as it reads a JSON object and a form alike.
 	sent : Endpoint(context, arg, result), List(Str) -> Str
 		where [arg.parser_for : Schema -> (State -> Try({ value : arg, rest : State }, Problem))]
-	sent = |_, tags| {
-		Sent : arg
-		json = "\"application/json\":{\"schema\":${described(Sent.parser_for(Schema.Default)(start(tags)))}}"
-		match Sent.parser_for(Schema.Default)({ ..start(tags), form: Bool.True }) {
-			Ok(done) if !done.rest.formless and done.rest.out.starts_with("{\"type\":\"object\",\"properties\":") =>
-				"${json},\"application/x-www-form-urlencoded\":{\"schema\":${done.rest.out}},\"multipart/form-data\":{\"schema\":${done.rest.out}}"
-			_ => json
+	sent = |endpoint, tags|
+		match Endpoint.checked_schema(endpoint) {
+			Ok(schema) => "\"application/json\":{\"schema\":${schema}},\"application/x-www-form-urlencoded\":{\"schema\":${schema}},\"multipart/form-data\":{\"schema\":${schema}}"
+			Err(Unchecked) => {
+				Sent : arg
+				json = "\"application/json\":{\"schema\":${described(Sent.parser_for(Schema.Default)(start(tags)))}}"
+				match Sent.parser_for(Schema.Default)({ ..start(tags), form: Bool.True }) {
+					Ok(done) if !done.rest.formless and done.rest.out.starts_with("{\"type\":\"object\",\"properties\":") =>
+						"${json},\"application/x-www-form-urlencoded\":{\"schema\":${done.rest.out}},\"multipart/form-data\":{\"schema\":${done.rest.out}}"
+					_ => json
+				}
+			}
 		}
-	}
 
 	## An endpoint's answer, as an operation's content has it: JSON, and its schema.
 	answer : Endpoint(context, arg, result), List(Str) -> Str
@@ -65,7 +71,7 @@ OpenApi := [].{
 	operation = |verb, doc, taken, contents| {
 		described_as = if (doc.is_empty()) "" else "\"description\":${Json.to_str(doc)},"
 		request = if (taken.is_empty()) "" else "\"requestBody\":{\"required\":true,\"content\":{${taken}}},"
-		refused = "\"default\":{\"description\":\"Refused: its status, and why, as text (400 for a body it can't read); or the handler's own answer (a redirect)\",\"content\":{\"text/plain\":{\"schema\":{\"type\":\"string\"}}}}"
+		refused = "\"default\":{\"description\":\"Refused: its status, and why, as text (400 for a body it can't read); a form's issues (422) as JSON; or the handler's own answer (a redirect)\",\"content\":{\"text/plain\":{\"schema\":{\"type\":\"string\"}},\"application/json\":{}}}"
 		"${Json.to_str(verb)}:{${described_as}${request}\"responses\":{\"200\":{\"description\":\"OK\",\"content\":{${Str.join_with(contents, ",")}}},${refused}}}"
 	}
 

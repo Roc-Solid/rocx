@@ -540,6 +540,11 @@ Every handler must be annotated, for example
 `get! : { request : Server.Request, params : { slug : Str }, context : c } => Try(Post, Endpoint.Refusal)`.
 `rocx build` refuses one that isn't, since the annotation is where `Api` gets its types.
 
+A route file may name the rules its method's body is read with: `post_body = Signup.form` (a form
+of packages/forms, or any value with `parse` and `json_schema`). The body, a form or JSON, is read
+and checked by them before the handler runs, whose `body` is their record; what doesn't pass is a
+422 with the issues as JSON, and `/openapi.json` documents the rules' schema (D-093).
+
 A param is a string unless the annotation gives it another type: `params : { id : I64 }` (a number,
 `Bool`, or a union of tags written out). The path's part is read as that type before anything runs,
 and one that doesn't read is a 404, as a path nothing answers is. The pages and layouts under the

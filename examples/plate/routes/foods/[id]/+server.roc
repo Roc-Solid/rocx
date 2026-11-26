@@ -1,7 +1,6 @@
 import pf.Server
 import pf.Endpoint
 import forms.Date
-import forms.Issues
 import ../../../Links
 import ../../../Plate
 import ../../../PlateForm
@@ -17,17 +16,17 @@ get! = |{ params, .. }| {
 	Ok({ food, today, meal })
 }
 
+## What POST /foods/:id is sent: an amount, a meal and a day, read and checked by
+## `PlateForm.amount` (D-093).
+post_body = PlateForm.amount
+
 ## POST /foods/:id, from the food's page: an amount of it logged to a meal on a day, then on to
 ## that day of the diary; or the form's issues (422), shown under its fields. What the amount has
 ## is worked out from the food as it is now, and kept with the entry (`Store.log!`).
-post! : { request : Server.Request, params : { id : Str }, context : {}, body : { amount : Str, unit : Str, meal : Str, day : Str } } => Try({}, Endpoint.Refusal)
-post! = |{ request, params, .. }|
-	match PlateForm.amount.parse_body(Server.text_of(request)) {
-		Ok(amount) => {
-			day = Date.to_str(amount.day)
-			_ = Store.log!({ food: params.id, day, meal: amount.meal, count: amount.count, unit: amount.unit }).map_err!(Store.refusal!)?
-			today = Store.today!({}).map_err!(Store.refusal!)?
-			Err(Answer(Server.redirect(Links.diary(day, today))))
-		}
-		Err(issues) => Err(Issues.refusal(issues))
-	}
+post! : { request : Server.Request, params : { id : Str }, context : {}, body : PlateForm.Amount } => Try({}, Endpoint.Refusal)
+post! = |{ params, body, .. }| {
+	day = Date.to_str(body.day)
+	_ = Store.log!({ food: params.id, day, meal: body.meal, count: body.count, unit: body.unit }).map_err!(Store.refusal!)?
+	today = Store.today!({}).map_err!(Store.refusal!)?
+	Err(Answer(Server.redirect(Links.diary(day, today))))
+}

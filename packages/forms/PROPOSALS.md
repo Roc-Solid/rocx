@@ -1,8 +1,10 @@
 # forms: proposals for the platform
 
-What packages/forms would change outside its own folder, if the user agrees. Nothing here is
-built: the package works today without any of it (see README.md, "Status"), and each proposal says
-what in the package would use it. Each section: the problem, the options weighed, the one
+What packages/forms would change outside its own folder, if the user agrees. The package works
+today without what is still proposed (see README.md, "Status"), and each proposal says what in the
+package would use it. Since D-093 (2026-11-26), an endpoint's body is read and checked by a form
+the route file names (`post_body = Signup.form`): proposal 3 is done that way, and proposal 2 in
+part (the 422's issues labelled `application/json`, the platform's `Json` refusal). Each section: the problem, the options weighed, the one
 recommended (with a sketch), what depends on it, and how it could be undone.
 
 ---
@@ -81,6 +83,10 @@ transpiled), except under `--client`, where `linkComponents` refuses an import o
 
 ## 2. A refusal with field issues
 
+**In part since D-093:** `Issues.refusal` answers `Json(422, issues)`, which the platform sends as
+`application/json`, and a checked endpoint refuses its form's issues so itself. The issues' shape is
+still forms' own; what follows (a platform shape, RFC 9457) is still a proposal.
+
 **Problem.** An endpoint refuses with `Endpoint.Refusal` (`BadRequest(Str)`, `Conflict(Str)`,
 `Status(U16, Str)`, …), always sent as `text/plain`, and a browser reads any refusal as
 `Server.Problem.Refused(U16, Str)`. Forms refuses with a 422 whose text is its issues' JSON
@@ -143,6 +149,11 @@ again.
 ---
 
 ## 3. A form's rules in `/openapi.json`
+
+**Done another way (D-093).** A route file names the form its method's body is read with
+(`post_body = Signup.form`); Generated/Api makes the contract `Endpoint.checked(…, Signup.form)`,
+and `OpenApi.sent` documents a checked endpoint's body with `form.json_schema()`, as JSON, URL-encoded
+and multipart. What follows is the proposal as it was.
 
 **Problem.** rocx writes an endpoint's request schema from its handler's `body` type. A form's
 endpoint has `body : {}` (the form reads the body itself, so that a box left unticked, which a

@@ -1,12 +1,12 @@
 import pf.Server
 import pf.Endpoint
 import forms.Form
-import forms.Issues
 
 ## The forms page's example (site/routes/ecosystem/forms): one schema, which the demo checks in the
-## browser as it is typed, and `post!` reads at an endpoint. In an app, the schema is a module of
-## its own, which a page and a route file both import, and `post!` is the route file's
-## (`routes/signup/+server.roc`). The page renders what `post!` answers, as the site is built.
+## browser as it is typed, and an endpoint's body is read and checked by. In an app, the schema is
+## a module of its own, which a page and a route file both import, and `post!` is the route file's
+## (`routes/signup/+server.roc`, beside `post_body = Signup.form`, D-093). The page renders what the
+## endpoint answers, as the site is built.
 FormsSignup := [].{
 	Passwords : { password : Str, confirm : Str }
 
@@ -27,13 +27,14 @@ FormsSignup := [].{
 		terms: Form.checkbox("terms", [Required]),
 	}.Form
 
-	## POST /signup: the account, or a 422 with each field's issues, the same the page shows as it
-	## is typed. Its `body` is `{}`: the form reads the body itself, so a box left unticked (which
-	## a browser doesn't send at all) is the form's to judge, not a 400.
-	post! : { request : Server.Request, params : {}, context : c, body : {} } => Try({ welcome : Str }, Endpoint.Refusal)
-	post! = |{ request, .. }|
-		match FormsSignup.form.parse_body(Server.text_of(request)) {
-			Ok(account) => Ok({ welcome: "Welcome, ${account.name}" })
-			Err(issues) => Err(Issues.refusal(issues))
-		}
+	## POST /signup: given the account, read and checked by `form` (its route file's `post_body =
+	## Signup.form`), as a form or JSON. What doesn't pass never reaches it: the platform refuses it
+	## with each field's issues (422, JSON), the same the page shows as it is typed.
+	post! : { request : Server.Request, params : {}, context : c, body : FormsSignup.Account } => Try({ welcome : Str }, Endpoint.Refusal)
+	post! = |{ body, .. }| Ok({ welcome: "Welcome, ${body.name}" })
+
+	## The endpoint, checked by `form`, as Generated/Api makes a route's from its `post_body`, with
+	## `post!` as its handler.
+	signup : Endpoint({}, FormsSignup.Account, { welcome : Str })
+	signup = Endpoint.checked(Endpoint.local("POST", "/signup", |request, context, body| FormsSignup.post!({ request, params: {}, context, body })), FormsSignup.form)
 }

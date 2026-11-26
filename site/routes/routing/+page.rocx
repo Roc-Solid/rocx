@@ -202,6 +202,14 @@ view! = |_|
 					bytes as they came.
 				</li>
 				<li>
+					<strong>Checked bodies.</strong> A route file may name the rules its method's body is read with,
+					beside the handler: <code>post_body = Signup.form</code>, a form of
+					<a href={"${Paths.ecosystem_forms}#endpoint"}>packages/forms</a>. The body, a form or JSON, is read
+					and checked by them before the handler runs, and the handler's <code>body</code> is their record.
+					What doesn't pass is a <code>422</code> with the issues as JSON, and <code>/openapi.json</code>
+					documents the body with the rules' schema (D-093).
+				</li>
+				<li>
 					<strong>Three more names.</strong> <code>events!</code> answers a GET that asks for events
 					(<code>accept: text/event-stream</code>) with a stream (<a href={"${Paths.calls}#events"}>events</a>).
 					<code>channel!</code> defines a channel that pages subscribe to

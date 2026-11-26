@@ -79,6 +79,10 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **MCP tools skip a checked body's rules (D-093).** packages/mcp's `McpHttp.endpoint` runs a
+  handler with `Endpoint.run!`, its arg read from the model's JSON by its type, so `post_body`'s
+  rules don't run there: read the arguments through the endpoint's rules (`Endpoint.form_of` on the
+  JSON's fields) and give the model their issues.
 - **A page's own typed params (D-092).** A param is typed by the handlers under its directory; a
   page whose directory has none that names it gets `Str`. A page could say its params' types itself
   (a `Params` alias in `+page.rocx`), when an app needs it.
@@ -143,6 +147,11 @@ When an item lands, delete its line here in the same commit.
     at run time (blocked by `test/compiler-bugs/two-formats-one-where`).
 
 ## The Roc compiler (the fork in `~/roc-fork`)
+
+- **A closure that captures an endpoint segfaults boxy_lowering** (4674b5973d): `Endpoint.checked`'s
+  reader, crashing with words that named `endpoint.url`, crashed `roc test server/platform/Endpoint.roc`
+  (SIGSEGV, post-check boxy_lowering); with constant words it compiles. No repro in
+  test/compiler-bugs yet.
 
 - **Reduced repros in `test/compiler-bugs/`** (`just compiler-bugs` runs them, on the nightly and
   on the fork). At the pin 4674b5973d all pass but these:
@@ -282,7 +291,7 @@ When an item lands, delete its line here in the same commit.
   examples) and `rocx new`'s template (`Accounts.roc`) still read one row with `Db.all!` and
   `.first()` or `.get(0)`.
 - **Stale proposals:** `packages/testing/PROPOSALS.md` (`src/routes.mjs`, `outbox.rs`, `<For>`; item
-  11 is done), `packages/forms/PROPOSALS.md` ("Nothing here is built").
+  11 is done); `packages/forms/PROPOSALS.md` 1 and 5 speak of `bin/rocx.mjs` and a cookie flash.
 - **sqlite-vs-turso's sale workloads aren't measured yet:** `sale`, `sale-job`, `concurrent-sale`
   and `concurrent-sale-job` (a sale in one transaction, with its receipt job and without) aren't in
   `site/sqlite-vs-turso.json`, so the docs page doesn't show them. `just db-bench`, when the user

@@ -2,17 +2,24 @@ import forms.Form
 import forms.Value
 import forms.Date
 
-## The app's forms, each written once with packages/forms. The endpoint a form posts to reads what
-## was posted with it, into a typed record, or refuses it (422) with each field's issues; the add
-## and new-list forms check what is typed with the very same rules as it is typed (`LiveForm`).
+## The app's forms, each written once with packages/forms. The endpoint a form posts to names the
+## one its body is read with (`post_body = TaskForm.adding`, D-093): what was posted, a form or
+## JSON alike, is read with it into a typed record, or refused (422) with each field's issues; the
+## add and new-list forms check what is typed with the very same rules as it is typed (`LiveForm`).
 TaskForm := [].{
+
+	## A new task, as `adding` reads it: a title, and maybe a day it is due and someone to do it.
+	Adding : { title : Str, due : Try(Date, [Missing]), assignee : Try(Str, [Missing]) }
+
+	## A task as `editing` reads it.
+	Editing : { title : Str, notes : Str, due : Try(Date, [Missing]), assignee : Try(Str, [Missing]), done : Bool }
 
 	## A task's title: something to read, not a novel.
 	title : Form(Str)
 	title = Form.text("title", [Trim, CollapseSpaces, Required, MaxLength(120)])
 
 	## A new task, from the form under a list: a title, and maybe a day it is due and someone to do it.
-	adding : Form({ title : Str, due : Try(Date, [Missing]), assignee : Try(Str, [Missing]) })
+	adding : Form(TaskForm.Adding)
 	adding = {
 		title: TaskForm.title,
 		due: Form.optional("due", Value.date([])),
@@ -20,7 +27,7 @@ TaskForm := [].{
 	}.Form
 
 	## A task as its page edits it: everything about it.
-	editing : Form({ title : Str, notes : Str, due : Try(Date, [Missing]), assignee : Try(Str, [Missing]), done : Bool })
+	editing : Form(TaskForm.Editing)
 	editing = {
 		title: TaskForm.title,
 		notes: Form.text("notes", [Trim, MaxLength(2000)]),

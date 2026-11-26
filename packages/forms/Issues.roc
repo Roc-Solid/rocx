@@ -162,10 +162,13 @@ Issues := [].{
 		}
 	}
 
-	## An endpoint's refusal of input with these issues: 422, and them as JSON. A handler answers
-	## `Err(Issues.refusal(issues))`.
-	refusal : List(Issues.Issue) -> [Status(U16, Str)]
-	refusal = |issues| Status(Issues.status, Issues.to_json(issues))
+	## An endpoint's refusal of input with these issues: 422, and them as JSON, sent as
+	## `application/json` (the platform's `Json` refusal). An endpoint whose body is checked by a form
+	## (`post_body = Signup.form`, D-093) refuses its form's issues so itself; a handler answers
+	## `Err(Issues.refusal(issues))` for what only it can check (a name taken, a person not on the
+	## team).
+	refusal : List(Issues.Issue) -> [Json(U16, Str)]
+	refusal = |issues| Json(Issues.status, Issues.to_json(issues))
 
 	## The issues an endpoint refused with, from what a submission's `error!()` or `Endpoint.send!`
 	## says went wrong (`Server.Problem`): a 422's issues. Any other problem has none.
@@ -229,4 +232,4 @@ expect Issues.from_json("nope") == Err(NotIssues)
 expect Issues.from_problem(Refused(422, Issues.to_json(sample))) == sample
 expect Issues.from_problem(Refused(400, Issues.to_json(sample))) == []
 expect Issues.from_problem(HttpErr("offline")) == []
-expect Issues.refusal(sample) == Status(422, Issues.to_json(sample))
+expect Issues.refusal(sample) == Json(422, Issues.to_json(sample))

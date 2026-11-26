@@ -3,10 +3,27 @@ import forms.Value
 import forms.Date
 import Plate
 
-## The app's forms, each written once with packages/forms. The endpoint a form posts to reads what
-## was posted with it, into a typed record, or refuses it (422) with each field's issues; the pages
-## check what is typed with the very same rules as it is typed (`LiveForm`).
+## The app's forms, each written once with packages/forms. The endpoint a form posts to names the
+## one its body is read with (`post_body = PlateForm.amount`, D-093): what was posted, a form or
+## JSON alike, is read with it into a typed record, or refused (422) with each field's issues; the
+## pages check what is typed with the very same rules as it is typed (`LiveForm`).
 PlateForm := [].{
+
+	## An amount logged, as `amount` reads it.
+	Amount : { count : Dec, unit : Str, meal : Plate.Meal, day : Date }
+
+	## A food of your own, as `food` reads it.
+	Food : { name : Str, brand : Str, per : Dec, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec, fiber : Try(Dec, [Missing]), sugars : Try(Dec, [Missing]), sat_fat : Try(Dec, [Missing]), sodium : Try(Dec, [Missing]), serving : Str, serving_grams : Try(Dec, [Missing]), barcode : Str }
+
+	## A recipe, as `recipe` reads it, and as `recipe_edit` does.
+	Recipe : { name : Str, servings : I64 }
+	RecipeEdit : { name : Str, servings : I64, notes : Str }
+
+	## An ingredient, as `ingredient` reads it.
+	Ingredient : { food : Str, grams : Dec }
+
+	## A weight, as `weight` reads it.
+	Weight : { day : Date, kg : Dec }
 
 	## A meal, as a form posts it (`lunch`).
 	meal : Str -> Form(Plate.Meal)
@@ -14,7 +31,7 @@ PlateForm := [].{
 
 	## How much of a food was eaten, at which meal, on which day: `amount` of the portion `unit`
 	## (its place among the food's portions, or `g` for grams). The food's page posts it.
-	amount : Form({ count : Dec, unit : Str, meal : Plate.Meal, day : Date })
+	amount : Form(PlateForm.Amount)
 	amount = {
 		count: Form.dec("amount", [Min(0.01), Max(10000.0)]),
 		unit: Form.text("unit", [Trim, Required, MaxLength(4)]),
@@ -24,7 +41,7 @@ PlateForm := [].{
 
 	## A food of your own, as its packet says it: what `per` grams of it have (100, or a serving's
 	## weight), and maybe a portion and a barcode.
-	food : Form({ name : Str, brand : Str, per : Dec, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec, fiber : Try(Dec, [Missing]), sugars : Try(Dec, [Missing]), sat_fat : Try(Dec, [Missing]), sodium : Try(Dec, [Missing]), serving : Str, serving_grams : Try(Dec, [Missing]), barcode : Str })
+	food : Form(PlateForm.Food)
 	food =
 		{
 			name: Form.text("name", [Trim, CollapseSpaces, Required, MaxLength(120)]),
@@ -50,14 +67,14 @@ PlateForm := [].{
 	barcode = Form.text("barcode", [Trim, Required, Matches("^[0-9]{8,14}$")]).message("A barcode is 8 to 14 digits")
 
 	## A new recipe: its name and how many servings it makes.
-	recipe : Form({ name : Str, servings : I64 })
+	recipe : Form(PlateForm.Recipe)
 	recipe = {
 		name: Form.text("name", [Trim, CollapseSpaces, Required, MaxLength(120)]),
 		servings: Form.int("servings", [Min(1), Max(100)]),
 	}.Form
 
 	## A recipe as its page edits it.
-	recipe_edit : Form({ name : Str, servings : I64, notes : Str })
+	recipe_edit : Form(PlateForm.RecipeEdit)
 	recipe_edit = {
 		name: Form.text("name", [Trim, CollapseSpaces, Required, MaxLength(120)]),
 		servings: Form.int("servings", [Min(1), Max(100)]),
@@ -65,7 +82,7 @@ PlateForm := [].{
 	}.Form
 
 	## An ingredient added to a recipe: the food, and how many grams of it.
-	ingredient : Form({ food : Str, grams : Dec })
+	ingredient : Form(PlateForm.Ingredient)
 	ingredient = {
 		food: Form.text("food", [Trim, Required, Matches("^[0-9]+$")]),
 		grams: Form.dec("grams", [Min(0.1), Max(20000.0)]),
@@ -85,7 +102,7 @@ PlateForm := [].{
 	}.Form
 
 	## A weight, on a day.
-	weight : Form({ day : Date, kg : Dec })
+	weight : Form(PlateForm.Weight)
 	weight = {
 		day: Form.date("day", [Min("2000-01-01"), Max("2100-12-31")]),
 		kg: Form.dec("kg", [Min(25.0), Max(400.0)]),

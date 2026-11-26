@@ -210,8 +210,12 @@ view! = |_|
 				read as its annotated type. It answers <code>Ok(result)</code>, sent as JSON, or
 				<code>Err(refusal)</code>, sent as a status and why. An <code>Endpoint.Refusal</code> is
 				<code>BadRequest(why)</code> (400), <code>Unauthorized</code> (401), <code>Forbidden</code> (403),
-				<code>NotFound</code> (404), <code>Conflict(why)</code> (409), <code>Status(code, why)</code>, or
-				<code>Answer(response)</code>, an answer of its own (a redirect that sets a cookie).
+				<code>NotFound</code> (404), <code>Conflict(why)</code> (409), <code>Status(code, why)</code>,
+				<code>Json(code, json)</code> (a body of JSON, sent as <code>application/json</code>: a form's
+				issues, <code>Issues.refusal</code>), or <code>Answer(response)</code>, an answer of its own (a
+				redirect that sets a cookie). A route file may also name the rules its body is read and checked
+				with (<a href={"${Paths.routing}#endpoints"}><code>post_body</code></a>): what doesn't pass them is
+				refused before the handler runs.
 			</p>
 			<Code title={Sources.endpoint_shout.file} source={Sources.endpoint_shout.rocx} />
 			<Code title={Sources.endpoint_shout_word.file} source={Sources.endpoint_shout_word.rocx} />

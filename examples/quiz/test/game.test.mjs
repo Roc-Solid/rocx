@@ -188,6 +188,15 @@ test("joining: the forms' issues at their fields, a plain post's flash, a room's
 	]);
 	assert.deepEqual(await issues(await someone.submit("/join", { code: code.toLowerCase(), name: "gus" })), [["name", "Someone in that room has this name already."]]);
 	assert.deepEqual(await issues(await someone.submit("/join", { code: "ZZZZ", name: "Hal" })), [["code", "There's no room with that code."]]);
+	// The form checks its body whatever it comes as (D-093): JSON is read by the same rules, and the
+	// issues come back as JSON, saying so.
+	const scripted = await someone.json("/join", { code: "nope", name: "" });
+	assert.equal(scripted.status, 422);
+	assert.equal(scripted.headers.get("content-type"), "application/json");
+	assert.deepEqual(await issues(scripted), [
+		["code", "A code is four letters, like BKRT."],
+		["name", "Fill this in"],
+	]);
 
 	// Without the runtime, the form posts, and comes back to the front page with a flash.
 	const posted = await someone.post("/join", { code: "ZZZZ", name: "Hal" });

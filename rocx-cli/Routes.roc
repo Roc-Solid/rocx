@@ -6,7 +6,9 @@
 ## channel, which pages subscribe to over the tab's one stream, `/rocx/live`, with its hooks
 ## `receive!`, `on_open!` and `on_close!`), and `+error.rocx` is what a path nothing has shows. A
 ## route file names its `middleware`, which runs around it; a page that names none runs behind the
-## one the `+server.roc` beside it names (D-079). A directory may have dots after its
+## one the `+server.roc` beside it names (D-079). A `+server.roc` may name the rules a method's body
+## is read and checked with (`post_body = Signup.form`, D-093), and its handlers' annotations may
+## give its path's params types (`params : { id : I64 }`, D-092). A directory may have dots after its
 ## first character, for a file's name (`routes/sitemap.xml/+server.roc` answers `/sitemap.xml`; its
 ## names are `SitemapXmlServer` and `sitemap_xml`). Directories that start with a dot are skipped,
 ## but for `.well-known` (`routes/.well-known/openid-configuration/+server.roc`).
@@ -54,7 +56,13 @@ Routes := [].{
 	## contract); `imported`: its import lines, for the modules those types name. `meta_fields`: the
 	## fields of the record its `meta` is written as, sorted (none when it is something else: a call, a
 	## spread); `takes_meta`: whether its view takes `meta` (a layout's: D-040 gives it one type).
-	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str), meta_fields : [Some(List(Str)), None], takes_meta : Bool }
+	## `bodies`: the rules a method's body is read with, as its `<method>_body` names them
+	## (`post_body = TaskForm.adding`, D-093), each with the line it is on.
+	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str), meta_fields : [Some(List(Str)), None], takes_meta : Bool, bodies : List(Body) }
+
+	## A method's body's rules (D-093): the method (`post!`), what its route file's `post_body`
+	## says, as written (`TaskForm.adding`), and its line (from 1).
+	Body : { method : Str, rules : Str, line : U64 }
 
 	## A method's or a channel's types, from its annotation (`get! : { request : Server.Request,
 	## params : {}, context : c } => Try(Str, Endpoint.Refusal)`): what it is sent (`body`'s type; `""`
@@ -165,7 +173,7 @@ Routes := [].{
 	defs_of = |sources, file|
 		match sources.find_first(|source| source.file == file) {
 			Ok(source) => source.defs
-			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [], meta_fields: None, takes_meta: Bool.False }
+			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [], meta_fields: None, takes_meta: Bool.False, bodies: [] }
 		}
 
 	## Whether the file names a middleware.
@@ -626,7 +634,46 @@ Routes := [].{
 			imported: lines.map(Text.trim).keep_if(|line| line.starts_with("import ")),
 			meta_fields: Routes.meta_fields(bytes),
 			takes_meta: Routes.takes_meta(lines),
+			bodies: Routes.method_names.keep_oks(|method| Routes.body_of(lines, method)),
 		}
+	}
+
+	## What a route file's `<method>_body` says (`post_body = TaskForm.adding`, D-093): the rules
+	## its method's body is read with, as written (what follows `=`, on its line or the indented
+	## lines after it), and its line.
+	body_of : List(Str), Str -> Try(Body, [NoBody])
+	body_of = |lines, method| {
+		name = "${method.drop_suffix("!")}_body"
+		match lines.find_first_index(|line| Routes.line_defines(line, name) and !Routes.annotates(line, name)) {
+			Ok(at) => {
+				first = Text.trim(Text.trim((lines.get(at) ?? "").drop_prefix(name)).drop_prefix("="))
+				var $taken = [first]
+				var $next = at + 1
+				while first.is_empty() and $next < lines.len() and ((lines.get($next) ?? "").starts_with("\t") or (lines.get($next) ?? "").starts_with(" ")) {
+					$taken = $taken.append(Text.trim(lines.get($next) ?? ""))
+					$next = $next + 1
+				}
+				Ok({ method, rules: Text.trim(Str.join_with($taken.keep_if(|part| !part.is_empty()), " ")), line: at + 1 })
+			}
+			Err(_) => Err(NoBody)
+		}
+	}
+
+	## The rules a route file names for a method's body (D-093), as written, if it names any.
+	rules_of : List(Source), Str, Str -> [Some(Str), None]
+	rules_of = |sources, file, method|
+		match Routes.defs_of(sources, file).bodies.find_first(|body| body.method == method) {
+			Ok(found) => Some(found.rules)
+			Err(_) => None
+		}
+
+	## Whether rules are written as a value of another module's (`TaskForm.adding`): what Api,
+	## which imports no route file, can name.
+	qualified : Str -> Bool
+	qualified = |rules| {
+		parts = rules.split_on(".")
+		first = parts.first() ?? ""
+		parts.len() >= 2 and Text.is_upper(Text.at(first.to_utf8(), 0)) and parts.all(|part| Text.all_of(part, Text.is_word))
 	}
 
 	## The fields of the record a route file's `meta` is written as (`meta = { title: "…", toc: [] }`),
@@ -2115,7 +2162,14 @@ Routes := [].{
 			}
 		takes_params = if (server.params.is_empty()) "_params" else "params"
 		url = if (Routes.is_typed(typed)) Routes.typed_url_of(server.parts, typed) else Routes.url_of(server.parts)
-		["\t## ${comment}"].concat(annotation).concat(["\t${name} = |${takes_params}| Endpoint.remote(${Text.json_string(verb)}, ${url})", ""])
+		remote = "Endpoint.remote(${Text.json_string(verb)}, ${url})"
+		# A body its route file names rules for is checked by them (D-093), in both copies.
+		made =
+			match Routes.rules_of(sources, server.file, method) {
+				Some(rules) if Routes.takes_body(verb) and Routes.qualified(rules) => "Endpoint.checked(${remote}, ${rules})"
+				_ => remote
+			}
+		["\t## ${comment}"].concat(annotation).concat(["\t${name} = |${takes_params}| ${made}", ""])
 	}
 
 	## A route file's methods with endpoints in Api, then its channel (`channel!`), if it has one.
@@ -2216,7 +2270,12 @@ Routes := [].{
 										Some(handler) => handler.line
 										None => 0
 									}
-								[types.arg, types.answer].join_map(
+								rules =
+									match Routes.rules_of(sources, server.file, method) {
+										Some(named) => [named]
+										None => []
+									}
+								[types.arg, types.answer].concat(rules).join_map(
 									|type| {
 										names = Routes.type_names(type)
 										defs.imported.keep_if(
@@ -2313,8 +2372,34 @@ Routes := [].{
 					},
 				),
 		)
-		problems.concat(Routes.contract_clashes(table, sources)).concat(Routes.param_problems(table, sources))
+		problems.concat(Routes.contract_clashes(table, sources)).concat(Routes.param_problems(table, sources)).concat(Routes.body_problems(table, sources))
 	}
+
+	## What is wrong with the rules route files name for their bodies (D-093), a line each: rules
+	## for a method the file doesn't have, or one sent no body, or rules Api can't name.
+	body_problems : Table, List(Source) -> List(Str)
+	body_problems = |table, sources|
+		table.servers.join_map(
+			|server| {
+				defs = Routes.defs_of(sources, server.file)
+				defs.bodies.join_map(
+					|body| {
+						at = "routes/${server.file}:${body.line.to_str()}"
+						name = "${body.method.drop_suffix("!")}_body"
+						verb = Routes.verb_of(body.method)
+						if !Routes.takes_body(verb) or body.method == "events!" {
+							["${at}: ${name} names rules for a body, and ${verb} is sent none: only post!, put! and patch! are (D-093)"]
+						} else if !defs.methods.contains(body.method) {
+							["${at}: ${name} names the rules ${body.method}'s body is read with, and the file has no ${body.method}"]
+						} else if !Routes.qualified(body.rules) {
+							["${at}: ${name} names its rules as a value of another module's (`${name} = Signup.form`), which Generated/Api copies and imports (it imports no route file): move the rules into a module of the app's, and name them so (D-093)"]
+						} else {
+							[]
+						}
+					},
+				)
+			},
+		)
 
 	## `Generated/Api.roc`: the app's contract. Each endpoint, a function of its params, with its
 	## method, its URL and the types its handler's annotation gives (`Endpoint.remote`); each channel
@@ -3365,6 +3450,7 @@ Routes := [].{
 			imported: Value.items(Value.field(value, "imports")).map(Value.str),
 			meta_fields: if (Routes.truthy(Value.field(value, "metaFields"))) Some(Value.items(Value.field(value, "metaFields")).map(Value.str)) else None,
 			takes_meta: Routes.truthy(Value.field(value, "takesMeta")),
+			bodies: Value.fields(Value.field(value, "bodies")).map(|each| { method: each.key, rules: Value.str(Value.field(each.value, "rules")), line: Routes.count_of(Value.field(each.value, "line")) }),
 		}
 	}
 
@@ -3485,7 +3571,8 @@ Routes := [].{
 						_ => []
 					},
 				)
-				.concat(if (defs.takes_meta) [{ key: "takesMeta", value: Boolean(Bool.True) }] else []),
+				.concat(if (defs.takes_meta) [{ key: "takesMeta", value: Boolean(Bool.True) }] else [])
+				.concat(if (defs.bodies.is_empty()) [] else [{ key: "bodies", value: Object(defs.bodies.map(|body| { key: body.method, value: Object([{ key: "rules", value: Text(body.rules) }, { key: "line", value: Value.count(body.line) }]) })) }]),
 		)
 	}
 

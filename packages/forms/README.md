@@ -78,27 +78,34 @@ Signup := [].{
 }
 ```
 
-**The endpoint** parses the form's body with the schema. When the body doesn't read, it refuses
-with a 422 and the issues as JSON (`Issues.refusal`). Its `body` type is `{}`, so the platform
-doesn't parse the body: the form does. That matters for a checkbox left unticked, which a browser
-doesn't send at all: the form judges it (`Unchecked`), instead of the platform answering 400.
+**The endpoint** names the form its body is read with, beside its handler (`post_body`, D-093),
+and the handler's `body` is the form's record. The platform reads the body, a form's fields
+(URL-encoded or multipart) or a JSON object alike, with the form: what passes is the handler's
+`body`; what doesn't is refused before the handler runs, with a 422 and the issues as JSON
+(`application/json`). A checkbox left unticked, which a browser doesn't send at all, is the form's
+to judge (`Unchecked`). `Generated/Api` makes the endpoint `Endpoint.checked(…, Signup.form)` in
+both copies, so a page's submission is read with the form too, and `/openapi.json` documents the
+body with `form.json_schema()`.
 
 ```roc
 # routes/signup/+server.roc
 import pf.Server
 import pf.Endpoint
-import forms.Issues
 import ../../Signup
 
-## POST /signup, from the sign-up form: the account it reads, or a 422 with each field's issues,
-## the same the page shows as it is typed.
-post! : { request : Server.Request, params : {}, context : c, body : {} } => Try({ welcome : Str }, Endpoint.Refusal)
-post! = |{ request, .. }|
-	match Signup.form.parse_body(Server.text_of(request)) {
-		Ok(account) => Ok({ welcome: "Welcome, ${account.name}" })
-		Err(issues) => Err(Issues.refusal(issues))
-	}
+## What POST /signup is sent: an account, read and checked by the form.
+post_body = Signup.form
+
+## POST /signup, from the sign-up form: the account, which passed every check.
+post! : { request : Server.Request, params : {}, context : c, body : Signup.Account } => Try({ welcome : Str }, Endpoint.Refusal)
+post! = |{ body, .. }| Ok({ welcome: "Welcome, ${body.name}" })
 ```
+
+The rules are named as a value of a module (`Signup.form`), which `Generated/Api` imports, as it
+imports the types the handler names. A handler refuses what only it can check, after the form (a
+name already taken), with the same shape: `Err(Issues.refusal([Issues.at_field("name", Custom("taken", "That name is taken"))]))`.
+The form's record is the endpoint's arg, which JSON reads and writes like any other's: `Date` is
+read and written as its text.
 
 **The page** checks the same form as it is typed (`LiveForm`), and shows the endpoint's issues
 when it refuses. This works with the runtime (the form is sent with `fetch`, and the page stays)
@@ -236,7 +243,7 @@ field reads an `I64` or a `Dec`.
 | `Issues.key(code)`, `Issues.params(code)` | what a table of translations is keyed by: `"too_short"`, `[{ name: "min", value: "3" }]`; a custom code's own key |
 | `Issues.at(issues, field)`, `under`, `messages` | a field's issues (`under`: its list items' too, `tags[0]`, `tags[1]`…), and their messages |
 | `Issues.to_json`, `Issues.from_json` | the issues as JSON, and back |
-| `Issues.refusal(issues)` | an endpoint's refusal: `Status(422, json)`, which is an `Endpoint.Refusal` |
+| `Issues.refusal(issues)` | an endpoint's refusal: `Json(422, json)`, which is an `Endpoint.Refusal` sent as `application/json` |
 | `Issues.from_problem(problem)` | the issues of a 422, from the `Server.Problem` that a submission's `error!()` or `Endpoint.send!` gives; `[]` for any other problem |
 
 To show issues in another language, match on the code, or look its key and params up in a
@@ -331,28 +338,25 @@ in again, so the person types the password again.
 
 ## Status
 
-Works today, with no change to the platform: the package and its `expect`s
-(`roc test packages/forms/main.roc`), and the components, which the docs site's Forms page and
-examples/tasks, examples/quiz and examples/plate use.
+Works today: the package and its `expect`s (`roc test packages/forms/main.roc`), the components,
+which the docs site's Forms page and examples/tasks, examples/quiz and examples/plate use, and
+an endpoint's body checked by a form (`post_body`, D-093): read from a form or JSON, refused with
+the issues as JSON, documented in `/openapi.json` with the form's schema.
 
 Not yet (each is a proposal in PROPOSALS.md):
 
-- **A refusal with field issues of the platform's own.** Today a refusal is a 422 whose text is the
-  issues' JSON, sent as `text/plain`, which `Issues.from_problem` reads back. `Server.explain` would
-  show that JSON to a person.
-- **The form's rules in `/openapi.json`.** The document describes an endpoint whose `body` is `{}`
-  as taking an empty object, so the rules (lengths, patterns, required fields) aren't in it.
-  `form.json_schema()` is ready for it.
+- **A refusal with field issues of the platform's own** (RFC 9457's problem details). Today a
+  refusal is a 422 whose body is the issues' JSON, labelled `application/json`, which
+  `Issues.from_problem` reads back. `Server.explain` would show that JSON to a person.
 - **Holding a submit back in the browser** when the form has issues. Today it always goes to the
   endpoint, which refuses it with the same issues.
-- **A ready-made endpoint handler.** The endpoint glue is a few lines in your route file (`post!`
-  above). A package can now have modules only the server compiles (as plugins do), so forms could
-  ship one.
 
 ## Limits
 
-- A URL-encoded body only (`application/x-www-form-urlencoded`, what a browser and the runtime send
-  for a form without files). Not JSON, and not `multipart/form-data` (files).
+- `form.parse_body(text)` reads a URL-encoded body only (`application/x-www-form-urlencoded`). An
+  endpoint's body checked by a form (`post_body`) is read by the platform, multipart and JSON too
+  (a JSON object of fields: text, numbers, yes-or-no, lists of them; a record inside a field is
+  a 400).
 - Decimals are written with a `.`, and no exponent. A locale's `1,5` is for a translation layer.
 - A regex has no flags (write `[A-Za-z]` for any case), no captures (`find` gives the whole match),
   and no backreferences or lookaround.

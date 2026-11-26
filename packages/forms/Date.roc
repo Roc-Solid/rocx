@@ -76,6 +76,33 @@ Date := { year : I64, month : I64, day : I64 }.{
 
 	is_after : Date, Date -> Bool
 	is_after = |a, b| Date.days(a) > Date.days(b)
+
+	## A day read as its text (`"2026-11-21"`) by any format that reads text: JSON, a form's field
+	## (the platform's `FormBody`). Text that isn't a day is the format's invalid value. So a record
+	## that holds a day is read and written as any other: an endpoint's checked body (D-093).
+	parser_for : encoding -> (state -> Try({ value : Date, rest : state }, err))
+		where [
+			encoding.parse_str : encoding, state -> Try({ value : Str, rest : state }, err),
+			encoding.invalid_value : encoding, state -> err,
+		]
+	parser_for = |encoding| {
+		Format : encoding
+		|state| {
+			read = Format.parse_str(encoding, state)?
+			match Date.from_str(read.value) {
+				Ok(date) => Ok({ value: date, rest: read.rest })
+				Err(NotDate) => Err(Format.invalid_value(encoding, state))
+			}
+		}
+	}
+
+	## A day written as its text (`to_str`), as JSON writes text.
+	encoder_for : encoding -> (Date, state -> Try(state, err))
+		where [encoding.encode_str : Str, state -> Try(state, err)]
+	encoder_for = |_| {
+		Format : encoding
+		|date, state| Format.encode_str(Date.to_str(date), state)
+	}
 }
 
 ## Digits as a number; anything else isn't a date.
@@ -155,3 +182,16 @@ expect !day_of("2026-11-21").is_before(day_of("2026-11-21"))
 expect day_of("2027-01-01").is_after(day_of("2026-12-31"))
 expect day_of("2026-11-21") == day_of("2026-11-21")
 expect day_of("2026-11-21").month() == 11
+
+# In JSON, as its text, both ways; text that isn't a day isn't read.
+expect Json.to_str({ due: day_of("2026-12-01") }) == "{\"due\":\"2026-12-01\"}"
+expect {
+	read : Try({ due : Date }, [InvalidJson(Str)])
+	read = Json.parse("{\"due\":\"2026-12-01\"}")
+	read.map_ok(|it| Date.to_str(it.due)) == Ok("2026-12-01")
+}
+expect {
+	read : Try({ due : Date }, [InvalidJson(Str)])
+	read = Json.parse("{\"due\":\"2026-02-30\"}")
+	read.is_err()
+}
