@@ -43,29 +43,30 @@ view! = |_|
 			The first paint is the best of them: the page is HTML the server rendered (here, written as
 			files by <code>rocx build --static</code>), shown before its wasm has loaded. Being ready to use
 			is the other way round: the page answers a click once the runtime and the wasm have come and
-			hydrated it, and on the benchmark's server, which compresses each file slowly as it sends it,
-			that is the last of them. The runtime's raw size is most of that: shortening its names, as a
-			full minifier would, makes it a third smaller. Updating rows that are there is close to the
-			others: a row's holes run again only when its data changed (compared with <code>==</code>),
-			selecting one patches a class, and a swap moves the two rows that moved.
+			hydrated it, and on the benchmark's server, which compresses each file as it sends it, slowly,
+			that is the last of them. What a page downloads is most of that: the runtime ships only what the
+			page uses (D-087), 124 KB of its 175, but with the wasm it is still more than Joy's, Leptos's or
+			React's, and many times Solid's, which is JavaScript alone.
 		</p>
 		<p>
-			Making rows is where Roc Solid is slower: about two and a half times vanillajs for 1,000 rows,
-			and for 10,000. For each row the runtime calls into the wasm about four times (the row and its
-			holes), the host notes every allocation each call makes (so a call cut short by a read that
-			waits can be freed), Roc writes the row's markup as JSON, and the runtime reads it and makes the
-			elements one by one, with comments marking where each row and hole is. Memory follows from the
-			same: a computation for the row and each hole, each with what it read. The download is the app's
-			wasm and the runtime: half again as much as Joy's, Leptos's or React's, and many times Solid's,
-			which is JavaScript alone; the runtime is shipped minified (D-075). The repository's
-			<code>TODO.md</code> lists what is left.
+			Updating rows that are there is close to the others: a row's holes run again only when its data
+			changed (compared with <code>==</code>), selecting one runs the two rows it leaves and comes to
+			(<code>create_selector!</code>, D-083), and a swap moves the two rows that moved. Making rows is
+			where Roc Solid is slower: about twice vanillajs for 1,000 rows, and for 10,000. A row is a
+			template (D-084): its markup comes once, and each row after is a copy with its parts put in, so
+			Roc builds no markup for it beyond its holes. But each hole is a computation of its own, run by a
+			call into the wasm, with what it read noted for the next change; vanillajs writes the text and is
+			done. Memory follows from the same: a computation for the row and each hole, each with what it
+			read. The repository's <code>TODO.md</code> lists what is left.
 		</p>
 		<p>
-			The first run found worse (D-074): CPU five times the fastest, creating 1,000 rows 217 ms and
-			replacing them 798. The host's notes of what runs allocate had filled with a hash map's
-			tombstones, so every run cost more than the one before; and a <code>.map</code>'s rows put in
-			order moved every row between two swapped ones. Both are fixed, with tests that count rather
-			than time.
+			The first run (D-074) found CPU five times the fastest; fixing how the host noted what runs
+			allocate, and how a <code>.map</code> reorders its rows, made it about twice (2.06×). The steps
+			after, on 2026-11-25 and 26 (D-083 to D-087: the selector, templates, cheaper notes, fewer calls
+			a row, the runtime shaken to what a page uses), made creating 1,000 rows 45.8 ms to 39.3,
+			selecting one 11.8 to 7.7, the download 73.4 KB to 66.2, and CPU 1.83× the fastest: beside
+			React's 1.74×. Each step was measured on its own, and two were taken back for what they cost
+			elsewhere: preload hints (a later first paint) and delegated handlers (more memory).
 		</p>
 
 		<Heading id="entries">The entries</Heading>

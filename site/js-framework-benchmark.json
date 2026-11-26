@@ -1,12 +1,12 @@
 {
- "measured": "2026-11-25",
- "commit": "beb7be7",
+ "measured": "2026-11-26",
+ "commit": "b84a0b8",
  "chrome": "158.0.8127.88",
  "benchmark": "krausest/js-framework-benchmark 0f4e789",
  "headless": true,
  "rounds": 2,
  "count": 15,
- "minutes": 75.2,
+ "minutes": 72.8,
  "machine": {
   "model": "MacBook Pro (Mac17,2)",
   "cpu": "Apple M5",
@@ -17,7 +17,7 @@
   "arch": "arm64",
   "power": "mains"
  },
- "load": "4.0 → 2.5",
+ "load": "6.0 → 5.0",
  "power": "mains",
  "failures": [],
  "unplugged": [],
@@ -25,12 +25,12 @@
   {
    "entry": "keyed/roc-solid",
    "name": "Roc Solid (keyed)",
-   "version": "roc-solid-vbeb7be7-keyed"
+   "version": "roc-solid-vb84a0b8-keyed"
   },
   {
    "entry": "non-keyed/roc-solid",
    "name": "Roc Solid (non-keyed)",
-   "version": "roc-solid-vbeb7be7-non-keyed"
+   "version": "roc-solid-vb84a0b8-non-keyed"
   },
   {
    "entry": "keyed/vanillajs",
@@ -133,511 +133,511 @@
  "results": {
   "keyed/roc-solid": {
    "01_run1k": {
-    "mean": 45.75,
-    "median": 45.75,
-    "min": 44.8,
-    "max": 46.9,
-    "stddev": 0.58,
+    "mean": 39.34,
+    "median": 38.9,
+    "min": 37.7,
+    "max": 41.8,
+    "stddev": 1.12,
     "n": 30,
     "rounds": [
-     45.5,
-     46
+     39.3,
+     38.8
     ]
    },
    "02_replace1k": {
-    "mean": 49.63,
-    "median": 49.75,
-    "min": 48.5,
-    "max": 50.4,
-    "stddev": 0.44,
+    "mean": 43.33,
+    "median": 43.35,
+    "min": 41.3,
+    "max": 45.9,
+    "stddev": 0.88,
     "n": 30,
     "rounds": [
-     49.5,
-     49.9
+     43.2,
+     43.4
     ]
    },
    "03_update10th1k_x16": {
-    "mean": 22.34,
-    "median": 22.3,
-    "min": 20.7,
-    "max": 23.6,
-    "stddev": 0.71,
+    "mean": 22.28,
+    "median": 22.15,
+    "min": 20.2,
+    "max": 26.2,
+    "stddev": 1.27,
     "n": 30,
     "rounds": [
-     22.6,
-     21.9
+     22.3,
+     22
     ]
    },
    "04_select1k": {
-    "mean": 11.83,
-    "median": 10.8,
-    "min": 9.8,
-    "max": 19.3,
-    "stddev": 2.56,
+    "mean": 7.66,
+    "median": 5.6,
+    "min": 3.5,
+    "max": 15,
+    "stddev": 3.77,
     "n": 50,
     "rounds": [
-     10.7,
-     10.8
+     5.6,
+     5.8
     ]
    },
    "05_swap1k": {
-    "mean": 22.76,
-    "median": 22.55,
-    "min": 20.7,
-    "max": 26.1,
-    "stddev": 1.06,
+    "mean": 22.98,
+    "median": 22.85,
+    "min": 21,
+    "max": 26.8,
+    "stddev": 1.27,
     "n": 30,
     "rounds": [
-     22.6,
-     22.4
+     23.1,
+     22.3
     ]
    },
    "06_remove-one-1k": {
-    "mean": 16.27,
-    "median": 16.35,
-    "min": 13.8,
-    "max": 23.2,
-    "stddev": 2,
+    "mean": 15.86,
+    "median": 14.1,
+    "min": 12.9,
+    "max": 23.4,
+    "stddev": 3.42,
     "n": 30,
     "rounds": [
-     16.3,
-     16.4
+     14,
+     14.2
     ]
    },
    "07_create10k": {
-    "mean": 474.08,
-    "median": 470.75,
-    "min": 465.1,
-    "max": 509,
-    "stddev": 9.13,
+    "mean": 448.16,
+    "median": 445.95,
+    "min": 395.2,
+    "max": 576.9,
+    "stddev": 40.83,
     "n": 30,
     "rounds": [
-     470.8,
-     470.7
+     455,
+     436.7
     ]
    },
    "08_create1k-after1k_x2": {
-    "mean": 52.48,
-    "median": 51.55,
-    "min": 50,
-    "max": 80.1,
-    "stddev": 5.18,
+    "mean": 46.62,
+    "median": 46.3,
+    "min": 44.2,
+    "max": 55.3,
+    "stddev": 2.16,
     "n": 30,
     "rounds": [
-     51,
-     52
+     46.3,
+     46.3
     ]
    },
    "09_clear1k_x8": {
-    "mean": 17.42,
-    "median": 17.3,
-    "min": 16.2,
-    "max": 19.6,
-    "stddev": 0.81,
+    "mean": 19.76,
+    "median": 19.5,
+    "min": 18.5,
+    "max": 21.2,
+    "stddev": 0.82,
     "n": 30,
     "rounds": [
-     17.3,
-     17.4
+     19.9,
+     19.4
     ]
    },
    "21_ready-memory": {
-    "mean": 1.17,
-    "median": 1.17,
-    "min": 1.15,
-    "max": 1.19,
-    "stddev": 0.02,
+    "mean": 1.04,
+    "median": 1.04,
+    "min": 0.99,
+    "max": 1.09,
+    "stddev": 0.05,
     "n": 2,
     "rounds": [
-     1.15,
-     1.19
+     1.09,
+     0.99
     ]
    },
    "22_run-memory": {
-    "mean": 4.6,
-    "median": 4.6,
-    "min": 4.59,
-    "max": 4.62,
-    "stddev": 0.01,
+    "mean": 4.8,
+    "median": 4.8,
+    "min": 4.8,
+    "max": 4.8,
+    "stddev": 0,
     "n": 2,
     "rounds": [
-     4.62,
-     4.59
+     4.8,
+     4.8
     ]
    },
    "25_run-clear-memory": {
-    "mean": 1.6,
-    "median": 1.6,
-    "min": 1.59,
-    "max": 1.6,
-    "stddev": 0.01,
+    "mean": 1.74,
+    "median": 1.74,
+    "min": 1.74,
+    "max": 1.74,
+    "stddev": 0,
     "n": 2,
     "rounds": [
-     1.59,
-     1.6
+     1.74,
+     1.74
     ]
    },
    "41_size-uncompressed": {
-    "mean": 291.8,
-    "median": 291.8,
-    "min": 291.8,
-    "max": 291.8,
+    "mean": 253.4,
+    "median": 253.4,
+    "min": 253.4,
+    "max": 253.4,
     "stddev": 0,
     "n": 2,
     "rounds": [
-     291.8,
-     291.8
+     253.4,
+     253.4
     ]
    },
    "42_size-compressed": {
-    "mean": 73.4,
-    "median": 73.4,
-    "min": 73.4,
-    "max": 73.4,
+    "mean": 66.2,
+    "median": 66.2,
+    "min": 66.2,
+    "max": 66.2,
     "stddev": 0,
     "n": 2,
     "rounds": [
-     73.4,
-     73.4
+     66.2,
+     66.2
     ]
    },
    "43_first-paint": {
-    "mean": 29,
-    "median": 29,
-    "min": 25.9,
-    "max": 32.1,
-    "stddev": 3.1,
+    "mean": 37.05,
+    "median": 37.05,
+    "min": 25.3,
+    "max": 48.8,
+    "stddev": 11.75,
     "n": 2,
     "rounds": [
-     25.9,
-     32.1
+     48.8,
+     25.3
     ]
    }
   },
   "non-keyed/roc-solid": {
    "01_run1k": {
-    "mean": 45.67,
-    "median": 45.6,
-    "min": 44.7,
-    "max": 46.8,
-    "stddev": 0.43,
+    "mean": 40.16,
+    "median": 39.4,
+    "min": 38,
+    "max": 47.7,
+    "stddev": 2.16,
     "n": 30,
     "rounds": [
-     45.6,
-     45.7
+     39.5,
+     39.2
     ]
    },
    "02_replace1k": {
-    "mean": 16.37,
-    "median": 15.45,
+    "mean": 16.28,
+    "median": 15.8,
     "min": 15,
-    "max": 22,
-    "stddev": 2.01,
+    "max": 23.4,
+    "stddev": 1.49,
     "n": 30,
     "rounds": [
-     15.3,
-     15.6
+     15.8,
+     15.8
     ]
    },
    "03_update10th1k_x16": {
-    "mean": 21.99,
-    "median": 21,
-    "min": 19.3,
-    "max": 48.4,
-    "stddev": 5.05,
+    "mean": 21.4,
+    "median": 20.95,
+    "min": 18.5,
+    "max": 32.5,
+    "stddev": 2.63,
     "n": 30,
     "rounds": [
-     21.3,
-     20.5
+     21.1,
+     20.9
     ]
    },
    "04_select1k": {
-    "mean": 11.33,
-    "median": 10.9,
-    "min": 9.7,
+    "mean": 7.48,
+    "median": 5.25,
+    "min": 3.7,
     "max": 16.5,
-    "stddev": 1.41,
+    "stddev": 3.85,
     "n": 50,
     "rounds": [
-     11.1,
-     10.9
+     6.6,
+     5.1
     ]
    },
    "05_swap1k": {
-    "mean": 20.39,
-    "median": 15.15,
-    "min": 14.5,
-    "max": 47.6,
-    "stddev": 11.09,
+    "mean": 22.47,
+    "median": 14.8,
+    "min": 13.4,
+    "max": 49.3,
+    "stddev": 14.03,
     "n": 30,
     "rounds": [
-     15.7,
-     15
+     14.6,
+     15.1
     ]
    },
    "06_remove-one-1k": {
-    "mean": 28.02,
-    "median": 27.9,
-    "min": 26.9,
-    "max": 29.5,
-    "stddev": 0.68,
+    "mean": 28.25,
+    "median": 28.25,
+    "min": 26.3,
+    "max": 31,
+    "stddev": 1.12,
     "n": 30,
     "rounds": [
-     28.4,
-     27.6
+     27.6,
+     28.4
     ]
    },
    "07_create10k": {
-    "mean": 462.03,
-    "median": 460.25,
-    "min": 450.1,
-    "max": 474.2,
-    "stddev": 6.38,
+    "mean": 448.45,
+    "median": 449.5,
+    "min": 404.6,
+    "max": 496.6,
+    "stddev": 20.75,
     "n": 30,
     "rounds": [
-     458.3,
-     461.6
+     445.1,
+     451.2
     ]
    },
    "08_create1k-after1k_x2": {
-    "mean": 51.76,
-    "median": 51.7,
-    "min": 50.9,
-    "max": 53.7,
-    "stddev": 0.66,
+    "mean": 46.04,
+    "median": 45.45,
+    "min": 43.5,
+    "max": 56.2,
+    "stddev": 2.5,
     "n": 30,
     "rounds": [
-     51.7,
-     51.7
+     45.6,
+     45.3
     ]
    },
    "09_clear1k_x8": {
-    "mean": 17.12,
-    "median": 17.05,
-    "min": 16,
-    "max": 18.8,
-    "stddev": 0.63,
+    "mean": 20.17,
+    "median": 20.25,
+    "min": 19.1,
+    "max": 21.3,
+    "stddev": 0.67,
     "n": 30,
     "rounds": [
-     17.3,
-     16.9
+     20.2,
+     20.3
     ]
    },
    "21_ready-memory": {
-    "mean": 1.16,
-    "median": 1.16,
-    "min": 1.15,
-    "max": 1.18,
-    "stddev": 0.01,
+    "mean": 1.03,
+    "median": 1.03,
+    "min": 0.99,
+    "max": 1.07,
+    "stddev": 0.04,
     "n": 2,
     "rounds": [
-     1.18,
-     1.15
+     1.07,
+     0.99
     ]
    },
    "22_run-memory": {
-    "mean": 4.59,
-    "median": 4.59,
-    "min": 4.58,
-    "max": 4.6,
+    "mean": 4.79,
+    "median": 4.79,
+    "min": 4.78,
+    "max": 4.8,
     "stddev": 0.01,
     "n": 2,
     "rounds": [
-     4.58,
-     4.6
+     4.78,
+     4.8
     ]
    },
    "25_run-clear-memory": {
-    "mean": 1.57,
-    "median": 1.57,
-    "min": 1.57,
-    "max": 1.57,
-    "stddev": 0,
+    "mean": 1.73,
+    "median": 1.73,
+    "min": 1.73,
+    "max": 1.74,
+    "stddev": 0.01,
     "n": 2,
     "rounds": [
-     1.57,
-     1.57
+     1.73,
+     1.74
     ]
    },
    "41_size-uncompressed": {
-    "mean": 275.5,
-    "median": 275.5,
-    "min": 275.5,
-    "max": 275.5,
+    "mean": 237.5,
+    "median": 237.5,
+    "min": 237.5,
+    "max": 237.5,
     "stddev": 0,
     "n": 2,
     "rounds": [
-     275.5,
-     275.5
+     237.5,
+     237.5
     ]
    },
    "42_size-compressed": {
-    "mean": 68.8,
-    "median": 68.8,
-    "min": 68.8,
-    "max": 68.8,
+    "mean": 61.9,
+    "median": 61.9,
+    "min": 61.9,
+    "max": 61.9,
     "stddev": 0,
     "n": 2,
     "rounds": [
-     68.8,
-     68.8
+     61.9,
+     61.9
     ]
    },
    "43_first-paint": {
-    "mean": 32.3,
-    "median": 32.3,
-    "min": 30.6,
-    "max": 34,
-    "stddev": 1.7,
+    "mean": 34.5,
+    "median": 34.5,
+    "min": 24.7,
+    "max": 44.3,
+    "stddev": 9.8,
     "n": 2,
     "rounds": [
-     30.6,
-     34
+     24.7,
+     44.3
     ]
    }
   },
   "keyed/vanillajs": {
    "01_run1k": {
-    "mean": 18.65,
-    "median": 18.9,
-    "min": 17.5,
-    "max": 19.5,
-    "stddev": 0.6,
+    "mean": 18.7,
+    "median": 18.5,
+    "min": 18,
+    "max": 20.3,
+    "stddev": 0.59,
     "n": 30,
     "rounds": [
-     18.9,
-     18.9
+     18.5,
+     18.6
     ]
    },
    "02_replace1k": {
-    "mean": 19.87,
-    "median": 19.7,
-    "min": 18.8,
-    "max": 22.7,
-    "stddev": 0.73,
+    "mean": 20.6,
+    "median": 20.2,
+    "min": 19.7,
+    "max": 23.1,
+    "stddev": 1.02,
     "n": 30,
     "rounds": [
-     19.8,
-     19.6
+     20.4,
+     20
     ]
    },
    "03_update10th1k_x16": {
-    "mean": 14.63,
-    "median": 11.6,
-    "min": 9.4,
-    "max": 23.6,
-    "stddev": 5.23,
+    "mean": 19.61,
+    "median": 22.95,
+    "min": 10.3,
+    "max": 32.2,
+    "stddev": 6.38,
     "n": 30,
     "rounds": [
-     11.7,
-     11.5
+     23,
+     22.9
     ]
    },
    "04_select1k": {
-    "mean": 7.2,
-    "median": 6.55,
-    "min": 2.2,
-    "max": 18.1,
-    "stddev": 4.54,
+    "mean": 7.6,
+    "median": 4.65,
+    "min": 2.4,
+    "max": 18.7,
+    "stddev": 5.43,
     "n": 50,
     "rounds": [
-     10.2,
-     5.2
+     4.7,
+     4.6
     ]
    },
    "05_swap1k": {
-    "mean": 16.75,
-    "median": 12.65,
-    "min": 11.2,
-    "max": 28.9,
-    "stddev": 5.91,
+    "mean": 20.44,
+    "median": 17.3,
+    "min": 11.7,
+    "max": 34.5,
+    "stddev": 7.24,
     "n": 30,
     "rounds": [
-     12.7,
-     12.4
+     14.9,
+     23.1
     ]
    },
    "06_remove-one-1k": {
-    "mean": 11.64,
-    "median": 10.2,
-    "min": 9.4,
-    "max": 21.9,
-    "stddev": 3.35,
+    "mean": 13.86,
+    "median": 10.9,
+    "min": 10.2,
+    "max": 23.3,
+    "stddev": 4.8,
     "n": 30,
     "rounds": [
-     10.2,
-     10.1
+     11,
+     10.8
     ]
    },
    "07_create10k": {
-    "mean": 201.43,
-    "median": 201.05,
-    "min": 195.1,
-    "max": 211,
-    "stddev": 4.58,
+    "mean": 219.82,
+    "median": 215.15,
+    "min": 200.6,
+    "max": 298.2,
+    "stddev": 16.74,
     "n": 30,
     "rounds": [
-     203.8,
-     198.4
+     215.2,
+     215.1
     ]
    },
    "08_create1k-after1k_x2": {
-    "mean": 22.47,
-    "median": 20.85,
-    "min": 20.3,
-    "max": 31,
-    "stddev": 3.68,
+    "mean": 23.35,
+    "median": 21.9,
+    "min": 20.9,
+    "max": 33,
+    "stddev": 3.24,
     "n": 30,
     "rounds": [
-     21.2,
-     20.8
+     22,
+     21.8
     ]
    },
    "09_clear1k_x8": {
-    "mean": 10.65,
-    "median": 9.25,
-    "min": 7.4,
-    "max": 17.6,
-    "stddev": 2.99,
+    "mean": 10.46,
+    "median": 8.85,
+    "min": 7.8,
+    "max": 20.7,
+    "stddev": 3.41,
     "n": 30,
     "rounds": [
-     10.1,
+     9,
      8.7
     ]
    },
    "21_ready-memory": {
-    "mean": 0.53,
-    "median": 0.53,
-    "min": 0.49,
+    "mean": 0.58,
+    "median": 0.58,
+    "min": 0.58,
     "max": 0.58,
-    "stddev": 0.04,
+    "stddev": 0,
     "n": 2,
     "rounds": [
-     0.49,
+     0.58,
      0.58
     ]
    },
    "22_run-memory": {
-    "mean": 1.85,
-    "median": 1.85,
-    "min": 1.83,
+    "mean": 1.86,
+    "median": 1.86,
+    "min": 1.84,
     "max": 1.87,
-    "stddev": 0.02,
+    "stddev": 0.01,
     "n": 2,
     "rounds": [
-     1.83,
+     1.84,
      1.87
     ]
    },
    "25_run-clear-memory": {
-    "mean": 0.64,
-    "median": 0.64,
-    "min": 0.62,
-    "max": 0.67,
-    "stddev": 0.02,
+    "mean": 0.65,
+    "median": 0.65,
+    "min": 0.65,
+    "max": 0.66,
+    "stddev": 0,
     "n": 2,
     "rounds": [
-     0.62,
-     0.67
+     0.66,
+     0.65
     ]
    },
    "41_size-uncompressed": {
@@ -665,125 +665,125 @@
     ]
    },
    "43_first-paint": {
-    "mean": 32.55,
-    "median": 32.55,
-    "min": 30.5,
-    "max": 34.6,
-    "stddev": 2.05,
+    "mean": 50.85,
+    "median": 50.85,
+    "min": 45.2,
+    "max": 56.5,
+    "stddev": 5.65,
     "n": 2,
     "rounds": [
-     34.6,
-     30.5
+     56.5,
+     45.2
     ]
    }
   },
   "non-keyed/vanillajs": {
    "01_run1k": {
-    "mean": 19.07,
-    "median": 19.3,
-    "min": 17.8,
-    "max": 20.2,
-    "stddev": 0.68,
+    "mean": 19.3,
+    "median": 19,
+    "min": 17.9,
+    "max": 24.8,
+    "stddev": 1.22,
     "n": 30,
     "rounds": [
-     19.2,
-     19.4
+     19.5,
+     18.9
     ]
    },
    "02_replace1k": {
-    "mean": 13.31,
-    "median": 13.15,
-    "min": 8.6,
-    "max": 20.1,
-    "stddev": 3.6,
+    "mean": 14.84,
+    "median": 15.45,
+    "min": 9.1,
+    "max": 20.7,
+    "stddev": 3.19,
     "n": 30,
     "rounds": [
-     13.2,
-     12.5
+     12.2,
+     15.5
     ]
    },
    "03_update10th1k_x16": {
-    "mean": 16.77,
-    "median": 14.9,
-    "min": 10.3,
-    "max": 25.3,
-    "stddev": 5.11,
+    "mean": 17.45,
+    "median": 13.9,
+    "min": 11,
+    "max": 27.7,
+    "stddev": 5.86,
     "n": 30,
     "rounds": [
-     15.1,
-     14.7
+     13.8,
+     14
     ]
    },
    "04_select1k": {
-    "mean": 6.51,
-    "median": 6.7,
-    "min": 2.2,
-    "max": 17.8,
-    "stddev": 4.02,
+    "mean": 7.25,
+    "median": 5.75,
+    "min": 1.9,
+    "max": 17.9,
+    "stddev": 4.81,
     "n": 50,
     "rounds": [
-     2.9,
-     8.4
+     5.8,
+     5.7
     ]
    },
    "05_swap1k": {
-    "mean": 17.35,
-    "median": 20.3,
-    "min": 7.9,
-    "max": 24.7,
-    "stddev": 6.01,
+    "mean": 13.91,
+    "median": 10.8,
+    "min": 8.4,
+    "max": 25.9,
+    "stddev": 6.07,
     "n": 30,
     "rounds": [
-     21.2,
-     20
+     10.9,
+     10.6
     ]
    },
    "06_remove-one-1k": {
-    "mean": 17.84,
-    "median": 17.85,
-    "min": 16.5,
-    "max": 19.4,
-    "stddev": 0.67,
+    "mean": 19.14,
+    "median": 18.9,
+    "min": 17.8,
+    "max": 22.1,
+    "stddev": 1.07,
     "n": 30,
     "rounds": [
-     17.7,
-     18
+     18.9,
+     18.9
     ]
    },
    "07_create10k": {
-    "mean": 203.68,
-    "median": 202.3,
-    "min": 197,
-    "max": 211,
-    "stddev": 3.9,
+    "mean": 220.49,
+    "median": 219.9,
+    "min": 210.4,
+    "max": 237.7,
+    "stddev": 6.38,
     "n": 30,
     "rounds": [
-     201.1,
-     204
+     220.7,
+     217.4
     ]
    },
    "08_create1k-after1k_x2": {
-    "mean": 22.77,
-    "median": 21.3,
-    "min": 20.4,
-    "max": 31.2,
-    "stddev": 3.61,
+    "mean": 23.31,
+    "median": 22,
+    "min": 21.3,
+    "max": 32.7,
+    "stddev": 3.25,
     "n": 30,
     "rounds": [
-     21.3,
-     21.3
+     21.9,
+     22
     ]
    },
    "09_clear1k_x8": {
-    "mean": 9.39,
-    "median": 8.2,
-    "min": 6.5,
-    "max": 16.2,
-    "stddev": 2.68,
+    "mean": 10.47,
+    "median": 8.7,
+    "min": 7.7,
+    "max": 19.1,
+    "stddev": 3.36,
     "n": 30,
     "rounds": [
-     8.2,
-     10.9
+     8.4,
+     9.1
     ]
    },
    "21_ready-memory": {
@@ -799,14 +799,14 @@
     ]
    },
    "22_run-memory": {
-    "mean": 1.81,
-    "median": 1.81,
-    "min": 1.79,
+    "mean": 1.83,
+    "median": 1.83,
+    "min": 1.83,
     "max": 1.83,
-    "stddev": 0.02,
+    "stddev": 0,
     "n": 2,
     "rounds": [
-     1.79,
+     1.83,
      1.83
     ]
    },
@@ -847,125 +847,125 @@
     ]
    },
    "43_first-paint": {
-    "mean": 36.55,
-    "median": 36.55,
-    "min": 30.5,
-    "max": 42.6,
-    "stddev": 6.05,
+    "mean": 58.8,
+    "median": 58.8,
+    "min": 57.3,
+    "max": 60.3,
+    "stddev": 1.5,
     "n": 2,
     "rounds": [
-     30.5,
-     42.6
+     57.3,
+     60.3
     ]
    }
   },
   "keyed/solid": {
    "01_run1k": {
-    "mean": 19.54,
-    "median": 19.55,
-    "min": 18.7,
-    "max": 20.2,
-    "stddev": 0.43,
+    "mean": 20.51,
+    "median": 19.95,
+    "min": 19.3,
+    "max": 24.7,
+    "stddev": 1.45,
     "n": 30,
     "rounds": [
-     19.6,
-     19.5
+     20.2,
+     19.9
     ]
    },
    "02_replace1k": {
-    "mean": 21.48,
-    "median": 21.4,
-    "min": 21.1,
-    "max": 22.2,
-    "stddev": 0.28,
+    "mean": 23.02,
+    "median": 22.65,
+    "min": 21.4,
+    "max": 29.2,
+    "stddev": 1.48,
     "n": 30,
     "rounds": [
-     21.5,
-     21.3
+     22.8,
+     22.5
     ]
    },
    "03_update10th1k_x16": {
-    "mean": 16.31,
-    "median": 12.15,
-    "min": 10,
-    "max": 26.1,
-    "stddev": 5.97,
+    "mean": 14.36,
+    "median": 13,
+    "min": 11.3,
+    "max": 27.8,
+    "stddev": 4.2,
     "n": 30,
     "rounds": [
-     11.8,
-     21.4
+     13,
+     13
     ]
    },
    "04_select1k": {
-    "mean": 7.78,
-    "median": 5.4,
-    "min": 2.8,
-    "max": 17.8,
-    "stddev": 4.97,
+    "mean": 7.83,
+    "median": 7.4,
+    "min": 3.3,
+    "max": 17.5,
+    "stddev": 3.67,
     "n": 50,
     "rounds": [
-     9,
-     3.8
+     6.7,
+     7.8
     ]
    },
    "05_swap1k": {
-    "mean": 18.61,
-    "median": 15.05,
-    "min": 12.1,
-    "max": 31.3,
-    "stddev": 6,
+    "mean": 15.92,
+    "median": 14.75,
+    "min": 13.2,
+    "max": 27.8,
+    "stddev": 3.92,
     "n": 30,
     "rounds": [
-     24,
-     14.6
+     14.7,
+     15.1
     ]
    },
    "06_remove-one-1k": {
-    "mean": 11.37,
-    "median": 10.3,
-    "min": 9.7,
-    "max": 22,
-    "stddev": 3.03,
+    "mean": 14.9,
+    "median": 14.6,
+    "min": 10,
+    "max": 24.4,
+    "stddev": 4.02,
     "n": 30,
     "rounds": [
-     10.4,
-     10.2
+     15,
+     13.5
     ]
    },
    "07_create10k": {
-    "mean": 213.07,
-    "median": 212.2,
-    "min": 205.7,
-    "max": 224.9,
-    "stddev": 5.27,
+    "mean": 232.89,
+    "median": 231.9,
+    "min": 218.1,
+    "max": 252.1,
+    "stddev": 8.39,
     "n": 30,
     "rounds": [
-     211.6,
-     214.4
+     232.2,
+     231.6
     ]
    },
    "08_create1k-after1k_x2": {
-    "mean": 21.89,
-    "median": 21.85,
-    "min": 21.1,
-    "max": 22.7,
-    "stddev": 0.35,
+    "mean": 24.58,
+    "median": 23.3,
+    "min": 22.3,
+    "max": 33.1,
+    "stddev": 2.95,
     "n": 30,
     "rounds": [
-     22,
-     21.8
+     23.1,
+     23.6
     ]
    },
    "09_clear1k_x8": {
-    "mean": 10.89,
-    "median": 10.1,
-    "min": 8.1,
-    "max": 18.9,
-    "stddev": 2.61,
+    "mean": 11.88,
+    "median": 10.6,
+    "min": 9.7,
+    "max": 18.8,
+    "stddev": 2.5,
     "n": 30,
     "rounds": [
-     9.6,
-     10.1
+     10.5,
+     10.6
     ]
    },
    "21_ready-memory": {
@@ -981,27 +981,27 @@
     ]
    },
    "22_run-memory": {
-    "mean": 2.66,
-    "median": 2.66,
-    "min": 2.64,
-    "max": 2.67,
-    "stddev": 0.02,
+    "mean": 2.68,
+    "median": 2.68,
+    "min": 2.67,
+    "max": 2.68,
+    "stddev": 0,
     "n": 2,
     "rounds": [
-     2.64,
-     2.67
+     2.67,
+     2.68
     ]
    },
    "25_run-clear-memory": {
-    "mean": 0.76,
-    "median": 0.76,
-    "min": 0.75,
+    "mean": 0.78,
+    "median": 0.78,
+    "min": 0.77,
     "max": 0.78,
-    "stddev": 0.01,
+    "stddev": 0,
     "n": 2,
     "rounds": [
-     0.75,
-     0.78
+     0.78,
+     0.77
     ]
    },
    "41_size-uncompressed": {
@@ -1029,161 +1029,161 @@
     ]
    },
    "43_first-paint": {
-    "mean": 46.45,
-    "median": 46.45,
-    "min": 45,
-    "max": 47.9,
-    "stddev": 1.45,
+    "mean": 47.9,
+    "median": 47.9,
+    "min": 46.9,
+    "max": 48.9,
+    "stddev": 1,
     "n": 2,
     "rounds": [
-     47.9,
-     45
+     48.9,
+     46.9
     ]
    }
   },
   "keyed/leptos": {
    "01_run1k": {
-    "mean": 22.09,
-    "median": 22.05,
-    "min": 21.4,
-    "max": 22.8,
-    "stddev": 0.35,
+    "mean": 24.78,
+    "median": 23.75,
+    "min": 22.6,
+    "max": 27.5,
+    "stddev": 1.89,
     "n": 30,
     "rounds": [
-     22.3,
-     21.9
+     25.7,
+     23.7
     ]
    },
    "02_replace1k": {
-    "mean": 25.94,
-    "median": 25.75,
-    "min": 25.1,
-    "max": 27.1,
-    "stddev": 0.54,
+    "mean": 27.69,
+    "median": 27.2,
+    "min": 26.3,
+    "max": 32,
+    "stddev": 1.42,
     "n": 30,
     "rounds": [
-     26.1,
-     25.6
+     27.2,
+     27.1
     ]
    },
    "03_update10th1k_x16": {
-    "mean": 16.62,
-    "median": 12.8,
-    "min": 10.8,
-    "max": 29.3,
-    "stddev": 6.27,
+    "mean": 18.68,
+    "median": 15.15,
+    "min": 11.8,
+    "max": 30,
+    "stddev": 6.3,
     "n": 30,
     "rounds": [
-     13.2,
-     12.5
+     24.8,
+     14.3
     ]
    },
    "04_select1k": {
-    "mean": 5.97,
-    "median": 4.15,
-    "min": 2.6,
-    "max": 15.1,
-    "stddev": 3.58,
+    "mean": 7.95,
+    "median": 6.4,
+    "min": 2.8,
+    "max": 18.9,
+    "stddev": 4.76,
     "n": 50,
     "rounds": [
-     3.8,
-     4.2
+     6.1,
+     7.3
     ]
    },
    "05_swap1k": {
-    "mean": 15.6,
-    "median": 13.35,
-    "min": 11.8,
-    "max": 25.1,
-    "stddev": 4.86,
+    "mean": 16.98,
+    "median": 14.55,
+    "min": 13.3,
+    "max": 27.1,
+    "stddev": 4.91,
     "n": 30,
     "rounds": [
-     13.7,
-     12.5
+     14.6,
+     14.5
     ]
    },
    "06_remove-one-1k": {
-    "mean": 12.92,
-    "median": 10.45,
-    "min": 9.8,
-    "max": 22.7,
-    "stddev": 4.08,
+    "mean": 14.04,
+    "median": 13.45,
+    "min": 10,
+    "max": 22.4,
+    "stddev": 3.56,
     "n": 30,
     "rounds": [
-     10.5,
-     10.4
+     11.1,
+     13.5
     ]
    },
    "07_create10k": {
-    "mean": 250.91,
-    "median": 248.95,
-    "min": 241.4,
-    "max": 278.3,
-    "stddev": 7.78,
+    "mean": 274.01,
+    "median": 272.35,
+    "min": 253.5,
+    "max": 313.9,
+    "stddev": 11.96,
     "n": 30,
     "rounds": [
-     252.9,
-     248.6
+     271,
+     277
     ]
    },
    "08_create1k-after1k_x2": {
-    "mean": 24.71,
-    "median": 24.6,
-    "min": 23.9,
-    "max": 26.6,
-    "stddev": 0.59,
+    "mean": 26.83,
+    "median": 26.25,
+    "min": 25.5,
+    "max": 30.6,
+    "stddev": 1.4,
     "n": 30,
     "rounds": [
-     24.6,
-     24.6
+     26.2,
+     26.6
     ]
    },
    "09_clear1k_x8": {
-    "mean": 13.93,
-    "median": 13.6,
-    "min": 11.6,
-    "max": 19.2,
-    "stddev": 1.65,
+    "mean": 15.29,
+    "median": 15.1,
+    "min": 13.2,
+    "max": 18.4,
+    "stddev": 1.54,
     "n": 30,
     "rounds": [
-     13.5,
-     13.8
+     15.5,
+     14.4
     ]
    },
    "21_ready-memory": {
-    "mean": 0.63,
-    "median": 0.63,
-    "min": 0.62,
-    "max": 0.64,
+    "mean": 0.64,
+    "median": 0.64,
+    "min": 0.63,
+    "max": 0.66,
     "stddev": 0.01,
     "n": 2,
     "rounds": [
-     0.64,
-     0.62
+     0.66,
+     0.63
     ]
    },
    "22_run-memory": {
-    "mean": 2.65,
-    "median": 2.65,
-    "min": 2.65,
-    "max": 2.65,
-    "stddev": 0,
+    "mean": 2.64,
+    "median": 2.64,
+    "min": 2.61,
+    "max": 2.67,
+    "stddev": 0.03,
     "n": 2,
     "rounds": [
-     2.65,
-     2.65
+     2.61,
+     2.67
     ]
    },
    "25_run-clear-memory": {
-    "mean": 0.98,
-    "median": 0.98,
-    "min": 0.96,
-    "max": 1,
-    "stddev": 0.02,
+    "mean": 1.08,
+    "median": 1.08,
+    "min": 0.98,
+    "max": 1.18,
+    "stddev": 0.1,
     "n": 2,
     "rounds": [
-     0.96,
-     1
+     1.18,
+     0.98
     ]
    },
    "41_size-uncompressed": {
@@ -1211,161 +1211,161 @@
     ]
    },
    "43_first-paint": {
-    "mean": 212.8,
-    "median": 212.8,
-    "min": 210.7,
-    "max": 214.9,
-    "stddev": 2.1,
+    "mean": 241.2,
+    "median": 241.2,
+    "min": 234.7,
+    "max": 247.7,
+    "stddev": 6.5,
     "n": 2,
     "rounds": [
-     214.9,
-     210.7
+     234.7,
+     247.7
     ]
    }
   },
   "keyed/joy": {
    "01_run1k": {
-    "mean": 23.68,
-    "median": 23.5,
-    "min": 22.6,
-    "max": 25.6,
-    "stddev": 0.74,
+    "mean": 24.17,
+    "median": 23.8,
+    "min": 22.7,
+    "max": 27,
+    "stddev": 0.96,
     "n": 30,
     "rounds": [
-     23.4,
-     23.5
+     23.8,
+     23.8
     ]
    },
    "02_replace1k": {
-    "mean": 25.03,
-    "median": 25,
-    "min": 24.2,
-    "max": 26.1,
-    "stddev": 0.4,
-    "n": 30,
-    "rounds": [
-     25,
-     25
-    ]
-   },
-   "03_update10th1k_x16": {
-    "mean": 16.27,
-    "median": 13.35,
-    "min": 11.5,
-    "max": 27,
-    "stddev": 5.34,
-    "n": 30,
-    "rounds": [
-     13.4,
-     12.9
-    ]
-   },
-   "04_select1k": {
-    "mean": 7.41,
-    "median": 6.6,
-    "min": 3.4,
-    "max": 15.8,
-    "stddev": 3.63,
-    "n": 50,
-    "rounds": [
-     7.2,
-     5.4
-    ]
-   },
-   "05_swap1k": {
-    "mean": 16,
-    "median": 14.5,
-    "min": 13.1,
-    "max": 26.8,
-    "stddev": 3.97,
-    "n": 30,
-    "rounds": [
-     14.5,
-     14.6
-    ]
-   },
-   "06_remove-one-1k": {
-    "mean": 14.11,
-    "median": 12,
-    "min": 10.1,
-    "max": 22.9,
-    "stddev": 4.12,
-    "n": 30,
-    "rounds": [
-     13.7,
-     11.3
-    ]
-   },
-   "07_create10k": {
-    "mean": 260.11,
-    "median": 259.55,
-    "min": 253.5,
-    "max": 268,
-    "stddev": 3.91,
-    "n": 30,
-    "rounds": [
-     260.3,
-     259.3
-    ]
-   },
-   "08_create1k-after1k_x2": {
-    "mean": 26.09,
+    "mean": 26.31,
     "median": 26,
-    "min": 25.5,
-    "max": 27.1,
-    "stddev": 0.42,
+    "min": 25,
+    "max": 29.5,
+    "stddev": 0.88,
     "n": 30,
     "rounds": [
-     26,
+     25.9,
      26.1
     ]
    },
-   "09_clear1k_x8": {
-    "mean": 10.86,
-    "median": 9.5,
-    "min": 8,
-    "max": 17.6,
-    "stddev": 3.14,
+   "03_update10th1k_x16": {
+    "mean": 17.07,
+    "median": 15.3,
+    "min": 13.4,
+    "max": 28.5,
+    "stddev": 4.41,
     "n": 30,
     "rounds": [
-     9.5,
-     9.4
+     15.3,
+     15.1
+    ]
+   },
+   "04_select1k": {
+    "mean": 7.88,
+    "median": 5.85,
+    "min": 3.8,
+    "max": 19.8,
+    "stddev": 4.57,
+    "n": 50,
+    "rounds": [
+     5.9,
+     5.8
+    ]
+   },
+   "05_swap1k": {
+    "mean": 18.15,
+    "median": 16.35,
+    "min": 14,
+    "max": 30.4,
+    "stddev": 4.79,
+    "n": 30,
+    "rounds": [
+     16.4,
+     16.3
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 16.41,
+    "median": 15.9,
+    "min": 10.9,
+    "max": 24.9,
+    "stddev": 4.41,
+    "n": 30,
+    "rounds": [
+     18.6,
+     14.2
+    ]
+   },
+   "07_create10k": {
+    "mean": 280.68,
+    "median": 279.1,
+    "min": 265.2,
+    "max": 305.3,
+    "stddev": 8.17,
+    "n": 30,
+    "rounds": [
+     278.7,
+     281.5
+    ]
+   },
+   "08_create1k-after1k_x2": {
+    "mean": 28.81,
+    "median": 28.15,
+    "min": 26.5,
+    "max": 38.9,
+    "stddev": 2.39,
+    "n": 30,
+    "rounds": [
+     28,
+     28.3
+    ]
+   },
+   "09_clear1k_x8": {
+    "mean": 12.57,
+    "median": 12,
+    "min": 9.2,
+    "max": 19.3,
+    "stddev": 2.72,
+    "n": 30,
+    "rounds": [
+     12.4,
+     11
     ]
    },
    "21_ready-memory": {
-    "mean": 0.68,
-    "median": 0.68,
-    "min": 0.63,
+    "mean": 0.72,
+    "median": 0.72,
+    "min": 0.72,
     "max": 0.72,
-    "stddev": 0.04,
+    "stddev": 0,
     "n": 2,
     "rounds": [
-     0.63,
+     0.72,
      0.72
     ]
    },
    "22_run-memory": {
-    "mean": 2.29,
-    "median": 2.29,
-    "min": 2.23,
+    "mean": 2.33,
+    "median": 2.33,
+    "min": 2.32,
     "max": 2.35,
-    "stddev": 0.06,
+    "stddev": 0.02,
     "n": 2,
     "rounds": [
-     2.23,
-     2.35
+     2.35,
+     2.32
     ]
    },
    "25_run-clear-memory": {
-    "mean": 0.85,
-    "median": 0.85,
-    "min": 0.8,
-    "max": 0.91,
-    "stddev": 0.06,
+    "mean": 0.84,
+    "median": 0.84,
+    "min": 0.81,
+    "max": 0.88,
+    "stddev": 0.03,
     "n": 2,
     "rounds": [
-     0.91,
-     0.8
+     0.81,
+     0.88
     ]
    },
    "41_size-uncompressed": {
@@ -1393,160 +1393,160 @@
     ]
    },
    "43_first-paint": {
-    "mean": 160.65,
-    "median": 160.65,
-    "min": 156.6,
-    "max": 164.7,
-    "stddev": 4.05,
+    "mean": 172.25,
+    "median": 172.25,
+    "min": 170.8,
+    "max": 173.7,
+    "stddev": 1.45,
     "n": 2,
     "rounds": [
-     164.7,
-     156.6
+     173.7,
+     170.8
     ]
    }
   },
   "non-keyed/joy": {
    "01_run1k": {
-    "mean": 23.3,
-    "median": 23.3,
-    "min": 22.3,
-    "max": 25.3,
-    "stddev": 0.65,
+    "mean": 24.74,
+    "median": 24,
+    "min": 23.2,
+    "max": 38,
+    "stddev": 2.62,
     "n": 30,
     "rounds": [
-     23.3,
-     23.1
+     24,
+     24
     ]
    },
    "02_replace1k": {
-    "mean": 12.18,
-    "median": 11.45,
-    "min": 10.3,
-    "max": 17,
-    "stddev": 2.09,
+    "mean": 11.15,
+    "median": 10.95,
+    "min": 10.6,
+    "max": 13.6,
+    "stddev": 0.61,
     "n": 30,
     "rounds": [
-     10.9,
-     11.8
-    ]
-   },
-   "03_update10th1k_x16": {
-    "mean": 17.84,
-    "median": 15.05,
-    "min": 12.2,
-    "max": 27.8,
-    "stddev": 5.25,
-    "n": 30,
-    "rounds": [
-     14.9,
-     23.2
-    ]
-   },
-   "04_select1k": {
-    "mean": 8.18,
-    "median": 8.15,
-    "min": 2.6,
-    "max": 17.7,
-    "stddev": 4.37,
-    "n": 50,
-    "rounds": [
-     8.4,
-     7.9
-    ]
-   },
-   "05_swap1k": {
-    "mean": 15.86,
-    "median": 11.9,
-    "min": 8.5,
-    "max": 24.1,
-    "stddev": 6.13,
-    "n": 30,
-    "rounds": [
-     12.5,
+     11.2,
      10.8
     ]
    },
-   "06_remove-one-1k": {
-    "mean": 18.58,
-    "median": 18.3,
-    "min": 17.4,
-    "max": 21.5,
-    "stddev": 1,
+   "03_update10th1k_x16": {
+    "mean": 17.51,
+    "median": 14.65,
+    "min": 13.2,
+    "max": 30.6,
+    "stddev": 5.43,
     "n": 30,
     "rounds": [
-     18.5,
-     18.3
+     14.5,
+     14.8
+    ]
+   },
+   "04_select1k": {
+    "mean": 6.2,
+    "median": 4.95,
+    "min": 3.3,
+    "max": 17.2,
+    "stddev": 3.15,
+    "n": 50,
+    "rounds": [
+     5.4,
+     4.6
+    ]
+   },
+   "05_swap1k": {
+    "mean": 16.05,
+    "median": 11.8,
+    "min": 9.1,
+    "max": 27,
+    "stddev": 6.61,
+    "n": 30,
+    "rounds": [
+     12.1,
+     11.5
+    ]
+   },
+   "06_remove-one-1k": {
+    "mean": 19.39,
+    "median": 19.1,
+    "min": 18.3,
+    "max": 24.6,
+    "stddev": 1.16,
+    "n": 30,
+    "rounds": [
+     19.4,
+     19
     ]
    },
    "07_create10k": {
-    "mean": 260.32,
-    "median": 259.6,
-    "min": 254.7,
-    "max": 270,
-    "stddev": 3.66,
+    "mean": 282.97,
+    "median": 280.65,
+    "min": 266.3,
+    "max": 331.5,
+    "stddev": 12.7,
     "n": 30,
     "rounds": [
-     259.6,
-     259.3
+     278.2,
+     281.4
     ]
    },
    "08_create1k-after1k_x2": {
-    "mean": 25.91,
-    "median": 25.8,
-    "min": 25.1,
-    "max": 27,
-    "stddev": 0.55,
+    "mean": 28.11,
+    "median": 27.35,
+    "min": 26.9,
+    "max": 38.6,
+    "stddev": 2.1,
     "n": 30,
     "rounds": [
-     25.7,
-     26
+     27.7,
+     27.3
     ]
    },
    "09_clear1k_x8": {
-    "mean": 9.97,
-    "median": 9.3,
-    "min": 7.9,
-    "max": 20.5,
-    "stddev": 2.42,
+    "mean": 12.61,
+    "median": 10.65,
+    "min": 9.2,
+    "max": 20.4,
+    "stddev": 3.62,
     "n": 30,
     "rounds": [
-     9.3,
-     9.3
+     10.5,
+     11
     ]
    },
    "21_ready-memory": {
     "mean": 0.72,
     "median": 0.72,
-    "min": 0.71,
+    "min": 0.72,
     "max": 0.72,
     "stddev": 0,
     "n": 2,
     "rounds": [
      0.72,
-     0.71
+     0.72
     ]
    },
    "22_run-memory": {
-    "mean": 2.28,
-    "median": 2.28,
-    "min": 2.25,
-    "max": 2.31,
-    "stddev": 0.03,
+    "mean": 2.32,
+    "median": 2.32,
+    "min": 2.31,
+    "max": 2.33,
+    "stddev": 0.01,
     "n": 2,
     "rounds": [
-     2.25,
-     2.31
+     2.31,
+     2.33
     ]
    },
    "25_run-clear-memory": {
-    "mean": 0.83,
-    "median": 0.83,
-    "min": 0.78,
-    "max": 0.88,
-    "stddev": 0.05,
+    "mean": 0.89,
+    "median": 0.89,
+    "min": 0.88,
+    "max": 0.9,
+    "stddev": 0.01,
     "n": 2,
     "rounds": [
-     0.78,
+     0.9,
      0.88
     ]
    },
@@ -1575,161 +1575,161 @@
     ]
    },
    "43_first-paint": {
-    "mean": 167.65,
-    "median": 167.65,
-    "min": 162.5,
-    "max": 172.8,
-    "stddev": 5.15,
+    "mean": 175.85,
+    "median": 175.85,
+    "min": 173.2,
+    "max": 178.5,
+    "stddev": 2.65,
     "n": 2,
     "rounds": [
-     172.8,
-     162.5
+     173.2,
+     178.5
     ]
    }
   },
   "keyed/react-hooks": {
    "01_run1k": {
-    "mean": 22.62,
-    "median": 22.3,
-    "min": 21.5,
+    "mean": 24.44,
+    "median": 23.7,
+    "min": 22.7,
     "max": 30.4,
-    "stddev": 1.6,
+    "stddev": 1.81,
     "n": 30,
     "rounds": [
-     22.4,
-     21.9
+     24,
+     23.6
     ]
    },
    "02_replace1k": {
-    "mean": 26.68,
-    "median": 26.65,
-    "min": 25.7,
-    "max": 28.3,
-    "stddev": 0.62,
+    "mean": 28.97,
+    "median": 28.5,
+    "min": 26.8,
+    "max": 33.4,
+    "stddev": 1.53,
     "n": 30,
     "rounds": [
-     26.7,
-     26.4
+     28.5,
+     28.5
     ]
    },
    "03_update10th1k_x16": {
-    "mean": 15.82,
-    "median": 15.2,
-    "min": 13.6,
-    "max": 25,
-    "stddev": 2.03,
+    "mean": 19.62,
+    "median": 17,
+    "min": 15.5,
+    "max": 32.7,
+    "stddev": 5.17,
     "n": 30,
     "rounds": [
-     15.7,
-     14.9
+     16.8,
+     17.4
     ]
    },
    "04_select1k": {
-    "mean": 7.41,
-    "median": 6.45,
-    "min": 5,
-    "max": 15.7,
-    "stddev": 2.14,
+    "mean": 8.11,
+    "median": 6.6,
+    "min": 4.6,
+    "max": 17.2,
+    "stddev": 3.34,
     "n": 50,
     "rounds": [
-     7,
-     6.3
+     6.6,
+     6.7
     ]
    },
    "05_swap1k": {
-    "mean": 88.99,
-    "median": 88.05,
-    "min": 85.8,
-    "max": 98.1,
-    "stddev": 2.61,
+    "mean": 94.32,
+    "median": 93.6,
+    "min": 89.3,
+    "max": 111.7,
+    "stddev": 4.3,
     "n": 30,
     "rounds": [
-     87.8,
-     88.9
+     93.6,
+     93.6
     ]
    },
    "06_remove-one-1k": {
-    "mean": 14.44,
-    "median": 14.4,
-    "min": 11,
-    "max": 24.1,
-    "stddev": 2.52,
+    "mean": 14.82,
+    "median": 14.05,
+    "min": 11.5,
+    "max": 22.1,
+    "stddev": 3.06,
     "n": 30,
     "rounds": [
-     14,
-     15.1
+     12.8,
+     14.6
     ]
    },
    "07_create10k": {
-    "mean": 329.32,
-    "median": 322.4,
-    "min": 313.1,
-    "max": 396.9,
-    "stddev": 20.78,
+    "mean": 364.85,
+    "median": 346.25,
+    "min": 332.2,
+    "max": 421.6,
+    "stddev": 33.11,
     "n": 30,
     "rounds": [
-     322.2,
-     322.6
+     342.9,
+     364.6
     ]
    },
    "08_create1k-after1k_x2": {
-    "mean": 25.74,
-    "median": 25.5,
-    "min": 24.7,
-    "max": 27.4,
-    "stddev": 0.73,
+    "mean": 28.16,
+    "median": 27.3,
+    "min": 26,
+    "max": 39.8,
+    "stddev": 2.56,
     "n": 30,
     "rounds": [
-     25.5,
-     25.7
+     27.3,
+     27.3
     ]
    },
    "09_clear1k_x8": {
-    "mean": 15.74,
-    "median": 15.7,
-    "min": 14.2,
-    "max": 20.6,
-    "stddev": 1.39,
+    "mean": 16.96,
+    "median": 16.8,
+    "min": 15.2,
+    "max": 20.8,
+    "stddev": 1.22,
     "n": 30,
     "rounds": [
-     15.7,
-     15.7
+     16.6,
+     17.2
     ]
    },
    "21_ready-memory": {
-    "mean": 1.13,
-    "median": 1.13,
-    "min": 1.1,
-    "max": 1.16,
-    "stddev": 0.03,
+    "mean": 1.18,
+    "median": 1.18,
+    "min": 1.16,
+    "max": 1.19,
+    "stddev": 0.01,
     "n": 2,
     "rounds": [
-     1.1,
-     1.16
+     1.16,
+     1.19
     ]
    },
    "22_run-memory": {
-    "mean": 4.35,
-    "median": 4.35,
-    "min": 4.31,
-    "max": 4.39,
-    "stddev": 0.04,
-    "n": 2,
-    "rounds": [
-     4.31,
-     4.39
-    ]
-   },
-   "25_run-clear-memory": {
-    "mean": 1.94,
-    "median": 1.94,
-    "min": 1.91,
-    "max": 1.96,
+    "mean": 4.4,
+    "median": 4.4,
+    "min": 4.38,
+    "max": 4.42,
     "stddev": 0.02,
     "n": 2,
     "rounds": [
-     1.91,
-     1.96
+     4.38,
+     4.42
+    ]
+   },
+   "25_run-clear-memory": {
+    "mean": 1.95,
+    "median": 1.95,
+    "min": 1.95,
+    "max": 1.95,
+    "stddev": 0,
+    "n": 2,
+    "rounds": [
+     1.95,
+     1.95
     ]
    },
    "41_size-uncompressed": {
@@ -1757,100 +1757,100 @@
     ]
    },
    "43_first-paint": {
-    "mean": 204.55,
-    "median": 204.55,
-    "min": 199.6,
-    "max": 209.5,
-    "stddev": 4.95,
+    "mean": 225.6,
+    "median": 225.6,
+    "min": 225.3,
+    "max": 225.9,
+    "stddev": 0.3,
     "n": 2,
     "rounds": [
-     209.5,
-     199.6
+     225.3,
+     225.9
     ]
    }
   }
  },
  "summary": {
   "keyed/roc-solid": {
-   "cpu_geomean_ms": 35.79,
-   "slowdown": 2.06,
-   "ready_memory_mb": 1.17,
-   "run_memory_mb": 4.6,
-   "compressed_kb": 73.4,
-   "uncompressed_kb": 291.8,
-   "first_paint_ms": 29
+   "cpu_geomean_ms": 32.79,
+   "slowdown": 1.83,
+   "ready_memory_mb": 1.04,
+   "run_memory_mb": 4.8,
+   "compressed_kb": 66.2,
+   "uncompressed_kb": 253.4,
+   "first_paint_ms": 37.05
   },
   "non-keyed/roc-solid": {
-   "cpu_geomean_ms": 32.77,
-   "slowdown": 1.88,
-   "ready_memory_mb": 1.16,
-   "run_memory_mb": 4.59,
-   "compressed_kb": 68.8,
-   "uncompressed_kb": 275.5,
-   "first_paint_ms": 32.3
+   "cpu_geomean_ms": 31.16,
+   "slowdown": 1.74,
+   "ready_memory_mb": 1.03,
+   "run_memory_mb": 4.79,
+   "compressed_kb": 61.9,
+   "uncompressed_kb": 237.5,
+   "first_paint_ms": 34.5
   },
   "keyed/vanillajs": {
-   "cpu_geomean_ms": 19.27,
-   "slowdown": 1.11,
-   "ready_memory_mb": 0.53,
-   "run_memory_mb": 1.85,
+   "cpu_geomean_ms": 21.22,
+   "slowdown": 1.18,
+   "ready_memory_mb": 0.58,
+   "run_memory_mb": 1.86,
    "compressed_kb": 2.5,
    "uncompressed_kb": 11.3,
-   "first_paint_ms": 32.55
+   "first_paint_ms": 50.85
   },
   "non-keyed/vanillajs": {
-   "cpu_geomean_ms": 19.31,
-   "slowdown": 1.11,
+   "cpu_geomean_ms": 20.03,
+   "slowdown": 1.12,
    "ready_memory_mb": 0.57,
-   "run_memory_mb": 1.81,
+   "run_memory_mb": 1.83,
    "compressed_kb": 2.4,
    "uncompressed_kb": 12,
-   "first_paint_ms": 36.55
+   "first_paint_ms": 58.8
   },
   "keyed/solid": {
-   "cpu_geomean_ms": 20.25,
-   "slowdown": 1.16,
+   "cpu_geomean_ms": 21.18,
+   "slowdown": 1.18,
    "ready_memory_mb": 0.6,
-   "run_memory_mb": 2.66,
+   "run_memory_mb": 2.68,
    "compressed_kb": 4.5,
    "uncompressed_kb": 11.5,
-   "first_paint_ms": 46.45
+   "first_paint_ms": 47.9
   },
   "keyed/leptos": {
-   "cpu_geomean_ms": 21.52,
-   "slowdown": 1.24,
-   "ready_memory_mb": 0.63,
-   "run_memory_mb": 2.65,
+   "cpu_geomean_ms": 24.09,
+   "slowdown": 1.34,
+   "ready_memory_mb": 0.64,
+   "run_memory_mb": 2.64,
    "compressed_kb": 48.8,
    "uncompressed_kb": 189.6,
-   "first_paint_ms": 212.8
+   "first_paint_ms": 241.2
   },
   "keyed/joy": {
-   "cpu_geomean_ms": 21.96,
-   "slowdown": 1.26,
-   "ready_memory_mb": 0.68,
-   "run_memory_mb": 2.29,
+   "cpu_geomean_ms": 23.95,
+   "slowdown": 1.34,
+   "ready_memory_mb": 0.72,
+   "run_memory_mb": 2.33,
    "compressed_kb": 47.4,
    "uncompressed_kb": 148.1,
-   "first_paint_ms": 160.65
+   "first_paint_ms": 172.25
   },
   "non-keyed/joy": {
-   "cpu_geomean_ms": 21.08,
-   "slowdown": 1.21,
+   "cpu_geomean_ms": 21.38,
+   "slowdown": 1.19,
    "ready_memory_mb": 0.72,
-   "run_memory_mb": 2.28,
+   "run_memory_mb": 2.32,
    "compressed_kb": 47.4,
    "uncompressed_kb": 147.9,
-   "first_paint_ms": 167.65
+   "first_paint_ms": 175.85
   },
   "keyed/react-hooks": {
-   "cpu_geomean_ms": 28.43,
-   "slowdown": 1.63,
-   "ready_memory_mb": 1.13,
-   "run_memory_mb": 4.35,
+   "cpu_geomean_ms": 31.13,
+   "slowdown": 1.74,
+   "ready_memory_mb": 1.18,
+   "run_memory_mb": 4.4,
    "compressed_kb": 51.4,
    "uncompressed_kb": 190.3,
-   "first_paint_ms": 204.55
+   "first_paint_ms": 225.6
   }
  },
  "categories": [
@@ -1860,26 +1860,26 @@
    "unit": "ms",
    "what": "a cold load until the buttons answer",
    "values": {
-    "keyed/roc-solid": 311.55,
-    "non-keyed/roc-solid": 295.7,
-    "keyed/vanillajs": 17.63,
-    "non-keyed/vanillajs": 20.37,
-    "keyed/solid": 42.03,
-    "keyed/leptos": 232.82,
-    "keyed/joy": 193.14,
-    "non-keyed/joy": 179.5,
-    "keyed/react-hooks": 211.63
+    "keyed/roc-solid": 287.84,
+    "non-keyed/roc-solid": 274.08,
+    "keyed/vanillajs": 22.04,
+    "non-keyed/vanillajs": 19.36,
+    "keyed/solid": 36.88,
+    "keyed/leptos": 266.43,
+    "keyed/joy": 185.77,
+    "non-keyed/joy": 235.45,
+    "keyed/react-hooks": 247.72
    },
    "ratios": {
-    "keyed/roc-solid": 17.67,
-    "non-keyed/roc-solid": 16.77,
-    "keyed/vanillajs": 1,
-    "non-keyed/vanillajs": 1.16,
-    "keyed/solid": 2.38,
-    "keyed/leptos": 13.21,
-    "keyed/joy": 10.96,
-    "non-keyed/joy": 10.18,
-    "keyed/react-hooks": 12
+    "keyed/roc-solid": 14.87,
+    "non-keyed/roc-solid": 14.16,
+    "keyed/vanillajs": 1.14,
+    "non-keyed/vanillajs": 1,
+    "keyed/solid": 1.9,
+    "keyed/leptos": 13.76,
+    "keyed/joy": 9.6,
+    "non-keyed/joy": 12.16,
+    "keyed/react-hooks": 12.8
    }
   },
   {
@@ -1888,26 +1888,26 @@
    "unit": "ms",
    "what": "a cold load until the browser first paints",
    "values": {
-    "keyed/roc-solid": 29,
-    "non-keyed/roc-solid": 32.3,
-    "keyed/vanillajs": 32.55,
-    "non-keyed/vanillajs": 36.55,
-    "keyed/solid": 46.45,
-    "keyed/leptos": 212.8,
-    "keyed/joy": 160.65,
-    "non-keyed/joy": 167.65,
-    "keyed/react-hooks": 204.55
+    "keyed/roc-solid": 37.05,
+    "non-keyed/roc-solid": 34.5,
+    "keyed/vanillajs": 50.85,
+    "non-keyed/vanillajs": 58.8,
+    "keyed/solid": 47.9,
+    "keyed/leptos": 241.2,
+    "keyed/joy": 172.25,
+    "non-keyed/joy": 175.85,
+    "keyed/react-hooks": 225.6
    },
    "ratios": {
-    "keyed/roc-solid": 1,
-    "non-keyed/roc-solid": 1.11,
-    "keyed/vanillajs": 1.12,
-    "non-keyed/vanillajs": 1.26,
-    "keyed/solid": 1.6,
-    "keyed/leptos": 7.34,
-    "keyed/joy": 5.54,
-    "non-keyed/joy": 5.78,
-    "keyed/react-hooks": 7.05
+    "keyed/roc-solid": 1.07,
+    "non-keyed/roc-solid": 1,
+    "keyed/vanillajs": 1.47,
+    "non-keyed/vanillajs": 1.7,
+    "keyed/solid": 1.39,
+    "keyed/leptos": 6.99,
+    "keyed/joy": 4.99,
+    "non-keyed/joy": 5.1,
+    "keyed/react-hooks": 6.54
    }
   },
   {
@@ -1916,26 +1916,26 @@
    "unit": "ms",
    "what": "create, replace, create 10,000, append",
    "values": {
-    "keyed/roc-solid": 86.7,
-    "non-keyed/roc-solid": 65.03,
-    "keyed/vanillajs": 35.99,
-    "non-keyed/vanillajs": 32.94,
-    "keyed/solid": 37.41,
-    "keyed/leptos": 43.41,
-    "keyed/joy": 44.78,
-    "non-keyed/joy": 37.2,
-    "keyed/react-hooks": 47.56
+    "keyed/roc-solid": 77.25,
+    "non-keyed/roc-solid": 60.61,
+    "keyed/vanillajs": 37.5,
+    "non-keyed/vanillajs": 34.83,
+    "keyed/solid": 40.55,
+    "keyed/leptos": 47.39,
+    "keyed/joy": 47.62,
+    "non-keyed/joy": 38.49,
+    "keyed/react-hooks": 51.93
    },
    "ratios": {
-    "keyed/roc-solid": 2.63,
-    "non-keyed/roc-solid": 1.97,
-    "keyed/vanillajs": 1.09,
+    "keyed/roc-solid": 2.22,
+    "non-keyed/roc-solid": 1.74,
+    "keyed/vanillajs": 1.08,
     "non-keyed/vanillajs": 1,
-    "keyed/solid": 1.14,
-    "keyed/leptos": 1.32,
-    "keyed/joy": 1.36,
-    "non-keyed/joy": 1.13,
-    "keyed/react-hooks": 1.44
+    "keyed/solid": 1.16,
+    "keyed/leptos": 1.36,
+    "keyed/joy": 1.37,
+    "non-keyed/joy": 1.1,
+    "keyed/react-hooks": 1.49
    }
   },
   {
@@ -1944,26 +1944,26 @@
    "unit": "ms",
    "what": "update, select, swap, remove, clear",
    "values": {
-    "keyed/roc-solid": 17.63,
-    "non-keyed/roc-solid": 18.94,
-    "keyed/vanillajs": 11.69,
-    "non-keyed/vanillajs": 12.6,
-    "keyed/solid": 12.39,
-    "keyed/leptos": 12.27,
-    "keyed/joy": 12.42,
-    "non-keyed/joy": 13.38,
-    "keyed/react-hooks": 18.84
+    "keyed/roc-solid": 16.52,
+    "non-keyed/roc-solid": 18.29,
+    "keyed/vanillajs": 13.46,
+    "non-keyed/vanillajs": 12.87,
+    "keyed/solid": 12.59,
+    "keyed/leptos": 14.02,
+    "keyed/joy": 13.82,
+    "non-keyed/joy": 13.36,
+    "keyed/react-hooks": 20.67
    },
    "ratios": {
-    "keyed/roc-solid": 1.51,
-    "non-keyed/roc-solid": 1.62,
-    "keyed/vanillajs": 1,
-    "non-keyed/vanillajs": 1.08,
-    "keyed/solid": 1.06,
-    "keyed/leptos": 1.05,
-    "keyed/joy": 1.06,
-    "non-keyed/joy": 1.14,
-    "keyed/react-hooks": 1.61
+    "keyed/roc-solid": 1.31,
+    "non-keyed/roc-solid": 1.45,
+    "keyed/vanillajs": 1.07,
+    "non-keyed/vanillajs": 1.02,
+    "keyed/solid": 1,
+    "keyed/leptos": 1.11,
+    "keyed/joy": 1.1,
+    "non-keyed/joy": 1.06,
+    "keyed/react-hooks": 1.64
    }
   },
   {
@@ -1972,26 +1972,26 @@
    "unit": "MB",
    "what": "ready, with 1,000 rows, after creating and clearing",
    "values": {
-    "keyed/roc-solid": 2.05,
-    "non-keyed/roc-solid": 2.03,
-    "keyed/vanillajs": 0.86,
+    "keyed/roc-solid": 2.06,
+    "non-keyed/roc-solid": 2.04,
+    "keyed/vanillajs": 0.89,
     "non-keyed/vanillajs": 0.88,
-    "keyed/solid": 1.07,
-    "keyed/leptos": 1.18,
-    "keyed/joy": 1.1,
-    "non-keyed/joy": 1.11,
-    "keyed/react-hooks": 2.12
+    "keyed/solid": 1.08,
+    "keyed/leptos": 1.22,
+    "keyed/joy": 1.12,
+    "non-keyed/joy": 1.14,
+    "keyed/react-hooks": 2.16
    },
    "ratios": {
-    "keyed/roc-solid": 2.39,
-    "non-keyed/roc-solid": 2.37,
-    "keyed/vanillajs": 1,
-    "non-keyed/vanillajs": 1.02,
-    "keyed/solid": 1.25,
-    "keyed/leptos": 1.38,
+    "keyed/roc-solid": 2.34,
+    "non-keyed/roc-solid": 2.33,
+    "keyed/vanillajs": 1.01,
+    "non-keyed/vanillajs": 1,
+    "keyed/solid": 1.23,
+    "keyed/leptos": 1.39,
     "keyed/joy": 1.28,
-    "non-keyed/joy": 1.29,
-    "keyed/react-hooks": 2.48
+    "non-keyed/joy": 1.3,
+    "keyed/react-hooks": 2.46
    }
   },
   {
@@ -2000,8 +2000,8 @@
    "unit": "KB",
    "what": "everything the page loads, compressed",
    "values": {
-    "keyed/roc-solid": 73.4,
-    "non-keyed/roc-solid": 68.8,
+    "keyed/roc-solid": 66.2,
+    "non-keyed/roc-solid": 61.9,
     "keyed/vanillajs": 2.5,
     "non-keyed/vanillajs": 2.4,
     "keyed/solid": 4.5,
@@ -2011,8 +2011,8 @@
     "keyed/react-hooks": 51.4
    },
    "ratios": {
-    "keyed/roc-solid": 30.58,
-    "non-keyed/roc-solid": 28.67,
+    "keyed/roc-solid": 27.58,
+    "non-keyed/roc-solid": 25.79,
     "keyed/vanillajs": 1.04,
     "non-keyed/vanillajs": 1,
     "keyed/solid": 1.88,
@@ -2027,176 +2027,176 @@
   "results": {
    "keyed/roc-solid": {
     "01_run1k": {
-     "mean": 4575,
-     "stddev": 58
+     "mean": 3934,
+     "stddev": 112
     },
     "02_replace1k": {
-     "mean": 4963,
-     "stddev": 44
+     "mean": 4333,
+     "stddev": 88
     },
     "03_update10th1k_x16": {
-     "mean": 2234,
-     "stddev": 71
+     "mean": 2228,
+     "stddev": 127
     },
     "04_select1k": {
-     "mean": 1183,
-     "stddev": 256
+     "mean": 766,
+     "stddev": 377
     },
     "05_swap1k": {
-     "mean": 2276,
-     "stddev": 106
+     "mean": 2298,
+     "stddev": 127
     },
     "06_remove-one-1k": {
-     "mean": 1627,
-     "stddev": 200
+     "mean": 1586,
+     "stddev": 342
     },
     "07_create10k": {
-     "mean": 47408,
-     "stddev": 913
+     "mean": 44816,
+     "stddev": 4083
     },
     "08_create1k-after1k_x2": {
-     "mean": 5248,
-     "stddev": 518
+     "mean": 4662,
+     "stddev": 216
     },
     "09_clear1k_x8": {
-     "mean": 1742,
-     "stddev": 81
+     "mean": 1976,
+     "stddev": 82
     },
     "21_ready-memory": {
-     "mean": 117,
-     "stddev": 2
+     "mean": 104,
+     "stddev": 5
     },
     "22_run-memory": {
-     "mean": 460,
-     "stddev": 1
+     "mean": 480,
+     "stddev": 0
     },
     "25_run-clear-memory": {
-     "mean": 160,
-     "stddev": 1
+     "mean": 174,
+     "stddev": 0
     },
     "41_size-uncompressed": {
-     "mean": 29180,
+     "mean": 25340,
      "stddev": 0
     },
     "42_size-compressed": {
-     "mean": 7340,
+     "mean": 6620,
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 2900,
-     "stddev": 310
+     "mean": 3705,
+     "stddev": 1175
     }
    },
    "non-keyed/roc-solid": {
     "01_run1k": {
-     "mean": 4567,
-     "stddev": 43
+     "mean": 4016,
+     "stddev": 216
     },
     "02_replace1k": {
-     "mean": 1637,
-     "stddev": 201
+     "mean": 1628,
+     "stddev": 149
     },
     "03_update10th1k_x16": {
-     "mean": 2199,
-     "stddev": 505
+     "mean": 2140,
+     "stddev": 263
     },
     "04_select1k": {
-     "mean": 1133,
-     "stddev": 141
+     "mean": 748,
+     "stddev": 385
     },
     "05_swap1k": {
-     "mean": 2039,
-     "stddev": 1109
+     "mean": 2247,
+     "stddev": 1403
     },
     "06_remove-one-1k": {
-     "mean": 2802,
-     "stddev": 68
+     "mean": 2825,
+     "stddev": 112
     },
     "07_create10k": {
-     "mean": 46203,
-     "stddev": 638
+     "mean": 44845,
+     "stddev": 2075
     },
     "08_create1k-after1k_x2": {
-     "mean": 5176,
-     "stddev": 66
+     "mean": 4604,
+     "stddev": 250
     },
     "09_clear1k_x8": {
-     "mean": 1712,
-     "stddev": 63
+     "mean": 2017,
+     "stddev": 67
     },
     "21_ready-memory": {
-     "mean": 116,
-     "stddev": 1
+     "mean": 103,
+     "stddev": 4
     },
     "22_run-memory": {
-     "mean": 459,
+     "mean": 479,
      "stddev": 1
     },
     "25_run-clear-memory": {
-     "mean": 157,
-     "stddev": 0
+     "mean": 173,
+     "stddev": 1
     },
     "41_size-uncompressed": {
-     "mean": 27550,
+     "mean": 23750,
      "stddev": 0
     },
     "42_size-compressed": {
-     "mean": 6880,
+     "mean": 6190,
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 3230,
-     "stddev": 170
+     "mean": 3450,
+     "stddev": 980
     }
    },
    "keyed/vanillajs": {
     "01_run1k": {
-     "mean": 1865,
-     "stddev": 60
+     "mean": 1870,
+     "stddev": 59
     },
     "02_replace1k": {
-     "mean": 1987,
-     "stddev": 73
+     "mean": 2060,
+     "stddev": 102
     },
     "03_update10th1k_x16": {
-     "mean": 1463,
-     "stddev": 523
+     "mean": 1961,
+     "stddev": 638
     },
     "04_select1k": {
-     "mean": 720,
-     "stddev": 454
+     "mean": 760,
+     "stddev": 543
     },
     "05_swap1k": {
-     "mean": 1675,
-     "stddev": 591
+     "mean": 2044,
+     "stddev": 724
     },
     "06_remove-one-1k": {
-     "mean": 1164,
-     "stddev": 335
+     "mean": 1386,
+     "stddev": 480
     },
     "07_create10k": {
-     "mean": 20143,
-     "stddev": 458
+     "mean": 21982,
+     "stddev": 1674
     },
     "08_create1k-after1k_x2": {
-     "mean": 2247,
-     "stddev": 368
+     "mean": 2335,
+     "stddev": 324
     },
     "09_clear1k_x8": {
-     "mean": 1065,
-     "stddev": 299
+     "mean": 1046,
+     "stddev": 341
     },
     "21_ready-memory": {
-     "mean": 53,
-     "stddev": 4
+     "mean": 58,
+     "stddev": 0
     },
     "22_run-memory": {
-     "mean": 185,
-     "stddev": 2
+     "mean": 186,
+     "stddev": 1
     },
     "25_run-clear-memory": {
-     "mean": 64,
-     "stddev": 2
+     "mean": 65,
+     "stddev": 0
     },
     "41_size-uncompressed": {
      "mean": 1130,
@@ -2207,54 +2207,54 @@
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 3255,
-     "stddev": 205
+     "mean": 5085,
+     "stddev": 565
     }
    },
    "non-keyed/vanillajs": {
     "01_run1k": {
-     "mean": 1907,
-     "stddev": 68
+     "mean": 1930,
+     "stddev": 122
     },
     "02_replace1k": {
-     "mean": 1331,
-     "stddev": 360
+     "mean": 1484,
+     "stddev": 319
     },
     "03_update10th1k_x16": {
-     "mean": 1677,
-     "stddev": 511
+     "mean": 1745,
+     "stddev": 586
     },
     "04_select1k": {
-     "mean": 651,
-     "stddev": 402
+     "mean": 725,
+     "stddev": 481
     },
     "05_swap1k": {
-     "mean": 1735,
-     "stddev": 601
+     "mean": 1391,
+     "stddev": 607
     },
     "06_remove-one-1k": {
-     "mean": 1784,
-     "stddev": 67
+     "mean": 1914,
+     "stddev": 107
     },
     "07_create10k": {
-     "mean": 20368,
-     "stddev": 390
+     "mean": 22049,
+     "stddev": 638
     },
     "08_create1k-after1k_x2": {
-     "mean": 2277,
-     "stddev": 361
+     "mean": 2331,
+     "stddev": 325
     },
     "09_clear1k_x8": {
-     "mean": 939,
-     "stddev": 268
+     "mean": 1047,
+     "stddev": 336
     },
     "21_ready-memory": {
      "mean": 57,
      "stddev": 0
     },
     "22_run-memory": {
-     "mean": 181,
-     "stddev": 2
+     "mean": 183,
+     "stddev": 0
     },
     "25_run-clear-memory": {
      "mean": 65,
@@ -2269,58 +2269,58 @@
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 3655,
-     "stddev": 605
+     "mean": 5880,
+     "stddev": 150
     }
    },
    "keyed/solid": {
     "01_run1k": {
-     "mean": 1954,
-     "stddev": 43
+     "mean": 2051,
+     "stddev": 145
     },
     "02_replace1k": {
-     "mean": 2148,
-     "stddev": 28
+     "mean": 2302,
+     "stddev": 148
     },
     "03_update10th1k_x16": {
-     "mean": 1631,
-     "stddev": 597
+     "mean": 1436,
+     "stddev": 420
     },
     "04_select1k": {
-     "mean": 778,
-     "stddev": 497
+     "mean": 783,
+     "stddev": 367
     },
     "05_swap1k": {
-     "mean": 1861,
-     "stddev": 600
+     "mean": 1592,
+     "stddev": 392
     },
     "06_remove-one-1k": {
-     "mean": 1137,
-     "stddev": 303
+     "mean": 1490,
+     "stddev": 402
     },
     "07_create10k": {
-     "mean": 21307,
-     "stddev": 527
+     "mean": 23289,
+     "stddev": 839
     },
     "08_create1k-after1k_x2": {
-     "mean": 2189,
-     "stddev": 35
+     "mean": 2458,
+     "stddev": 295
     },
     "09_clear1k_x8": {
-     "mean": 1089,
-     "stddev": 261
+     "mean": 1188,
+     "stddev": 250
     },
     "21_ready-memory": {
      "mean": 60,
      "stddev": 0
     },
     "22_run-memory": {
-     "mean": 266,
-     "stddev": 2
+     "mean": 268,
+     "stddev": 0
     },
     "25_run-clear-memory": {
-     "mean": 76,
-     "stddev": 1
+     "mean": 78,
+     "stddev": 0
     },
     "41_size-uncompressed": {
      "mean": 1150,
@@ -2331,58 +2331,58 @@
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 4645,
-     "stddev": 145
+     "mean": 4790,
+     "stddev": 100
     }
    },
    "keyed/leptos": {
     "01_run1k": {
-     "mean": 2209,
-     "stddev": 35
+     "mean": 2478,
+     "stddev": 189
     },
     "02_replace1k": {
-     "mean": 2594,
-     "stddev": 54
+     "mean": 2769,
+     "stddev": 142
     },
     "03_update10th1k_x16": {
-     "mean": 1662,
-     "stddev": 627
+     "mean": 1868,
+     "stddev": 630
     },
     "04_select1k": {
-     "mean": 597,
-     "stddev": 358
+     "mean": 795,
+     "stddev": 476
     },
     "05_swap1k": {
-     "mean": 1560,
-     "stddev": 486
+     "mean": 1698,
+     "stddev": 491
     },
     "06_remove-one-1k": {
-     "mean": 1292,
-     "stddev": 408
+     "mean": 1404,
+     "stddev": 356
     },
     "07_create10k": {
-     "mean": 25091,
-     "stddev": 778
+     "mean": 27401,
+     "stddev": 1196
     },
     "08_create1k-after1k_x2": {
-     "mean": 2471,
-     "stddev": 59
+     "mean": 2683,
+     "stddev": 140
     },
     "09_clear1k_x8": {
-     "mean": 1393,
-     "stddev": 165
+     "mean": 1529,
+     "stddev": 154
     },
     "21_ready-memory": {
-     "mean": 63,
+     "mean": 64,
      "stddev": 1
     },
     "22_run-memory": {
-     "mean": 265,
-     "stddev": 0
+     "mean": 264,
+     "stddev": 3
     },
     "25_run-clear-memory": {
-     "mean": 98,
-     "stddev": 2
+     "mean": 108,
+     "stddev": 10
     },
     "41_size-uncompressed": {
      "mean": 18960,
@@ -2393,58 +2393,58 @@
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 21280,
-     "stddev": 210
+     "mean": 24120,
+     "stddev": 650
     }
    },
    "keyed/joy": {
     "01_run1k": {
-     "mean": 2368,
-     "stddev": 74
+     "mean": 2417,
+     "stddev": 96
     },
     "02_replace1k": {
-     "mean": 2503,
-     "stddev": 40
+     "mean": 2631,
+     "stddev": 88
     },
     "03_update10th1k_x16": {
-     "mean": 1627,
-     "stddev": 534
+     "mean": 1707,
+     "stddev": 441
     },
     "04_select1k": {
-     "mean": 741,
-     "stddev": 363
+     "mean": 788,
+     "stddev": 457
     },
     "05_swap1k": {
-     "mean": 1600,
-     "stddev": 397
+     "mean": 1815,
+     "stddev": 479
     },
     "06_remove-one-1k": {
-     "mean": 1411,
-     "stddev": 412
+     "mean": 1641,
+     "stddev": 441
     },
     "07_create10k": {
-     "mean": 26011,
-     "stddev": 391
+     "mean": 28068,
+     "stddev": 817
     },
     "08_create1k-after1k_x2": {
-     "mean": 2609,
-     "stddev": 42
+     "mean": 2881,
+     "stddev": 239
     },
     "09_clear1k_x8": {
-     "mean": 1086,
-     "stddev": 314
+     "mean": 1257,
+     "stddev": 272
     },
     "21_ready-memory": {
-     "mean": 68,
-     "stddev": 4
+     "mean": 72,
+     "stddev": 0
     },
     "22_run-memory": {
-     "mean": 229,
-     "stddev": 6
+     "mean": 233,
+     "stddev": 2
     },
     "25_run-clear-memory": {
-     "mean": 85,
-     "stddev": 6
+     "mean": 84,
+     "stddev": 3
     },
     "41_size-uncompressed": {
      "mean": 14810,
@@ -2455,58 +2455,58 @@
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 16065,
-     "stddev": 405
+     "mean": 17225,
+     "stddev": 145
     }
    },
    "non-keyed/joy": {
     "01_run1k": {
-     "mean": 2330,
-     "stddev": 65
+     "mean": 2474,
+     "stddev": 262
     },
     "02_replace1k": {
-     "mean": 1218,
-     "stddev": 209
+     "mean": 1115,
+     "stddev": 61
     },
     "03_update10th1k_x16": {
-     "mean": 1784,
-     "stddev": 525
+     "mean": 1751,
+     "stddev": 543
     },
     "04_select1k": {
-     "mean": 818,
-     "stddev": 437
+     "mean": 620,
+     "stddev": 315
     },
     "05_swap1k": {
-     "mean": 1586,
-     "stddev": 613
+     "mean": 1605,
+     "stddev": 661
     },
     "06_remove-one-1k": {
-     "mean": 1858,
-     "stddev": 100
+     "mean": 1939,
+     "stddev": 116
     },
     "07_create10k": {
-     "mean": 26032,
-     "stddev": 366
+     "mean": 28297,
+     "stddev": 1270
     },
     "08_create1k-after1k_x2": {
-     "mean": 2591,
-     "stddev": 55
+     "mean": 2811,
+     "stddev": 210
     },
     "09_clear1k_x8": {
-     "mean": 997,
-     "stddev": 242
+     "mean": 1261,
+     "stddev": 362
     },
     "21_ready-memory": {
      "mean": 72,
      "stddev": 0
     },
     "22_run-memory": {
-     "mean": 228,
-     "stddev": 3
+     "mean": 232,
+     "stddev": 1
     },
     "25_run-clear-memory": {
-     "mean": 83,
-     "stddev": 5
+     "mean": 89,
+     "stddev": 1
     },
     "41_size-uncompressed": {
      "mean": 14790,
@@ -2517,58 +2517,58 @@
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 16765,
-     "stddev": 515
+     "mean": 17585,
+     "stddev": 265
     }
    },
    "keyed/react-hooks": {
     "01_run1k": {
-     "mean": 2262,
-     "stddev": 160
+     "mean": 2444,
+     "stddev": 181
     },
     "02_replace1k": {
-     "mean": 2668,
-     "stddev": 62
+     "mean": 2897,
+     "stddev": 153
     },
     "03_update10th1k_x16": {
-     "mean": 1582,
-     "stddev": 203
+     "mean": 1962,
+     "stddev": 517
     },
     "04_select1k": {
-     "mean": 741,
-     "stddev": 214
+     "mean": 811,
+     "stddev": 334
     },
     "05_swap1k": {
-     "mean": 8899,
-     "stddev": 261
+     "mean": 9432,
+     "stddev": 430
     },
     "06_remove-one-1k": {
-     "mean": 1444,
-     "stddev": 252
+     "mean": 1482,
+     "stddev": 306
     },
     "07_create10k": {
-     "mean": 32932,
-     "stddev": 2078
+     "mean": 36485,
+     "stddev": 3311
     },
     "08_create1k-after1k_x2": {
-     "mean": 2574,
-     "stddev": 73
+     "mean": 2816,
+     "stddev": 256
     },
     "09_clear1k_x8": {
-     "mean": 1574,
-     "stddev": 139
+     "mean": 1696,
+     "stddev": 122
     },
     "21_ready-memory": {
-     "mean": 113,
-     "stddev": 3
+     "mean": 118,
+     "stddev": 1
     },
     "22_run-memory": {
-     "mean": 435,
-     "stddev": 4
+     "mean": 440,
+     "stddev": 2
     },
     "25_run-clear-memory": {
-     "mean": 194,
-     "stddev": 2
+     "mean": 195,
+     "stddev": 0
     },
     "41_size-uncompressed": {
      "mean": 19030,
@@ -2579,225 +2579,225 @@
      "stddev": 0
     },
     "43_first-paint": {
-     "mean": 20455,
-     "stddev": 495
+     "mean": 22560,
+     "stddev": 30
     }
    }
   },
   "summary": {
    "keyed/roc-solid": {
-    "cpu_geomean_ms": 3579,
-    "slowdown": 206,
-    "ready_memory_mb": 117,
-    "run_memory_mb": 460,
-    "compressed_kb": 7340,
-    "uncompressed_kb": 29180,
-    "first_paint_ms": 2900
+    "cpu_geomean_ms": 3279,
+    "slowdown": 183,
+    "ready_memory_mb": 104,
+    "run_memory_mb": 480,
+    "compressed_kb": 6620,
+    "uncompressed_kb": 25340,
+    "first_paint_ms": 3705
    },
    "non-keyed/roc-solid": {
-    "cpu_geomean_ms": 3277,
-    "slowdown": 188,
-    "ready_memory_mb": 116,
-    "run_memory_mb": 459,
-    "compressed_kb": 6880,
-    "uncompressed_kb": 27550,
-    "first_paint_ms": 3230
+    "cpu_geomean_ms": 3116,
+    "slowdown": 174,
+    "ready_memory_mb": 103,
+    "run_memory_mb": 479,
+    "compressed_kb": 6190,
+    "uncompressed_kb": 23750,
+    "first_paint_ms": 3450
    },
    "keyed/vanillajs": {
-    "cpu_geomean_ms": 1927,
-    "slowdown": 111,
-    "ready_memory_mb": 53,
-    "run_memory_mb": 185,
+    "cpu_geomean_ms": 2122,
+    "slowdown": 118,
+    "ready_memory_mb": 58,
+    "run_memory_mb": 186,
     "compressed_kb": 250,
     "uncompressed_kb": 1130,
-    "first_paint_ms": 3255
+    "first_paint_ms": 5085
    },
    "non-keyed/vanillajs": {
-    "cpu_geomean_ms": 1931,
-    "slowdown": 111,
+    "cpu_geomean_ms": 2003,
+    "slowdown": 112,
     "ready_memory_mb": 57,
-    "run_memory_mb": 181,
+    "run_memory_mb": 183,
     "compressed_kb": 240,
     "uncompressed_kb": 1200,
-    "first_paint_ms": 3655
+    "first_paint_ms": 5880
    },
    "keyed/solid": {
-    "cpu_geomean_ms": 2025,
-    "slowdown": 116,
+    "cpu_geomean_ms": 2118,
+    "slowdown": 118,
     "ready_memory_mb": 60,
-    "run_memory_mb": 266,
+    "run_memory_mb": 268,
     "compressed_kb": 450,
     "uncompressed_kb": 1150,
-    "first_paint_ms": 4645
+    "first_paint_ms": 4790
    },
    "keyed/leptos": {
-    "cpu_geomean_ms": 2152,
-    "slowdown": 124,
-    "ready_memory_mb": 63,
-    "run_memory_mb": 265,
+    "cpu_geomean_ms": 2409,
+    "slowdown": 134,
+    "ready_memory_mb": 64,
+    "run_memory_mb": 264,
     "compressed_kb": 4880,
     "uncompressed_kb": 18960,
-    "first_paint_ms": 21280
+    "first_paint_ms": 24120
    },
    "keyed/joy": {
-    "cpu_geomean_ms": 2196,
-    "slowdown": 126,
-    "ready_memory_mb": 68,
-    "run_memory_mb": 229,
+    "cpu_geomean_ms": 2395,
+    "slowdown": 134,
+    "ready_memory_mb": 72,
+    "run_memory_mb": 233,
     "compressed_kb": 4740,
     "uncompressed_kb": 14810,
-    "first_paint_ms": 16065
+    "first_paint_ms": 17225
    },
    "non-keyed/joy": {
-    "cpu_geomean_ms": 2108,
-    "slowdown": 121,
+    "cpu_geomean_ms": 2138,
+    "slowdown": 119,
     "ready_memory_mb": 72,
-    "run_memory_mb": 228,
+    "run_memory_mb": 232,
     "compressed_kb": 4740,
     "uncompressed_kb": 14790,
-    "first_paint_ms": 16765
+    "first_paint_ms": 17585
    },
    "keyed/react-hooks": {
-    "cpu_geomean_ms": 2843,
-    "slowdown": 163,
-    "ready_memory_mb": 113,
-    "run_memory_mb": 435,
+    "cpu_geomean_ms": 3113,
+    "slowdown": 174,
+    "ready_memory_mb": 118,
+    "run_memory_mb": 440,
     "compressed_kb": 5140,
     "uncompressed_kb": 19030,
-    "first_paint_ms": 20455
+    "first_paint_ms": 22560
    }
   },
   "categories": [
    {
     "id": "ready",
     "values": [
-     31155,
-     29570,
-     1763,
-     2037,
-     4203,
-     23282,
-     19314,
-     17950,
-     21163
+     28784,
+     27408,
+     2204,
+     1936,
+     3688,
+     26643,
+     18577,
+     23545,
+     24772
     ],
     "ratios": [
-     1767,
-     1677,
+     1487,
+     1416,
+     114,
      100,
-     116,
-     238,
-     1321,
-     1096,
-     1018,
-     1200
+     190,
+     1376,
+     960,
+     1216,
+     1280
     ]
    },
    {
     "id": "paint",
     "values": [
-     2900,
-     3230,
-     3255,
-     3655,
-     4645,
-     21280,
-     16065,
-     16765,
-     20455
+     3705,
+     3450,
+     5085,
+     5880,
+     4790,
+     24120,
+     17225,
+     17585,
+     22560
     ],
     "ratios": [
+     107,
      100,
-     111,
-     112,
-     126,
-     160,
-     734,
-     554,
-     578,
-     705
+     147,
+     170,
+     139,
+     699,
+     499,
+     510,
+     654
     ]
    },
    {
     "id": "making",
     "values": [
-     8670,
-     6503,
-     3599,
-     3294,
-     3741,
-     4341,
-     4478,
-     3720,
-     4756
+     7725,
+     6061,
+     3750,
+     3483,
+     4055,
+     4739,
+     4762,
+     3849,
+     5193
     ],
     "ratios": [
-     263,
-     197,
-     109,
+     222,
+     174,
+     108,
      100,
-     114,
-     132,
+     116,
      136,
-     113,
-     144
+     137,
+     110,
+     149
     ]
    },
    {
     "id": "updating",
     "values": [
-     1763,
-     1894,
-     1169,
-     1260,
-     1239,
-     1227,
-     1242,
-     1338,
-     1884
+     1652,
+     1829,
+     1346,
+     1287,
+     1259,
+     1402,
+     1382,
+     1336,
+     2067
     ],
     "ratios": [
-     151,
-     162,
+     131,
+     145,
+     107,
+     102,
      100,
-     108,
+     111,
+     110,
      106,
-     105,
-     106,
-     114,
-     161
+     164
     ]
    },
    {
     "id": "memory",
     "values": [
-     205,
-     203,
-     86,
+     206,
+     204,
+     89,
      88,
-     107,
-     118,
-     110,
-     111,
-     212
+     108,
+     122,
+     112,
+     114,
+     216
     ],
     "ratios": [
-     239,
-     237,
+     234,
+     233,
+     101,
      100,
-     102,
-     125,
-     138,
+     123,
+     139,
      128,
-     129,
-     248
+     130,
+     246
     ]
    },
    {
     "id": "download",
     "values": [
-     7340,
-     6880,
+     6620,
+     6190,
      250,
      240,
      450,
@@ -2807,8 +2807,8 @@
      5140
     ],
     "ratios": [
-     3058,
-     2867,
+     2758,
+     2579,
      104,
      100,
      188,

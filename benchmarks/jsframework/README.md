@@ -20,7 +20,7 @@ label of three words picked at random by a xorshift generator with a fixed seed 
 entry's words; the runner reads only ids, the row count and the " !!!" an update adds). Nothing
 is batched, cached or read from the DOM beyond what an app would do. The page is written as files
 by `rocx build --static` (D-073), its wasm `--opt=size --specialize=yes`, as an app ships it, and
-`runtime.js` as rocx ships it today (not minified).
+`runtime.js` as that build ships it: only what the page uses (D-087), minified (D-075).
 
 ## Compared with
 
