@@ -1153,7 +1153,7 @@ test("rocx build (D-037): refuses an unannotated handler; a type's module that i
 		// The type in a module of its own: no cycle. Feed, which the routes may import, may import Api.
 		put("app/News.roc", "News := [].{\n\tSaid : { text : Str }\n}\n");
 		// The page reads the endpoint: the browser's copy reaches Api, and what its types name.
-		put("app/routes/+page.rocx", "import pf.Html\nimport pf.Endpoint\nimport ../Generated/Api\n\nview! = |_| <p>{Endpoint.get!(Api.get_hello({})).text}</p>\n");
+		put("app/routes/+page.rocx", "import pf.Html\nimport pf.Endpoint\nimport ../Generated/Api\n\nview! = |_| <p>{Api.get_hello({}).read!().text}</p>\n");
 		assert.equal(built({ client: join(dir, "app", "build", "client") }), true, said.join("\n"));
 		assert.match(readFileSync(join(dir, "app", "Generated", "Api.roc"), "utf8"), /^import \.\.\/News\n[^]*\tget_hello : \{\} -> Endpoint\(context, \{\}, News\.Said\)\n/m);
 		assert.match(readFileSync(join(dir, "app", "build", "client", "Generated", "Api.roc"), "utf8"), /\tget_hello : \{\} -> Endpoint\(context, \{\}, News\.Said\)\n/, "the browser's copy: the same types");

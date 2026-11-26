@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import pf.Router
 import ../Generated/Api
 import ../Middlewares
@@ -13,7 +12,7 @@ middleware = Middlewares.anyone
 
 ## What the page shows (`GET /api`).
 offer! : {} => { email : Str, plans : List({ name : Str, price : Str, subscription : Bool, cost : Str, blurb : Str }), current : Str }
-offer! = |{}| Endpoint.get!(Api.get_api({}))
+offer! = |{}| Api.get_api({}).read!()
 
 ## A plan's button.
 label : Bool -> Str

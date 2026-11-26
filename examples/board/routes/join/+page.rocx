@@ -15,7 +15,7 @@ meta = { title: "Join · Board" }
 ## Everyone who has joined (`GET /api/join`). Its type is said here: in the browser's copy of the app,
 ## an endpoint has none.
 people! : {} => List(Board.Person)
-people! = |{}| Endpoint.get!(Api.get_api_join({}))
+people! = |{}| Api.get_api_join({}).read!()
 
 view! = |_| {
 	then = Board.after_join(then_in(Router.location!({}).query))

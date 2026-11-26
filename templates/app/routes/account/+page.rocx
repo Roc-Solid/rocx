@@ -19,7 +19,7 @@ middleware = Middlewares.signed_in
 
 ## The account, as `GET /api/account` says.
 account! : {} => { email : Str, sessions : List({ id : Str, current : Bool, started : Str }), two_factor : { state : Str, secret : Str, uri : Str, recovery_codes : U64 } }
-account! = |{}| Endpoint.get!(Api.get_api_account({}))
+account! = |{}| Api.get_api_account({}).read!()
 
 view! = |_| {
 	me = account!({})

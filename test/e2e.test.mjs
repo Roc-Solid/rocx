@@ -276,7 +276,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		const broken = await get("/broken");
 		assert.equal(broken.status, 500);
 		assert.match(broken.html, /<title>Broken<\/title>.*<main><!--errored:failed--><section class="error"><h1>500<\/h1> <p class="problem">nothing above provides Generated\/BrokenPage\.missing[^<]*<\/p><\/section><!--\/errored--><\/main>/, "the error page, inside the layout");
-		// A page whose read its endpoint refuses (`Endpoint.get!`): a 404 is the page's 404, the error
+		// A page whose read its endpoint refuses (`Endpoint.read!`): a 404 is the page's 404, the error
 		// page with why; a 5xx is a 500, as any failure is.
 		const thing = await get("/things/1");
 		assert.equal(thing.status, 200);
@@ -511,7 +511,7 @@ function contractApp() {
 	// A route of respond! alone, which Handlers doesn't import, so it may import Handlers (an MCP route
 	// would): it runs another route's handler there and then.
 	put("routes/raw/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../Generated/Handlers\n\n## Every method: the hello endpoint\'s answer, run here.\nrespond! : { request : Server.Request, params : {}, context : {} } => Server.Response\nrespond! = |{ request, context, .. }|\n\tmatch Endpoint.run!(Handlers.get_hello({}), request, context, {}) {\n\t\tOk(said) => Server.response(200, [], "${said.from} ${said.n.to_str()}")\n\t\tErr(_) => Server.response(500, [], "no answer")\n\t}\n');
-	put("routes/+page.rocx", 'import pf.Html\nimport pf.Endpoint\nimport ../Generated/Api\n\nview! = |_| {\n\tlatest = Endpoint.get!(Api.get_hello({}))\n\tsend! = || {\n\t\t_ = Endpoint.send!(Api.post_publish({}), { n: latest.n })\n\t\t{}\n\t}\n\t<button type="button" on:click={send!}>{latest.from}</button>\n}\n');
+	put("routes/+page.rocx", 'import pf.Html\nimport pf.Endpoint\nimport ../Generated/Api\n\nview! = |_| {\n\tlatest = Api.get_hello({}).read!()\n\tsend! = || {\n\t\t_ = Api.post_publish({}).send!({ n: latest.n })\n\t\t{}\n\t}\n\t<button type="button" on:click={send!}>{latest.from}</button>\n}\n');
 	return dir;
 }
 
@@ -591,7 +591,7 @@ test("the contract (D-037): a wrong body or answer against it doesn't compile, i
 		for (const [checked, copy] of both().map((each, i) => [each, i ? "browser" : "server"])) {
 			assert.notEqual(checked.status, 0, copy);
 			assert.match(checked.stdout, /routes\/\+page\.rocx:8:\d+/, `${copy}: the send, at the .rocx line:\n${checked.stdout}`);
-			assert.match(checked.stdout, /_ = Endpoint\.send!\(Api\.post_publish\(\{\}\), \{ n: "one" \}\)/, `${copy}: the .rocx line, quoted`);
+			assert.match(checked.stdout, /_ = Api\.post_publish\(\{\}\)\.send!\(\{ n: "one" \}\)/, `${copy}: the .rocx line, quoted`);
 			assert.match(checked.stdout, /routes\/\+page\.rocx:11:\d+/, `${copy}: the read, at its line`);
 			assert.doesNotMatch(checked.stdout, /(build\/client\/|Generated\/)\S*\.roc:\d+:\d+/, `${copy}: never a line of rocx's copy`);
 		}

@@ -1899,7 +1899,7 @@ shout_at : Str -> Endpoint({}, {}, Str)
 shout_at = |word| Endpoint.local("GET", "/probe/shout/${Server.encode_segment(word)}", |request, {}, {}| Ok(Server.decode_segment(request.path.drop_prefix("/probe/shout/")).with_ascii_uppercased()))
 
 shout! : Str => Str
-shout! = |word| Endpoint.get!(shout_at(word))
+shout! = |word| shout_at(word).read!()
 
 ## GET /probe/member, behind a middleware of its own (`members_only`), as a route file's endpoint
 ## is behind the file's: who the member is, from what the middleware handed on, and the request.
@@ -1907,7 +1907,7 @@ member_probe : Endpoint({ started : Str, member : Str }, {}, Str)
 member_probe = Endpoint.local("GET", "/probe/member", |request, handed, {}| Ok("member ${handed.member}, ${request.method} ${request.path}"))
 
 member! : {} => Str
-member! = |{}| Endpoint.get!(member_probe)
+member! = |{}| member_probe.read!()
 
 ## ---- Channels (D-020), as `Generated/Api` and `Generated/Routes` would answer them ----
 
@@ -2025,7 +2025,7 @@ signed_in_probe : Endpoint({ started : Str, member : Str }, {}, Str)
 signed_in_probe = Endpoint.local("GET", "/probe/signed_in", |_, handed, {}| Ok("signed in as ${handed.member}"))
 
 signed_in! : {} => Str
-signed_in! = |{}| Endpoint.get!(signed_in_probe)
+signed_in! = |{}| signed_in_probe.read!()
 
 ## The gate: a member goes on; anyone else is sent to `/login`, their `session` cookie cleared.
 gate : Middleware({ started : Str }, { started : Str, member : Str })
@@ -2210,7 +2210,7 @@ flash_endpoint = Endpoint.local(
 ## <NoHydration>, which isn't noted for the browser.
 reading! : {} => Html
 reading! = |{}| {
-	data! = Solid.create_memo!(|| Endpoint.get!(Endpoint.with_query(reads_endpoint, Router.location!({}).query)))
+	data! = Solid.create_memo!(|| reads_endpoint.with_query(Router.location!({}).query).read!())
 	Html.element(
 		"html",
 		[],
@@ -2240,15 +2240,15 @@ reading! = |{}| {
 						[
 							Html.text_of(
 								||
-									match Endpoint.read!(missing_endpoint) {
+									match missing_endpoint.send!({}) {
 										Ok(found) => found
 										Err(problem) => Server.explain(problem)
 									},
 							),
 						],
 					),
-					Errored.view!({ fallback: |problem, _| Html.element("p", [Html.attr("class", "refused")], [Html.text_of(|| problem)]), children: [Html.text_of(|| Endpoint.get!(missing_endpoint))] }),
-					Html.no_hydration([Html.element("p", [Html.attr("class", "static")], [Html.text_of(|| Endpoint.get!(Endpoint.with_query(reads_endpoint, "weeks=region")).weeks)])]),
+					Errored.view!({ fallback: |problem, _| Html.element("p", [Html.attr("class", "refused")], [Html.text_of(|| problem)]), children: [Html.text_of(|| missing_endpoint.read!())] }),
+					Html.no_hydration([Html.element("p", [Html.attr("class", "static")], [Html.text_of(|| reads_endpoint.with_query("weeks=region").read!().weeks)])]),
 				],
 			),
 		],
@@ -2258,7 +2258,7 @@ reading! = |{}| {
 ## A page that reads the address its GET came from, as the server renders it: the in-process read
 ## has the page's.
 peer_page! : {} => Html
-peer_page! = |{}| Html.element("html", [], [Html.element("body", [], [Html.element("p", [Html.attr("class", "peer")], [Html.text_of(|| Endpoint.get!(peer_endpoint))])])])
+peer_page! = |{}| Html.element("html", [], [Html.element("body", [], [Html.element("p", [Html.attr("class", "peer")], [Html.text_of(|| peer_endpoint.read!())])])])
 
 peer_endpoint : Endpoint({}, {}, Str)
 peer_endpoint = Endpoint.remote("GET", "/peer-json")
@@ -2274,14 +2274,14 @@ read_gated! = |{}|
 			Html.element(
 				"body",
 				[],
-				[Errored.view!({ fallback: |problem, _| Html.text_of(|| problem), children: [Html.element("header", [], [Html.text_of(|| Endpoint.get!(member_endpoint))])] })],
+				[Errored.view!({ fallback: |problem, _| Html.text_of(|| problem), children: [Html.element("header", [], [Html.text_of(|| member_endpoint.read!())])] })],
 			),
 		],
 	)
 
 ## A page that reads an endpoint whose handler reads the flash a plain form's post left.
 read_flash! : {} => Html
-read_flash! = |{}| Html.element("html", [], [Html.element("body", [], [Html.element("p", [Html.attr("class", "flash")], [Html.text_of(|| Endpoint.get!(flash_endpoint))])])])
+read_flash! = |{}| Html.element("html", [], [Html.element("body", [], [Html.element("p", [Html.attr("class", "flash")], [Html.text_of(|| flash_endpoint.read!())])])])
 
 ## Markup built by hand with names a page can't have (D-079), each left out, and what is around
 ## them written: tags that aren't plain names, inline handlers and attribute names that would end
@@ -2518,7 +2518,7 @@ waiting! = |{}| {
 					Html.element("p", [Html.attr("class", "waited")], [Html.text_of(|| waited!())]),
 					Errored.view!({
 						fallback: |problem, _| Html.element("p", [Html.attr("class", "refused")], [Html.text_of(|| problem)]),
-						children: [Html.text_of(|| Endpoint.get!(Endpoint.with_query(refusing_endpoint, at.query)))],
+						children: [Html.text_of(|| refusing_endpoint.with_query(at.query).read!())],
 					}),
 					Html.element(
 						"p",

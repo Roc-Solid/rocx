@@ -2479,7 +2479,7 @@ Routes := [].{
 			[
 				"## Written by rocx build from the app's routes/: the app's contract. Each endpoint a +server.roc has,",
 				"## as a function of its params: its method, its URL and the types its handler's annotation gives,",
-				if (client) "## and nothing it does. This is the browser's copy (`Endpoint.send!`, `Endpoint.get!`)." else "## and nothing it does, so any module may import it (`Endpoint.publish!`, `Endpoint.get!`). The",
+				if (client) "## and nothing it does. This is the browser's copy (`Endpoint.send!`, `Endpoint.read!`)." else "## and nothing it does, so any module may import it (`Endpoint.publish!`, `Endpoint.read!`). The",
 				if (client) "## Edit the routes." else "## handlers are Generated/Handlers'. Edit the routes.",
 				"import pf.Endpoint",
 				"import pf.Server",

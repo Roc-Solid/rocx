@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import pf.Router
 import pf.Server
 import pf.Title
@@ -19,7 +18,7 @@ middleware = Middlewares.signed_in
 
 ## The notebook, as `GET /api` answers it for this page's query (`?q=`, `?tag=`, `?archived=true`).
 home! : {} => Pages.Home
-home! = |{}| Endpoint.get!(Api.get_api({}).with_query(Router.location!({}).query))
+home! = |{}| Api.get_api({}).with_query(Router.location!({}).query).read!()
 
 view! = |_| {
 	home = home!({})

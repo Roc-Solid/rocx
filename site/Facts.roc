@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import Generated/Api
 
 ## What the build measured, as `key=value` lines (`site/build.mjs`): the wasm's sizes, how long
@@ -12,7 +11,7 @@ Facts := [].{
 	## The facts, from the server that was started with them: `GET /api/facts`, which the server
 	## answers as it renders the page, so the browser reads them from the page, and asks nothing.
 	facts! : {} => Str
-	facts! = |{}| Endpoint.get!(Api.get_api_facts({}))
+	facts! = |{}| Api.get_api_facts({}).read!()
 
 	## One of the facts, by its key (`"client_brotli"`): "?" if the build measured none.
 	fact! : Str => Str

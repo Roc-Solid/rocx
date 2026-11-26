@@ -85,7 +85,7 @@ view! = |_|
 				<code>Endpoint.publish!(Api.channel_org_org_news({"{ org: \"acme\" }"}), news)</code>, from a request,
 				a job or an actor. Only the subscribers with the same params hear it, in the order it was published.
 				A page's first data, as the server renders it, comes from a <code>get!</code> endpoint on the same
-				path, read with <code>Endpoint.get!</code>; the channel carries what changes after that.
+				path, read with <code>Endpoint.read!</code>; the channel carries what changes after that.
 			</p>
 			<ul>
 				<li>

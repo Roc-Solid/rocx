@@ -106,7 +106,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const server = { delay: 60, fail: {}, name: "Ada", calls: [], tallies: { count: 0, other: 0 } };
 const json = (value) => ({ status: 200, body: JSON.stringify(value) });
 
-/** The test app's endpoints that its pages read (`Endpoint.get!`): `GET /api/<name>/<arg>`, the
+/** The test app's endpoints that its pages read (`Endpoint.read!`): `GET /api/<name>/<arg>`, the
  * arg a path segment. The native server answers them as it renders a page, recording the answers
  * for the browser, and answers the browser's GETs. Here, scripted, as JS. */
 const READS = { say: (word) => `Said: ${word}`, echo: (message) => `Echo: ${message}`, tally: (name) => server.tallies[name] ?? 0 };

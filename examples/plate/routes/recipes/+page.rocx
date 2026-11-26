@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
-import pf.Endpoint
 import forms.LiveForm
 import forms.TextField
 import ../../Plate
@@ -15,7 +14,7 @@ meta = { title: "Recipes" }
 
 view! = |_| {
 	read = Api.get_api_recipes({})
-	recipes! = create_memo!(|| Endpoint.get!(read))
+	recipes! = create_memo!(|| read.read!())
 	live = LiveForm.filled!(PlateForm.recipe, Api.post_api_recipes({}), [("servings", "2")])
 	<section class="recipes">
 		<h1>Recipes</h1>

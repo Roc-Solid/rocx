@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import pf.Solid exposing [create_signal!, use_context!]
 import pf.Context
 import ../Generated/Api
@@ -27,7 +26,7 @@ Bag := [].{
 	## The server renders the bag with it, and puts the answer in the page, so the browser doesn't ask
 	## again.
 	reader! : {} => Str
-	reader! = |{}| Endpoint.get!(Api.get_api_reader({}))
+	reader! = |{}| Api.get_api_reader({}).read!()
 
 	view! : {} => Html
 	view! = |{}| {

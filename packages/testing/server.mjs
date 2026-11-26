@@ -230,7 +230,7 @@ export class Client {
 	}
 
 	/**
-	 * Reads a GET endpoint as a page does (`Endpoint.get!`: `accept: application/json`, with the
+	 * Reads a GET endpoint as a page does (`Endpoint.read!`: `accept: application/json`, with the
 	 * cookies): its answer, parsed. An answer that isn't a 200 throws a ReadError, with its status
 	 * and text.
 	 */

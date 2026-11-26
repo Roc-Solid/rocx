@@ -1178,7 +1178,7 @@ export class Runtime {
 		this.actions = new Map();
 		this.submissions = new Map();
 		this.submitting = null;
-		/** The computations that read a GET from the server (`Endpoint.get!`): what a submission's
+		/** The computations that read a GET from the server (`Endpoint.read!`): what a submission's
 		 * result has read again before it is done (`revalidate`). */
 		this.readers = new Set();
 		/** Why the last request `js_fetch` answered "waits" for unwinds its caller (`js_waits`). */
@@ -2063,7 +2063,7 @@ export class Runtime {
 
 	/**
 	 * Reads the page's reads again (Solid Router revalidating after an action), then `done`: every
-	 * computation that read a GET from the server (`Endpoint.get!`, `read!`) asks it again, its last
+	 * computation that read a GET from the server (`read!`, or `send!` of a GET) asks it again, its last
 	 * value shown meanwhile, and `done` runs once each has its answer (or failed, or went), in the
 	 * run of the last one, so whatever reads both sees the new data and the submission's end
 	 * together. With `keys` (`Router.revalidate!`'s, D-054), only the reads of a GET whose URL is
@@ -3046,7 +3046,7 @@ export class Runtime {
 	/**
 	 * An HTTP request for the running computation or handler (`Call.fetch!`): its answer, as
 	 * `{"status":…,"body":…}`, from its calls if in, or asked for now (and it waits, as for a server
-	 * read's). A GET the server made as it rendered the page (`Endpoint.get!`: noted under
+	 * read's). A GET the server made as it rendered the page (`Endpoint.read!`: noted under
 	 * `GET <url>`) is read from the page's answers, not asked again. Rendering as a server would, it
 	 * is the answer the page recorded (`renderToString({ answers })`): the server platform answers a
 	 * GET by its route, natively, and anything else is a 599.

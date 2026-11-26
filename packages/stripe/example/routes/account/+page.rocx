@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import ../../Generated/Api
 import ../../Middlewares
 
@@ -11,7 +10,7 @@ middleware = Middlewares.signed_in
 
 ## The account, as `GET /api/account` says.
 account! : {} => { email : Str, plan : Str, status : Str, until : Str, ending : Bool, customer : Bool, orders : List({ id : Str, what : Str, day : Str }) }
-account! = |{}| Endpoint.get!(Api.get_api_account({}))
+account! = |{}| Api.get_api_account({}).read!()
 
 ## What the page says of a subscription's period.
 period : Bool -> Str

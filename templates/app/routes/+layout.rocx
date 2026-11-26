@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
-import pf.Endpoint
 import pf.Errored
 import pf.Router
 import ../Generated/Api
@@ -11,7 +10,7 @@ import ../components/Nav
 ## `<style>` is in), the bar at the top (`Nav`: who is signed in, from `GET /api/me`), and the page.
 ## A story (a dev build's catalog, /__rocx/stories/…) is the component alone, without the bar.
 view! = |{ meta, children, .. }| {
-	me! = create_memo!(|| Endpoint.get!(Api.get_api_me({})))
+	me! = create_memo!(|| Api.get_api_me({}).read!())
 	story! = create_memo!(|| Router.location!({}).path.starts_with("/__rocx/stories/"))
 	<>
 		<!doctype html>

@@ -24,7 +24,7 @@ import ../../../Generated/Paths
 ## first (`Router.use_before_leave!`).
 meta = { title: "A task" }
 
-view! = |{ params, .. }| <Editor detail={Endpoint.get!(Api.get_api_tasks_id({ id: params.id }))} />
+view! = |{ params, .. }| <Editor detail={Api.get_api_tasks_id({ id: params.id }).read!()} />
 
 ## The form, filled in with the task as it is (`LiveForm.filled!`), checked as it is typed with the
 ## same `TaskForm.editing` the endpoint reads it with; after a refusal, what was typed and the

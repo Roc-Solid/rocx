@@ -48,7 +48,7 @@ view! = |{ params }| {
 	# The board as it shows: the server's, with the moves on their way applied.
 	board! = create_memo!(
 		|| {
-			server = Endpoint.get!(read)
+			server = read.read!()
 			moves.pending_inputs!().fold(server, Board.moved)
 		},
 	)

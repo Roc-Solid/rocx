@@ -7,7 +7,7 @@ import Server
 ##
 ##     search = use_search_params!({})
 ##     days! = || search.get!("days") ?? "7"
-##     report! = create_memo!(|| Endpoint.get!(stats.with_query("days=${Server.encode_segment(days!())}")))
+##     report! = create_memo!(|| stats.with_query("days=${Server.encode_segment(days!())}").read!())
 ##     <button aria-pressed={if (days!() == "30") "true" else "false"} on:click={|| search.set!([("days", "30")])}>30 days</button>
 ##
 ## A change of the query alone is made in place: the address changes (an entry pushed, Back goes

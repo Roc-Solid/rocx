@@ -23,8 +23,8 @@ view! = |{ params }| <Editing id={params.id} opened={opened!(params.id)} />
 ## The note, and who is editing it (`GET /api/me`), for the bar.
 opened! : Str => Pages.Opened
 opened! = |id| {
-	me = Endpoint.get!(Api.get_api_me({}))
-	{ email: me.email, note: Endpoint.get!(Api.get_api_notes_id({ id: id })) }
+	me = Api.get_api_me({}).read!()
+	{ email: me.email, note: Api.get_api_notes_id({ id: id }).read!() }
 }
 
 ## The editor, once the note is found.

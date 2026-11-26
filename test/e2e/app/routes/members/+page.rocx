@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import ../../Generated/Api
 
 ## Members only: it names no middleware, so it runs behind the one `+server.roc` names (D-079).
@@ -8,7 +7,7 @@ meta = { title: "Members" }
 ## Who is asking: this path's endpoint (`GET /members`, for JSON), behind the same middleware,
 ## which says who. The server answers it as it renders the page, and the page carries the answer.
 who! : {} => Str
-who! = |{}| Endpoint.get!(Api.get_members({}))
+who! = |{}| Api.get_members({}).read!()
 
 view! = |_|
 	<>

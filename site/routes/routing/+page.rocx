@@ -88,7 +88,7 @@ view! = |_|
 				<li>
 					<strong>Its data comes from endpoints.</strong> A page isn't given the request. It reads where it
 					is with <code>{"Router.location!({})"}</code>, and reads its data from an endpoint with
-					<code>Endpoint.get!</code>, which the server answers while it renders the page
+					<code>Endpoint.read!</code>, which the server answers while it renders the page
 					(<a href={Paths.calls}>talking to the server</a>). What middleware knows, such as who is signed in,
 					reaches a page the same way: through an endpoint behind that middleware
 					(<a href="#middleware">below</a>).

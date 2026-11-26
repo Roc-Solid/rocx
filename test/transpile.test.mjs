@@ -218,7 +218,7 @@ test("server! is gone (D-023): refused at its line, saying what to write instead
 		assert.ok(error instanceof RocxError, `expected a RocxError, got ${error}`);
 		assert.deepEqual(
 			{ reason: error.reason, line: error.line, column: error.column },
-			{ reason: "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.get_…(params))", line: 3, column: 9 },
+			{ reason: "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Api.get_…(params).read!()", line: 3, column: 9 },
 		);
 	}
 });

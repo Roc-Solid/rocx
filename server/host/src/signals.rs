@@ -5,7 +5,7 @@
 //! A page's markup arrives as JSON (`Html.serialize!`, when the host runs the page's box), every
 //! hole a computation Roc gave the host to keep (`keep!`). Rendering walks it (`html`), running each
 //! hole once (`once`), with no tracking and nothing waiting: a memo is computed when it is made, and
-//! a GET of one of the app's endpoints (`Endpoint.get!`) is answered by its route, in-process
+//! a GET of one of the app's endpoints (`Endpoint.read!`) is answered by its route, in-process
 //! (`roc_fetch`: the app's `respond!`, as for the browser's request), its answer noted for the page.
 //! The answers go in a script before `</body>`, with the script that starts the browser's side
 //! (`/rocx/start.js`).
@@ -1224,7 +1224,7 @@ pub extern "C" fn roc_context_get(id: u64) -> Callable {
 }
 
 /// A component's request. While the server renders a page, a GET of one of the app's own endpoints
-/// (a path, `/…`: `Endpoint.get!`, `Endpoint.read!`) is answered in-process, by its route, as the
+/// (a path, `/…`: `Endpoint.read!`, `Endpoint.send!`) is answered in-process, by its route, as the
 /// browser's GET would be (`in_process`, with `accept: application/json`), whatever its status;
 /// the answer, `{"status":…,"body":…}`, is noted for the page under `GET <url>` (not inside a
 /// `<NoHydration>`: the browser never asks), so hydrating, the browser reads it there. Any other

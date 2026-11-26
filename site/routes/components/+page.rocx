@@ -213,7 +213,7 @@ view! = |_|
 			<h3>Memos and the server</h3>
 			<p>
 				A memo starts computing as soon as it is made. One that reads an endpoint
-				(<code>Endpoint.get!</code>, see <a href={Paths.calls}>talking to the server</a>) is async: a
+				(<code>Endpoint.read!</code>, see <a href={Paths.calls}>talking to the server</a>) is async: a
 				component that makes five such memos sends five requests at once, and a hole that reads one waits
 				until its answer is in (<a href="#waiting">waiting and failing</a>). <code>refresh!(user!)</code>
 				computes a memo again, asking the server again. The old value stays on screen meanwhile, and
@@ -898,7 +898,7 @@ view! = |_|
 				from the server: who you are, your posts, your friends, your likes and your notifications. It shows
 				one spinner until they are all in. The posts and the friends can each fail on their own, and anything
 				else failing fails the whole. (<code>{"Api.current_user!({})"}</code> and the others are small
-				functions in that test app around <code>Endpoint.get!</code>, which reads a GET endpoint.)
+				functions in that test app around <code>Endpoint.read!</code>, which reads a GET endpoint.)
 			</p>
 			<Code title={"${Sources.signals_glance.file}, in part"} source={Sources.signals_glance.rocx} numbers={Bool.False} />
 			<ol class="timeline">
@@ -964,7 +964,7 @@ view! = |_|
 				<code>is_pending!</code>, Solid 2.0's <code>isPending</code>, says so. The rule is Solid's: the first
 				load is <code>{"<Loading>"}</code>'s job, and loading again is <code>is_pending!</code>'s.
 			</p>
-			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_posts({}), \"page=\${page!().to_str()}\")))\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t{...posts!().map(|post| <li key={post.id}>{post.title}</li>)}\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n{if (is_pending!(posts!)) <p>Updating…</p>}"} numbers={Bool.False} />
+			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Api.get_posts({}).with_query(\"page=\${page!().to_str()}\").read!())\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t{...posts!().map(|post| <li key={post.id}>{post.title}</li>)}\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n{if (is_pending!(posts!)) <p>Updating…</p>}"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>True</strong> while a memo the accessor reads has a value and waits for a new one, from
@@ -1075,14 +1075,14 @@ view! = |_|
 			</ul>
 			<p>
 				Solid 2.0 also writes an optimistic value the other way round, and so can you:
-				<code>{"create_optimistic!(|| Endpoint.get!(board))"}</code> is a signal whose value is the server's
+				<code>{"create_optimistic!(|| board.read!())"}</code> is a signal whose value is the server's
 				until a handler writes it. The write shows at once and is held until the submissions that handler
 				sent are done and the page's reads have been read again; then it is undone in the same update, so
 				the server's data takes its place without a flicker. A refusal undoes it at once, and so does a write
 				whose handler sent nothing. Use it for a value the handler knows; use the memo above for many moves
 				on their way, each applied to the server's latest data.
 			</p>
-			<Code title="A count shown ahead of the server" source={"(count!, set_count!) = create_optimistic!(|| Endpoint.get!(Api.get_count({})))\nadd! = use_action!(Api.post_add({}))\n\n<button on:click={|| {\n\tset_count!(count!() + 1)\n\tadd!({ by: 1 })\n}}>{count!().to_str()}</button>"} numbers={Bool.False} />
+			<Code title="A count shown ahead of the server" source={"(count!, set_count!) = create_optimistic!(|| Api.get_count({}).read!())\nadd! = use_action!(Api.post_add({}))\n\n<button on:click={|| {\n\tset_count!(count!() + 1)\n\tadd!({ by: 1 })\n}}>{count!().to_str()}</button>"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>Which reads a result reads again</strong> is the endpoint's to say, as Solid Router's
@@ -1260,7 +1260,7 @@ view! = |_|
 			</p>
 			<Versus>
 				<Code title="Solid 2.0" source={Sources.solid_friends.rocx} markup={Bool.True} numbers={Bool.False} />
-				<Code title="Roc Solid" source={"view! = |{}| {\n\t(shown!, set_shown!) = create_signal!(3.U64)\n\tfriends! = create_memo!(|| Endpoint.get!(Api.get_friends({})))\n\t<Loading fallback={<p>Loading…</p>}>\n\t\t<ul>\n\t\t\t{...friends!().take_first(shown!()).map(|friend| <li key={friend.id}>{friend.name}</li>)}\n\t\t</ul>\n\t\t{if friends!().len() > shown!() {\n\t\t\t<button on:click={|| set_shown!(shown!() + 3)}>More</button>\n\t\t}}\n\t</Loading>\n}"} numbers={Bool.False} />
+				<Code title="Roc Solid" source={"view! = |{}| {\n\t(shown!, set_shown!) = create_signal!(3.U64)\n\tfriends! = create_memo!(|| Api.get_friends({}).read!())\n\t<Loading fallback={<p>Loading…</p>}>\n\t\t<ul>\n\t\t\t{...friends!().take_first(shown!()).map(|friend| <li key={friend.id}>{friend.name}</li>)}\n\t\t</ul>\n\t\t{if friends!().len() > shown!() {\n\t\t\t<button on:click={|| set_shown!(shown!() + 3)}>More</button>\n\t\t}}\n\t</Loading>\n}"} numbers={Bool.False} />
 			</Versus>
 			<TableWrap>
 				<table class="names">
@@ -1305,7 +1305,7 @@ view! = |_|
 						<tr><td><code>{"<form action={join} method=\"post\">"}</code>, <code>useSubmission(join)</code> (Solid Router)</td><td><code>{"<form action={Endpoint.url_of(join)} method=\"post\">"}</code>, <code>use_submission!(join)</code></td></tr>
 						<tr><td><code>{"const move = useAction(moveAction); move(card, day)"}</code></td><td><code>{"move! = use_action!(Api.post_move({}))"}</code>, <code>{"move!({ card, day })"}</code>, in a handler</td></tr>
 						<tr><td><code>useSubmissions(moveAction)</code></td><td><code>{"moves = use_submissions!(Api.post_move({}))"}</code>, <code>{"moves.all!()"}</code> as records</td></tr>
-						<tr><td><code>{"const [cards, setCards] = createOptimistic(() => board())"}</code>, written in the action</td><td><code>{"(cards!, set_cards!) = create_optimistic!(|| Endpoint.get!(board))"}</code>, written in the handler that sends it; or derived: <code>{"create_memo!(|| moves.pending_inputs!().fold(Endpoint.get!(board), moved))"}</code></td></tr>
+						<tr><td><code>{"const [cards, setCards] = createOptimistic(() => board())"}</code>, written in the action</td><td><code>{"(cards!, set_cards!) = create_optimistic!(|| board.read!())"}</code>, written in the handler that sends it; or derived: <code>{"create_memo!(|| moves.pending_inputs!().fold(board.read!(), moved))"}</code></td></tr>
 						<tr><td><code>{"<form action={toggle.with(todo.id)} method=\"post\">"}</code></td><td><code>{"<form action={Endpoint.url_of(Endpoint.with_fields(toggle, { id: todo.id }))} method=\"post\">"}</code></td></tr>
 						<tr><td><code>submission.retry()</code></td><td><code>{"submission.retry!()"}</code>, <code>{"moves.retry!(id)"}</code></td></tr>
 						<tr><td><code>{"return json(card, { revalidate: getBoard.key })"}</code></td><td><code>{"Router.revalidate!([Endpoint.url_of(Api.get_board({}))])"}</code>, in the endpoint's handler</td></tr>

@@ -50,7 +50,7 @@
 ##   needs, checked when the server starts (`Plugins`); `routes`, the app's own (`Routes.claims`),
 ##   which no plugin's route or file at the root may meet.
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
-##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
+##   GET endpoint a component reads while the host renders the page (`Endpoint.read!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
 ##   `Store`, `Repeat`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Search`, `Leave`,
 ##   `HttpStatusCode`, `Transition`, `Title`, `Browser`, `Submission`, `Submissions`), and HTTP's

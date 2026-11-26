@@ -25,8 +25,8 @@ view! = |{ params }| <Shown id={params.id} first={opened!(params.id)} />
 ## (`GET /api/me`), for the bar.
 opened! : Str => Pages.Opened
 opened! = |id| {
-	me = Endpoint.get!(Api.get_api_me({}))
-	{ email: me.email, note: Endpoint.get!(Api.get_api_notes_id({ id: id })) }
+	me = Api.get_api_me({}).read!()
+	{ email: me.email, note: Api.get_api_notes_id({ id: id }).read!() }
 }
 
 ## The note, once it is found: what the page shows of it, read again (`note!`) where a button
@@ -36,7 +36,7 @@ Shown := [].{
 	view! = |{ id, first }| {
 		read = Api.get_api_notes_id({ id: id })
 		note! : {} => Note.Full
-		note! = |{}| Endpoint.get!(read)
+		note! = |{}| read.read!()
 		acting = use_submission!(Api.post_api_notes_id({ id: id }))
 		action = Endpoint.url_of(Api.post_api_notes_id({ id: id }))
 		<div>

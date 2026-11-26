@@ -10,7 +10,7 @@ import Api
 Reads := [].{
 	view! : {} => Html
 	view! = |{}| {
-		data! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.reads({}), Router.location!({}).query)))
+		data! = create_memo!(|| Api.reads({}).with_query(Router.location!({}).query).read!())
 		listen! = || {
 			Endpoint.listen!(
 				Api.changes({}),

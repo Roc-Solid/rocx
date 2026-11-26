@@ -165,7 +165,7 @@ Editor := [].{
 			token = token!()
 			if (token.is_empty()) {} else {
 				taken : Try(Str, Server.Problem)
-				taken = Endpoint.send!(lease, { token: token })
+				taken = lease.send!({ token: token })
 				_ = taken
 				{}
 			}

@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!]
-import pf.Endpoint
 import pf.Router
 import ../I18n
 import ../Search
@@ -20,7 +19,7 @@ SearchBox := [].{
 	view! = |{ lang }| {
 		intl = I18n.intl(lang)
 		# Read once, where the page is rendered.
-		posts = Endpoint.get!(Endpoint.with_query(Api.get_api_posts({}), "lang=${lang}"))
+		posts = Api.get_api_posts({}).with_query("lang=${lang}").read!()
 		(query!, set_query!) = create_signal!(Search.query_of(Router.location!({}).query))
 		found! = create_memo!(|| Search.results(query!(), posts))
 		said! = || {

@@ -132,8 +132,8 @@ Where to look in the code for each Roc Solid feature the app uses.
 | One rule set for a note's title, body and tags, whoever writes it (a page, a script, an agent), tested with `expect`s, and one module of operations that every way in calls. | `Note.roc`, `Notebook.roc` |
 | Appends that never overwrite each other: the note is read and written in one transaction, and SQLite's transactions take turns. | `Store.append!`, `Note.appended` |
 | Tags, pinning and archiving. | `Notebook.tag!`, `Notebook.pin!`, `Notebook.archive!`, `routes/api/notes/[id]/+server.roc` (`post!`, the note page's buttons) |
-| Pages that read their endpoints (`Endpoint.get!`), with the types they answer with in one module, shared by the server and the browser. A page's endpoints are under `api/` at the page's path (`/settings` reads and posts to `/api/settings`): a path is a page or an endpoint, never both. A note's page reads the JSON API's note, `GET /api/notes/<id>`, and posts its buttons there. | `Pages.roc`, each `+page.rocx`, `routes/api/` |
-| A 404 for a note that doesn't exist or isn't yours. The endpoint refuses both alike, so ids tell nothing, and `Endpoint.get!` turns the refusal into the app's error page. | `routes/notes/[id]/+page.rocx`, `routes/+error.rocx` |
+| Pages that read their endpoints (`Endpoint.read!`), with the types they answer with in one module, shared by the server and the browser. A page's endpoints are under `api/` at the page's path (`/settings` reads and posts to `/api/settings`): a path is a page or an endpoint, never both. A note's page reads the JSON API's note, `GET /api/notes/<id>`, and posts its buttons there. | `Pages.roc`, each `+page.rocx`, `routes/api/` |
+| A 404 for a note that doesn't exist or isn't yours. The endpoint refuses both alike, so ids tell nothing, and `Endpoint.read!` turns the refusal into the app's error page. | `routes/notes/[id]/+page.rocx`, `routes/+error.rocx` |
 | Forms that work without JavaScript. With it, the runtime sends each form to one of the app's endpoints with `fetch` and the page stays (D-095); a page that shows the answer reads it with `use_submission!`. | every `<form method="post">` |
 | Pure components (`view`) for what only shows its props; an effectful component (`view!`) for what keeps state, here the editor's draft and tabs (`create_signal!`). | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx`, `Ui/Brand.rocx` (pure); `Ui/Editor.rocx` (effectful) |
 | Pure components tested in `expect`s with packages/testing's `Dom`. | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx` |
@@ -287,7 +287,7 @@ got a prompt. With a wrong token it got 401.
 
 Writing the app turned up gaps in the platform and the packages. Most are fixed now (a form's
 unticked checkbox, the app's public address, a plain form's flash, guard's refusal of a plain form,
-404s from `Endpoint.get!`, typed submissions in the browser). These are still worth knowing:
+404s from `Endpoint.read!`, typed submissions in the browser). These are still worth knowing:
 
 1. **The MCP server is mounted in `main.roc`, not as a route.** Its tools run the endpoints'
    handlers (`Generated/Handlers`), which import every route file, so no module a route imports may

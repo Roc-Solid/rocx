@@ -47,7 +47,7 @@ Planner := [].{
 		(note!, set_note!) = create_signal!("")
 		shared = Planner.board({})
 		cards! = create_memo!(|| {
-			server = Endpoint.get!(shared)
+			server = shared.read!()
 			moves.pending_inputs!().fold(server, Planner.moved)
 		})
 		on_day! = |day| cards!().keep_if(|card| card.day == day)

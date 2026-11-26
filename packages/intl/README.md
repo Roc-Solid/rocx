@@ -143,11 +143,11 @@ import ../Generated/Api
 view! = |{ children, .. }| {
 	# A reader's pick is kept in the `locale` cookie (POST /locale), so the next page is in it too.
 	remember! = |tag| {
-		_kept = Endpoint.send!(Api.post_locale({}), { tag: tag })
+		_kept = Api.post_locale({}).send!({ tag: tag })
 		{}
 	}
 	# The reader's locale: GET /locale, answered as the server renders the page, carried in it.
-	tag = Endpoint.get!(Api.get_locale({}))
+	tag = Api.get_locale({}).read!()
 	store = Language.store!({ supported: I18n.supported, catalog: I18n.catalog, tag, remember! })
 	{ intl!, .. } = store
 	<>

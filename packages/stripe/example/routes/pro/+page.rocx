@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import ../../Generated/Api
 import ../../Middlewares
 
@@ -11,7 +10,7 @@ middleware = Middlewares.subscribers
 
 ## Whose page it is (`GET /api/pro`).
 reader! : {} => { email : Str }
-reader! = |{}| Endpoint.get!(Api.get_api_pro({}))
+reader! = |{}| Api.get_api_pro({}).read!()
 
 view! = |_| {
 	reader = reader!({})

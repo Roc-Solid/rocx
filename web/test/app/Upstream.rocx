@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_memo!]
 import pf.Loading
 import pf.Errored
-import pf.Endpoint
 import Api
 
 ## A memo read only through another: `doubled!` reads `source!`, a slow read that the tests can fail,
@@ -12,7 +11,7 @@ import Api
 Upstream := [].{
 	view! : {} => Html
 	view! = |{}| {
-		source! = create_memo!(|| Endpoint.get!(Api.flaky({})))
+		source! = create_memo!(|| Api.flaky({}).read!())
 		doubled! = create_memo!(|| "doubled ${(source!().n * 2).to_str()}")
 		<div class="upstream">
 			<Errored fallback={|problem, retry|

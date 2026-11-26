@@ -15,7 +15,7 @@ Document := [].{
 
 	## Says a word back: `GET /api/say/{word}`, read as a plain value.
 	say! : Str => Str
-	say! = |word| Endpoint.get!(Endpoint.remote("GET", "/api/say/${Server.encode_segment(word)}"))
+	say! = |word| Endpoint.remote("GET", "/api/say/${Server.encode_segment(word)}").read!()
 
 	view! : {} => Html
 	view! = |{}| {

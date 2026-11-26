@@ -106,7 +106,7 @@ reads one of them is patched when it changes, and only that part.
 
 ### Moves before the server has them
 
-`board!` is a memo: the board as the server last sent it (`Endpoint.get!`), with every move still on
+`board!` is a memo: the board as the server last sent it (`Endpoint.read!`), with every move still on
 its way applied to it (`moves.pending_inputs!().fold(server, Board.moved)`). A drop calls `move!`,
 an action that posts the move without the page waiting. The card shows in its new place at once,
 stays there while the post is on its way, and the board is read again once the server has it. The

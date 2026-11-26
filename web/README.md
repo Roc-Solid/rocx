@@ -109,7 +109,7 @@ node --test --test-concurrency=1 --test-name-pattern="stores" web/test/platform.
 6. **Interact.** A click runs its handler's box (`roc_run`). The handler's signal writes apply when
    it is done; each schedules the computations that read the signal. A flush runs them, in a
    microtask. Each answers JSON again, and the runtime patches only its own node.
-7. **Wait.** A read whose answer isn't in yet (`Endpoint.get!` of a new URL) throws through the
+7. **Wait.** A read whose answer isn't in yet (`Endpoint.read!` of a new URL) throws through the
    Roc frames. The runtime runs the computation again once the answer is in. Meanwhile the
    nearest `<Loading>` shows its fallback (the first time) or the old value stays (after that).
 
@@ -679,8 +679,8 @@ nearest `<Errored>` says why.
 
 ### Endpoint reads
 
-`Endpoint.get!(endpoint)` reads a GET endpoint as a plain value (`Endpoint.read!` gives a refusal
-as a value; `Endpoint.with_query` adds a query). It goes through `Host.fetch!`:
+`endpoint.read!()` reads a GET endpoint as a plain value (`endpoint.send!({})` gives a refusal
+as a value; `endpoint.with_query(query)` adds a query). Both go through `Host.fetch!`:
 
 - In the browser, the runtime's `fetchFor` asks the server (`accept: application/json`). Until the
   answer is in, the read waits ([Waiting](#waiting-reads-that-arent-in-yet)). An answer that isn't
@@ -754,7 +754,7 @@ endpoint reads it) and `clear!(id)`. An **optimistic value** is a memo of the se
 the inputs on their way applied:
 
 ```roc
-create_memo!(|| moves.pending_inputs!().fold(Endpoint.get!(board), moved))
+create_memo!(|| moves.pending_inputs!().fold(board.read!(), moved))
 ```
 
 How a submission ends:
@@ -790,7 +790,7 @@ both copies of the app: `use_submissions!(Api.post_move({}))` is a `Submissions(
 ### `create_optimistic!` (D-054)
 
 `create_optimistic!` is Solid 2.0's `createOptimistic`: a signal whose value is a memo's
-(`|| Endpoint.get!(board)`) until a handler writes it.
+(`|| board.read!()`) until a handler writes it.
 
 - The write is held by a **transition** the runtime opens as the handler's writes apply. The
   transition stays open for the rest of that task, so submissions sent meanwhile join it (the

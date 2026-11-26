@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import ../../Generated/Api
 import ../../Middlewares
 
@@ -11,7 +10,7 @@ middleware = Middlewares.readers
 
 ## The book (`GET /api/ebook`).
 book! : {} => { title : Str, chapters : List(Str) }
-book! = |{}| Endpoint.get!(Api.get_api_ebook({}))
+book! = |{}| Api.get_api_ebook({}).read!()
 
 view! = |_| {
 	book = book!({})

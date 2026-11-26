@@ -10,7 +10,7 @@ Echo := [].{
 	## Says a message back: `GET /api/echo/{message}`, which the server answers as it renders the
 	## page, and the browser asks for a message the page didn't carry.
 	echo! : Str => Str
-	echo! = |message| Endpoint.get!(Endpoint.remote("GET", "/api/echo/${Server.encode_segment(message)}"))
+	echo! = |message| Endpoint.remote("GET", "/api/echo/${Server.encode_segment(message)}").read!()
 
 	view! : {} => Html
 	view! = |{}| {

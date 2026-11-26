@@ -254,7 +254,7 @@ middleware = Middlewares.beta
 The server decides the flags once for the visitor, and the page shows a part only when its flag is
 on. The server renders the page with the flags and puts the answer in it, so the browser hydrates
 with the same values, without asking again. The flags are a GET endpoint at a path of its own,
-whose handler reads the visitor from its `context`. The layout reads it with `Endpoint.get!`:
+whose handler reads the visitor from its `context`. The layout reads it with `Endpoint.read!`:
 
 ```roc
 # routes/flags/+server.roc: GET /flags (its handler runs on the server only)
@@ -265,7 +265,7 @@ get! = |{ context, .. }| Ok(FlagStore.values!(Features.all, { user: context.user
 ```roc
 # Visitor.rocx: read as the page renders, and carried in the page
 flags! : {} => Flags.Values
-flags! = |{}| Endpoint.get!(Api.get_flags({}))
+flags! = |{}| Api.get_flags({}).read!()
 ```
 
 ```roc

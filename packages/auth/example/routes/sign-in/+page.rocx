@@ -12,7 +12,7 @@ meta = { title: "Sign in" }
 
 ## What the page offers (`GET /api/sign-in`).
 offered! : {} => { providers : List({ name : Str, label : Str, path : Str }), dev : Bool }
-offered! = |{}| Endpoint.get!(Api.get_api_sign_in({}))
+offered! = |{}| Api.get_api_sign_in({}).read!()
 
 view! = |_| {
 	query = Router.location!({}).query

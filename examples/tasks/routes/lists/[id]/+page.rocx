@@ -21,7 +21,7 @@ meta = { title: "A list" }
 view! = |{ params, .. }| {
 	page = Api.get_api_lists_id({ id: params.id })
 	sheet! : () => Tasks.Sheet
-	sheet! = create_memo!(|| Endpoint.get!(page))
+	sheet! = create_memo!(|| page.read!())
 	location = Router.location!({})
 	<Board list={params.id} sheet!={sheet!()} stale!={is_pending!(sheet!)} reload!={refresh!(sheet!)} filter={Tasks.filter_of(location.query)} path={location.path} />
 }

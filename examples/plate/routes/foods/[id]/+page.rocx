@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, untrack!]
-import pf.Endpoint
 import pf.Router
 import pf.Server
 import pf.Title
@@ -24,7 +23,7 @@ meta = { title: "A food" }
 view! = |{ params, .. }| {
 	read = Api.get_api_foods_id({ id: params.id })
 	pick! : () => Try(Plate.Pick, Server.Problem)
-	pick! = create_memo!(|| Endpoint.read!(read))
+	pick! = create_memo!(|| read.send!({}))
 	<>{match pick!() {
 		Ok(found) => <FoodPage id={params.id} pick!={found} />
 		Err(_) => <NoFood />

@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import pf.Title
 import pf.Transition
 import pf.Solid exposing [create_effect!, create_signal!]
@@ -28,7 +27,7 @@ meta = { title: "Host" }
 ## answer coming in), and the next one flies in as the last fades (`transition:in`, `transition:out`).
 view! = |{ params }| {
 	code = params.code
-	seat = Endpoint.get!(Api.get_api_rooms_code({ code: code }))
+	seat = Api.get_api_rooms_code({ code: code }).read!()
 	room = Feed.follow!(code, seat.view)
 	current! = room.view!
 	hosting = seat.who == Host

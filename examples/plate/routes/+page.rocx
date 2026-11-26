@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, is_pending!]
-import pf.Endpoint
 import ../Plate
 import ../Generated/Api
 import ../components/Diary
@@ -13,6 +12,6 @@ meta = { title: "Today" }
 view! = |_| {
 	read = Api.get_api({})
 	day! : () => Plate.Day
-	day! = create_memo!(|| Endpoint.get!(read))
+	day! = create_memo!(|| read.read!())
 	<Diary day!={day!()} stale!={is_pending!(day!)} />
 }

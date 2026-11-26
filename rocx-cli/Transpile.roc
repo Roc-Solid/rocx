@@ -1303,7 +1303,7 @@ Transpile := [].{
 					$last = if (made.open) "(" else ")"
 				} else {
 					if word == "server!" and Text.at(src, end) == '(' {
-						return Err(Transpile.fail(cfg, "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Endpoint.get!(Api.get_…(params))", pos))
+						return Err(Transpile.fail(cfg, "server!(…) is gone (D-023): define a GET endpoint (get! in a route's +server.roc) and read it with Api.get_…(params).read!()", pos))
 					}
 					in_view = Transpile.view_at(cfg, pos)
 					read =

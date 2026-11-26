@@ -4051,7 +4051,7 @@ test("endpoint reads: a page reads a GET endpoint as the server renders it, in-p
 	const html = await text("/reads?weeks=1", { headers: { cookie: "member=Ada", "x-probe": "7", accept: "text/html", "if-none-match": '"v1"', range: "bytes=0-9" } });
 	assert.match(html, /<p class="data"><!--x-->1 Ada 7<!--\/x--><\/p>/, "the page's query, its cookie and its header, as the in-process GET carried them");
 	assert.match(html, /<p class="pending"><!--x-->settled<!--\/x--><\/p>/, "is_pending!: the server renders final values");
-	assert.match(html, /<p class="missing"><!--x-->Not found<!--\/x--><\/p>/, "a refusal, as a value (read!)");
+	assert.match(html, /<p class="missing"><!--x-->Not found<!--\/x--><\/p>/, "a refusal, as a value (send!({}))");
 	assert.match(html, /<p class="refused">GET \/reads\/missing: 404: Not found<\/p>/, "and as a failure the <Errored> shows (get!); its fallback's hole reads nothing that changes: static (D-052)");
 	assert.match(html, /<p class="static">region<\/p>/, "read inside the <NoHydration> too");
 	const answers = answersOf(html);

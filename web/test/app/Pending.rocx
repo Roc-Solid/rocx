@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!, is_pending!, refresh!]
 import pf.Loading
 import pf.Errored
-import pf.Endpoint
 import pf.Browser
 import Api
 import Upstream
@@ -28,7 +27,7 @@ Pending := [].{
 	view! : {} => Html
 	view! = |{}| {
 		(page!, set_page!) = create_signal!(1.U64)
-		item! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.slow({}), Pending.query(page!()))))
+		item! = create_memo!(|| Api.slow({}).with_query(Pending.query(page!())).read!())
 		label! = create_memo!(|| "page ${item!().page.to_str()}, version ${item!().version.to_str()}")
 		create_effect!(|| is_pending!(item!), |pending| Browser.call!("pending", pending))
 		(upstream!, set_upstream!) = create_signal!(Bool.False)

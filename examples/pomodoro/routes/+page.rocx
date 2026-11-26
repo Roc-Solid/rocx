@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import pf.Errored
 import pf.Loading
 import pf.Time
@@ -27,7 +26,7 @@ view! = |_| {
 	(mode!, set_mode!) = create_signal!(Pomodoro.focus)
 	(left!, set_left!) = create_signal!(Pomodoro.length(Focus))
 	(clock!, set_clock!) = create_signal!(Pomodoro.paused)
-	today! = create_memo!(|| Endpoint.get!(Api.get_api_today({})))
+	today! = create_memo!(|| Api.get_api_today({}).read!())
 	record! = use_action!(Api.post_api_sessions({}))
 
 	# A session's end: told, recorded if it was a focus session, the next one set up.

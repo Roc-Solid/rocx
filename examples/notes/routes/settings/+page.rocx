@@ -17,7 +17,7 @@ middleware = Middlewares.signed_in
 
 ## Your tokens and the MCP server's address (`GET /api/settings`).
 settings! : {} => Pages.Settings
-settings! = |{}| Endpoint.get!(Api.get_api_settings({}))
+settings! = |{}| Api.get_api_settings({}).read!()
 
 view! = |_| {
 	making = use_submission!(Api.post_api_settings({}))

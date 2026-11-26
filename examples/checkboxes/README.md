@@ -83,7 +83,7 @@ Then open http://localhost:18160.
 | `<Repeat>`: rows by index, with no list behind them, each kept while its index is in range | each row's boxes in `routes/+page.rocx`; the list's own rows in `packages/virtual/components/VirtualList.rocx` |
 | `on:viewport`: what of an element shows (its scroll position and size) | inside `<VirtualList>`; the page hears it as `on_view!` |
 | A grid laid out by the list's width | `Grid.columns`, `Grid.rows`, `Grid.in_row` |
-| A page's first rows in its HTML, from an endpoint read where it renders | `Endpoint.get!(Api.get_boxes({}))` in `routes/+page.rocx` |
+| A page's first rows in its HTML, from an endpoint read where it renders | `Api.get_boxes({}).read!()` in `routes/+page.rocx` |
 | A channel with hooks: pages say which box they checked, chunks are published latest-first, the pages open are counted | `routes/boxes/+server.roc`, `Store.roc` |
 | Shared state with no database: `Kv`, a compare-and-swap, a counter | `Store.roc` |
 | Optimistic updates that the server's version replaces | `Grid.toggled`, `Grid.heard`, `Grid.merged` |

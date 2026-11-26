@@ -476,10 +476,10 @@ element.
 | You write | It means |
 |---|---|
 | `<Loading fallback={…}>`, `<Errored fallback={\|problem, retry\| …}>` | What shows while answers are on their way; what shows when something inside failed |
-| `Endpoint.get!(Api.get_api_shelf({}))` | A GET endpoint's answer, as a plain value. The server answers it as it renders the page, and the page carries the answer to the browser. `Endpoint.read!` gives a refusal as a value (`import pf.Endpoint`) |
+| `Api.get_api_shelf({}).read!()` | A GET endpoint's answer, as a plain value. The server answers it as it renders the page, and the page carries the answer to the browser. `.send!({})` instead gives a refusal as a value |
 | `submission = use_submission!(Api.post_join({}))` | The latest submission of a form to an endpoint: `pending!()`, `input!()`, `field!(name)`, `result!()`, `error!()` (`import pf.Router exposing [use_submission!]`) |
 | `move! = use_action!(Api.post_move({}))`, `moves = use_submissions!(Api.post_move({}))` | An **action**: `move!(arg)`, in a handler, sends to the endpoint without a form or waiting. `moves` is every submission to it (`all!()`, `pending!()`, `pending_inputs!()`, `clear!(id)`, `retry!(id)`), for an optimistic value: the server's data with `pending_inputs!()` applied |
-| `(cards!, set_cards!) = create_optimistic!(\|\| Endpoint.get!(board))` | Solid 2.0's optimistic value: the server's, until a handler writes it; the write holds until what that handler sent is done |
+| `(cards!, set_cards!) = create_optimistic!(\|\| board.read!())` | Solid 2.0's optimistic value: the server's, until a handler writes it; the write holds until what that handler sent is done |
 
 **Navigation** (`import pf.Router exposing […]` unless the row says otherwise)
 
@@ -590,7 +590,7 @@ routes as `Routes` does, and renders the page inside its layouts.
   made anew.
 - Around the levels, inside the root layout, is an `<Errored>`. A failure nothing else catches shows
   the error page with status 500, or with the status a read was refused with when it is a 4xx (so
-  `Endpoint.get!` of a note that isn't there makes the page a 404). A path no page has shows the
+  `Endpoint.read!` of a note that isn't there makes the page a 404). A path no page has shows the
   error page with a 404.
 - A layout is given its own params (`routes/[lang]/+layout.rocx` gets `lang`; the root layout's
   are `{}`), not the page's, and the page's `meta` as a getter that follows the page while the
@@ -761,8 +761,8 @@ is JSON. The docs site's [Talking to the server](https://roc-solid.github.io/cal
 demos of each.
 
 **Reads.** A component reads a GET endpoint as a plain value with
-`Endpoint.get!(Api.get_api_shelf({}))`. An answer that isn't 200 fails the computation that read it,
-and the nearest `<Errored>` shows why. `Endpoint.read!(…)` gives a `Try(result, Server.Problem)`
+`Api.get_api_shelf({}).read!()`. An answer that isn't 200 fails the computation that read it,
+and the nearest `<Errored>` shows why. `(…).send!({})` gives a `Try(result, Server.Problem)`
 instead. `Endpoint.with_query(endpoint, query)` adds a query string, which the handler reads as
 `request.query`. What the route's middleware handed on is the handler's `context`
 (`get! = |{ params, context, .. }| Ok(…)`).
@@ -788,7 +788,7 @@ from a signal) fetches the endpoint's URL. A read that its middleware answers wi
 signed-out visitor sent to sign in) makes the whole page that redirect.
 
 **From handlers.** A handler sends to any endpoint with
-`Endpoint.send!(Api.post_api_shout({}), draft!())`.
+`Api.post_api_shout({}).send!(draft!())`.
 
 **Forms.** `<form method="post" action={Endpoint.url_of(join)}>` posts to an endpoint. The endpoint
 reads the form's fields by its body's type: a number from its text, an unticked box as `Bool.False`,
@@ -820,7 +820,7 @@ argument: a submission of its own, sent without a form and without waiting (Soli
 An **optimistic value** shows a change at once, before the server confirms it. Write it as a memo of
 the server's data with `pending_inputs!()` applied: it gives way to the server's data, read again,
 with no frame of the old in between, and a refusal puts it back. Or write it as Solid 2.0 does,
-`create_optimistic!(|| Endpoint.get!(board))`: a value a handler writes ahead of the server, held
+`create_optimistic!(|| board.read!())`: a value a handler writes ahead of the server, held
 until what that handler sent is done.
 
 `Endpoint.with_fields` gives a form's fields ahead of time (Solid Router's `action.with`). A form
@@ -854,7 +854,7 @@ schema of each shape it is asked to read. A body a form can send is listed as a 
 
 **No server functions.** Roc Solid has no `server!` functions; `rocx build` refuses one at its line.
 Write a `get!` in a route's `+server.roc` instead (its input is the path's params or the query) and
-read it with `Endpoint.get!(Api.get_…(params))` where you would have called it.
+read it with `Api.get_…(params).read!()` where you would have called it.
 
 ## Safety
 

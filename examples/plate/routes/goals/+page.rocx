@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
-import pf.Endpoint
 import forms.LiveForm
 import forms.TextField
 import ../../Plate
@@ -17,7 +16,7 @@ meta = { title: "Goals" }
 
 view! = |_| {
 	read = Api.get_api_goals({})
-	goals! = create_memo!(|| Endpoint.get!(read))
+	goals! = create_memo!(|| read.read!())
 	<Profile goals!={goals!()} />
 }
 

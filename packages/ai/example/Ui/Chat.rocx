@@ -49,7 +49,7 @@ Chat := [].{
 			text = draft!().trim()
 			if !text.is_empty() and state!() != Thinking {
 				posted : Try({}, Http.Problem)
-				posted = Endpoint.send!(Api.post_api_chat_chat({ chat: chat }), { text: text })
+				posted = Api.post_api_chat_chat({ chat: chat }).send!({ text: text })
 				set_draft!("")
 				set_lines!(lines!().append({ id: lines!().len(), who: "you", text: text }))
 				set_reply!("")
@@ -65,7 +65,7 @@ Chat := [].{
 		}
 		sum! = || {
 			summed : Try({ text : Str }, Http.Problem)
-			summed = Endpoint.send!(Api.post_api_notes_summary({}), {})
+			summed = Api.post_api_notes_summary({}).send!({})
 			match summed {
 				Ok(answer) => set_summary!(answer.text)
 				Err(problem) => set_summary!(explain(problem))

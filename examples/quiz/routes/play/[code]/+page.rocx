@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import pf.Title
 import pf.Transition
 import pf.Solid exposing [create_effect!, create_memo!, create_signal!]
@@ -27,7 +26,7 @@ meta = { title: "Play" }
 ## game that is over, says so.
 view! = |{ params }| {
 	code = params.code
-	seat = Endpoint.get!(Api.get_api_rooms_code({ code: code }))
+	seat = Api.get_api_rooms_code({ code: code }).read!()
 	<main class="phone">
 		<Title>{"Room ${code}"}</Title>
 		{

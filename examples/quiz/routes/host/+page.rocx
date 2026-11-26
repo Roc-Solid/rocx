@@ -12,7 +12,7 @@ meta = { title: "Host a game" }
 ## marked (`?made=<id>`).
 view! = |_| {
 	sets : List({ id : I64, title : Str, blurb : Str, questions : I64 })
-	sets = Endpoint.get!(Api.get_api_host({}))
+	sets = Api.get_api_host({}).read!()
 	made = Router.location!({}).query.drop_prefix("made=")
 	<>
 		<Masthead here={Paths.host} />

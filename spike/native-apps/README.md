@@ -44,9 +44,9 @@ spike/native-apps/phone-hello/routes/+page.rocx
   an archive. Nothing else in `web/` changed; `web/runtime.js` is untouched.
 - **`spike/native-apps/phone-hello`** (here, not in `examples/`, where every app has a page on the
   docs site): one page with a counter (a signal, a button, a text hole), a value
-  read from `GET /api/greeting` through `Api` with `Endpoint.get!` in a memo, shown under
+  read from `GET /api/greeting` through `Api` with `Endpoint.read!` in a memo, shown under
   `<Loading>` and `<Errored>`, with "Ask again" (`refresh!`), and a field whose text a button sends
-  to `POST /api/echo` with `Endpoint.send!(Api.post_api_echo({}), { text })`, from a
+  to `POST /api/echo` with `Api.post_api_echo({}).send!({ text })`, from a
   handler that waits for the answer, which is typed (`{ shout : Str, length : U64 }`, or a refusal).
 - **`examples/pomodoro`** (2026-11-24), the first example app made for both: a focus timer whose
   page is a ring in SVG, buttons in a flex row and a bar of a percentage's width, and whose
@@ -226,7 +226,7 @@ The user's choice (2026-11-23): native code for the app's Roc, no over-the-air u
   the wasm and runtime.js on its main thread. A request or a timer waits on a thread of its own,
   posts what happened, and writes a byte to a pipe the main `ALooper` watches; the callback drains
   it and runs `pump` (answers in, a flush, one batch out).
-- **A read that isn't in yet** (`Endpoint.get!` before the answer, a memo without its first value)
+- **A read that isn't in yet** (`Endpoint.read!` before the answer, a memo without its first value)
   ends its computation the way the server's host ends a failed one: the hosted function notes why
   and `longjmp`s back to the computation's guard (`guard.c`, the server's). The engine then does
   what runtime.js does with `NotReady`: the nearest `<Loading>` shows its fallback, and the

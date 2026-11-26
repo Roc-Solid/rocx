@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_signal!]
-import pf.Endpoint
 import pf.Server as Http
 import ../Generated/Api
 
@@ -21,7 +20,7 @@ Shout := [].{
 		(answer!, set_answer!) = create_signal!(nothing)
 		shout! = |word| {
 			sent : Try({ word : Str, shouted : Str, bytes : U64 }, Http.Problem)
-			sent = Endpoint.send!(Api.get_api_shout_word({ word: word }), {})
+			sent = Api.get_api_shout_word({ word: word }).send!({})
 			match sent {
 				Ok(shouted) => set_answer!(Shouted("${shouted.shouted}: ${shouted.bytes.to_str()} bytes"))
 				Err(problem) => set_answer!(Failed(explain(problem)))

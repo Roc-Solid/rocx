@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import pf.Router
 import pf.Server
 import auth.SignInError
@@ -12,7 +11,7 @@ meta = { title: "Sign in" }
 
 ## Whom the link signs in, or why it doesn't (used, or expired: 410).
 link! : Str => Try({ email : Str }, Server.Problem)
-link! = |token| Endpoint.read!(Api.get_api_sign_in_link({}).with_query("token=${Server.encode_segment(token)}"))
+link! = |token| Api.get_api_sign_in_link({}).with_query("token=${Server.encode_segment(token)}").send!({})
 
 view! = |_| {
 	token = SignInError.field(Router.location!({}).query, "token")

@@ -7,11 +7,11 @@ Api := [].{
 
 	## GET /api/say/<word>: what the server says of a word.
 	say! : Str => Str
-	say! = |word| Endpoint.get!(Endpoint.remote("GET", "/api/say/${word}"))
+	say! = |word| Endpoint.remote("GET", "/api/say/${word}").read!()
 
 	## GET /api/wait: answered slowly, for a handler that waits for it before it navigates.
 	wait! : {} => Str
-	wait! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/wait"))
+	wait! = |{}| Endpoint.remote("GET", "/api/wait").read!()
 
 	## POST /api/leave: an action whose answer sends the visitor elsewhere (`x-rocx-redirect`).
 	leave : {} -> Endpoint({}, Str, Str)

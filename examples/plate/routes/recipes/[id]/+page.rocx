@@ -25,7 +25,7 @@ view! = |{ params, .. }| {
 	location = Router.location!({})
 	(query!, set_query!) = create_signal!(Query.value(location.query, "q"))
 	kitchen! : () => Try(Plate.Kitchen, Server.Problem)
-	kitchen! = create_memo!(|| Endpoint.read!(Endpoint.with_query(Api.get_api_recipes_id({ id: params.id }), Query.of([("q", query!())]))))
+	kitchen! = create_memo!(|| Api.get_api_recipes_id({ id: params.id }).with_query(Query.of([("q", query!())])).send!({}))
 	search = { query!, set_query! }
 	<>{match kitchen!() {
 		Ok(found) => <Kitchen id={params.id} kitchen!={found} search={search} stale!={is_pending!(kitchen!)} />

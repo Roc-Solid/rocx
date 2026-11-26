@@ -233,7 +233,7 @@ view! = |_|
 			<p>
 				Anywhere only the server runs: an endpoint, a middleware, a job, an actor, a stream. A component is
 				compiled for the browser too, so it can't query the database itself. It reads its data through a
-				GET endpoint (<code>Endpoint.get!</code>), which the server answers in-process while it renders the
+				GET endpoint (<code>Endpoint.read!</code>), which the server answers in-process while it renders the
 				page. The handler runs only on the server, so it may query; the browser's copy has only the
 				endpoint's method and URL (<a href={"${Paths.calls}#user"}>who is asking</a>).
 			</p>

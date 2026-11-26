@@ -27,7 +27,7 @@ ReactionBar := [].{
 		toggle! = use_action!(sender)
 		shown! = create_memo!(
 			|| {
-				server = Endpoint.read!(counts)
+				server = counts.send!({})
 				pending = toggles.pending_inputs!()
 				server.map_ok(|tally| pending.fold(tally, Reaction.apply))
 			},

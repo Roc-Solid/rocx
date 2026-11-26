@@ -29,7 +29,7 @@ view! = |{ params }| {
 	id = params.id
 	read = Api.get_api_monitors_id({ id: id })
 	detail! : () => Report.Detail
-	detail! = create_memo!(|| Endpoint.get!(read))
+	detail! = create_memo!(|| read.read!())
 	heard! : Channel.Event(Report.News) => {}
 	heard! = |event|
 		match event {

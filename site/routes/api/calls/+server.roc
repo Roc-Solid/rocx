@@ -6,7 +6,7 @@ import ../../../Generated/ApiShoutWordServer
 
 ## GET /api/calls, for JSON: what the shout endpoints answered, asked as anything over HTTP would
 ## ask them (`Endpoint.respond!`), and as the app asks them, a function run here and now
-## (`Endpoint.run!`). The page at /calls reads it as it renders (`Endpoint.get!`): the page's data,
+## (`Endpoint.run!`). The page at /calls reads it as it renders (`Endpoint.read!`): the page's data,
 ## at the page's path under /api.
 get! : { request : Server.Request, params : {}, context : { facts : Str } } => Try({ asked : List({ method : Str, path : Str, body : Str, status : U16, answer : Str }), shouted : Str }, Endpoint.Refusal)
 get! = |{ request, context, .. }| {

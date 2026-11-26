@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import ../Generated/Api
 import ../Middlewares
 
@@ -10,7 +9,7 @@ middleware = Middlewares.anyone
 
 ## Who is signed in (`GET /api`).
 home! : {} => { email : Str }
-home! = |{}| Endpoint.get!(Api.get_api({}))
+home! = |{}| Api.get_api({}).read!()
 
 view! = |_| {
 	me = home!({})

@@ -81,7 +81,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 | The error page: for a path no page has (404), and a page that failed (500) | [`routes/+error.rocx`](routes/+error.rocx) |
 | A page's endpoints under `api/`, at the page's path: a path is a page or an endpoint, never both. `GET /lists/:id` is the page; `GET /api/lists/:id` the list as JSON, which is what the page reads; `POST /api/lists/:id` adds a task | [`routes/api/lists/[id]/+server.roc`](routes/api/lists/[id]/+server.roc), [`routes/api/tasks/[id]/+server.roc`](routes/api/tasks/[id]/+server.roc), [`routes/api/+server.roc`](routes/api/+server.roc) (`POST /api`, a new list) |
 | Endpoints of their own, which scripts can call too | [`routes/api/team`](routes/api/team/+server.roc), [`routes/api/tasks/toggle`](routes/api/tasks/toggle/+server.roc), [`move`](routes/api/tasks/move/+server.roc), [`delete`](routes/api/tasks/delete/+server.roc) |
-| A page that reads an endpoint with `Endpoint.get!`. When the endpoint refuses with `NotFound`, the page becomes the error page, answered 404 | [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
+| A page that reads an endpoint with `Endpoint.read!`. When the endpoint refuses with `NotFound`, the page becomes the error page, answered 404 | [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 | `<Errored>`: a part of the layout that shows a fallback if its read fails | [`routes/+layout.rocx`](routes/+layout.rocx) |
 | `<Title>`: a page's title from its data | [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 
@@ -187,7 +187,7 @@ moving before they click.
 Building this app showed what the platform didn't do yet. Most of it has been fixed since, in the
 platform or in packages/forms: forms that start filled in or start afresh, form fields read into
 typed bodies, bodies read and checked by the form itself (D-093: a form's endpoint read its body
-twice, once typed as strings for the list's pending tasks, once with the form), `Endpoint.get!` of a
+twice, once typed as strings for the list's pending tasks, once with the form), `Endpoint.read!` of a
 refusal answered as the error page, and a favicon as a `data:` URL. What remains, and what the app
 does about it:
 

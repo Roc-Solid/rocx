@@ -1215,7 +1215,7 @@ While rendering:
 - Every hole runs once, with no tracking. A memo is computed when it is made.
 - `<Loading>` renders what is inside it; nothing waits.
 - A failure shows the nearest `<Errored>`'s fallback.
-- An endpoint a component reads (`Endpoint.get!`) is answered in-process and noted (next section).
+- An endpoint a component reads (`Endpoint.read!`) is answered in-process and noted (next section).
 - Effects, cleanups and timers (`create_effect!`, `on_settled!`, `on_cleanup!`, `set_interval!`,
   `set_timeout!`) don't run, as in Solid. Their boxes are let go of, since nothing they would undo
   started. `is_pending!` is false.
@@ -1254,8 +1254,8 @@ held are freed when it ends.
 
 ### Endpoint reads while rendering
 
-A component reads a GET endpoint with `Endpoint.get!` (or `Endpoint.read!`, which gives a refusal
-as a value; `Endpoint.with_query` adds a query). That asks the host (`Host.fetch!`, `roc_fetch` in
+A component reads a GET endpoint with `endpoint.read!()` (or `endpoint.send!({})`, which gives a
+refusal as a value; `endpoint.with_query(query)` adds a query). That asks the host (`Host.fetch!`, `roc_fetch` in
 `signals.rs`).
 
 While the host renders a page, a GET of one of the app's own paths (`/…`) is made in-process:

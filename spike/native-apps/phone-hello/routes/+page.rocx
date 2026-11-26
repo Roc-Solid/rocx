@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, refresh!]
-import pf.Endpoint
 import pf.Loading
 import pf.Errored
 import pf.Server
@@ -13,13 +12,13 @@ meta = { title: "Phone hello" }
 
 view! = |_| {
 	(count!, set_count!) = create_signal!(0.I64)
-	greeting! = create_memo!(|| Endpoint.get!(Api.get_api_greeting({})))
+	greeting! = create_memo!(|| Api.get_api_greeting({}).read!())
 	(draft!, set_draft!) = create_signal!("")
 	(said!, set_said!) = create_signal!("Nothing sent yet")
 	# A handler that waits for the server: it stops while the answer is on its way, and runs again
 	# once it is in, as in the browser.
 	send! = || {
-		match Endpoint.send!(Api.post_api_echo({}), { text: draft!() }) {
+		match Api.post_api_echo({}).send!({ text: draft!() }) {
 			Ok(answer) => set_said!("${answer.shout} (${answer.length.to_str()} characters)")
 			Err(problem) => set_said!("Not sent: ${Server.explain(problem)}")
 		}

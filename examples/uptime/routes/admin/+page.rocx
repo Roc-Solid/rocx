@@ -23,7 +23,7 @@ middleware = Middlewares.admin
 view! = |_| {
 	read = Api.get_api_admin({})
 	admin! : () => Report.Admin
-	admin! = create_memo!(|| Endpoint.get!(read))
+	admin! = create_memo!(|| read.read!())
 	heard! : Channel.Event(Report.News) => {}
 	heard! = |event|
 		match event {

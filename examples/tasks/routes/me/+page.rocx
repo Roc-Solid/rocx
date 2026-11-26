@@ -15,7 +15,7 @@ meta = { title: "Who are you?" }
 
 view! = |_| {
 	team = Api.get_api_team({})
-	team! = create_memo!(|| Endpoint.get!(team))
+	team! = create_memo!(|| team.read!())
 	choose = Api.post_api_me({})
 	# The latest submission: after a refused plain post, the flash it came back with.
 	sent = use_submission!(choose)

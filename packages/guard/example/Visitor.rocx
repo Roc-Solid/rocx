@@ -1,4 +1,3 @@
-import pf.Endpoint
 import guard.Flags
 import Generated/Api
 
@@ -9,5 +8,5 @@ Visitor := [].{
 	## (`routes/flags/+server.roc`), which the server answers as it renders the page, and the page
 	## carries, so the browser's first run reads the same values instead of asking again.
 	flags! : {} => Flags.Values
-	flags! = |{}| Endpoint.get!(Api.get_flags({}))
+	flags! = |{}| Api.get_flags({}).read!()
 }

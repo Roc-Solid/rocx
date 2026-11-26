@@ -50,7 +50,7 @@ Actions := [].{
 		upload! = use_action!(Actions.upload({}))
 		counted = Actions.count({})
 		others = Actions.other({})
-		(shown!, set_shown!) = create_optimistic!(|| Endpoint.get!(counted))
+		(shown!, set_shown!) = create_optimistic!(|| counted.read!())
 		(description!, set_description!) = create_signal!("First")
 		(more!, set_more!) = create_signal!(Bool.True)
 		(file!, set_file!) = create_signal!("")
@@ -72,7 +72,7 @@ Actions := [].{
 						</>
 					}}
 					<p class="count">{shown!().to_str()}</p>
-					<p class="other">{Endpoint.get!(others).to_str()}</p>
+					<p class="other">{others.read!().to_str()}</p>
 					<p class="adds">{Actions.listed(adds.all!())}</p>
 					<p class="uploaded">{
 						match uploads.result!() {

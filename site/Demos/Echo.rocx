@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!]
 import pf.Loading
 import pf.Errored
-import pf.Endpoint
 import ../Generated/Api
 
 ## The echo, Solid-style: pick a message, and see what the server said back. Each answer is a GET
@@ -13,7 +12,7 @@ Echo := [].{
 
 	## What the server says back to a message: `GET /api/echo/{message}`, read as a plain value.
 	echo! : Str => Str
-	echo! = |message| Endpoint.get!(Api.get_api_echo_message({ message: message }))
+	echo! = |message| Api.get_api_echo_message({ message: message }).read!()
 
 	## What there is to say.
 	messages : List(Str)

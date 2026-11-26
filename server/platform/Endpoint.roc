@@ -10,12 +10,12 @@ import Host
 ## it over HTTP. The app calls it through what rocx writes from the routes (`Generated/Api.roc`), as
 ## a function of its params: its contract, the method, the URL and the types its handler's
 ## annotation gives, and nothing the handler does, so any module may import it (D-037). A component
-## reads a GET endpoint as a plain value (`get!`, or `read!` for its refusal too): while the server
-## renders the page, the server answers it, and the page carries the answer to the browser. It sends
-## any endpoint from a handler (`send!`), or listens to one's events (`listen!`), through the
-## platform's `Call`. On the server, a channel's messages are published to it (`publish!`), and
-## `run!` runs an endpoint there and then, with its handler (`Generated/Handlers.roc`, which `bind`s
-## each contract to its handler).
+## reads a GET endpoint as a plain value (`Api.get_board({}).read!()`): while the server renders
+## the page, the server answers it, and the page carries the answer to the browser. It sends any
+## endpoint (`Api.post_card({}).send!(card)`, a refusal as a value; a GET too, with `{}`), or
+## listens to one's events (`listen!`), through the platform's `Call`. On the server, a channel's
+## messages are published to it (`publish!`), and `run!` runs an endpoint there and then, with its
+## handler (`Generated/Handlers.roc`, which `bind`s each contract to its handler).
 ##
 ## A handler is given the request, the context its middleware handed on, its path's params and its
 ## body, and answers `Ok(result)`, sent as JSON with the status 200, or a `Refusal`: a status and
@@ -128,8 +128,8 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		}
 
 	## A GET endpoint's answer, as a plain value, for a component or a computation
-	## (`create_memo!(|| Endpoint.get!(Api.get_profile({ id })))`): one definition of a page's data,
-	## the endpoint's, read where the page renders.
+	## (`create_memo!(|| Api.get_profile({ id }).read!())`): one definition of a page's data, the
+	## endpoint's, read where the page renders.
 	##
 	## - While the server renders the page, the server answers it in-process. The GET goes through the
 	##   endpoint's route, as the browser's would, with `accept: application/json` and the page's
@@ -145,11 +145,12 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## page's own that catches it shows its fallback, as it would in the browser, and the page is
 	## answered as it is (200, unless the fallback says otherwise with `<HttpStatusCode>`). A
 	## redirect, while the page renders (a signed-out visitor sent to sign in), is the page's answer
-	## instead. `with_query` adds a query.
-	get! : Endpoint(context, {}, result) => result
+	## instead. `with_query` adds a query; `endpoint.send!({})` gives a refusal as a value, for a
+	## computation that shows it itself.
+	read! : Endpoint(context, {}, result) => result
 		where [result.Json.Parseable([InvalidJson(Str)])]
-	get! = |endpoint|
-		match Endpoint.read!(endpoint) {
+	read! = |endpoint|
+		match asked!(endpoint) {
 			Ok(result) => result
 			Err(problem) => {
 				why =
@@ -160,26 +161,6 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 				Host.fail!("${endpoint.method} ${endpoint.url}: ${why}")
 				crash "unreachable: fail! doesn't return"
 			}
-		}
-
-	## A GET endpoint's answer, as `get!` reads it, with a refusal as a value: `Err(Refused(404, why))`,
-	## for a computation that shows it itself.
-	read! : Endpoint(context, {}, result) => Try(result, Server.Problem)
-		where [result.Json.Parseable([InvalidJson(Str)])]
-	read! = |endpoint|
-		if endpoint.method == "GET" {
-			# `Call.fetch!`'s request, its header written as the host takes it: a read that isn't in yet
-			# unwinds this frame, and a list made for the header would never be let go of.
-			match fetched(Host.fetch!("GET", endpoint.url, "accept: application/json", "")) {
-				Ok(answered) => Endpoint.answer(endpoint, Ok({ status: answered.status, headers: [], body: answered.body }))
-				Err(InvalidJson(why)) => {
-					Host.fail!("GET ${endpoint.url}: ${why}")
-					crash "unreachable: fail! doesn't return"
-				}
-			}
-		} else {
-			Host.fail!("${endpoint.method} ${endpoint.url} isn't read: send it with Endpoint.send!, from a handler")
-			crash "unreachable: fail! doesn't return"
 		}
 
 	## The endpoint, asked with a query (`weeks=1`, as a URL writes it after the `?`): the page's own,
@@ -199,15 +180,20 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			{ ..endpoint, url: "${bare}?${query}" }
 		}
 
-	## From a component, in the browser: its answer, sent with the platform's `Call.fetch!`, and
-	## read as a plain value (`Endpoint.send!(Api.post_api_shout({}), { word })`). The handler or
-	## computation that sends it stops until the answer is in, and runs again then.
+	## Its answer, a refusal as a value: `Ok(result)`, or `Err(Refused(404, why))` and the like
+	## (`Api.post_api_shout({}).send!({ word })`). From a handler, in the browser, it is sent with the
+	## platform's `Call.fetch!`; the handler stops until the answer is in, and runs again then. A GET
+	## (`Api.get_board({}).send!({})`) is asked as `read!` asks it, while the page renders too, for a
+	## computation that shows a refusal itself.
 	send! : Endpoint(context, arg, result), arg => Try(result, Server.Problem)
 		where [arg.Json.Encodable(e), result.Json.Parseable([InvalidJson(Str)])]
-	send! = |endpoint, arg| {
-		answered = Call.fetch!(Endpoint.to_request(endpoint, arg))
-		Endpoint.answer(endpoint, Ok({ status: answered.status, headers: [], body: answered.body }))
-	}
+	send! = |endpoint, arg|
+		if endpoint.method == "GET" {
+			asked!(endpoint)
+		} else {
+			answered = Call.fetch!(Endpoint.to_request(endpoint, arg))
+			Endpoint.answer(endpoint, Ok({ status: answered.status, headers: [], body: answered.body }))
+		}
 
 	## From a component, in the browser: listens to an endpoint's events with the platform's
 	## `Call.listen!` (`Endpoint.listen!(Api.events_api_count_to({ to }), heard!)`): `heard!` is
@@ -618,6 +604,25 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			"${request.path} takes ${Str.join_with(allowed, ", ")}, not ${request.method}",
 		)
 }
+
+## A GET endpoint's answer, as `read!` reads it, with a refusal as a value (`send!` of a GET).
+asked! : Endpoint(context, arg, result) => Try(result, Server.Problem)
+	where [result.Json.Parseable([InvalidJson(Str)])]
+asked! = |endpoint|
+	if endpoint.method == "GET" {
+		# `Call.fetch!`'s request, its header written as the host takes it: a read that isn't in yet
+		# unwinds this frame, and a list made for the header would never be let go of.
+		match fetched(Host.fetch!("GET", endpoint.url, "accept: application/json", "")) {
+			Ok(answered) => Endpoint.answer(endpoint, Ok({ status: answered.status, headers: [], body: answered.body }))
+			Err(InvalidJson(why)) => {
+				Host.fail!("GET ${endpoint.url}: ${why}")
+				crash "unreachable: fail! doesn't return"
+			}
+		}
+	} else {
+		Host.fail!("${endpoint.method} ${endpoint.url} isn't read: send it with Endpoint.send!, from a handler")
+		crash "unreachable: fail! doesn't return"
+	}
 
 ## The host's answer to a request (`Host.fetch!`), as `Call.fetch!` reads it.
 fetched : Str -> Try({ status : U16, body : Str }, [InvalidJson(Str)])

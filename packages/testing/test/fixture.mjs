@@ -104,7 +104,7 @@ meta = { title: "Notes" }
 
 ## How many notes there are: GET /notes, read as the page renders.
 count! : {} => U64
-count! = |{}| Endpoint.get!(Api.get_notes({}))
+count! = |{}| Api.get_notes({}).read!()
 
 view! = |_|
 	<section aria-labelledby="title">

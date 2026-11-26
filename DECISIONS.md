@@ -6121,3 +6121,50 @@ doesn't fit a name, and the handlers' annotations would remain a second way.
 `params : …`), and nothing checks that the two agree across directories.
 
 **Reversible:** yes: the alias is read, nothing else depends on it.
+
+## D-102 An endpoint is read and sent by its own methods: `read!` and `send!`
+
+**Status.** Built (2026-11-26).
+
+**Context.** A page read its data with `Endpoint.get!(Api.get_api_echo_message({ message }))`: a
+wrapper around the contract's value, and the word `get` twice, the method's name in Api's and the
+read's. A refusal as a value was a third function, `Endpoint.read!`, and sending was
+`Endpoint.send!(endpoint, arg)`. Api's functions return a value, not a call (D-037), and that value
+is used fifteen ways (`url_of`, `use_action!`, `use_submissions!`, `with_query`, channels), so it
+can't become the call itself.
+
+**Options.**
+1. Generated twins in Api: `Api.get_api_echo_message!({ message })` beside the value. Two names per
+   endpoint, and the read with a query (`with_query`) or of an endpoint passed around still needs
+   `Endpoint`'s.
+2. Static dispatch on the value, the names as they were: `Api.get_x({}).get!()`, `get` twice still.
+3. One verb, `send!`, for everything: every page read would be a `Try` to match, and no refusal would
+   reach an `<Errored>` by itself.
+4. Two verbs, named by what they do, not by HTTP's methods, called on the value.
+
+**Decision.** 4.
+
+```roc
+echo! = |message| Api.get_api_echo_message({ message }).read!()             # the value; a refusal fails the read
+sent = Api.post_api_shout({}).send!(word)                                  # Try(result, Server.Problem)
+link! = |token| Api.get_sign_in_link({}).with_query(query).send!({})       # a GET, its refusal as a value
+```
+
+- **`read!`** is what `get!` was: a GET's answer as a plain value, answered in-process and noted for
+  the page while the server renders it; a refusal fails the computation, for the nearest `<Errored>`.
+- **`send!`** is as it was for the other methods. Given a GET, it asks it as `read!` does (the
+  host's fetch with its header written out, so a read that isn't in yet leaks nothing), with the
+  refusal as a value: what `Endpoint.read!` was, now gone.
+- **Method calls, not new names**: `endpoint.read!()` is `Endpoint.read!(endpoint)`, so a module that
+  only reads and sends needs no `import pf.Endpoint` (48 such imports dropped). The docs, the
+  examples, the packages' examples and the template write the method form, `Endpoint.send!(x, arg)`
+  calls too.
+
+**Why.** The read says what it does, once, after the endpoint it reads; a handler's `get!` and a
+page's `read!` are no longer one name for two things.
+
+**Costs.** A breaking rename: an app's `Endpoint.get!` doesn't compile, and its `Endpoint.read!`
+gives the value, not a `Try` (a type error where it is matched). Apps outside this repository move
+by hand.
+
+**Reversible:** yes: `get!` back as `read!`'s other name.

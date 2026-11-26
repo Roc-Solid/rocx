@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, is_pending!]
 import pf.Router exposing [use_action!, use_submissions!]
-import pf.Endpoint
 import pf.Server
 import PlannerDay
 import ../Generated/Api
@@ -37,7 +36,7 @@ Planner := [].{
 		week = Api.get_api_planner({})
 		plans! = create_memo!(
 			|| {
-				server = Endpoint.get!(week)
+				server = week.read!()
 				moves.pending_inputs!().fold(server, PlannerDay.moved)
 			},
 		)

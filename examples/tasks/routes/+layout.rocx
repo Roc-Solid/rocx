@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
-import pf.Endpoint
 import pf.Router
 import pf.Errored
 import ../Tasks
@@ -19,7 +18,7 @@ import ../components/Avatar
 ## (`aria-current`, D-086).
 view! = |{ meta, children, .. }| {
 	team = Api.get_api_team({})
-	team! = create_memo!(|| Endpoint.get!(team))
+	team! = create_memo!(|| team.read!())
 	story! = create_memo!(|| Router.location!({}).path.starts_with("/__rocx/stories/"))
 	<>
 		<!doctype html>

@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Endpoint
 import pf.Solid exposing [create_memo!, use_context!]
 import pf.Loading
 import Bag
@@ -12,7 +11,7 @@ Shelf := [].{
 
 	## What is on the shelf: `GET /api/shelf`, read as a plain value.
 	stock! : {} => List(Bag.Thing)
-	stock! = |{}| Endpoint.get!(Api.get_api_shelf({}))
+	stock! = |{}| Api.get_api_shelf({}).read!()
 
 	view! : {} => Html
 	view! = |{}| {

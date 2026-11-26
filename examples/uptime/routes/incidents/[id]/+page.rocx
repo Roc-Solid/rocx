@@ -21,7 +21,7 @@ meta = { title: "Incident · Status" }
 view! = |{ params }| {
 	read = Api.get_api_incidents_id({ id: params.id })
 	incident! : () => Report.Incident
-	incident! = create_memo!(|| Endpoint.get!(read))
+	incident! = create_memo!(|| read.read!())
 	heard! : Channel.Event(Report.News) => {}
 	heard! = |event|
 		match event {

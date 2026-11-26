@@ -20,9 +20,9 @@ import ../../Ui/Versus
 ## forms, and followed live through their events and channels.
 meta = {
 	title: "Talking to the server",
-	description: "How a Roc Solid page talks to its server: endpoints in a route's +server.roc, typed by Generated/Api; Endpoint.get! reads a page's data as the server renders it; handlers send endpoints, forms post to them, and pages follow events and channels live.",
+	description: "How a Roc Solid page talks to its server: endpoints in a route's +server.roc, typed by Generated/Api; read! reads a page's data as the server renders it; handlers send endpoints, forms post to them, and pages follow events and channels live.",
 	toc: [
-		{ id: "reads", label: "A page's data: Endpoint.get!" },
+		{ id: "reads", label: "A page's data: read!" },
 		{ id: "how", label: "From the server's render to a click" },
 		{ id: "problems", label: "When a read fails" },
 		{ id: "user", label: "Who is asking" },
@@ -39,7 +39,7 @@ meta = {
 ## The endpoints, as they answered: the page's endpoint (`GET /api/calls`, for JSON), which the
 ## server answers as it renders the page.
 asked! : {} => { asked : List({ method : Str, path : Str, body : Str, status : U16, answer : Str }), shouted : Str }
-asked! = |{}| Endpoint.get!(Api.get_api_calls({}))
+asked! = |{}| Api.get_api_calls({}).read!()
 
 view! = |_|
 	<>
@@ -57,11 +57,12 @@ view! = |_|
 				middleware.
 			</PageHero>
 
-			<Heading id="reads">A page's data: Endpoint.get!</Heading>
+			<Heading id="reads">A page's data: read!</Heading>
 			<p>
 				Write the endpoint once, as a <code>get!</code> in a route's <code>+server.roc</code>. Then read it in
-				a component with <code>{"Endpoint.get!(Api.…)"}</code>, where <code>Api</code> is the module rocx
-				writes with a function for each endpoint. The value is the handler's result, typed, and you use it in
+				a component with <code>{"Api.get_….read!()"}</code>, where <code>Api</code> is the module rocx
+				writes with a function for each endpoint, and <code>read!</code> asks it. The value is the
+				handler's result, typed, and you use it in
 				a memo or straight in markup. Here: an endpoint that says a message back; a signal that a click
 				writes; a memo that reads the endpoint for each message; and another memo that picks the answer to
 				the message chosen.
@@ -143,8 +144,9 @@ view! = |_|
 				An answer other than 200 fails whatever read it: the memo, or the hole. The nearest
 				<a href={"${Paths.components}#waiting"}><code>{"<Errored>"}</code></a> shows its fallback, which is
 				given why, as text (<code>GET /api/notes/9: 404: Not found</code>), and a function that tries again.
-				When a component should handle a refusal itself, it reads with <code>Endpoint.read!</code> instead,
-				which returns <code>Ok(result)</code> or <code>Err(problem)</code>. A problem is a
+				When a component should handle a refusal itself, it asks with <code>{"send!({})"}</code> instead
+				(<code>{"Api.get_….send!({})"}</code>), which returns <code>Ok(result)</code> or
+				<code>Err(problem)</code>. A problem is a
 				<code>Server.Problem</code>, one of:
 			</p>
 			<ul>
@@ -253,10 +255,10 @@ view! = |_|
 			</Versus>
 			<p>
 				In the browser, an event handler (an <code>on:click</code>, say) sends any endpoint with
-				<code>{"Endpoint.send!(endpoint, arg)"}</code> and gets <code>Ok(result)</code> or
+				<code>{"Api.….send!(arg)"}</code> and gets <code>Ok(result)</code> or
 				<code>Err(problem)</code>. The event handler pauses while the answer is on its way: it runs again once
 				the answer is in, and only that run's writes are kept. This component asks the shout endpoint for the
-				word clicked, <code>{"Endpoint.send!(Api.get_api_shout_word({ word: word }), {})"}</code>,
+				word clicked, <code>{"Api.get_api_shout_word({ word: word }).send!({})"}</code>,
 				and shows the answer, or why there is none. On the static copy of this site, these three words'
 				answers are files, which the server wrote as the site was built:
 			</p>
@@ -529,7 +531,7 @@ view! = |_|
 				framework picks. Roc Solid has none. A page's data is a <code>get!</code> in a route's
 				<code>+server.roc</code>, at a URL you chose: under <code>api/</code> at the page's path, or a path of
 				its own for a layout or a component many pages show. Its input is the path's params or the query, and what its middleware handed
-				on is its <code>context</code>. A component reads it with <code>{"Endpoint.get!(Api.get_…(params))"}</code>.
+				on is its <code>context</code>. A component reads it with <code>{"Api.get_…(params).read!()"}</code>.
 				So the server's render, hydration, later reads in the browser, other clients and the OpenAPI document
 				all meet one handler, behind one middleware. <code>rocx build</code> refuses <code>{"server!(…)"}</code>,
 				and says what to write instead.

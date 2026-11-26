@@ -277,7 +277,7 @@ view! = |_|
 				what the browser's runtime renders, byte for byte, on every page.
 			</p>
 			<p>
-				When a component reads an endpoint (<code>Endpoint.get!</code>, a GET of one of the app's own
+				When a component reads an endpoint (<code>Endpoint.read!</code>, a GET of one of the app's own
 				paths), the host makes that request in-process: it runs through the app's <code>respond!</code>,
 				behind the route's middleware, with <code>accept: application/json</code>, the page's headers
 				(cookies included) and the app's context. So the component gets the same answer the browser would.

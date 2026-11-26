@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, is_pending!]
-import pf.Endpoint
 import pf.Server
 import pf.Title
 import pf.HttpStatusCode
@@ -16,7 +15,7 @@ meta = { title: "A day" }
 view! = |{ params, .. }| {
 	read = Api.get_api_days_day({ day: params.day })
 	day! : () => Try(Plate.Day, Server.Problem)
-	day! = create_memo!(|| Endpoint.read!(read))
+	day! = create_memo!(|| read.send!({}))
 	<>{match day!() {
 		Ok(found) => <Diary day!={found} stale!={is_pending!(day!)} />
 		Err(_) => <NotADay />

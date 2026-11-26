@@ -10,24 +10,24 @@ Api := [].{
 	Post : { title : Str }
 
 	current_user! : {} => User
-	current_user! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/current_user"))
+	current_user! = |{}| Endpoint.remote("GET", "/api/current_user").read!()
 
 	posts_of! : U64 => List(Post)
-	posts_of! = |id| Endpoint.get!(Endpoint.remote("GET", "/api/posts_of/${id.to_str()}"))
+	posts_of! = |id| Endpoint.remote("GET", "/api/posts_of/${id.to_str()}").read!()
 
 	friends! : {} => List(Str)
-	friends! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/friends"))
+	friends! = |{}| Endpoint.remote("GET", "/api/friends").read!()
 
 	likes! : {} => U64
-	likes! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/likes"))
+	likes! = |{}| Endpoint.remote("GET", "/api/likes").read!()
 
 	notifications! : {} => U64
-	notifications! = |{}| Endpoint.get!(Endpoint.remote("GET", "/api/notifications"))
+	notifications! = |{}| Endpoint.remote("GET", "/api/notifications").read!()
 
 	## Renames who you are, from a handler: the new name, or why there is none.
 	rename! : Str => Str
 	rename! = |name|
-		match Endpoint.send!(Endpoint.remote("POST", "/api/rename"), name) {
+		match Endpoint.remote("POST", "/api/rename").send!(name) {
 			Ok(renamed) => renamed
 			Err(problem) => Server.explain(problem)
 		}

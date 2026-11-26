@@ -16,7 +16,7 @@ middleware = Middlewares.member
 ## Who is asking, and every board (`GET /api`), its type said here too (the endpoint's own is in
 ## Generated/Api).
 home! : {} => { me : Board.Person, boards : List(Board.Summary) }
-home! = |{}| Endpoint.get!(Api.get_api({}))
+home! = |{}| Api.get_api({}).read!()
 
 view! = |_| {
 	creating = use_submission!(Api.post_api({}))

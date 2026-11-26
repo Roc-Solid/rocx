@@ -107,7 +107,7 @@ Solid := [].{
 	}
 
 	## A value the page shows ahead of the server (Solid 2.0's `createOptimistic`): its accessor and
-	## its setter. It is `compute`'s, a memo (the server's data, say: `|| Endpoint.get!(board)`),
+	## its setter. It is `compute`'s, a memo (the server's data, say: `|| board.read!()`),
 	## until a handler writes it: the write shows once the handler is done, and is held until the
 	## submissions that handler sent are done (an action's, `Router.use_action!`; or the form its
 	## `submit` sends), the page's reads read again by then, so the server's data takes its place
@@ -115,7 +115,7 @@ Solid := [].{
 	## the submission's `error`. With nothing sent, the write is undone at once, as Solid 2.0
 	## undoes one outside a transition. Several held at once: the latest still held shows.
 	##
-	##     (cards!, set_cards!) = create_optimistic!(|| Endpoint.get!(board))
+	##     (cards!, set_cards!) = create_optimistic!(|| board.read!())
 	##     move! = use_action!(Api.post_move({}))
 	##     on_drop! = |day| {
 	##         set_cards!(moved(cards!(), dragged!(), day))
@@ -262,7 +262,7 @@ Solid := [].{
 	## When `compute` answers again, `apply` runs as before. What fails in `apply` or `error`
 	## themselves is theirs, as a handler's is.
 	##
-	##     create_effect_with!(|| Endpoint.get!(Api.get_room({ room: room!() })), { apply: |room| set_topic!(room.topic), error: |why| set_problem!(why) })
+	##     create_effect_with!(|| Api.get_room({ room: room!() }).read!(), { apply: |room| set_topic!(room.topic), error: |why| set_problem!(why) })
 	create_effect_with! : (() => a), { apply : a => {}, error : Str => {} } => {}
 	create_effect_with! = |compute, handlers| {
 		error = handlers.error

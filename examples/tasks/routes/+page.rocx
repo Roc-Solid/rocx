@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!]
-import pf.Endpoint
 import forms.LiveForm
 import forms.TextField
 import ../Tasks
@@ -15,7 +14,7 @@ meta = { title: "Your lists" }
 
 view! = |_| {
 	team = Api.get_api_team({})
-	team! = create_memo!(|| Endpoint.get!(team))
+	team! = create_memo!(|| team.read!())
 	live = LiveForm.of!(TaskForm.new_list, Api.post_api({}))
 	me! = || Tasks.name_of(team!().people, team!().me)
 	<>

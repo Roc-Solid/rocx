@@ -13,7 +13,7 @@ import Server
 ## when it is the endpoint's. On the server it is the flash, or none.
 ##
 ## A submission the endpoint answers with its result (200) stays pending until the page's reads
-## (`Endpoint.get!`) have been read again, so what the page shows next is the server's, all at once.
+## (`Endpoint.read!`) have been read again, so what the page shows next is the server's, all at once.
 Submission(arg, result) :: { url : Str, form : List({ name : Str, value : Str }) -> Try(arg, Str) }.{
 
 	## The latest submission to the endpoint at `url`, whose arg a form's fields are read as by

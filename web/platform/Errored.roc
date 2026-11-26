@@ -10,7 +10,7 @@ Errored := [].{
 	view! = |{ fallback, children }| Html.errored(fallback, children)
 
 	## The HTTP status a failure stands for: a read an endpoint refused with a status from 400 to 499
-	## (`Endpoint.get!`'s failure, `GET /notes/9: 404: Not found`) is that status; anything else
+	## (`Endpoint.read!`'s failure, `GET /notes/9: 404: Not found`) is that status; anything else
 	## (a 5xx, no answer, an answer that isn't the type, a failure of the page's own) is 500. The
 	## app's root `<Errored>` (rocx writes it) answers its error page with it, so a page whose data
 	## isn't there is a 404, as a path no page has is.

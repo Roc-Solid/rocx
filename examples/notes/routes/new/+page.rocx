@@ -14,7 +14,7 @@ meta = { title: "New note · Notes" }
 middleware = Middlewares.signed_in
 
 blank! : {} => Pages.Blank
-blank! = |{}| Endpoint.get!(Api.get_api_new({}))
+blank! = |{}| Api.get_api_new({}).read!()
 
 view! = |_| {
 	saving = use_submission!(Api.post_api_new({}))

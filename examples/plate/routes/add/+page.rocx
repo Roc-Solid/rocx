@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, is_pending!]
-import pf.Endpoint
 import pf.Router
 import pf.Title
 import ../../Plate
@@ -25,7 +24,7 @@ view! = |_| {
 	asked_meal = Query.value(location.query, "meal")
 	(query!, set_query!) = create_signal!(Query.value(location.query, "q"))
 	found! : () => Plate.Search
-	found! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_api_add({}), Query.of([("q", query!()), ("day", asked_day), ("meal", asked_meal)]))))
+	found! = create_memo!(|| Api.get_api_add({}).with_query(Query.of([("q", query!()), ("day", asked_day), ("meal", asked_meal)])).read!())
 	meal! = || Plate.meal_of(found!().meal)
 	where! = || { day: found!().day, meal: found!().meal }
 	<section class="add">

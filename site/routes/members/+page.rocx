@@ -21,7 +21,7 @@ meta = {
 ## middleware, which read the cookie and handed on the name. The server answers it as it renders
 ## the page, and the page carries the answer.
 member! : {} => Str
-member! = |{}| Endpoint.get!(Api.get_api_members({})).member
+member! = |{}| Api.get_api_members({}).read!().member
 
 view! = |_| {
 	member = member!({})
