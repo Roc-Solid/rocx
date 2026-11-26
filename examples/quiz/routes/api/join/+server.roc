@@ -10,5 +10,5 @@ post_body = Joining.form
 
 ## POST /api/join, from the front page's form (`code`, `name`): on to the room's page as one of its
 ## players. Without the runtime, the form posts, and comes back with a refusal's issues.
-post! : { request : Server.Request, params : {}, context : Visitor.Context, body : Joining.Made } => Try({}, Endpoint.Refusal)
+post! : { request : Server.Request, params : {}, context : Visitor.Context, body : Joining.Made } => Try(Server.Response, Endpoint.Refusal)
 post! = |{ context, body, .. }| Entry.join!(context, body.code, body.name)

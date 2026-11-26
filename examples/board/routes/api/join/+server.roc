@@ -18,7 +18,7 @@ get! = |_|
 ## colour you picked. Who you are is a session (packages/auth): `Auth.sign_in!` starts one for the
 ## person and sets its cookie, `board_session`, which holds a random token (the person's id stays on
 ## the server). The session you had ends as it starts (`Auth.switch!`), so a browser has one.
-post! : { request : Server.Request, params : {}, context : {}, body : { name : Str, color : Str, then : Str } } => Try(Str, Endpoint.Refusal)
+post! : { request : Server.Request, params : {}, context : {}, body : { name : Str, color : Str, then : Str } } => Try(Server.Response, Endpoint.Refusal)
 post! = |{ request, body, .. }|
 	match Board.person_name_of(body.name) {
 		Err(why) => Err(BadRequest(why))
@@ -29,7 +29,7 @@ post! = |{ request, body, .. }|
 				match Store.join!(name, body.color) {
 					Ok(me) =>
 						match Auth.switch!(request, Server.redirect(Board.after_join(body.then)), me.id) {
-							Ok(answer) => Err(Answer(answer))
+							Ok(answer) => Ok(answer)
 							Err(DbErr(why)) => Err(Store.refused!(DbErr(why)))
 						}
 					Err(problem) => Err(Store.refused!(problem))

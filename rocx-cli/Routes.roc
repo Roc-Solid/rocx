@@ -1909,7 +1909,12 @@ Routes := [].{
 		types = Routes.param_types(table, sources)
 		missing = if (pages) "if (wants_html) {\n\t\t\tRoutes.by_accept(Routes.page(404))\n\t\t} else {\n\t\t\tRoutes.by_accept(Routes.text(404, \"nothing at \${request.path}\"))\n\t\t}" else "Routes.text(404, \"nothing at \${request.path}\")"
 		page_answer = |entry| Routes.guarded(table, entry, |_request, _context| "Routes.page(200)")
-		endpoint = |at, method| Routes.guarded(table, Routes.server_of(at), |request, context| "Endpoint.${if (method == "events!") "stream!" else "respond!"}(Handlers.${Routes.api_name(method, at.name)}(params), ${request}, ${context})")
+		endpoint = |at, method| {
+			server = Routes.server_of(at)
+			# Events are streamed; an answer of the handler's own is sent as it is (D-106); the rest is JSON.
+			answering = if (method == "events!") "stream!" else if (Routes.answers_as_is(sources, server, method)) "respond_as_is!" else "respond!"
+			Routes.guarded(table, server, |request, context| "Endpoint.${answering}(Handlers.${Routes.api_name(method, at.name)}(params), ${request}, ${context})")
+		}
 		branch = |at| {
 			condition = Routes.matched_by(at.parts, at.params)
 			params = Routes.params_of(at.params)
@@ -2211,18 +2216,20 @@ Routes := [].{
 				typed = Routes.typed_params(types, at.parts, at.params)
 				params = if (at.params.is_empty()) "{}" else "{ ${Str.join_with(typed.map(|param| "${param.name}: ${Routes.param_sample(param.type)}"), ", ")} }"
 				call = |method| "Api.${Routes.api_name(method, server.name)}(${params})"
+				# How a method's answer is described: events, an answer of its own (D-106), or JSON.
+				answer_of = |method| if (method == "events!") "events" else if (Routes.answers_as_is(sources, server, method)) "as_is" else "answer"
 				gets = methods.keep_if(|method| Routes.verb_of(method) == "GET")
 				get_operation =
 					if gets.is_empty() {
 						[]
 					} else {
-						[operation("get", Str.join_with(gets.map(doc_of).keep_if(|doc| !doc.is_empty()), "\n\n"), "\"\"", gets.map(|method| "OpenApi.${if (method == "events!") "events" else "answer"}(${call(method)}, tags)"))]
+						[operation("get", Str.join_with(gets.map(doc_of).keep_if(|doc| !doc.is_empty()), "\n\n"), "\"\"", gets.map(|method| "OpenApi.${answer_of(method)}(${call(method)}, tags)"))]
 					}
 				others = methods.keep_if(|method| Routes.verb_of(method) != "GET").map(
 					|method| {
 						verb = Routes.verb_of(method)
 						takes = verb == "POST" or verb == "PUT" or verb == "PATCH"
-						operation(Text.lower(verb), doc_of(method), if (takes) "OpenApi.sent(${call(method)}, tags)" else "\"\"", ["OpenApi.answer(${call(method)}, tags)"])
+						operation(Text.lower(verb), doc_of(method), if (takes) "OpenApi.sent(${call(method)}, tags)" else "\"\"", ["OpenApi.${answer_of(method)}(${call(method)}, tags)"])
 					},
 				)
 				opened =
@@ -2287,6 +2294,16 @@ Routes := [].{
 					_ => None
 				}
 			None => None
+		}
+
+	## Whether a method answers with a response of its own (D-106): its handler's answer is
+	## `Server.Response` (`=> Try(Server.Response, Endpoint.Refusal)`), which is sent as it is
+	## (`Endpoint.respond_as_is!`), not encoded as JSON.
+	answers_as_is : List(Source), Entry, Str -> Bool
+	answers_as_is = |sources, server, method|
+		match Routes.contract_types(sources, server, method) {
+			Some(given) => given.answer == "Server.Response"
+			None => Bool.False
 		}
 
 	## The record of a route's params, as a type: `{ board : Str, card : Str }`, or `{}`.

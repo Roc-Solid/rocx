@@ -13,7 +13,7 @@ post_body = PlateForm.food
 ## POST /api/foods/new, from the food form: a food of your own, as its packet says it, kept as what
 ## 100 g of it has; then on to its page, to log it to the day and meal the form was opened for
 ## (its `then_day` and `then_meal` fields). A barcode another food has already is refused.
-post! : { request : Server.Request, params : {}, context : {}, body : PlateForm.Food } => Try({}, Endpoint.Refusal)
+post! : { request : Server.Request, params : {}, context : {}, body : PlateForm.Food } => Try(Server.Response, Endpoint.Refusal)
 post! = |{ request, body, .. }| {
 	food = body
 	taken = if (food.barcode.is_empty()) Bool.False else Store.by_barcode!(food.barcode).is_ok()
@@ -42,6 +42,6 @@ post! = |{ request, body, .. }| {
 				.map_err!(Store.refusal!)?
 		# Where to go after: the form's own fields, beside the food's.
 		posted = Server.text_of(request)
-		Err(Answer(Server.redirect(Links.food(id, { day: Query.value(posted, "then_day"), meal: Query.value(posted, "then_meal") }))))
+		Ok(Server.redirect(Links.food(id, { day: Query.value(posted, "then_day"), meal: Query.value(posted, "then_meal") })))
 	}
 }

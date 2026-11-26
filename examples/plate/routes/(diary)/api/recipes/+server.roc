@@ -14,8 +14,8 @@ get! = |_| Store.recipes!({}).map_err!(Store.refusal!)
 post_body = PlateForm.recipe
 
 ## POST /api/recipes, from the new recipe form: a recipe of no ingredients yet, and on to it.
-post! : { request : Server.Request, params : {}, context : {}, body : PlateForm.Recipe } => Try({}, Endpoint.Refusal)
+post! : { request : Server.Request, params : {}, context : {}, body : PlateForm.Recipe } => Try(Server.Response, Endpoint.Refusal)
 post! = |{ body, .. }| {
 	id = Store.add_recipe!(body).map_err!(Store.refusal!)?
-	Err(Answer(Server.redirect(Paths.recipes_id({ id: id }))))
+	Ok(Server.redirect(Paths.recipes_id({ id: id })))
 }

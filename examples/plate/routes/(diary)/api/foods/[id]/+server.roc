@@ -23,10 +23,10 @@ post_body = PlateForm.amount
 ## POST /api/foods/:id, from the food's page: an amount of it logged to a meal on a day, then on to
 ## that day of the diary; or the form's issues (422), shown under its fields. What the amount has
 ## is worked out from the food as it is now, and kept with the entry (`Store.log!`).
-post! : { request : Server.Request, params : { id : Str }, context : {}, body : PlateForm.Amount } => Try({}, Endpoint.Refusal)
+post! : { request : Server.Request, params : { id : Str }, context : {}, body : PlateForm.Amount } => Try(Server.Response, Endpoint.Refusal)
 post! = |{ params, body, .. }| {
 	day = Date.to_str(body.day)
 	_ = Store.log!({ food: params.id, day, meal: body.meal, count: body.count, unit: body.unit }).map_err!(Store.refusal!)?
 	today = Store.today!({}).map_err!(Store.refusal!)?
-	Err(Answer(Server.redirect(Links.diary(day, today))))
+	Ok(Server.redirect(Links.diary(day, today)))
 }

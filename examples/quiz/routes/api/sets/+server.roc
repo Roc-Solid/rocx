@@ -12,9 +12,9 @@ post_body = Draft.form
 
 ## POST /api/sets, from the editor (`title`, `blurb`, `questions`): the new set, written, and on to the
 ## host's page, where it is first.
-post! : { request : Server.Request, params : {}, context : Visitor.Context, body : Draft.Made } => Try({}, Endpoint.Refusal)
+post! : { request : Server.Request, params : {}, context : Visitor.Context, body : Draft.Made } => Try(Server.Response, Endpoint.Refusal)
 post! = |{ body, .. }|
 	match Sets.create!(body) {
-		Ok(id) => Err(Answer(Server.redirect("${Paths.host}?made=${id.to_str()}")))
+		Ok(id) => Ok(Server.redirect("${Paths.host}?made=${id.to_str()}"))
 		Err(_) => Err(Status(503, "The set couldn't be saved. Try again."))
 	}

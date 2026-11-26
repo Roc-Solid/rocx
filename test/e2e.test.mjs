@@ -414,7 +414,7 @@ test("an app of components: rocx build refuses a job outside its module's block,
 	assert.match(old.stderr, /routes\/old\/\+page\.rocx:1:8: import html\.Html: markup is components, written with the platform's Html, which the server renders and the browser hydrates: import pf\.Html/);
 });
 
-test("routes, served natively: each page in its layouts, a param a page's, a path no page has the error page's; /.well-known/… is routed, an upload reaches its put! as the bytes it was, and respond! answers every other method", { skip: (!hasRoc && "no Roc (run `just setup`, or set ROC)") || (!hasRust() && "no Rust (run `just setup`)") }, async () => {
+test("routes, served natively: each page in its layouts, a param a page's, a path no page has the error page's; /.well-known/… is routed, an upload reaches its put! as the bytes it was, an answer of a handler's own is sent as it is (D-106), and respond! answers every other method", { skip: (!hasRoc && "no Roc (run `just setup`, or set ROC)") || (!hasRust() && "no Rust (run `just setup`)") }, async () => {
 	const dir = routesCopy();
 	const put = (path, text) => {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -427,6 +427,16 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 	put(
 		"routes/uploads/[name]/+server.roc",
 		"import pf.Server\nimport pf.Endpoint\nimport crypto.Sha256\n\n## An upload, as it came.\nput! : { request : Server.Request, params : { name : Str }, context : c, body : {} } => Try({ name : Str, size : U64, sha : Str }, Endpoint.Refusal)\nput! = |{ request, params, .. }| Ok({ name: params.name, size: request.body.len(), sha: Sha256.hex(request.body) })\n",
+	);
+	// Answers of their own (D-106): a file a service fetches, as it is, and a sign-in that sets a
+	// cookie and goes on; their successes are `Ok`, not `Err(Answer(…))`.
+	put(
+		"routes/verify/[file]/+server.roc",
+		'import pf.Server\nimport pf.Endpoint\n\n## The file a service fetches to check the site is ours, as it is.\nget! : { request : Server.Request, params : { file : Str }, context : c } => Try(Server.Response, Endpoint.Refusal)\nget! = |{ params, .. }| if (params.file == "token.txt") Ok(Server.response(200, [{ name: "content-type", value: "text/plain; charset=utf-8" }], "token=abc")) else Err(NotFound)\n',
+	);
+	put(
+		"routes/enter/+server.roc",
+		'import pf.Server\nimport pf.Endpoint\n\n## Signs Ada in and goes to the blog.\npost! : { request : Server.Request, params : {}, context : c, body : {} } => Try(Server.Response, Endpoint.Refusal)\npost! = |_| Ok(Server.with_cookie(Server.redirect("/blog"), "member", "Ada"))\n',
 	);
 	put(
 		"routes/mcp/+server.roc",
@@ -472,12 +482,24 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 		const uploaded = await fetch(`${server.url}/uploads/clip.mp4`, { method: "PUT", body: part, headers: { "content-type": "video/mp4" } });
 		assert.deepEqual(await uploaded.json(), { name: "clip.mp4", size: 1 << 20, sha: createHash("sha256").update(part).digest("hex") });
 		assert.equal((await fetch(`${server.url}/uploads/clip.mp4`, { method: "POST" })).headers.get("allow"), "PUT");
+		// An answer of its own (D-106): sent as it is, not as JSON; a refusal as ever; another method rocx's 405.
+		const verified = await fetch(`${server.url}/verify/token.txt`);
+		assert.deepEqual([verified.status, verified.headers.get("content-type"), await verified.text()], [200, "text/plain; charset=utf-8", "token=abc"]);
+		assert.equal((await fetch(`${server.url}/verify/other.txt`)).status, 404, "its refusal");
+		assert.equal((await fetch(`${server.url}/verify/token.txt`, { method: "POST" })).headers.get("allow"), "GET");
+		const entered = await fetch(`${server.url}/enter`, { method: "POST", redirect: "manual" });
+		assert.deepEqual([entered.status, entered.headers.get("location")], [303, "/blog"], "a redirect, as it is");
+		assert.match(entered.headers.get("set-cookie"), /^member=Ada;/, "its cookie too");
+		const submitted = await fetch(`${server.url}/enter`, { method: "POST", headers: { "x-rocx-submission": "1" }, redirect: "manual" });
+		assert.deepEqual([submitted.status, submitted.headers.get("x-rocx-redirect")], [200, "/blog"], "to the runtime's form, a redirect it goes to, as Answer's is");
+		assert.match(submitted.headers.get("set-cookie"), /^member=Ada;/);
 		assert.equal(await (await fetch(`${server.url}/mcp`, { method: "DELETE", body: "this" })).text(), "DELETE this ctx");
 		assert.equal(await (await fetch(`${server.url}/mcp`)).text(), "GET  ctx");
 		assert.equal((await fetch(`${server.url}/.hidden`)).status, 404, "another directory starting with a dot isn't routed");
 		const openapi = await (await fetch(`${server.url}/openapi.json`)).json();
 		assert.ok(openapi.paths["/.well-known/oauth-authorization-server"], Object.keys(openapi.paths).join(" "));
 		assert.equal(openapi.paths["/mcp"], undefined, "respond! isn't an endpoint");
+		assert.deepEqual(openapi.paths["/verify/{file}"].get.responses["200"].content, { "*/*": {} }, "an answer of its own: any type, no schema");
 		assert.equal((await fetch(`${server.url}/openapi.html`)).status, 404, "Document: no page");
 	} finally {
 		await server?.stop();

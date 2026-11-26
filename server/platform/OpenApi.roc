@@ -53,6 +53,11 @@ OpenApi := [].{
 		"\"application/json\":{\"schema\":${described(Answered.parser_for(Schema.Default)(start(tags)))}}"
 	}
 
+	## An endpoint's answer of its own (D-106: its handler's `Try(Server.Response, …)`), as an
+	## operation's content has it: any type, with no schema, since the handler says what it sends.
+	as_is : Endpoint(context, arg, Server.Response), List(Str) -> Str
+	as_is = |_, _| "\"*/*\":{}"
+
 	## An endpoint's events (`events!`), as an operation's content has them: a stream of events,
 	## each one's data JSON, with its schema; then an `end` event, with none.
 	events : Endpoint(context, {}, Events(event)), List(Str) -> Str

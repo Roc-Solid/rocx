@@ -463,71 +463,27 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## there. An answer of its own is otherwise sent as it is.
 	respond! : Endpoint(context, arg, result), Server.Request, context => Server.Response
 		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
-	respond! = |endpoint, request, context| {
-		read = input_of(request)
-		parsed : Try(arg, [Unreadable(Str), Unchecked(Str)])
-		parsed =
-			match endpoint.form {
-				Checked(rules) => {
-					checks = rules.read
-					match read {
-						Fields(fields) => checks(fields).map_err(|why| Unchecked(why))
-						Read(json) =>
-							match json_fields(json) {
-								Ok(fields) => checks(fields).map_err(|why| Unchecked(why))
-								Err(why) => Err(Unreadable(why))
-							}
-						Unread(_) => Err(Unreadable(""))
-					}
-				}
-				Typed(reader) =>
-					match read {
-						Fields(fields) => reader(fields).map_err(|why| Unreadable(why))
-						Read(json) => Json.parse(json).map_err(|InvalidJson(why)| Unreadable(why))
-						Unread(_) => Json.parse("{}").map_err(|InvalidJson(why)| Unreadable(why))
-					}
-				Untyped =>
-					match read {
-						Fields(_) => Json.parse(Server.form_json(Server.text_of(request))).map_err(|InvalidJson(why)| Unreadable(why))
-						Read(json) => Json.parse(json).map_err(|InvalidJson(why)| Unreadable(why))
-						Unread(_) => Json.parse("{}").map_err(|InvalidJson(why)| Unreadable(why))
-					}
-			}
-		posted = Endpoint.posted_by(request)
-		# A plain form goes back to its page with what it was answered, whatever it is.
-		reply! = |status, kind, body|
-			match posted {
-				PlainForm => Server.flash_back!(request, { url: endpoint.url, input: form_input(read), status, body })
-				_ => Server.response(status, [{ name: "content-type", value: kind }], body)
-			}
-		match parsed {
-			Ok(arg) => {
-				handler = endpoint.run
-				match handler(request, context, arg) {
-					Ok(result) =>
-						match Json.to_str_try(result) {
-							Ok(json) => reply!(200, json_type, json)
-							Err(_) => reply!(500, text_type, "${endpoint.method} ${request.path}'s answer: ${Server.unwritable}")
-						}
-					Err(Answer(own)) =>
-						match posted {
-							Runtime => redirected(own)
-							_ => own
-						}
-					Err(refusal) => {
-						(status, why) = Endpoint.refused(refusal)
-						reply!(status, type_of(refusal), why)
-					}
-				}
-			}
-			Err(Unchecked(issues)) => reply!(422, json_type, issues)
-			Err(Unreadable(why)) =>
-				match read {
-					Unread(type) => text(415, "${endpoint.method} ${request.path} reads JSON (application/json) or a form, not ${if (type.is_empty()) "a body with no content-type" else type}")
-					_ => reply!(400, text_type, "${endpoint.method} ${request.path} can't read its body: ${why}")
-				}
-		}
-	}
+	respond! = |endpoint, request, context|
+		answered!(
+			endpoint,
+			request,
+			context,
+			|result|
+				match Json.to_str_try(result) {
+					Ok(json) => Json(json)
+					Err(_) => Unwritable
+				},
+		)
+
+	## On the server: as `respond!`, for an endpoint whose result is an answer of its own: a handler
+	## annotated `=> Try(Server.Response, Endpoint.Refusal)` (D-106), which `rocx build` answers
+	## with this. Its `Ok` is sent as it is, as `Err(Answer(…))` is (a redirect of its own comes back
+	## to a form the runtime sent as 200 with `x-rocx-redirect`); its refusals are `respond!`'s. A
+	## text, a file, a redirect that sets a cookie: an answer that isn't JSON, without its success
+	## being an `Err`.
+	respond_as_is! : Endpoint(context, arg, Server.Response), Server.Request, context => Server.Response
+		where [arg.Json.Parseable([InvalidJson(Str)])]
+	respond_as_is! = |endpoint, request, context| answered!(endpoint, request, context, |own| Own(own))
 
 	## On the server: the answer to a request for an endpoint's events (`events!`, asked with
 	## `accept: text/event-stream`), given the context its middleware handed on: a stream, each event
@@ -591,6 +547,79 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			[{ name: "allow", value: Str.join_with(allowed, ", ") }, { name: "content-type", value: "text/plain; charset=utf-8" }],
 			"${request.path} takes ${Str.join_with(allowed, ", ")}, not ${request.method}",
 		)
+}
+
+## `respond!`'s and `respond_as_is!`'s answer: the body read as the endpoint reads it, its handler
+## run, and its `Ok` answered as `ok` says (JSON, or an answer of its own), its refusals alike.
+answered! : Endpoint(context, arg, result), Server.Request, context, (result -> [Json(Str), Own(Server.Response), Unwritable]) => Server.Response
+	where [arg.Json.Parseable([InvalidJson(Str)])]
+answered! = |endpoint, request, context, ok| {
+	read = input_of(request)
+	parsed : Try(arg, [Unreadable(Str), Unchecked(Str)])
+	parsed =
+		match endpoint.form {
+			Checked(rules) => {
+				checks = rules.read
+				match read {
+					Fields(fields) => checks(fields).map_err(|why| Unchecked(why))
+					Read(json) =>
+						match json_fields(json) {
+							Ok(fields) => checks(fields).map_err(|why| Unchecked(why))
+							Err(why) => Err(Unreadable(why))
+						}
+					Unread(_) => Err(Unreadable(""))
+				}
+			}
+			Typed(reader) =>
+				match read {
+					Fields(fields) => reader(fields).map_err(|why| Unreadable(why))
+					Read(json) => Json.parse(json).map_err(|InvalidJson(why)| Unreadable(why))
+					Unread(_) => Json.parse("{}").map_err(|InvalidJson(why)| Unreadable(why))
+				}
+			Untyped =>
+				match read {
+					Fields(_) => Json.parse(Server.form_json(Server.text_of(request))).map_err(|InvalidJson(why)| Unreadable(why))
+					Read(json) => Json.parse(json).map_err(|InvalidJson(why)| Unreadable(why))
+					Unread(_) => Json.parse("{}").map_err(|InvalidJson(why)| Unreadable(why))
+				}
+		}
+	posted = Endpoint.posted_by(request)
+	# A plain form goes back to its page with what it was answered, whatever it is.
+	reply! = |status, kind, body|
+		match posted {
+			PlainForm => Server.flash_back!(request, { url: endpoint.url, input: form_input(read), status, body })
+			_ => Server.response(status, [{ name: "content-type", value: kind }], body)
+		}
+	# An answer of the handler's own, sent as it is (but a redirect to the runtime's form).
+	as_is = |own|
+		match posted {
+			Runtime => redirected(own)
+			_ => own
+		}
+	match parsed {
+		Ok(arg) => {
+			handler = endpoint.run
+			match handler(request, context, arg) {
+				Ok(result) =>
+					match ok(result) {
+						Json(json) => reply!(200, json_type, json)
+						Own(own) => as_is(own)
+						Unwritable => reply!(500, text_type, "${endpoint.method} ${request.path}'s answer: ${Server.unwritable}")
+					}
+				Err(Answer(own)) => as_is(own)
+				Err(refusal) => {
+					(status, why) = Endpoint.refused(refusal)
+					reply!(status, type_of(refusal), why)
+				}
+			}
+		}
+		Err(Unchecked(issues)) => reply!(422, json_type, issues)
+		Err(Unreadable(why)) =>
+			match read {
+				Unread(type) => text(415, "${endpoint.method} ${request.path} reads JSON (application/json) or a form, not ${if (type.is_empty()) "a body with no content-type" else type}")
+				_ => reply!(400, text_type, "${endpoint.method} ${request.path} can't read its body: ${why}")
+			}
+	}
 }
 
 ## A GET endpoint's answer, as `read!` reads it, with a refusal as a value (`send!` of a GET).

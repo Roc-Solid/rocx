@@ -274,6 +274,29 @@ body and its `content-type` (D-103). A route file that answers with another rout
 directly binds it itself, as `site/routes/calls/+server.roc` does:
 `Endpoint.bind(Api.x(params), |r, c, b| XServer.post!(…))`.
 
+**An answer of its own (D-106).** A handler's `Ok` is sent as JSON, unless its annotation's answer
+is `Server.Response`: then `Ok(response)` is sent as it is, a text, a file, a redirect that sets a
+cookie, and its refusals are as any handler's. `Generated/Routes` answers it with
+`Endpoint.respond_as_is!` (the rest with `Endpoint.respond!`), and `/openapi.json` gives it any
+type and no schema (`OpenApi.as_is`). Its contract's answer is `Server.Response` too, which the
+typed client doesn't read: a page links to it, posts a form to it (a redirect is followed, D-095),
+or reads a submission's `error!()`, never its `result!()`.
+
+```roc
+# routes/api/_verify/[file]/+server.roc: the file a service fetches to check the site is ours
+get! : { request : Server.Request, params : { file : Str }, context : c } => Try(Server.Response, Endpoint.Refusal)
+get! = |{ params, .. }|
+	if params.file == "token.txt" {
+		Ok(Server.response(200, [{ name: "content-type", value: "text/plain; charset=utf-8" }], "token=abc"))
+	} else {
+		Err(NotFound)
+	}
+```
+
+A handler that answers JSON but sometimes its own (a cookie with its result, a plain form's
+redirect) keeps its result's type and answers those with the refusal `Answer(response)`, sent as it
+is too.
+
 How endpoints read their bodies and answer forms is under Forms, below.
 
 ## The database: `Db`
@@ -817,8 +840,8 @@ it with `Server.flash_back!` instead, for a result, a refusal, or a body it can'
 3. Under `--debug` or `--dev`, the 303 also has `x-rocx-flash`: the flash's URL, status and body,
    never the fields, for tests (packages/testing's `flash`).
 
-An answer of the endpoint's own (`Err(Answer(…))`, such as a redirect that sets a cookie) is sent
-as it is.
+An answer of the endpoint's own (a handler's `Ok` whose answer is `Server.Response`, D-106, or
+`Err(Answer(…))`: a redirect that sets a cookie, say) is sent as it is.
 
 The page the browser lands on reads the flash with `Server.flash!({})`, or as its form's
 submission (`Router.use_submission!(endpoint)`, which reads the flash when it is for that
@@ -843,8 +866,8 @@ With the browser runtime, a form posting to one of the app's endpoints is sent w
 
 An action (`Router.use_action!`, D-030) is sent by the runtime as JSON with
 `x-rocx-submission: 1`; on success the runtime re-reads the page's reads. The server sees plain
-requests, and an endpoint's own `Err(Answer(…))` (JSON with a cookie, as the docs site's planner
-keeps a reader's week) is sent as it is. A script's post (JSON, or a form not from a page) gets the
+requests, and an endpoint's own answer (`Ok` of `Server.Response`, or `Err(Answer(…))`: JSON with a
+cookie, as the docs site's planner keeps a reader's week) is sent as it is. A script's post (JSON, or a form not from a page) gets the
 endpoint's answer as always.
 
 A handler that must answer each kind its own way asks `Endpoint.posted_by(request)`: `PlainForm`

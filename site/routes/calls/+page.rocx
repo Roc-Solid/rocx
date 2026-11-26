@@ -216,8 +216,10 @@ view! = |_|
 				<code>BadRequest(why)</code> (400), <code>Unauthorized</code> (401), <code>Forbidden</code> (403),
 				<code>NotFound</code> (404), <code>Conflict(why)</code> (409), <code>Status(code, why)</code>,
 				<code>Json(code, json)</code> (a body of JSON, sent as <code>application/json</code>: a form's
-				issues, <code>Issues.refusal</code>), or <code>Answer(response)</code>, an answer of its own (a
-				redirect that sets a cookie). A route file may also name the rules its body is read and checked
+				issues, <code>Issues.refusal</code>), or <code>Answer(response)</code>, an answer of its own in
+				the result's place (a result of JSON, with a cookie). A handler whose answer is always its own (a
+				redirect that sets a cookie, a file) is annotated <code>{"Try(Server.Response, Endpoint.Refusal)"}</code>
+				and answers <code>Ok(response)</code>, sent as it is. A route file may also name the rules its body is read and checked
 				with (<a href={"${Paths.routing}#endpoints"}><code>post_body</code></a>): what doesn't pass them is
 				refused before the handler runs.
 			</p>
@@ -338,8 +340,8 @@ view! = |_|
 					its refusal (<code>{"Refused(409, \"…\")"}</code>) or why no answer came. <code>input!()</code> is
 					what was sent, as the endpoint reads it, and <code>field!(name)</code> one field as it was typed.
 					Only the latest submission counts; <code>clear!()</code>, in an event handler, forgets it. A
-					redirect from the endpoint (<code>{"Err(Answer(Server.redirect(…)))"}</code>, setting a cookie,
-					say) sends the browser there. A refusal shows only where the page reads the submission: one that
+					redirect from the endpoint (<code>{"Ok(Server.redirect(…))"}</code>, setting a cookie, say) sends
+					the browser there. A refusal shows only where the page reads the submission: one that
 					nothing reads shows nothing, and the browser's console says so.
 				</li>
 				<li>
@@ -354,8 +356,9 @@ view! = |_|
 				</li>
 				<li>
 					<strong>Where to go next is the endpoint's to say, either way.</strong> An endpoint whose form should
-					go somewhere when it succeeds answers <code>{"Err(Answer(Server.redirect(…)))"}</code>, as the endpoint
-					behind this site's <a href={Paths.members_join}>joining page</a> does (it sets a cookie too).
+					go somewhere when it succeeds answers <code>{"Ok(Server.redirect(…))"}</code> (its annotation's answer
+					<code>Server.Response</code>), as the endpoint behind this site's
+					<a href={Paths.members_join}>joining page</a> does (it sets a cookie too).
 				</li>
 				<li>
 					<strong>Without a form.</strong> <code>use_action!(endpoint)</code> (Solid Router's

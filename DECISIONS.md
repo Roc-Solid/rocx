@@ -6353,3 +6353,68 @@ for Postgres says `database: Postgres` now: given a `postgres://` URL, it stops 
 what to write; given none, it runs on the file.
 
 **Reversible:** yes: the default back in `Generated/App`, and the four lines go.
+
+## D-106 An answer of a handler's own is its `Ok`: `Try(Server.Response, Endpoint.Refusal)`
+
+**Status.** Built (2026-11-26).
+
+**Context.** A handler's `Ok` is sent as JSON: it is what the typed client reads (`read!`,
+`send!`, a submission's `result!()`). An endpoint whose success isn't JSON, a text file a service
+fetches to check the site is ours, a video, a redirect that sets a cookie, had one way to answer:
+the refusal `Answer(response)`, "exactly this answer". So its success was an `Err`:
+
+```roc
+get! : { request : Server.Request, params : { file : Str }, context : c } => Try({}, Endpoint.Refusal)
+get! = |{ params, .. }| if (params.file == "token.txt") Err(Answer(Server.response(200, …, "token=abc"))) else Err(NotFound)
+```
+
+It reads as a failure, and the `{}` it claims to answer is never sent. `respond!`, which answers
+any method with a `Server.Response`, avoids it, but then the handler checks the method itself and
+writes its own 405, which `get!` has for nothing.
+
+**Options.**
+1. As it was: `Err(Answer(…))`, a comment saying why.
+2. `respond!` for these: no `Err`, but every method by hand.
+3. A handler annotated `=> Try(Server.Response, Endpoint.Refusal)` has its `Ok` sent as it is.
+   `rocx build` already reads the annotation (Api's types, D-037; typed params, D-092), so it tells
+   these apart and answers them another way.
+4. A wrapper type for such answers (`Endpoint.Own(response)`), sent as it is: a second spelling of
+   `Server.Response`, to import and wrap.
+
+**Decision.** 3.
+
+```roc
+get! : { request : Server.Request, params : { file : Str }, context : c } => Try(Server.Response, Endpoint.Refusal)
+get! = |{ params, .. }| if (params.file == "token.txt") Ok(Server.response(200, …, "token=abc")) else Err(NotFound)
+```
+
+- **`Endpoint.respond_as_is!`** answers such an endpoint: `respond!`'s reading of the body and its
+  refusals, and its `Ok` sent as `Answer`'s response is (a redirect of its own comes back to a form
+  the runtime sent as 200 with `x-rocx-redirect`). The two share one body (`answered!`), handed how
+  an `Ok` is answered. `Generated/Routes` calls it for a method whose annotation's answer is exactly
+  `Server.Response` (`Routes.answers_as_is`), `respond!` for the rest.
+- **The contract says so too**: Api's answer is `Server.Response` in both programs (the browser's
+  platform has the type). The typed client doesn't read it: `read!`, `send!`'s result and a
+  submission's `result!()` need an answer of JSON, and `Server.Response` has none (a compile error
+  where one is asked for). A page links to such an endpoint, posts a form to it (its redirect is
+  followed, D-095), or reads a submission's `error!()`.
+- **`/openapi.json`** gives its answer any type and no schema (`OpenApi.as_is`: `"*/*":{}`): the
+  handler says what it sends.
+- **`Answer(response)` stays**, for a handler that answers JSON but sometimes its own: a result with
+  a cookie (the docs site's planner), a plain form's redirect beside the JSON the runtime reads
+  (the tasks example's delete).
+- The docs site's join and leave endpoints and the examples' handlers whose every success was
+  `Err(Answer(…))` (board, notes, plate, quiz, tasks, uptime: 19 route files and quiz's `Entry`)
+  answer `Ok` now. test/e2e.test.mjs checks a text answered as it is, its refusal, rocx's 405, a
+  redirect with its cookie as it is and to the runtime's form, and the OpenAPI entry.
+
+**Why.** A success is an `Ok`, and what a handler sends is what its annotation says. The method
+check stays rocx's.
+
+**Costs.** Two ways for an answer of one's own: a handler's `Ok`, when every success is one, and
+`Answer`, beside a JSON result. A handler that names `Server.Response` gives up its typed client.
+The generator tells it apart by the annotation's text, so an alias of `Server.Response` is taken
+for JSON (and doesn't compile, since a response isn't JSON).
+
+**Reversible:** yes: `respond_as_is!` and its branch in the generator go, and the handlers go back
+to `Err(Answer(…))`.

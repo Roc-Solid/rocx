@@ -11,7 +11,7 @@ post_body = Joining.named
 
 ## POST /api/play/:code, from a room's own page (`name`): into the room as one of its players. A code
 ## is written as people type it (`bk-rt` is BKRT), so the path's is read here, not by its type.
-post! : { request : Server.Request, params : { code : Str }, context : Visitor.Context, body : { name : Str } } => Try({}, Endpoint.Refusal)
+post! : { request : Server.Request, params : { code : Str }, context : Visitor.Context, body : { name : Str } } => Try(Server.Response, Endpoint.Refusal)
 post! = |{ params, context, body, .. }|
 	match Codes.parse(params.code) {
 		Ok(code) => Entry.join!(context, code, body.name)

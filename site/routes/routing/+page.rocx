@@ -194,9 +194,10 @@ view! = |_|
 				A handler is given a record of the request, the path's params, the context its middleware handed on
 				and, for a method with a body, the body, read as the type its annotation says. It answers
 				<code>Ok(result)</code>, sent as JSON with the status 200, or <code>Err(refusal)</code>:
-				<code>BadRequest(why)</code> is a 400, <code>NotFound</code> a 404, and
-				<code>{"Answer(Server.redirect(…))"}</code> an answer of its own. This one answers the form on this
-				site's <a href={Paths.members_join}>joining page</a>, and sets a cookie:
+				<code>BadRequest(why)</code> is a 400, <code>NotFound</code> a 404. A handler annotated
+				<code>{"Try(Server.Response, Endpoint.Refusal)"}</code> answers with a response of its own, sent as
+				it is: a redirect, a cookie, a file that isn't JSON. This one answers the form on this site's
+				<a href={Paths.members_join}>joining page</a>, and sets a cookie:
 			</p>
 			<Code title={Sources.members_join_server.file} source={Sources.members_join_server.rocx} />
 			<ul>
