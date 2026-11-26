@@ -833,7 +833,7 @@ test("channels: a +server.roc's channel! is Api's channel_<path> (CHANNEL, its U
 		"",
 	].join("\n");
 	assert.deepEqual(definitions(room).channel, { hooks: ["receive!", "on_open!", "on_close!"] });
-	assert.deepEqual(definitions(room).handlers, { "channel!": { line: 9, body: "", answer: "Channel(Str, Str, Str)" } }, "its types, from its annotation: what Api's copy is");
+	assert.deepEqual(definitions(room).handlers, { "channel!": { line: 9, body: "", answer: "Channel(Str, Str, Str)", params: "{ room : Str }" } }, "its types, from its annotation: what Api's copy is");
 	assert.deepEqual(definitions(room).methods, [], "a channel is no HTTP method");
 	assert.deepEqual(definitions("get! = |_| Ok(1)\n").channel, undefined);
 	assert.deepEqual(definitions("on_open! = |_| []\n").hooks, ["on_open!"], "a hook with no channel, for rocx build to refuse");
@@ -939,10 +939,10 @@ test("the contract (D-037): Api's types are copied from each handler's annotatio
 	].join("\n");
 	const defs = definitions(board);
 	assert.deepEqual(defs.handlers, {
-		"get!": { line: 15, body: "", answer: "List(Board.Column)" },
-		"post!": { line: 23, body: "{ card : Card, totals : List(C.Total) }", answer: "Str" },
-		"events!": { line: 26, body: "", answer: "Events({ at : U64 })" },
-		"channel!": { line: 29, body: "", answer: "Channel(Str, Board.News, [])" },
+		"get!": { line: 15, body: "", answer: "List(Board.Column)", params: "{ board : Str }" },
+		"post!": { line: 23, body: "{ card : Card, totals : List(C.Total) }", answer: "Str", params: "{ board : Str }" },
+		"events!": { line: 26, body: "", answer: "Events({ at : U64 })", params: "{ board : Str }" },
+		"channel!": { line: 29, body: "", answer: "Channel(Str, Board.News, [])", params: "{ board : Str }" },
 	}, "an annotation over several lines too; the line each is defined at");
 	assert.deepEqual(defs.imports.length, 8);
 	const table = routeTable(["b/[board]/+server.roc"]);
@@ -984,6 +984,63 @@ test("the contract (D-037): Api's types are copied from each handler's annotatio
 	]));
 	assert.deepEqual(clash, [
 		"routes/b/+server.roc:4: its get! names Store (shop.Store, as Generated/ has it), and routes/a/+server.roc's get! names another Store (../Store): Generated/Api imports the modules both name, so give one of them another name (import … as …)",
+	]);
+});
+
+test("typed path params (D-092): the types handlers give a path's params are Api's, Paths', Root's and Routes'; a part that doesn't read as its type is no route", () => {
+	const files = ["notes/[id]/+page.rocx", "notes/[id]/+server.roc", "notes/[id]/edit/+page.rocx", "notes/[id]/tags/[tag]/+server.roc", "tags/[tag]/+page.rocx", "tags/[tag]/+server.roc"];
+	const page = { view: "view!", meta: false, methods: [], middleware: null, docs: {} };
+	const handler = (method, params, answer = "Str") => `${method} : { request : Server.Request, params : ${params}, context : c${method === "delete!" || method === "get!" || method === "channel!" ? "" : ", body : {}"} } => Try(${answer}, Endpoint.Refusal)\n${method} = |_| Ok(x)\n`;
+	const sources = new Map([
+		["notes/[id]/+page.rocx", page],
+		["notes/[id]/edit/+page.rocx", page],
+		["tags/[tag]/+page.rocx", page],
+		["notes/[id]/+server.roc", definitions(handler("get!", "{ id : I64 }") + "\n" + handler("channel!", "{ id : I64 }", "Channel(Str, Str, [])"))],
+		["notes/[id]/tags/[tag]/+server.roc", definitions(handler("delete!", "{ id : I64, tag : [Work, Home] }", "{}"))],
+		["tags/[tag]/+server.roc", definitions(handler("get!", "{ tag : Str }"))],
+	]);
+	assert.equal(sources.get("notes/[id]/+server.roc").handlers["get!"].params, "{ id : I64 }", "the params' type, from the annotation");
+	const table = routeTable(files);
+	assert.deepEqual(contractProblems(table, sources), []);
+
+	const api = apiModule(table, { sources });
+	assert.match(api, /\tget_notes_id : \{ id : I64 \} -> Endpoint\(context, \{\}, Str\)\n\tget_notes_id = \|params\| Endpoint\.remote\("GET", "\/notes\/\$\{Server\.encode_param\(params\.id\)\}"\)/, "a typed param's part, as FormBody reads it back");
+	assert.match(api, /\tdelete_notes_id_tags_tag : \{ id : I64, tag : \[Work, Home\] \} -> /);
+	assert.match(api, /"\/notes\/\$\{Server\.encode_param\(params\.id\)\}\/tags\/\$\{Server\.encode_param\(params\.tag\)\}"/);
+	assert.match(api, /\tget_tags_tag : \{ tag : Str \} -> Endpoint\(context, \{\}, Str\)\n\tget_tags_tag = \|params\| Endpoint\.remote\("GET", "\/tags\/\$\{Server\.encode_segment\(params\.tag\)\}"\)/, "a Str param as before");
+	assert.match(api, /OpenApi\.typed_path\("\/notes\/\{id\}", Api\.get_notes_id, tags, \[\n\t+OpenApi\.operation\("get", "", "", \[OpenApi\.answer\(Api\.get_notes_id\(\{ id: 0 \}\), tags\)\]\),/, "its params' schemas from their types; a value of each to name the endpoint with");
+	assert.match(api, /Api\.delete_notes_id_tags_tag\(\{ id: 0, tag: Work \}\)/);
+	assert.match(api, /OpenApi\.path\("\/tags\/\{tag\}", \["tag"\], \[/);
+
+	const paths = pathsModule(table, { sources });
+	assert.match(paths, /\tnotes_id : \{ id : I64 \} -> Str\n\tnotes_id = \|params\| "\/notes\/\$\{Server\.encode_param\(params\.id\)\}"/);
+	assert.match(paths, /\tnotes_id_edit : \{ id : I64 \} -> Str\n/, "a page below the param's directory: the type is the directory's");
+	assert.match(paths, /\ttags_tag : \{ tag : Str \} -> Str\n\ttags_tag = \|params\| "\/tags\/\$\{Server\.encode_segment\(params\.tag\)\}"/);
+
+	const routes = routesModule(table, { sources });
+	assert.match(routes, /^import pf\.Endpoint$/m);
+	assert.match(routes, /\t\t\tread : Try\(\{ id : I64 \}, Str\)\n\t\t\tread = Endpoint\.read_params\(\[\{ name: "id", value: segments\.get\(1\) \?\? "" \}\]\)\n\t\t\tmatch read \{\n\t\t\t\tOk\(params\) => \{/);
+	assert.match(routes, /\t\t\t\tErr\(_\) => if \(wants_html\) \{\n\t+Routes\.page\(404\)/, "a part that doesn't read: the 404 a path nothing has gets");
+	assert.match(routes, /read : Try\(\{ id : I64, tag : \[Work, Home\] \}, Str\)/);
+	assert.match(routes, /Ok\(_params\) => \{\n\t+if \(method == "GET"\) \{\n\t+Routes\.page\(200\)/, "a page's path alone, its params read for the match");
+	assert.match(routes, /segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("tags"\)\) \{\n\t\t\tparams = \{ tag: segments\.get\(1\) \?\? "" \}/, "a Str param read as before");
+	assert.match(routes, /Err\(_\) => Routes\.text\(404, "no channel at/, "a channel's");
+
+	const root = rootModule(table, { sources });
+	assert.match(root, /^import pf\.Endpoint$/m);
+	assert.match(root, /PageNotesId\(\{ id : I64 \}\)[,\]]/);
+	assert.match(root, /PageNotesIdEdit\(\{ id : I64 \}\)/, "a page below the param's directory: the directory's type");
+	assert.match(root, /PageTagsTag\(\{ tag : Str \}\)/);
+	assert.match(root, /Ok\(params\) => \{\n\t+PageNotesId\(params\)\n\t+\}\n\t+Err\(_\) => Missing\(path\)/);
+	assert.match(root, /"routes\/notes\/\[id\]\/\+page\.rocx id=\$\{Server\.encode_param\(params\.id\)\}"/);
+
+	// What rocx build refuses: one param given two types, and a type a part isn't read as.
+	const refused = (more) => contractProblems(table, new Map([...sources, ...more]));
+	assert.deepEqual(refused([["notes/[id]/tags/[tag]/+server.roc", definitions(handler("delete!", "{ id : Str, tag : [Work, Home] }", "{}"))]]), [
+		"routes/notes/[id]/tags/[tag]/+server.roc:2: delete! gives the param id the type Str, and routes/notes/[id]/+server.roc's get! gives it I64: a path's param has one type wherever it is read (D-092)",
+	]);
+	assert.deepEqual(refused([["tags/[tag]/+server.roc", definitions(handler("get!", "{ tag : Tags.Tag }"))]]), [
+		"routes/tags/[tag]/+server.roc:2: get! gives the param tag the type Tags.Tag: a path's param is Str, a number (U64, I64, Dec…), Bool, or a union of tags written out ([Low, High]), which every module rocx writes can name (D-092)",
 	]);
 });
 

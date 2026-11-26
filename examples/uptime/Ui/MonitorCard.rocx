@@ -15,7 +15,7 @@ MonitorCard := [].{
 	view = |{ monitor! }|
 		<li class="monitor">
 			<div class="head">
-				<h3><a href={Paths.monitors_id({ id: monitor!().id.to_str() })}>{monitor!().name}</a></h3>
+				<h3><a href={Paths.monitors_id({ id: monitor!().id })}>{monitor!().name}</a></h3>
 				{<StatePill state={monitor!().state} label={monitor!().label} />}
 			</div>
 			<dl class="numbers">

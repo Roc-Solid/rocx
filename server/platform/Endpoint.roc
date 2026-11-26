@@ -64,6 +64,12 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	bind : Endpoint(context, arg, result), (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
 	bind = |endpoint, handler| { method: endpoint.method, url: endpoint.url, run: handler, form: endpoint.form, bound: endpoint.bound }
 
+	## A path's typed params (D-092), read from its parts as a form's fields are (`FormBody`):
+	## `[{ name: "id", value: "7" }]` as `{ id : I64 }`, or why not. Generated/Routes and Root read a
+	## typed path with it, and a part that doesn't read is no match (404).
+	read_params : List({ name : Str, value : Str }) -> Try(params, Str) where [params.FormBody.Readable]
+	read_params = |parts| FormBody.parse(parts)
+
 	## Its reader of a form's fields as its arg (`FormBody`), or why it can't: what a submission of a
 	## form to it reads what was typed with (`Router.use_submission!`, `Submission.input!`).
 	form_of : Endpoint(context, arg, result) -> (List({ name : Str, value : Str }) -> Try(arg, Str))
@@ -768,6 +774,16 @@ expect Endpoint.to_request(shout, "hi") == { method: "POST", url: "/shout", head
 expect Endpoint.answer(shout, Ok({ status: 200, headers: [], body: "\"HI\"" })) == Ok("HI")
 expect Endpoint.answer(shout, Ok({ status: 400, headers: [], body: "say something" })) == Err(Refused(400, "say something"))
 expect Endpoint.refused(NotFound) == (404, "Not found")
+expect {
+	read : Try({ id : I64, kind : [Low, High] }, Str)
+	read = Endpoint.read_params([{ name: "id", value: "7" }, { name: "kind", value: "High" }])
+	read == Ok({ id: 7, kind: High })
+}
+expect {
+	read : Try({ id : I64 }, Str)
+	read = Endpoint.read_params([{ name: "id", value: "seven" }])
+	read.is_err()
+}
 expect Endpoint.url_of(Endpoint.bind(Endpoint.remote("POST", "/shout"), |_, _, said| Ok(Str.concat(said, "!")))) == "/shout"
 expect Endpoint.url_of(Endpoint.with_query(shout, "weeks=1")) == "/shout?weeks=1"
 expect Endpoint.url_of(Endpoint.with_query(Endpoint.with_query(shout, "weeks=1"), "weeks=2")) == "/shout?weeks=2"

@@ -58,10 +58,15 @@ Routes := [].{
 
 	## A method's or a channel's types, from its annotation (`get! : { request : Server.Request,
 	## params : {}, context : c } => Try(Str, Endpoint.Refusal)`): what it is sent (`body`'s type; `""`
-	## when its record has none) and what it answers (its `Try`'s first). `line`: its definition's
-	## (from 1). Without an annotation, or one rocx can't read (`Unreadable`, why), it has none; one
-	## that names a type the route file defines (`Defined`, those types) has none Api can name.
-	Handler : { method : Str, line : U64, types : [Typed({ body : Str, answer : Str }), Unreadable(Str), Unannotated, Defined(List(Str))] }
+	## when its record has none), what it answers (its `Try`'s first) and its path's params (`params`'s
+	## type, `{ id : I64 }`; `""` when its record has none). `line`: its definition's (from 1). Without
+	## an annotation, or one rocx can't read (`Unreadable`, why), it has none; one that names a type
+	## the route file defines (`Defined`, those types) has none Api can name.
+	Handler : { method : Str, line : U64, types : [Typed({ body : Str, answer : Str, params : Str }), Unreadable(Str), Unannotated, Defined(List(Str))] }
+
+	## A path's param with its type (D-092): its name, which of the path's parts it is, and its type
+	## as Roc writes it (`Str`, `I64`, `[Low, High]`).
+	TypedParam : { name : Str, at : U64, type : Str }
 
 	## Each route file's definitions, by its path under `routes/`.
 	Source : { file : Str, defs : Defs }
@@ -859,10 +864,10 @@ Routes := [].{
 		$parts.append(Text.rest(bytes, $start)).map(Text.trim).keep_if(|part| !part.is_empty())
 	}
 
-	## A handler's types, from its annotation (what follows its `:`): `{ request : …, params : …,
-	## context : …, body : B } => Try(A, …)` is `{ body: "B", answer: "A" }` (`body` is `""` when
-	## the record has none).
-	signature : Str -> Try({ body : Str, answer : Str }, [Unreadable(Str)])
+	## A handler's types, from its annotation (what follows its `:`): `{ request : …, params : P,
+	## context : …, body : B } => Try(A, …)` is `{ body: "B", answer: "A", params: "P" }` (`body` and
+	## `params` are `""` when the record has none).
+	signature : Str -> Try({ body : Str, answer : Str, params : Str }, [Unreadable(Str)])
 	signature = |annotation| {
 		shape = "its annotation should be a record of what it is given, then => and a Try of its answer: { request : Server.Request, params : …, context : …, body : … } => Try(…, Endpoint.Refusal)"
 		bytes = annotation.to_utf8()
@@ -875,11 +880,13 @@ Routes := [].{
 				Err(Unclosed) => return Err(Unreadable(shape))
 			}
 		fields = Routes.top_level_parts(Text.cut(bytes, 1, close))
-		body =
-			match fields.find_first(|field| field.starts_with("body") and Text.trim(field.drop_prefix("body")).starts_with(":")) {
-				Ok(field) => Text.trim(Text.trim(field.drop_prefix("body")).drop_prefix(":"))
+		field_type = |name|
+			match fields.find_first(|field| field.starts_with(name) and Text.trim(field.drop_prefix(name)).starts_with(":")) {
+				Ok(field) => Text.trim(Text.trim(field.drop_prefix(name)).drop_prefix(":"))
 				Err(_) => ""
 			}
+		body = field_type("body")
+		params = field_type("params")
 		arrow = Text.trim(Text.rest(bytes, close + 1))
 		if !(arrow.starts_with("=>") or arrow.starts_with("->")) {
 			return Err(Unreadable(shape))
@@ -899,7 +906,7 @@ Routes := [].{
 		}
 		parts = Routes.top_level_parts(Text.cut(answer_bytes, 4, ends))
 		if parts.len() == 2 {
-			Ok({ body, answer: parts.first() ?? "" })
+			Ok({ body, answer: parts.first() ?? "", params })
 		} else {
 			Err(Unreadable(shape))
 		}
@@ -1430,6 +1437,188 @@ Routes := [].{
 	params_of : List(Param) -> Str
 	params_of = |params| if (params.is_empty()) "{}" else "{ ${Str.join_with(params.map(|param| "${param.name}: segments.get(${param.at.to_str()}) ?? \"\""), ", ")} }"
 
+	# ---- typed path params (D-092) ----
+
+	## The types a path param may have besides a union of tags (D-092): what `FormBody` reads from a
+	## part's text, and what every module rocx writes (Api, Paths, Root, Routes) can name.
+	param_type_names : List(Str)
+	param_type_names = ["Str", "Bool", "U8", "U16", "U32", "U64", "U128", "I8", "I16", "I32", "I64", "I128", "Dec", "F32", "F64"]
+
+	## A type as written, without its spaces, to compare two.
+	squeezed : Str -> Str
+	squeezed = |type| Str.join_with(Str.join_with(type.split_on(" "), "").split_on("\t"), "")
+
+	## Whether a param's type is one a path's part reads as: a name of `param_type_names`, or a union
+	## of tags with no payload, written out (`[Low, High]`).
+	param_type_ok : Str -> Bool
+	param_type_ok = |type| {
+		bare = Routes.squeezed(type)
+		if Routes.param_type_names.contains(bare) {
+			Bool.True
+		} else if bare.starts_with("[") and bare.ends_with("]") {
+			tags = bare.drop_prefix("[").drop_suffix("]").split_on(",")
+			tags.all(|tag| Text.is_upper(Text.at(tag.to_utf8(), 0)) and Text.all_of(tag, Text.is_word))
+		} else {
+			Bool.False
+		}
+	}
+
+	## The fields of a record's type as written (`{ id : I64, slug : Str }`): each one's name and
+	## type.
+	record_types : Str -> List({ name : Str, type : Str })
+	record_types = |text|
+		Routes.top_level_parts(Text.trim(text).drop_prefix("{").drop_suffix("}")).keep_oks(
+			|part|
+				match part.split_first(":") {
+					Ok({ before, after }) => Ok({ name: Text.trim(before), type: Text.trim(after) })
+					Err(_) => Err(NoType)
+				},
+		)
+
+	## Where each handler's annotation gives a path param a type (`params : { id : I64 }`): the
+	## directory the param is its part of (`monitors/[id]`), its name, its type, and the route file,
+	## method and line that say so.
+	param_uses : Table, List(Source) -> List({ dir : Str, name : Str, type : Str, file : Str, method : Str, line : U64 })
+	param_uses = |table, sources|
+		table.servers.join_map(
+			|server|
+				Routes.contracted(sources, server).join_map(
+					|method|
+						match Routes.handler_in(sources, server.file, method) {
+							Some(handler) =>
+								match handler.types {
+									Typed(types) if !types.params.is_empty() => {
+										given = Routes.record_types(types.params)
+										server.params.keep_oks(
+											|param|
+												match given.find_first(|field| field.name == param.name) {
+													Ok(field) => Ok({ dir: Str.join_with(server.parts.take_first(param.at + 1), "/"), name: param.name, type: field.type, file: server.file, method, line: handler.line })
+													Err(_) => Err(NotGiven)
+												},
+										)
+									}
+									_ => []
+								}
+							None => []
+						},
+				),
+		)
+
+	## Each path param that has a type other than `Str` (D-092), by its directory: the first type a
+	## handler's annotation gives it. (`param_problems` says when they don't agree.)
+	param_types : Table, List(Source) -> List({ dir : Str, name : Str, type : Str })
+	param_types = |table, sources|
+		Routes.param_uses(table, sources).fold(
+			[],
+			|found, each|
+				if Routes.squeezed(each.type) == "Str" or found.any(|before| before.dir == each.dir and before.name == each.name) {
+					found
+				} else {
+					found.append({ dir: each.dir, name: each.name, type: each.type })
+				},
+		)
+
+	## What is wrong with the types handlers give path params, a line each: a param given two types
+	## (a path's param has one wherever it is read: its directory's pages, layouts and endpoints), or
+	## a type a path's part isn't read as.
+	param_problems : Table, List(Source) -> List(Str)
+	param_problems = |table, sources| {
+		uses = Routes.param_uses(table, sources)
+		unread = uses.keep_if(|each| !Routes.param_type_ok(each.type)).map(
+			|each| "routes/${each.file}:${each.line.to_str()}: ${each.method} gives the param ${each.name} the type ${each.type}: a path's param is Str, a number (U64, I64, Dec…), Bool, or a union of tags written out ([Low, High]), which every module rocx writes can name (D-092)",
+		)
+		var $problems = unread
+		var $seen = []
+		for each in uses {
+			match $seen.find_first(|before| before.dir == each.dir and before.name == each.name and Routes.squeezed(before.type) != Routes.squeezed(each.type)) {
+				Ok(before) => {
+					problem = "routes/${each.file}:${each.line.to_str()}: ${each.method} gives the param ${each.name} the type ${each.type}, and routes/${before.file}'s ${before.method} gives it ${before.type}: a path's param has one type wherever it is read (D-092)"
+					if !$problems.contains(problem) {
+						$problems = $problems.append(problem)
+					}
+				}
+				Err(_) => {
+					$seen = $seen.append(each)
+				}
+			}
+		}
+		$problems
+	}
+
+	## A route's params with their types (D-092): each one's type is what `param_types` has for its
+	## directory, or `Str`.
+	typed_params : List({ dir : Str, name : Str, type : Str }), List(Str), List(Param) -> List(TypedParam)
+	typed_params = |types, parts, params|
+		params.map(
+			|param| {
+				dir = Str.join_with(parts.take_first(param.at + 1), "/")
+				type =
+					match types.find_first(|each| each.dir == dir and each.name == param.name) {
+						Ok(found) => found.type
+						Err(_) => "Str"
+					}
+				{ name: param.name, at: param.at, type }
+			},
+		)
+
+	## Whether any of a route's params has a type other than `Str`: one read from its part.
+	is_typed : List(TypedParam) -> Bool
+	is_typed = |params| params.any(|param| Routes.squeezed(param.type) != "Str")
+
+	## The record of a route's params, as a type: `{ board : Str, card : I64 }`, or `{}`.
+	typed_params_type : List(TypedParam) -> Str
+	typed_params_type = |params| if (params.is_empty()) "{}" else "{ ${Str.join_with(params.map(|param| "${param.name} : ${param.type}"), ", ")} }"
+
+	## Lines that read a route's typed params from its segments (`Endpoint.read_params`: as a form's
+	## fields are read, by their types), then
+	## `ok`, given them as `params` (`_params`, when it doesn't use them), or `missing` when a part
+	## doesn't read as its type: then the route doesn't match. `indent`: the lines' tabs.
+	params_read : List(TypedParam), Str, Bool, Str, Str -> Str
+	params_read = |params, indent, uses, ok, missing| {
+		fields = Str.join_with(params.map(|param| "{ name: ${Text.json_string(param.name)}, value: segments.get(${param.at.to_str()}) ?? \"\" }"), ", ")
+		Str.join_with(
+			[
+				"read : Try(${Routes.typed_params_type(params)}, Str)",
+				"${indent}read = Endpoint.read_params([${fields}])",
+				"${indent}match read {",
+				"${indent}\tOk(${if (uses) "params" else "_params"}) => {",
+				"${indent}\t\t${ok}",
+				"${indent}\t}",
+				"${indent}\tErr(_) => ${missing}",
+				"${indent}}",
+			],
+			"\n",
+		)
+	}
+
+	## The URL of a path with typed params, its params put in, as a Roc string literal: a `Str` param
+	## encoded (`Server.encode_segment`), any other written as its part reads (`Server.encode_param`).
+	typed_url_of : List(Str), List(TypedParam) -> Str
+	typed_url_of = |parts, params| {
+		put = |part| {
+			name = part.drop_prefix("[").drop_suffix("]")
+			typed = params.any(|param| param.name == name and Routes.squeezed(param.type) != "Str")
+			"\${Server.${if (typed) "encode_param" else "encode_segment"}(params.${name})}"
+		}
+		Text.json_string("/${Str.join_with(parts.map(|part| if (part.starts_with("[")) put(part) else part), "/")}")
+	}
+
+	## A value of a param's type, which nothing reads: what Api's OpenAPI document names an endpoint
+	## with (its params are only its URL's).
+	param_sample : Str -> Str
+	param_sample = |type| {
+		bare = Routes.squeezed(type)
+		if bare == "Str" {
+			"\"\""
+		} else if bare == "Bool" {
+			"Bool.False"
+		} else if bare.starts_with("[") {
+			bare.drop_prefix("[").drop_suffix("]").split_on(",").first() ?? "\"\""
+		} else {
+			"0"
+		}
+	}
+
 	## Whether the app has pages (a page, or its error page).
 	has_pages : Table -> Bool
 	has_pages = |table|
@@ -1522,6 +1711,8 @@ Routes := [].{
 	routes_module : Table, List(Source), [Some(List(Placed)), None] -> Str
 	routes_module = |table, sources, stories| {
 		pages = Routes.has_pages(table)
+		types = Routes.param_types(table, sources)
+		missing = if (pages) "if (wants_html) {\n\t\t\tRoutes.page(404)\n\t\t} else {\n\t\t\tRoutes.text(404, \"nothing at \${request.path}\")\n\t\t}" else "Routes.text(404, \"nothing at \${request.path}\")"
 		page_answer = |entry|
 			match Routes.page_guard(table, sources, entry) {
 				Some(guard) => "Middleware.run!(${guard.module_name}.middleware, request, context, |_passed, _handed| Routes.page(200))"
@@ -1585,9 +1776,14 @@ Routes := [].{
 				"",
 			)
 			reads = !methods.is_empty() or respond
-			Str.join_with(["if (${condition}) {"].concat(if (reads) ["\t\t\tparams = ${params}"] else []).concat(["\t\t\t${dispatch}", "\t\t}"]), "\n")
+			typed = Routes.typed_params(types, at.parts, at.params)
+			if Routes.is_typed(typed) {
+				# A part that isn't its param's type: the route doesn't match (D-092).
+				Str.join_with(["if (${condition}) {", "\t\t\t${Routes.params_read(typed, "\t\t\t", reads, dispatch.replace_each("\n", "\n\t\t"), missing.replace_each("\n", "\n\t\t"))}", "\t\t}"], "\n")
+			} else {
+				Str.join_with(["if (${condition}) {"].concat(if (reads) ["\t\t\tparams = ${params}"] else []).concat(["\t\t\t${dispatch}", "\t\t}"]), "\n")
+			}
 		}
-		missing = if (pages) "if (wants_html) {\n\t\t\tRoutes.page(404)\n\t\t} else {\n\t\t\tRoutes.text(404, \"nothing at \${request.path}\")\n\t\t}" else "Routes.text(404, \"nothing at \${request.path}\")"
 		modules = Text.sorted(
 			table.pages
 				.keep_if(|entry| Routes.guards(sources, entry.file))
@@ -1602,6 +1798,7 @@ Routes := [].{
 				},
 		)
 		hooked = |at, hook| Routes.hooks_of(sources, Routes.server_of(at).file).contains(hook)
+		no_channel = "Routes.text(404, \"no channel at \${request.path}\")"
 		channel_arm = |at| {
 			server = Routes.server_of(at)
 			channel = "Api.${Routes.api_name(Routes.channel_name, at.name)}(params)"
@@ -1614,9 +1811,13 @@ Routes := [].{
 				}
 			closes = if (hooked(at, "on_close!")) "Bool.True" else "Bool.False"
 			answer = |request, context| "Endpoint.channel!(Handlers.${Routes.api_name(Routes.channel_name, at.name)}(params), ${request}, ${context}, { opened!: ${opened}, received!: ${received}, closes: ${closes} })"
-			Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\tparams = ${Routes.params_of(at.params)}", "\t\t\t${Routes.guarded(sources, server, answer)}", "\t\t}"], "\n")
+			typed = Routes.typed_params(types, at.parts, at.params)
+			if Routes.is_typed(typed) {
+				Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\t${Routes.params_read(typed, "\t\t\t", Bool.True, Routes.guarded(sources, server, answer), no_channel)}", "\t\t}"], "\n")
+			} else {
+				Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\tparams = ${Routes.params_of(at.params)}", "\t\t\t${Routes.guarded(sources, server, answer)}", "\t\t}"], "\n")
+			}
 		}
-		no_channel = "Routes.text(404, \"no channel at \${request.path}\")"
 		channel_function =
 			if channels.is_empty() {
 				[]
@@ -1634,15 +1835,13 @@ Routes := [].{
 		closed_arm = |at| {
 			server = Routes.server_of(at)
 			channel = "Api.${Routes.api_name(Routes.channel_name, at.name)}(params)"
-			Str.join_with(
-				[
-					"if (${Routes.matched_by(at.parts, at.params)}) {",
-					"\t\t\tparams = ${Routes.params_of(at.params)}",
-					"\t\t\tEndpoint.closed!(${channel}, request, |who, tab, why| ${server.module_name}.on_close!({ params: params, who: who, tab: tab, why: why, channel: ${channel} }))",
-					"\t\t}",
-				],
-				"\n",
-			)
+			closes_with = "Endpoint.closed!(${channel}, request, |who, tab, why| ${server.module_name}.on_close!({ params: params, who: who, tab: tab, why: why, channel: ${channel} }))"
+			typed = Routes.typed_params(types, at.parts, at.params)
+			if Routes.is_typed(typed) {
+				Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\t${Routes.params_read(typed, "\t\t\t", Bool.True, closes_with, "Server.response(204, [], \"\")")}", "\t\t}"], "\n")
+			} else {
+				Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\tparams = ${Routes.params_of(at.params)}", "\t\t\t${closes_with}", "\t\t}"], "\n")
+			}
 		}
 		closed_function =
 			if closing.is_empty() {
@@ -1789,6 +1988,7 @@ Routes := [].{
 	## The server's `Api.openapi`: the OpenAPI document of the endpoints.
 	open_api_document : Table, List(Source), List(Str), Str -> List(Str)
 	open_api_document = |table, sources, tags, title| {
+		types = Routes.param_types(table, sources)
 		operation = |verb, doc, body, contents| "OpenApi.operation(${Text.roc_string(verb)}, ${Text.roc_string(doc)}, ${body}, [${Str.join_with(contents, ", ")}])"
 		documented = table.paths.keep_if(
 			|at|
@@ -1807,7 +2007,8 @@ Routes := [].{
 						Ok(doc) => doc.value
 						Err(_) => ""
 					}
-				params = if (at.params.is_empty()) "{}" else "{ ${Str.join_with(at.params.map(|param| "${param.name}: \"\""), ", ")} }"
+				typed = Routes.typed_params(types, at.parts, at.params)
+				params = if (at.params.is_empty()) "{}" else "{ ${Str.join_with(typed.map(|param| "${param.name}: ${Routes.param_sample(param.type)}"), ", ")} }"
 				call = |method| "Api.${Routes.api_name(method, server.name)}(${params})"
 				gets = methods.keep_if(|method| Routes.verb_of(method) == "GET")
 				get_operation =
@@ -1823,7 +2024,14 @@ Routes := [].{
 						operation(Text.lower(verb), doc_of(method), if (takes) "OpenApi.sent(${call(method)}, tags)" else "\"\"", ["OpenApi.answer(${call(method)}, tags)"])
 					},
 				)
-				["\t\t\tOpenApi.path(${Text.roc_string(Routes.open_api_path(at.parts))}, [${Str.join_with(at.params.map(|param| Text.roc_string(param.name)), ", ")}], ["]
+				opened =
+					if Routes.is_typed(typed) {
+						# Its params' schemas from their types: Api's function of them (D-092).
+						"OpenApi.typed_path(${Text.roc_string(Routes.open_api_path(at.parts))}, Api.${Routes.api_name(methods.first() ?? "get!", server.name)}, tags, ["
+					} else {
+						"OpenApi.path(${Text.roc_string(Routes.open_api_path(at.parts))}, [${Str.join_with(at.params.map(|param| Text.roc_string(param.name)), ", ")}], ["
+					}
+				["\t\t\t${opened}"]
 					.concat(get_operation.concat(others).map(|each| "\t\t\t\t${each},"))
 					.append("\t\t\t]),")
 			},
@@ -1887,8 +2095,8 @@ Routes := [].{
 	## An endpoint's or a channel's lines in Api: its comment, its type (from its handler's: its
 	## params to an endpoint of any context, the handler's body and its answer) and its contract,
 	## its method and URL. The browser's copy is the same.
-	contract_lines : List(Source), Entry, Str -> List(Str)
-	contract_lines = |sources, server, method| {
+	contract_lines : List(Source), List({ dir : Str, name : Str, type : Str }), Entry, Str -> List(Str)
+	contract_lines = |sources, types, server, method| {
 		verb = Routes.contract_verb(method)
 		name = Routes.api_name(method, server.name)
 		comment =
@@ -1899,13 +2107,15 @@ Routes := [].{
 			} else {
 				"${verb} ${server.path}, from routes/${server.file}"
 			}
+		typed = Routes.typed_params(types, server.parts, server.params)
 		annotation =
 			match Routes.contract_types(sources, server, method) {
-				Some(types) => ["\t${name} : ${Routes.params_type(server.params)} -> Endpoint(context, ${types.arg}, ${types.answer})"]
+				Some(given) => ["\t${name} : ${Routes.typed_params_type(typed)} -> Endpoint(context, ${given.arg}, ${given.answer})"]
 				None => []
 			}
 		takes_params = if (server.params.is_empty()) "_params" else "params"
-		["\t## ${comment}"].concat(annotation).concat(["\t${name} = |${takes_params}| Endpoint.remote(${Text.json_string(verb)}, ${Routes.url_of(server.parts)})", ""])
+		url = if (Routes.is_typed(typed)) Routes.typed_url_of(server.parts, typed) else Routes.url_of(server.parts)
+		["\t## ${comment}"].concat(annotation).concat(["\t${name} = |${takes_params}| Endpoint.remote(${Text.json_string(verb)}, ${url})", ""])
 	}
 
 	## A route file's methods with endpoints in Api, then its channel (`channel!`), if it has one.
@@ -2103,7 +2313,7 @@ Routes := [].{
 					},
 				),
 		)
-		problems.concat(Routes.contract_clashes(table, sources))
+		problems.concat(Routes.contract_clashes(table, sources)).concat(Routes.param_problems(table, sources))
 	}
 
 	## `Generated/Api.roc`: the app's contract. Each endpoint, a function of its params, with its
@@ -2114,8 +2324,9 @@ Routes := [].{
 	api_module : Table, List(Source), { client : Bool, tags : List(Str), title : Str } -> Str
 	api_module = |table, sources, options| {
 		client = options.client
-		endpoints = table.servers.join_map(|server| Routes.defs_of(sources, server.file).methods.join_map(|method| Routes.contract_lines(sources, server, method)))
-		channels = table.servers.keep_if(|server| Routes.has_channel(sources, server.file)).join_map(|server| Routes.contract_lines(sources, server, Routes.channel_name))
+		types = Routes.param_types(table, sources)
+		endpoints = table.servers.join_map(|server| Routes.defs_of(sources, server.file).methods.join_map(|method| Routes.contract_lines(sources, types, server, method)))
+		channels = table.servers.keep_if(|server| Routes.has_channel(sources, server.file)).join_map(|server| Routes.contract_lines(sources, types, server, Routes.channel_name))
 		known = ["import pf.Endpoint", "import pf.Server", "import pf.OpenApi"]
 		typed = Routes.contract_import_lines(Routes.contract_imports(table, sources)).keep_if(|line| !known.contains(line))
 		lines =
@@ -2171,15 +2382,18 @@ Routes := [].{
 		Str.join_with(lines, "\n")
 	}
 
-	## `Generated/Paths.roc`: a path for every page, a function of its params if it has any.
-	paths_module : Table -> Str
-	paths_module = |table| {
+	## `Generated/Paths.roc`: a path for every page, a function of its params if it has any, typed as
+	## the handlers' annotations give them (D-092).
+	paths_module : Table, List(Source) -> Str
+	paths_module = |table, sources| {
+		types = Routes.param_types(table, sources)
 		definition = |page|
 			if page.params.is_empty() {
 				["\t## ${page.path}, from routes/${page.file}", "\t${page.name} : Str", "\t${page.name} = ${Text.json_string(page.path)}"]
 			} else {
-				shape = "{ ${Str.join_with(page.params.map(|param| "${param.name} : Str"), ", ")} }"
-				["\t## ${page.path}, from routes/${page.file}", "\t${page.name} : ${shape} -> Str", "\t${page.name} = |params| ${Routes.url_of(page.parts)}"]
+				typed = Routes.typed_params(types, page.parts, page.params)
+				url = if (Routes.is_typed(typed)) Routes.typed_url_of(page.parts, typed) else Routes.url_of(page.parts)
+				["\t## ${page.path}, from routes/${page.file}", "\t${page.name} : ${Routes.typed_params_type(typed)} -> Str", "\t${page.name} = |params| ${url}"]
 			}
 		statics = table.pages.keep_if(|page| page.params.is_empty()).map(|page| Text.json_string(page.path))
 		any_params = table.pages.any(|page| !page.params.is_empty())
@@ -2294,6 +2508,9 @@ Routes := [].{
 	root_module : Table, List(Source), List(Placed), { build : Str, dev : Bool } -> Str
 	root_module = |table, sources, stories, told| {
 		pages = table.pages
+		# Each page's params with their types (D-092): a part that isn't its param's type is no page.
+		types = Routes.param_types(table, sources)
+		typed_of = |page| Routes.typed_params(types, page.parts, page.params)
 		root = table.layouts.find_first(|layout| layout.parts.is_empty())
 		has_root =
 			match root {
@@ -2327,10 +2544,11 @@ Routes := [].{
 				None => "{}"
 			}
 		# A layout's own params: those its directory names.
-		own = |page, layout| page.params.keep_if(|param| param.at < layout.parts.len())
+		own = |page, layout| typed_of(page).keep_if(|param| param.at < layout.parts.len())
 		record_of = |owned| if (owned.is_empty()) "{}" else "{ ${Str.join_with(owned.map(|param| "${param.name}: params.${param.name}"), ", ")} }"
 		# A level's key, as Roc: its file, and each of its params as a path's part.
-		key_of = |file, owned| "\"routes/${file}${Str.join_with(owned.map(|param| " ${param.name}=\${Server.encode_segment(params.${param.name})}"), "")}\""
+		encoder = |param| if (Routes.squeezed(param.type) == "Str") "encode_segment" else "encode_param"
+		key_of = |file, owned| "\"routes/${file}${Str.join_with(owned.map(|param| " ${param.name}=\${Server.${encoder(param)}(params.${param.name})}"), "")}\""
 		front =
 			match pages.find_first(|page| page.path == "/") {
 				Ok(page) => Some(page)
@@ -2339,12 +2557,27 @@ Routes := [].{
 		stories_prefix = Text.json_string("${Routes.stories_path}/")
 		tags =
 			pages
-				.map(|page| if (page.params.is_empty()) tag_of(page) else "${tag_of(page)}({ ${Str.join_with(page.params.map(|param| "${param.name} : Str"), ", ")} })")
+				.map(|page| if (page.params.is_empty()) tag_of(page) else "${tag_of(page)}(${Routes.typed_params_type(typed_of(page))})")
 				.concat(if (stories.is_empty()) [] else ["Story(Str)"])
 				.append("Missing(Str)")
 		route_arms =
 			(if (stories.is_empty()) [] else [{ condition: "path.starts_with(${stories_prefix})", made: "Story(path.drop_prefix(${stories_prefix}))" }])
-				.concat(pages.map(|page| { condition: Routes.matched_by(page.parts, page.params), made: if (page.params.is_empty()) tag_of(page) else "${tag_of(page)}(${Routes.params_of(page.params)})" }))
+				.concat(
+					pages.map(
+						|page| {
+							typed = typed_of(page)
+							made =
+								if page.params.is_empty() {
+									tag_of(page)
+								} else if Routes.is_typed(typed) {
+									Routes.params_read(typed, "\t\t\t", Bool.True, "${tag_of(page)}(params)", "Missing(path)")
+								} else {
+									"${tag_of(page)}(${Routes.params_of(page.params)})"
+								}
+							{ condition: Routes.matched_by(page.parts, page.params), made }
+						},
+					),
+				)
 		route_lines =
 			if route_arms.is_empty() {
 				["\troute = |path| Missing(path)"]
@@ -2363,7 +2596,7 @@ Routes := [].{
 					|page| {
 						levels = below(page)
 						chain = Str.join_with(levels.map_with_index(|layout, i| "if (depth == ${(i + 1).to_str()}) ${key_of(layout.file, own(page, layout))} else "), "")
-						"${pattern_of(page)} => ${chain}${key_of(page.file, page.params)}"
+						"${pattern_of(page)} => ${chain}${key_of(page.file, typed_of(page))}"
 					},
 				)
 				.concat(if (stories.is_empty()) [] else ["Story(id) => \"story \${id}\""])
@@ -2431,6 +2664,7 @@ Routes := [].{
 				"import pf.Solid",
 			]
 				.concat(if (pages.is_empty()) [] else ["import pf.Server"])
+				.concat(if (pages.any(|page| Routes.is_typed(typed_of(page)))) ["import pf.Endpoint"] else [])
 				.concat(["import pf.Errored", "import pf.HttpStatusCode"])
 				.concat(modules.map(|module_name| "import ${module_name}"))
 				.concat(story_modules.map(|each| "import ../${each.module_path} as ${each.alias}"))
@@ -3123,7 +3357,7 @@ Routes := [].{
 						} else if Routes.truthy(Value.field(given, "unreadable")) {
 							Unreadable(Value.str(Value.field(given, "unreadable")))
 						} else {
-							Typed({ body: Value.str_or(Value.field(given, "body"), ""), answer: Value.str_or(Value.field(given, "answer"), "{}") })
+							Typed({ body: Value.str_or(Value.field(given, "body"), ""), answer: Value.str_or(Value.field(given, "answer"), "{}"), params: Value.str_or(Value.field(given, "params"), "") })
 						}
 					{ method: each.key, line: Routes.count_of(Value.field(given, "line")), types }
 				},
@@ -3226,7 +3460,7 @@ Routes := [].{
 		handler_value = |handler| {
 			types =
 				match handler.types {
-					Typed(found) => [{ key: "body", value: Text(found.body) }, { key: "answer", value: Text(found.answer) }]
+					Typed(found) => [{ key: "body", value: Text(found.body) }, { key: "answer", value: Text(found.answer) }].concat(if (found.params.is_empty()) [] else [{ key: "params", value: Text(found.params) }])
 					Unreadable(why) => [{ key: "unreadable", value: Text(why) }]
 					Unannotated => [{ key: "unannotated", value: Boolean(Bool.True) }]
 					Defined(named) => [{ key: "defined", value: Value.strs(named) }]
@@ -3331,7 +3565,7 @@ Routes := [].{
 			}
 			"pathsModule" => {
 				table = Routes.table_from(arg(0))?
-				Ok(Text(Routes.paths_module(table)))
+				Ok(Text(Routes.paths_module(table, Routes.sources_from(option("sources")))))
 			}
 			"rootModule" => {
 				table = Routes.table_from(arg(0))?

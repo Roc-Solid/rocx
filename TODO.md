@@ -79,6 +79,9 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **A page's own typed params (D-092).** A param is typed by the handlers under its directory; a
+  page whose directory has none that names it gets `Str`. A page could say its params' types itself
+  (a `Params` alias in `+page.rocx`), when an app needs it.
 - **The engine in the browser (spike/wasm-engine/REPORT.md, "Round 2").** native/core's engine is
   within 0 to 5% of today's runtime on the benchmark's page (clear about 1.6x), but its wasm is
   119 KB with brotli at opt-level s (markup read without serde_json since round 3) against today's

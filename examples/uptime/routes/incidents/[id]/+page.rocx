@@ -33,7 +33,7 @@ view! = |{ params }| {
 			<p class="crumbs">
 				<a href="/">All services</a>
 				<span aria-hidden="true">/</span>
-				<a href={Paths.monitors_id({ id: incident!().monitor.to_str() })}>{incident!().monitor_name}</a>
+				<a href={Paths.monitors_id({ id: incident!().monitor })}>{incident!().monitor_name}</a>
 			</p>
 			{<IncidentCard incident={incident!()} link={Bool.False} />}
 		</div>

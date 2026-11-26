@@ -5553,6 +5553,63 @@ set.
 
 **Reversible:** yes: native/core's own allocator and guard are in git's history.
 
+## D-092 A path's params have the types their handlers give them
+
+**Status.** Built (2026-11-26).
+
+**Context.** A handler's `params` were a record of strings (`params : { id : Str }`), so an app
+whose ids are numbers parsed them by hand in every handler, and answered `NotFound` itself for an id
+that wasn't one (examples/uptime: five handlers of `match I64.from_str(params.id) { …, Err(_) =>
+Err(NotFound) }`; the site's count, `U64.from_str(params.to) ?? 0`). Its pages did the same, and
+its links wrote `id.to_str()`. The body already had a reader of a type from text (`FormBody`,
+D-038), which a path's parts are too.
+
+**Decision.**
+
+- **The annotation says the type**: `get! : { request : Server.Request, params : { id : I64 },
+  context : c } => …`. A param may be `Str`, a number (`U8` to `I128`, `Dec`, `F32`, `F64`), `Bool`,
+  or a union of tags with no payload written out (`[Draft, Live]`): what `FormBody` reads from a
+  part's text, and what every module rocx writes can name without importing the app's (a type of a
+  module's is refused at its line: Paths and Root import no app module, and Paths is what pages
+  import).
+- **One type per param, wherever it is read**: a param is its directory's (`routes/monitors/[id]`),
+  so every handler under that directory that names it must give it the same type (rocx build
+  refuses two, naming both), and the pages and layouts under it are given it too: `view! = |{ params
+  }|` gets `{ id : I64 }`, `Paths.monitors_id({ id: 7 })` takes one, `Root`'s route and its levels'
+  keys have it. A param no handler types is `Str`, as before, so an app that writes nothing new
+  is unchanged, its generated code too.
+- **Read where the path is matched**: `Routes` reads a typed path's parts with
+  `Endpoint.read_params` (`FormBody`, which isn't exposed, as a form's fields: `[{ name: "id",
+  value: <part> }]`), and so does `Root` (both copies, so client navigation agrees with the server). A part that doesn't read as its type is no match: the 404 a path nothing has
+  gets (the error page for a browser, text for anyone else), before any middleware or handler runs.
+  A channel's subscription to such a path is a 404, and its close a 204.
+- **Written back the way it is read**: Api's and Paths' URLs put a typed param in with
+  `Server.encode_param` (JSON's text of a number or a yes-or-no, a tag's name, text as it is, then
+  `encode_segment`), a `Str` with `encode_segment` as before.
+- **Documented with its type**: `/openapi.json` gives such a path's parameters their schemas, from
+  the params' record (`OpenApi.typed_path(at, Api.get_x, tags, operations)`, which writes the
+  record's schema with `OpenApi`'s format and takes each field's); a `Str` param stays `{"type":
+  "string"}` (`OpenApi.path`).
+
+Converted: examples/uptime's monitors and incidents (`{ id : I64 }`: no parsing, no `NotFound` of
+its own; its pages and links pass the number), and the site's count (`{ to : U64 }`).
+
+**Alternatives.** A 400 for a part that doesn't read: but `/monitors/payments` names no monitor,
+as `/monitors/9999` doesn't, and SvelteKit's param matchers and Rails' route constraints both make
+it no route. Types per handler (each method parses its own): one path's page and endpoints would
+then disagree on what `/notes/x` is, and Root has one type per page. A page-only declaration of
+its params' types (a `Params` alias in `+page.rocx`): a second way to say it; the handlers'
+annotations exist already, and a page without a `+server.roc` beside or below it still gets `Str`
+(a later step could read a page's own). Any type with a `FormBody` reader (an app's nominal
+`Slug`): Paths and Root would have to import the app's modules, which import Paths.
+
+**Costs.** A typed param's type is the directory's, so two handlers under it can't differ. A part
+is read with FormBody (a number's text, trimmed), so `/notes/%207` is note 7. The typed-path
+check runs before the path's middleware: a guarded route answers a 404 rather than a 401 for a
+part that doesn't read, as for any path nothing answers.
+
+**Reversible:** yes: write `Str` in the annotations; nothing else changes.
+
 ## D-094 A setter's function form: `update!`
 
 **Status.** Built (2026-11-26).

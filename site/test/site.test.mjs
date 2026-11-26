@@ -458,7 +458,8 @@ test("endpoints: GET /openapi.json is their OpenAPI document, each schema its ty
 	assert.deepEqual(Object.keys(joined), ["application/json", "application/x-www-form-urlencoded", "multipart/form-data"]);
 	assert.deepEqual(joined["application/x-www-form-urlencoded"].schema, joined["application/json"].schema);
 	assert.deepEqual(Object.keys(doc.paths["/api/shout"].post.requestBody.content), ["application/json"], "a string isn't a form's body");
-	assert.deepEqual(doc.paths["/api/count/{to}"].parameters, [{ name: "to", in: "path", required: true, schema: { type: "string" } }]);
+	assert.deepEqual(doc.paths["/api/count/{to}"].parameters, [{ name: "to", in: "path", required: true, schema: { type: "integer", minimum: 0 } }], "its param's type, U64 (D-092)");
+	assert.deepEqual(doc.paths["/api/shout/{word}"].parameters, [{ name: "word", in: "path", required: true, schema: { type: "string" } }]);
 	const events = doc.paths["/api/count/{to}"].get.responses["200"].content["text/event-stream"].itemSchema.oneOf;
 	assert.deepEqual(events[0].properties.data.contentSchema.required, ["count", "of", "square"], "each event's data");
 	assert.deepEqual(events[1].properties.event, { const: "end" });
@@ -575,6 +576,9 @@ test("events: an endpoint streams them as it makes them, and lets go of a page t
 	const refused = await listen("/api/count/21");
 	assert.equal(refused.status, 400);
 	assert.equal(await refused.text(), "count to a number from 1 to 20");
+	// Its param is a U64 (D-092): a part that isn't one is no route, a 404, and the handler never runs.
+	const unread = await listen("/api/count/five");
+	assert.equal(unread.status, 404);
 	// A page that goes before the end: the server lets go of the stream, and keeps answering.
 	const gone = new AbortController();
 	const cut = await fetch(`${site.url}/api/count/20`, { headers: { accept: "text/event-stream" }, signal: gone.signal });

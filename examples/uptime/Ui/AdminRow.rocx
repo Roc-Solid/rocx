@@ -17,7 +17,7 @@ AdminRow := [].{
 	view! : { monitor! : () => Report.AdminMonitor } => Html
 	view! = |{ monitor! }| {
 		# Its monitor's: a row per monitor id, so the id read once is meant.
-		id = untrack!(|| monitor!().id.to_str())
+		id = untrack!(|| monitor!().id)
 		check = Api.post_admin_monitors_id_check({ id: id })
 		pause = Api.post_admin_monitors_id_pause({ id: id })
 		checked = use_submission!(check)

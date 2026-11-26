@@ -77,7 +77,8 @@ view! = |_|
 			<ul>
 				<li>
 					<strong><code>view!</code> is given the page's params:</strong> <code>{"view! = |{ params }| …"}</code>,
-					a record of strings (<code>{"{}"}</code> on a page without params). Write <code>|_|</code> when the
+					a record of strings, or of the <a href="#params">types its handlers give them</a>
+					(<code>{"{}"}</code> on a page without params). Write <code>|_|</code> when the
 					page needs none. A page is an <a href={"${Paths.components}#kinds"}>effectful component</a>: its body
 					runs once, and it may make signals.
 				</li>
@@ -136,7 +137,7 @@ view! = |_|
 			<p>
 				A directory in brackets is a param: <code>routes/blog/[slug]/+page.rocx</code> is the page at any
 				<code>/blog/…</code>, and its <code>view!</code> is given <code>{"params : { slug : Str }"}</code>. A
-				param is always a string, decoded from the URL; parse it yourself if it is a number. A fixed part is
+				param is a string, decoded from the URL, unless a handler's annotation gives it another type. A fixed part is
 				tried before a param in the same place, so <code>/blog/new</code> can be a page of its own beside
 				<code>/blog/[slug]</code>. A directory may also name a file, with dots between its letters or digits:
 				<code>routes/sitemap.xml/+server.roc</code> answers <code>/sitemap.xml</code>, and its names leave the
@@ -151,6 +152,17 @@ view! = |_|
 				be slug?</em>). <code>Paths.all</code> lists the pages without params.
 			</p>
 			<Code title={"What rocx writes for that app: ${Sources.route_fixture_paths.file}"} source={Sources.route_fixture_paths.rocx} numbers={Bool.False} />
+			<p>
+				<strong>Typed params.</strong> A handler's annotation may give a param a type other than
+				<code>Str</code>: a number, <code>Bool</code>, or a union of tags written out
+				(<code>{"[Draft, Live]"}</code>). The router reads the path's part as that type before anything runs,
+				and a part that doesn't read is no match, so <code>/api/count/five</code> is a 404, as a path nothing
+				answers is, and the handler never parses it. The type is the directory's: every handler under it
+				gives the param the same one (rocx build says where two differ), and the pages and layouts there
+				are given it too, as <code>Paths</code> and <code>Api</code> take it. This site's count of
+				<a href={"${Paths.calls}#events"}>events</a> is typed so:
+			</p>
+			<Code title={Sources.endpoint_count.file} source={Sources.endpoint_count.rocx} />
 			<p>This site's sidebar is made of them, each part's pages in groups under a heading:</p>
 			<Code title={"${Sources.route_nav.file}, in part"} source={Sources.route_nav.rocx} numbers={Bool.False} />
 

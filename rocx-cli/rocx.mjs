@@ -105,7 +105,7 @@ export const routesModule = (table, { sources, stories = null }) => call("routes
 export const apiModule = (table, { sources, client = false, tags = [], title = "app" }) => call("apiModule", table, { sources: plain(sources), client, tags, title });
 export const handlersModule = (table, { sources }) => call("handlersModule", table, { sources: plain(sources) });
 export const contractProblems = (table, sources) => call("contractProblems", table, plain(sources));
-export const pathsModule = (table) => call("pathsModule", table);
+export const pathsModule = (table, { sources = new Map() } = {}) => call("pathsModule", table, { sources: plain(sources) });
 export const rootModule = (table, { sources, stories = [], build = "0badc0de", dev = false }) => call("rootModule", table, { sources: plain(sources), stories, build, dev });
 export const jobsIn = (dir, table) => call("jobsIn", dir, table);
 export const actorsIn = (dir, table) => call("actorsIn", dir, table);

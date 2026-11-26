@@ -22,7 +22,7 @@ Count := [].{
 			set_heard!([])
 			set_state!(Listening)
 			Endpoint.listen!(
-				Api.events_api_count_to({ to: to!() }),
+				Api.events_api_count_to({ to: U64.from_str(to!().trim()) ?? 0 }),
 				|event|
 					match event {
 						Event(counted) => set_heard!(heard!().append(counted))

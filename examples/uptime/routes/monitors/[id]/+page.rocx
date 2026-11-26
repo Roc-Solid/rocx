@@ -31,7 +31,7 @@ view! = |{ params }| {
 	heard! = |event|
 		match event {
 			Resync => refresh!(detail!)
-			Message(news) => if (news.monitor.to_str() == id) refresh!(detail!) else {}
+			Message(news) => if (news.monitor == id) refresh!(detail!) else {}
 			Refused(_, _) | Ended(_) => {}
 		}
 	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))

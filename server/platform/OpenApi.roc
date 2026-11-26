@@ -71,10 +71,25 @@ OpenApi := [].{
 
 	## A path as OpenAPI writes it (`/api/count/{to}`), its params, and its methods (`operation`).
 	path : Str, List(Str), List(Str) -> Str
-	path = |at, params, operations| {
-		param = |name| "{\"name\":${Json.to_str(name)},\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}"
-		taken = if (params.is_empty()) "" else "\"parameters\":[${Str.join_with(params.map(param), ",")}],"
-		"${Json.to_str(at)}:{${taken}${Str.join_with(operations, ",")}}"
+	path = |at, params, operations| with_parameters(at, params.map(|name| { name: name, schema: "{\"type\":\"string\"}" }), operations)
+
+	## A path as `path` writes it, its params of the types their handlers give them (D-092): `api`
+	## is Api's function of the path's params (`Api.get_monitors_id`), which this doesn't call; each
+	## field of its params' record is a parameter of the path, with its schema (`{ id : I64 }`: an
+	## integer).
+	typed_path : Str, (params -> Endpoint(context, arg, result)), List(Str), List(Str) -> Str
+		where [params.parser_for : Schema -> (State -> Try({ value : params, rest : State }, Problem))]
+	typed_path = |at, _, tags, operations| {
+		Params : params
+		written =
+			match Params.parser_for(Schema.Default)(start(tags)) {
+				Ok(done) => {
+					out = done.rest.out.to_utf8()
+					done.rest.marks.map(|mark| { name: mark.name, schema: Str.from_utf8_lossy(out.sublist({ start: mark.start, len: mark.end - mark.start })) })
+				}
+				Err(_) => []
+			}
+		with_parameters(at, written, operations)
 	}
 
 	## The document: its title, and its paths (`path`).
@@ -144,6 +159,14 @@ OpenApi := [].{
 		)
 }
 
+## A path's entry: its params, each with its schema, then its methods.
+with_parameters : Str, List({ name : Str, schema : Str }), List(Str) -> Str
+with_parameters = |at, params, operations| {
+	param = |each| "{\"name\":${Json.to_str(each.name)},\"in\":\"path\",\"required\":true,\"schema\":${each.schema}}"
+	taken = if (params.is_empty()) "" else "\"parameters\":[${Str.join_with(params.map(param), ",")}],"
+	"${Json.to_str(at)}:{${taken}${Str.join_with(operations, ",")}}"
+}
+
 ## The page that shows the document, `openapi.json` beside it (so a copy under a base path, as
 ## on GitHub Pages, finds it too), in `viewer`. Each is pinned to one version on jsDelivr and
 ## checked against its hash (`integrity`), and told not to call home: Swagger UI not to send the
@@ -177,14 +200,16 @@ Frame : [Fields(U64), Item, NoItem, Entry]
 ## a form's schema (`form`, for `sent`): the record's field it is in (`field`), the fields a form
 ## may leave out (`loose`: a yes-or-no, a list), and whether it found a shape a form doesn't have
 ## (`formless`: a record in a field, a tuple, a dict, null, a tag with a payload, a list of lists).
-State : { out : Str, at : List(Frame), tags : List(Str), depth : U64, form : Bool, field : Str, loose : List(Str), formless : Bool }
+## Where each of the outermost record's fields' schemas starts and ends in `out` (`marks`, its
+## bytes), for a path's params (`typed_path`).
+State : { out : Str, at : List(Frame), tags : List(Str), depth : U64, form : Bool, field : Str, loose : List(Str), formless : Bool, marks : List({ name : Str, start : U64, end : U64 }) }
 
 ## Why a schema couldn't be written: a tag union none of the names are tags of, or one too deep.
 ## (`NotThisTag` is a name that isn't one of a union's: the format tries the next.)
 Problem : [NotThisTag, TooDeep, NoTags, MissingField(Str), Invalid]
 
 start : List(Str) -> State
-start = |tags| { out: "", at: [], tags: tags, depth: 0, form: Bool.False, field: "", loose: [], formless: Bool.False }
+start = |tags| { out: "", at: [], tags: tags, depth: 0, form: Bool.False, field: "", loose: [], formless: Bool.False, marks: [] }
 
 ## Writing a form's schema, at a shape a form doesn't have: so noted.
 formless : State -> State
@@ -342,7 +367,10 @@ Schema := [Default].{
 		for field in Encoding.FieldName.FieldNames.iter(names) {
 			if $index == next {
 				comma = if (next == 0) "" else ","
-				return Ok(Field({ field: field, rest: { ..state, out: state.out.concat("${comma}${Json.to_str(field.name())}:"), at: state.at.drop_last(1).append(Fields(next + 1)), field: if (state.at.len() == 1) field.name() else state.field } }))
+				out = state.out.concat("${comma}${Json.to_str(field.name())}:")
+				outermost = state.at.len() == 1
+				marks = if (outermost) state.marks.append({ name: field.name(), start: out.to_utf8().len(), end: 0 }) else state.marks
+				return Ok(Field({ field: field, rest: { ..state, out, at: state.at.drop_last(1).append(Fields(next + 1)), field: if (outermost) field.name() else state.field, marks } }))
 			}
 			# A form's yes-or-no and lists, right in its record, may be left out.
 			if !(state.form and state.at.len() == 1 and state.loose.contains(field.name())) {
@@ -353,8 +381,13 @@ Schema := [Default].{
 		Ok(Done({ ..state, out: state.out.concat("},\"required\":[${Str.join_with($required, ",")}]}"), at: state.at.drop_last(1) }))
 	}
 
+	## After a field's schema: in the outermost record, where it ends.
 	parse_record_after_field : Schema, State -> Try([Continue(State), Done(State)], Problem)
-	parse_record_after_field = |_, state| Ok(Continue(state))
+	parse_record_after_field = |_, state|
+		match state.marks.last() {
+			Ok(mark) if state.at.len() == 1 => Ok(Continue({ ..state, marks: state.marks.drop_last(1).append({ ..mark, end: state.out.to_utf8().len() }) }))
+			_ => Ok(Continue(state))
+		}
 
 	skip_record_field : Schema, State -> Try(State, Problem)
 	skip_record_field = |_, state| Ok(state)
@@ -554,6 +587,15 @@ expect {
 expect OpenApi.sent(shelf, []).starts_with("\"application/json\":") and !OpenApi.sent(shelf, []).contains("x-www-form-urlencoded")
 expect !OpenApi.sent(paint, ["Red", "Rgb"]).contains("x-www-form-urlencoded")
 expect OpenApi.sent(shout, []).contains("\"application/x-www-form-urlencoded\":{\"schema\":{\"type\":\"object\",\"properties\":{\"word\":{\"type\":\"string\"}},\"required\":[\"word\"]}}")
+
+## A path's params of their types (D-092): each field of the params' record, with its schema.
+counting : { to : U64, kind : [Odd, Even], name : Str } -> Endpoint({}, {}, {})
+counting = |_| Endpoint.local("GET", "/count", |_, _, _| Ok({}))
+
+expect {
+	got = OpenApi.typed_path("/count/{to}/{kind}/{name}", counting, ["Even", "Odd"], [])
+	got == "\"/count/{to}/{kind}/{name}\":{\"parameters\":[{\"name\":\"kind\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\",\"enum\":[\"Even\",\"Odd\"]}},{\"name\":\"name\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}},{\"name\":\"to\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"integer\",\"minimum\":0}}],}"
+}
 
 ## A document: its paths, their params, their methods.
 expect {

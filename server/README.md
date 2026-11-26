@@ -238,6 +238,25 @@ and no route file. So a store module, a job, an actor or another route can impor
 can't read, and a type defined in the route file itself (Api can't import the route file, so move
 the type into a module of its own).
 
+**Typed params (D-092).** A param is `Str` unless the annotation says otherwise:
+`params : { id : I64 }` (a number, `Bool`, or a union of tags written out, `[Draft, Live]`, as
+well). The router reads the path's part as that type (with `FormBody`, as a form's field), and a
+part that doesn't read is no match: a 404, before the route's middleware or handler runs. The type
+is the param's directory's: every handler under `routes/monitors/[id]/` that names `id` gives it
+the same type, and the pages and layouts there are given it too (`view! = |{ params }|`,
+`Paths.monitors_id({ id: 7 })`). Api's and Paths' URLs write it back with `Server.encode_param`,
+and `/openapi.json` gives the parameter its type's schema.
+
+```roc
+# routes/monitors/[id]/+server.roc
+get! : { request : Server.Request, params : { id : I64 }, context : {} } => Try(Report.Detail, Endpoint.Refusal)
+get! = |{ params, .. }| Status.detail!(params.id).map_err(Store.refused!)
+
+# Generated/Api.roc
+get_monitors_id : { id : I64 } -> Endpoint(context, {}, Report.Detail)
+get_monitors_id = |params| Endpoint.remote("GET", "/monitors/${Server.encode_param(params.id)}")
+```
+
 **`Generated/Handlers`** binds each contract to its handler with `Endpoint.bind`, so the compiler
 checks that they agree. It imports every route file. `Generated/Routes` answers requests with these
 endpoints, and `Endpoint.run!` runs one there and then: no HTTP, and no middleware (the caller ran

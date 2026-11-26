@@ -395,7 +395,7 @@ Build := [].{
 			modules_written =
 				[{ name: "Routes", content: Routes.routes_module(table, sources, placed) }]
 					.concat(stories_page)
-					.concat([{ name: "Paths", content: Routes.paths_module(table) }, { name: "Styles", content: Build.styles_module(css, sheet) }])
+					.concat([{ name: "Paths", content: Routes.paths_module(table, sources) }, { name: "Styles", content: Build.styles_module(css, sheet) }])
 					.concat(api)
 					.concat(root_page)
 					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints, jobs_package }) }])

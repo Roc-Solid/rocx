@@ -12,10 +12,10 @@ UpdateForm := [].{
 	view! : { incident : I64 } => Html
 	view! = |{ incident }| {
 		# Its incident's: a row per incident id, so the id read once is meant.
-		id = untrack!(|| incident.to_str())
+		id = untrack!(|| incident)
 		post = Api.post_admin_incidents_id({ id: id })
 		submission = use_submission!(post)
-		field = "update-${id}"
+		field = "update-${id.to_str()}"
 		<form class="update" method="post" action={Endpoint.url_of(post)}>
 			<div class="row">
 				<label for={"${field}-state"}>Stage</label>

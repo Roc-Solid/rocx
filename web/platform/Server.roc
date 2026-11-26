@@ -426,6 +426,24 @@ Server := [].{
 		Str.from_utf8_lossy($out)
 	}
 
+	## A typed path param as a path's part (D-092), as `FormBody` reads it back: text as it is, a
+	## number or yes-or-no as JSON writes it (`7`, `1.5`, `true`), a choice its tag's name (`High`);
+	## encoded as `encode_segment` encodes. What a link to an endpoint or a page with typed params
+	## puts in its path (Generated/Api, Generated/Paths).
+	encode_param : a -> Str where [a.Json.Encodable(e)]
+	encode_param = |value|
+		match Json.to_str_try(value) {
+			Ok(json) =>
+				if json.starts_with("\"") {
+					parsed : Try(Str, [InvalidJson(Str)])
+					parsed = Json.parse(json)
+					Server.encode_segment(parsed ?? json)
+				} else {
+					Server.encode_segment(json)
+				}
+			Err(_) => crash "a path's param ${Server.unwritable}"
+		}
+
 	## A path's part as the text it stands for: `%XX` decoded.
 	decode_segment : Str -> Str
 	decode_segment = |text| percent_decoded(text)
@@ -668,6 +686,16 @@ expect Server.same_origin(Server.from_http("POST", "/", "origin: http://localhos
 expect !Server.same_origin(Server.from_http("POST", "/", "origin: https://evil.example\nhost: localhost:8080", []))
 expect Server.same_origin(Server.from_http("POST", "/", "host: localhost:8080", []))
 expect Server.encode_segment("Ada Lovelace/1") == "Ada%20Lovelace%2F1"
+expect Server.encode_param(7.I64) == "7"
+expect Server.encode_param(-1.5.Dec) == "-1.5"
+expect Server.encode_param(Bool.True) == "true"
+expect Server.encode_param("Ada Lovelace/1") == "Ada%20Lovelace%2F1"
+expect Server.encode_param("say \"hi\"") == "say%20%22hi%22"
+expect {
+	level : [Low, High]
+	level = High
+	Server.encode_param(level) == "High"
+}
 expect Server.form_json("name=Ada+Lovelace&plan=a%26b&empty=") == "{\"name\":\"Ada Lovelace\",\"plan\":\"a&b\",\"empty\":\"\"}"
 expect Server.changes(Server.from_http("DELETE", "/", "", [])) and !Server.changes(Server.from_host("/", ""))
 expect Server.with_cookie(Server.redirect("/members"), "member", "Ada L").headers == [{ name: "location", value: "/members" }, { name: "set-cookie", value: "member=Ada%20L; Path=/; HttpOnly; SameSite=Lax" }]

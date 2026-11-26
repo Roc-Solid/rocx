@@ -97,6 +97,12 @@ test("a monitor's page and its JSON; a 404 for one that isn't there", async () =
 	assert.equal((await app.client().get("/monitors/9999")).status, 404);
 	assert.equal((await app.client().get("/incidents/9999")).status, 404);
 	assert.equal((await app.client().get("/no/such/page")).status, 404);
+	// An id that isn't a number is no route at all (D-092: the params are { id : I64 }): 404 for the
+	// page, the JSON and the admin's posts alike, before a handler or a middleware runs.
+	assert.equal((await app.client().get("/monitors/payments")).status, 404);
+	assert.equal((await app.client().request("/monitors/1.5", { headers: { accept: "application/json" } })).status, 404);
+	assert.equal((await app.client().request("/incidents/x", { headers: { accept: "application/json" } })).status, 404);
+	assert.equal((await app.client().submit("/admin/monitors/x/pause", {})).status, 404);
 });
 
 test("subscribing: a plain form, the runtime's, a wrong address, and the unsubscribe link", async () => {

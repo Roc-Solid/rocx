@@ -698,7 +698,7 @@ SiteSources := [].{
 	fixture_paths! : Str => Try(Source, [Problem(Str)])
 	fixture_paths! = |root| {
 		table = Routes.route_table(Routes.find_route_files!(Fs.join([root, "test", "e2e", "routes", "routes"])))?
-		kept = Text.lines(Routes.paths_module(table)).keep_if(|line| !line.starts_with("# rocx"))
+		kept = Text.lines(Routes.paths_module(table, [])).keep_if(|line| !line.starts_with("# rocx"))
 		Ok(SiteSources.shown("route_fixture_paths", "Generated/Paths.roc", Text.trim(Str.join_with(kept, "\n"))))
 	}
 

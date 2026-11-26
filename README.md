@@ -498,7 +498,7 @@ Under an app's `routes/` directory, as in SvelteKit:
 ```
 routes/+layout.rocx              view! = |{ meta, children, .. }| <html>…{...children}…</html>
 routes/+page.rocx                /
-routes/blog/[slug]/+page.rocx    /blog/:slug; its view is given params : { slug : Str }
+routes/blog/[slug]/+page.rocx    /blog/:slug; its view is given params : { slug : Str } (or the type its handlers give it)
 routes/blog/[slug]/+server.roc   get! = |{ params, .. }| …, put! = |{ params, body, .. }| …
 routes/sitemap.xml/+server.roc   /sitemap.xml (a directory may name a file)
 routes/+error.rocx               where nothing is
@@ -539,6 +539,11 @@ these beside them:
 Every handler must be annotated, for example
 `get! : { request : Server.Request, params : { slug : Str }, context : c } => Try(Post, Endpoint.Refusal)`.
 `rocx build` refuses one that isn't, since the annotation is where `Api` gets its types.
+
+A param is a string unless the annotation gives it another type: `params : { id : I64 }` (a number,
+`Bool`, or a union of tags written out). The path's part is read as that type before anything runs,
+and one that doesn't read is a 404, as a path nothing answers is. The pages and layouts under the
+param's directory are given the same type, and `Paths` and `Api` take it (D-092).
 
 **Middleware** (the platform's `Middleware`) runs around answers: the app's default middleware
 around every request, and a route file's own `middleware = …` around that file's page and
