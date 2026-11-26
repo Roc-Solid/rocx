@@ -184,6 +184,13 @@ view! = |_|
 				with <code>Server.file(request, field)</code>, each with its name, type and bytes.
 			</p>
 			<p>
+				A route file may also name the rules its body is read and checked with
+				(<code>post_body = Signup.form</code>, a form of <a href={Paths.ecosystem_forms}>packages/forms</a>).
+				A form's fields and a JSON object are then read alike, and what the rules refuse never reaches the
+				handler: it is answered 422, with the issues as JSON
+				(<a href={"${Paths.routing}#endpoints"}>endpoints</a>).
+			</p>
+			<p>
 				A request's body is read whole before your code runs, 16 MiB at most unless the server's
 				<code>--max-body</code> (<code>MAX_BODY</code>) allows more
 				(<a href={"${Paths.platform_server}#running"}>running it</a>).

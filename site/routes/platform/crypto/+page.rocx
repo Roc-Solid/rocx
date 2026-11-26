@@ -7,7 +7,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Crypto",
-	description: "The Roc Solid server platform's crypto: secure random bytes, AES-GCM and P-256 (key pairs, ECDH, ES256) from the host, with the crypto package's SHA-256, HMAC, HKDF, Base64 and Hex, for tokens, signed links, sealed secrets and Web Push.",
+	description: "The Roc Solid server platform's crypto: secure random bytes, AES-GCM and P-256 (key pairs, ECDH, ES256) from the host, with the crypto package's SHA-256, HMAC, HKDF, Base64, Base32, Hex and SHA-1 (for authenticator apps' codes), for tokens, signed links, sealed secrets and Web Push.",
 	toc: [
 		{ id: "tokens", label: "Tokens, and their digests" },
 		{ id: "links", label: "Signed links" },
@@ -112,9 +112,11 @@ view! = |_|
 					<tr><td><code>P256</code></td><td><code>generate!</code>: a new key pair; <code>sign!</code>: ES256 signatures; <code>ecdh!</code>: a shared secret with a key pair made for one call</td></tr>
 					<tr><td><code>Random</code></td><td><code>bytes!(count)</code>, <code>seed_u64!</code>: the operating system's randomness</td></tr>
 					<tr><td><code>crypto.Sha256</code></td><td><code>hash</code>: 32 bytes; <code>hex</code>: 64 hex digits</td></tr>
-					<tr><td><code>crypto.Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code> and <code>equal</code>, in constant time</td></tr>
+					<tr><td><code>crypto.Sha1</code></td><td><code>hash</code>: 20 bytes; <code>hex</code>. For authenticator apps' codes (TOTP) alone: never sign with it or keep a digest in it</td></tr>
+					<tr><td><code>crypto.Hmac</code></td><td><code>sha256(key, message)</code>; <code>verify_sha256(key, message, signature)</code> and <code>equal</code>, in constant time; <code>sha1</code> and <code>verify_sha1</code>, for TOTP</td></tr>
 					<tr><td><code>crypto.Hkdf</code></td><td><code>sha256(key, salt, info, length)</code> (RFC 5869), <code>TooLong</code> past 8160 bytes; <code>extract</code>, <code>expand</code></td></tr>
 					<tr><td><code>crypto.Base64</code></td><td><code>encode</code>, <code>decode</code>; <code>url_encode</code> (unpadded), <code>url_decode</code>; <code>encode_unpadded</code>, <code>url_encode_padded</code>, <code>lines</code> (MIME's)</td></tr>
+					<tr><td><code>crypto.Base32</code></td><td><code>encode</code>, <code>encode_unpadded</code> (an <code>otpauth://</code> secret), <code>decode</code> (either case)</td></tr>
 					<tr><td><code>crypto.Hex</code></td><td><code>encode</code>, <code>decode</code></td></tr>
 				</tbody>
 			</table>
@@ -123,8 +125,10 @@ view! = |_|
 				(<code>ring</code>). The rest belong to
 				<a href={Paths.ecosystem_crypto}>the crypto package</a>: pure Roc with no effects, so they run
 				anywhere, including a page in the browser and <code>expect</code> tests. They are checked against
-				the test vectors of NIST, RFC 4231, RFC 4648 and RFC 5869; <code>Sha256</code> wraps Roc's builtin
-				<code>Crypto.SHA256</code>. Decoding is strict: each value has exactly one text that decodes to it.
+				the test vectors of NIST, RFC 2202, RFC 4231, RFC 4648 and RFC 5869; <code>Sha256</code> wraps
+				Roc's builtin <code>Crypto.SHA256</code>. Decoding is strict: only the alphabet, no spaces,
+				padding left out or exactly right, and the last character's unused bits zero (Hex and Base32 take
+				either case, as a person types a secret).
 			</p>
 		</NoHydration>
 	</>

@@ -91,10 +91,11 @@ view! = |_|
 				should do, like the "sign in as anyone" shortcut above. Under <code>--dev</code> the server also
 				reloads open pages when it restarts, shows a crash's reason in the answer, and, with the email
 				plugin and no <code>SMTP_URL</code>, keeps the email it would send and shows it at
-				<code>/__rocx/mail</code> (<a href={"${Paths.ecosystem_email}#mailbox"}>the dev mailbox</a>);
-				without <code>--dev</code> that server doesn't start, rather than lose the email.
+				<code>/__rocx/mail</code> (<a href={"${Paths.ecosystem_email}#mailbox"}>the dev mailbox</a>).
 				<code>Env.debug!({"{}"})</code> says whether it was started with <code>--debug</code>, as tests start
-				it: the email plugin keeps mail for the tests to read then too.
+				it: the email plugin keeps mail for the tests to read then too. With neither flag, as a deployed
+				server runs, a server with the email plugin and no <code>SMTP_URL</code> doesn't start, rather
+				than lose the email; nor does one whose app or plugins have tables and no database.
 			</p>
 		</NoHydration>
 	</>

@@ -47,8 +47,9 @@ view! = |_|
 			<ul>
 				<li>
 					<strong><code>Postgres</code></strong> is the default. The server finds it at
-					<code>--database-url</code> (or <code>DATABASE_URL</code>); without one, the app has no database.
-					Choose it for data other programs share, or more data than one server's disk holds.
+					<code>--database-url</code> (or <code>DATABASE_URL</code>); without one, the app has no database,
+					and one with tables doesn't start (<a href="#where">below</a>). Choose it for data other programs
+					share, or more data than one server's disk holds.
 				</li>
 				<li>
 					<strong><code>Sqlite(path)</code></strong> is a file inside the server's own process, at

@@ -3,7 +3,8 @@ import Host
 ## The app's database: Postgres, SQLite or Turso, as its program says (`database`, D-045, D-046).
 ## Its SQL is the app's, in its database's flavor: nothing is translated.
 ##
-## - Postgres is at `--database-url` (or `DATABASE_URL`); without one the app has no database.
+## - Postgres is at `--database-url` (or `DATABASE_URL`); without one the app has no database, and a
+##   server whose app or plugins have tables doesn't start, outside `--dev` and `--debug`.
 ## - SQLite is a file in the server's process, at the program's `Sqlite(path)` (or a `sqlite:<path>`
 ##   `--database-url`), made when missing. Reads go on while a write does; writes take turns. So keep
 ##   anything slow (`Http.fetch!`, a wait) out of a transaction: on SQLite it holds every other write

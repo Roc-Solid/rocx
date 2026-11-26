@@ -78,7 +78,7 @@ The platform's Roc (`platform/`):
   durable timers), `FlashStore` (where a form's flash waits), `Setting` (the start's settings).
 - The shared modules, copied from `web/platform` (`SHARED_MODULES` in `build.mjs`): `Html`,
   `Solid`, `Store`, `Repeat`, `Loading`, `Errored`, `Call`, `Context`, `Router`, `Search`, `Leave`,
-  `A`, `HttpStatusCode`, `Transition`, `Title`, `Browser`, `Submission`, `Submissions`, and HTTP's
+  `HttpStatusCode`, `Transition`, `Title`, `Browser`, `Submission`, `Submissions`, and HTTP's
   `Server`, `Endpoint`, `FormBody`, `Channel`, `Middleware`, `Events`, `OpenApi`. They are
   committed here too, so a fresh clone compiles.
 
@@ -106,7 +106,9 @@ contract) and `Generated/Handlers`. `site/main.roc` and `examples/*/main.roc` ar
    `Generated/App`: it sets `request.route`, sends a channel's end (`x-rocx-channel: close`)
    straight to the route's `on_close!`, and runs everything else through the app's middleware,
    then the OpenAPI middleware, then a plugin's route or the app's own (`Plugin.respond!`, then
-   `Routes.respond!`). `Server.clear_flash` runs on the way out.
+   `Routes.respond!`, which runs the route's middleware: a `+server.roc`'s for its endpoints, and
+   for a page its own, or else its directory's `+server.roc`'s, D-079). `Server.clear_flash` runs
+   on the way out.
 5. `Server.for_host` flattens the `Server.Response` for the host. Its `kind` says which body it
    has (table below).
 6. Back in the host, in the same call: a handler's `Router.revalidate!` keys become an
@@ -132,8 +134,11 @@ The boxes an answer doesn't use (the page, the stream) do nothing, and the host 
 
 ### How the server starts and stops
 
-1. The flags are read (`Config::parse`). An unknown flag, or one that is gone (`--migrations`,
-   `--job-workers`, `--smtp-url`…), stops the server with a message saying where it went.
+1. `.env` (or `--env-file`'s, or `ROCX_ENV_FILE`'s) is read into the environment, in `main`,
+   while it is the only thread (`dotenv.rs`, D-088; Settings, below). A line that isn't a setting,
+   or a named file that isn't there, stops the server (exit 2). Then the flags are read
+   (`Config::parse`). An unknown flag, or one that is gone (`--migrations`, `--job-workers`,
+   `--smtp-url`…), stops the server with a message saying where it went.
 2. tokio's runtime starts, then Roc's threads (`coroutine::start`).
 3. The host takes its address. A port in use stops the server here (`Address already in use`,
    exit 1), before anything else has started.
@@ -142,16 +147,18 @@ The boxes an answer doesn't use (the page, the stream) do nothing, and the host 
 5. The start runs in Roc, as three calls one after another (`roc::init`, `roc::make_context`,
    `roc::started`):
    - `init_for_host!`: the log takes the app's format; the database opens; the plugins are checked
-     (every problem at once stops the server); the host learns the kinds of actor and the
-     plugins' files and scripts; the migrations run: the platform's, then the plugins', then the
-     app's.
+     (every problem at once stops the server, and so does no database while the app or a plugin
+     has tables, outside `--dev` and `--debug`: `no_database!`, D-045); the host learns the kinds
+     of actor and the plugins' files and scripts; the migrations run: the platform's, then the
+     plugins', then the app's.
    - `context_for_host!`: the app's `init!` makes its context.
    - `started_for_host!`: actors' timers left from the last run are set again, the plugins'
      `starts` run in order, and each plugin's line goes on the log (`rocx plugins: added`).
    An `Err` or a crash in any of them stops the server.
 6. The background loops start: the plugins' loops and checks (`roc_background_count`), each a call
    of its own. One that crashes starts again a second later.
-7. The host logs `rocx server: http://… (Roc, native)` and answers requests.
+7. The host logs what `.env` set (`rocx server: settings read`, in the app's format now), then
+   `rocx server: http://… (Roc, native)`, and answers requests.
 
 Stopping (SIGTERM, or ^C): the server logs `rocx server: stopping`, stops listening, and waits up
 to ten seconds for the requests and streams still running. The background loops are told to stop
@@ -464,13 +471,18 @@ Jobs, cron and email are packages, each a plugin built on the platform's general
 not part of the platform.
 
 - **Jobs and cron** (packages/jobs, D-034): `Job.plugin({ jobs: App.jobs, crons })` adds the
-  queue's table, its workers (background loops) and its schedules, on Postgres or SQLite. They
-  use the database and its notifications, background loops, and isolated calls with time limits.
-  The jobs page is packages/admin's (`JobsPage.plugin`). See `packages/jobs/README.md`.
+  queue's table, its workers (background loops), its schedules, and a sweep of finished jobs
+  (`jobs.sweep`: at start and every hour, done ones a week after they finished, failed and
+  canceled ones after 30 days; `keep_done_ms`, `keep_failed_ms`, `sweep_ms`), on Postgres or
+  SQLite. They use the database and its notifications, background loops, and isolated calls with
+  time limits. A job is queued with `Job.enqueue!(kind, input, {})`, the options a record with
+  defaults (`{ when: At(ms) }`, `{ key, … }` for `enqueue_keyed!`). The jobs page is
+  packages/admin's (`JobsPage.plugin`). See `packages/jobs/README.md`.
 - **Email** (packages/email, D-035): `Email.plugin({})` sends over SMTP (`SMTP_URL`, `MAIL_FROM`)
-  on `Tcp` with TLS, or, without an SMTP server, keeps mail in `Kv` for the dev mailbox at
-  `/__rocx/mail` (an early path, under `--dev`). It checks the SMTP server at start. See
-  `packages/email/README.md`.
+  on `Tcp` with TLS. Without an SMTP server it keeps mail in `Kv` only under `--dev` (the dev
+  mailbox at `/__rocx/mail`, an early path) or `--debug` (for tests); anywhere else its start
+  fails, so the server doesn't start rather than lose every email (D-079). It checks the SMTP
+  server once the server has started. See `packages/email/README.md`.
 
 ## Requests to other servers: `Http`
 
@@ -854,15 +866,15 @@ its value: the file is the default, the environment says otherwise. `--env-file 
 file, read in its place (and which must be there), as does `ROCX_ENV_FILE` when no flag does; set but
 empty, no file is read: the tests' servers start so (`just test`, packages/testing's `startServer`),
 so a developer's `.env` never reaches them. The lines are dotenv's: `NAME=value`, `export
-NAME=value`, `# comments`, a value in single quotes as it is, in double quotes with `\n`, `\t`, `\"`
-and `\\`, either over several lines; no `${NAME}` expansion. A line that isn't a setting stops the
+NAME=value`, `# comments`, a value in single quotes as it is, in double quotes with `\n`, `\t`, `\r`,
+`\"` and `\\`, either over several lines; no `${NAME}` expansion. A line that isn't a setting stops the
 server, saying which. The log names what was set and what the environment kept, never a value
-(`rocx server: settings read`, as the server listens, in the app's log format). Keep `.env` out of git: the repository's `.gitignore`, and `rocx
-new`'s, list it. The
-context file is for what `init!` is given. `Env.dev!` says whether the server was started with
-`--dev`. `Env.public_url!` is where the app is, for links it sends (Running, below). The
-platform's own settings stay flags or their variables (`DATABASE_URL`, …); a plugin reads its own
-(`SMTP_URL`, for packages/email).
+(`rocx server: settings read`, as the server listens, in the app's log format). Keep `.env` out of
+git: the repository's `.gitignore`, and `rocx new`'s, list it. The context file is for what
+`init!` is given. `Env.dev!` says whether the server was started with `--dev`, and `Env.debug!`
+with `--debug` (as tests start it). `Env.public_url!` is where the app is, for links it sends
+(Running, below). The platform's own settings stay flags or their variables (`DATABASE_URL`, …); a
+plugin reads its own (`SMTP_URL`, for packages/email).
 
 ## Time: `Time`
 
@@ -911,9 +923,10 @@ key, AES-256 under a 32-byte one, the ciphertext then the tag. Anything else sho
 nonce used twice under one key gives the key away.
 
 The rest is pure Roc, so it is a package on no platform (`packages/crypto`, D-025), which a page in
-the browser may use too: `Sha256`, `Hmac` (with a constant-time comparison), `Hkdf`, `Base64` (both
-alphabets, strict) and `Hex`, each checked by `expect`s against published vectors (NIST, RFC 4231,
-RFC 4648, RFC 5869).
+the browser may use too: `Sha256`, `Hmac` (HMAC-SHA256, and HMAC-SHA1 for TOTP, with a
+constant-time comparison), `Hkdf`, `Base64` (both alphabets, strict), `Base32` (an authenticator
+app's secret), `Hex`, and `Sha1` (for TOTP alone: D-081), each checked by `expect`s against
+published vectors (NIST, RFC 2202, RFC 4231, RFC 4648, RFC 5869).
 
 ## Values in memory: `Kv`
 
@@ -1210,6 +1223,13 @@ While rendering:
   written without their comments, which would show. The browser binds them to the element's text.
 - `<HttpStatusCode code={404} />` sets the answer's status (`Host.status!`). `<Navigate href>`
   makes the answer a 303 to `href`.
+- A name markup can't have is never written (D-079): a tag that isn't an ASCII letter then
+  letters, digits and `-`; an attribute name that isn't an ASCII letter then letters, digits, `-`,
+  `_`, `.` and `:`, or that starts with `on` (an inline handler); a `<script>` whose children
+  aren't the text a `.rocx` file wrote (`Html.source_text`). What isn't plain is left out (an
+  element with what is inside it, or the attribute), the page renders around it, and the render
+  logs one warning, `rocx server: markup named what a page can't have, which wasn't written`, with
+  its `path` and the `names` (`plain_tag`, `plain_attribute`, `written_element` in `signals.rs`).
 
 The answer is the whole document (`signals.rs`'s `document`, `titled` and `headed`):
 
@@ -1294,12 +1314,15 @@ can be searched:
 | Message | Level | Fields |
 | --- | --- | --- |
 | `rocx server: http://… (Roc, native)` | info | (the address is in the message) |
+| `rocx server: settings read` | info | `file`, `set`, `kept` (names, never values: `.env`, D-088) |
+| `rocx server: no database, so these tables aren't made, and what reads them fails` | warn | `tables` (under `--dev` or `--debug`) |
 | `rocx server: Roc crashed` | error | `method`, `target`, `error` |
 | `rocx server: migrated` | info | `migration` |
 | `rocx plugins: added` | info | `plugin`, `adds` |
 | `rocx actor: a message failed` | error | `actor`, `key`, `error` |
 | `rocx jobs: a job failed, and runs again` | warn | `kind`, `id`, `attempt`, `of`, `again_in_ms`, `error` |
 | `rocx jobs: a job failed for good` | error | `kind`, `id`, `attempts`, `error` |
+| `rocx jobs: finished jobs swept` | info | `count`, `keep_done_ms`, `keep_failed_ms` |
 | `rocx cron: a schedule's job wasn't queued` | error | `cron`, `error` |
 | `email: kept, not sent (no SMTP_URL)` | info | `to`, `subject` |
 
@@ -1527,8 +1550,8 @@ one, and check that a parent process trapping SIGURG hears none.
 ### Background loops
 
 At start the host asks the platform's Roc how many background loops to run
-(`roc_background_count`): the plugins' loops and checks (the jobs plugin's workers and its
-schedules' loop, the email plugin's look at the SMTP server). Each runs as a call of its own until
+(`roc_background_count`): the plugins' loops and checks (the jobs plugin's workers, its
+schedules' loop and its sweep of finished jobs, the email plugin's look at the SMTP server). Each runs as a call of its own until
 the server stops; one that crashes is started again a second later (`rocx server: a background
 loop crashed, and starts again in a second`). `Live.next!` in a loop answers `Gone` when the
 server stops.
@@ -1556,7 +1579,8 @@ node server/build.mjs <app.roc> <output> [--opt=dev|speed] [--target=arm64mac|x6
 - **Targets:** `arm64mac` and `x64mac` link against the system. `arm64musl` and `x64musl` are
   static Linux executables, cross-compiled from macOS: Rust's musl target supplies `rcrt1.o`,
   `libc.a` and `libunwind.a`, and Zig compiles the host's C (`guard.c`, and `ring`'s C for TLS).
-  The test app built for `arm64musl` has run in a container against `just db`'s Postgres.
+  The test app built for `arm64musl` has run in a container against `just db`'s Postgres, and CI
+  builds and tests every app for it, natively, on Linux arm64 runners (D-069).
 - **`--opt`:** `dev` (the default) or `speed`.
 - **`--specialize` (D-064):** an optimized build uses boxy lowering (`--specialize=no`) unless you
   pass `--specialize=yes` (`specialize: true` to `buildApp` or packages/testing's
@@ -1569,6 +1593,11 @@ node server/build.mjs <app.roc> <output> [--opt=dev|speed] [--target=arm64mac|x6
   largest frame is down to 264 KiB (TODO.md); whether specialization becomes the default again is
   D-064's to decide.
 
+An app with routes is built to deploy with `rocx build <dir> --release <out> [--target …]`
+(D-078), which needs no Node: the browser's copy and its wasm, then the server's host when it
+changed and the app on it, optimized for speed (boxy, as below), into `<out>/server`, with what it
+serves in `<out>/static`.
+
 `just glue` regenerates `host/src/roc_platform_abi.rs` after a change to `platform/main.roc`'s
 header (with the other platforms' glue).
 
@@ -1578,6 +1607,7 @@ header (with the other platforms' glue).
 <app> --port 8080 --host 127.0.0.1        where to listen (PORT)
       --static DIR, --file /PATH=FILE     files served as they are
       --context-file FILE                 what the app's init! is given, once, as it starts
+      --env-file FILE                     settings for the environment, read as it starts (ROCX_ENV_FILE; else .env here, if there is one; set but empty: none); the environment wins
       --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)
       --kv-max-mb 64                      the key-value store's limit (KV_MAX_MB): the least recently used goes past it
@@ -1616,14 +1646,17 @@ This is the host's own `--help` (`USAGE` in `http.rs`). Some details:
   proxy. Without either, it is where the server listens (`http://127.0.0.1:8080`, or the port the
   system gave `--port 0`; an all-interfaces address becomes loopback). It is never taken from a
   request's `Host`, which whoever asks controls.
-- **Exit codes:** 2 for a flag the host can't read (or `--help`), 1 for a server that can't start
-  (a port in use, a migration that fails, a plugin problem, `init!`'s `Err`).
+- **Exit codes:** 2 for a flag the host can't read (or `--help`) and for a `.env` it can't read
+  (a line that isn't a setting, an `--env-file` that isn't there), 1 for a server that can't start
+  (a port in use, a migration that fails, a plugin problem, no database while the app or a plugin
+  has tables, `init!`'s `Err`).
 
 ## Tests
 
-`just test-server` runs this platform's tests, then packages/testing's, packages/posthog's and the
-guard, push, auth and stripe examples' (each against an app it builds). Run one file with
-`node --test server/test/server.test.mjs`. They skip what they can't run:
+`just test-server` runs this platform's tests, then packages/testing's, packages/posthog's, the
+guard, push, auth, stripe and ai examples' (each against an app it builds), and `rocx new`'s
+template's (`templates/test`), all with `ROCX_ENV_FILE=` so a `.env` here reaches none of them. Run
+one file with `node --test server/test/server.test.mjs`. They skip what they can't run:
 
 - without Roc or Rust (`just setup`), everything;
 - without `DATABASE_URL` (`just db`), what needs Postgres;
@@ -1653,15 +1686,17 @@ it over HTTP:
 - **Pages of components:** a whole document with its answers and `start.js`; `<Loading>`,
   `<Errored>`, an endpoint read behind middleware, `<HttpStatusCode>`, HEAD, crashes, effects that
   don't run, holes in `<title>` and `<textarea>`, a `<NoHydration>`, a read redirected by its
-  middleware, the dev reload script, and no leaks.
+  middleware, the dev reload script, names markup can't have left out (D-079), and no leaks.
 - **Endpoint reads:** answered in-process while a page renders, with its query, cookies and
   headers, noted once and never from a `<NoHydration>`; one its middleware redirects; a handler
   reading the page's flash.
 - **Forms:** a plain form's refusal and result back to its page with a flash, read there with what
   was typed and noted for the browser, then let go; passwords never coming back; a flash gone after
   a minute; a script's and the runtime's posts answered as they are; a redirect for the runtime.
-- **The database:** Postgres statements, `Db.array`, `Db.Nullable`, waits on their own, migrations,
-  transactions, and transactions inside them (`nested-checks.mjs`, shared with the SQLite tests);
+- **The database:** Postgres statements, `Db.one!`, `Db.array`, `Db.Nullable`, waits on their own,
+  migrations, transactions, and transactions inside them (`nested-checks.mjs`, shared with the
+  SQLite tests); an app with tables and no database refused at start, or started with a line on the
+  log under `--debug`;
   `--describe-sql` on Postgres (a scratch database, `--sql-database`, `CREATEDB`); a SQLite or
   Turso URL refused for a Postgres app; packages/admin's tables admin (`admin-checks.mjs`, shared
   with the SQLite tests); roc-pg (`server/examples/roc-pg`).
@@ -1676,12 +1711,14 @@ it over HTTP:
   the server's thread), keys unique while pending, cancel and move, listing, a database migrated
   before jobs were a package; the jobs page (behind a guard, its forms, its stream); cron.
 - **Email** through packages/email's plugin: the outbox, the dev mailbox (in memory, only under
-  `--dev`), and SMTP to a server the test runs.
+  `--dev`), a server with no `SMTP_URL` refused at start without `--dev` or `--debug` (D-079), and
+  SMTP to a server the test runs.
 - **`Tcp`, `Http`, `Env`, crypto, random:** sockets; `Http.fetch!` against servers the test runs
   (redirects, timeouts, size limits, failing TLS, kept connections, a kept connection closed under
   a GET and under a POST, proxies named and from the environment, `fetch_chunks!`, the deprecated
   API), `proxy.rs`'s own unit tests; `Env` from a request and a job, the public URL; AES-GCM and
-  packages/crypto against Node's; random bytes.
+  packages/crypto against Node's; AES-GCM with the caller's nonce against RFC 8291's and RFC 8188's
+  records; P-256's new pairs, ES256 signatures and ECDH, which Node checks; random bytes.
 - **The log:** JSON when `ROCX_LOG=json` or unset on a pipe, pretty lines with `ROCX_LOG=pretty`, an
   app's fields beside `time`, `level` and `msg` and never in their place, a program's `Pretty`
   (`server/test/pretty`) winning over `Auto` and `ROCX_LOG`, 200 requests logging at once with
@@ -1719,6 +1756,12 @@ that needs Postgres refused, jobs (in a transaction, retried, keyed, cut off at 
 with the statement interrupted and the transaction rolled back), cron, the jobs page,
 packages/admin, and transactions inside transactions (`nested-checks.mjs`: on Turso in WAL mode
 too, and a level that loses to another's write on Turso's MVCC).
+
+**`server/test/envfile.test.mjs`** builds `server/test/envfile`, an app that answers
+`GET /env/<NAME>`, and starts it in directories of its own (D-088): `.env` where it starts read
+into its environment, the environment's own value winning, `--env-file` and `ROCX_ENV_FILE` (set
+but empty: none read), the log's line naming what was set and kept in the app's format, a bad line
+or a missing named file stopping the server; and `dotenv.rs`'s own parser tests.
 
 **`server/test/host-entries.test.mjs`** builds nothing: it reads the host's sources and checks that
 every function Roc can call (the glue's runtime and hosted symbols, every exported function, the

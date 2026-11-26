@@ -48,7 +48,7 @@ view! = |_|
 			</p>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what the app's init! is given, once, as it starts\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB; 413 beyond\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)\n      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what the app's init! is given, once, as it starts\n      --env-file FILE                     settings for the environment, read as it starts (ROCX_ENV_FILE; else .env here, if there is one; set but empty: none); the environment wins\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB; 413 beyond\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)\n      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
@@ -72,18 +72,22 @@ view! = |_|
 					<code>NO_PROXY</code> names (<a href={"${Paths.platform_http}#connections"}>HTTP</a>).
 				</li>
 				<li>
-					<strong>Starting.</strong> The server takes its port first. If the port is in use, it stops
-					there, before it opens the database or runs anything. Then it opens the database, checks the
-					plugins, applies the migrations, runs the app's <code>init!</code>, starts the background loops,
-					and answers requests.
+					<strong>Starting.</strong> The server first reads <code>.env</code>, if there is one, into its
+					environment (<a href={Paths.platform_settings}>settings</a>). Then it takes its port: if the port
+					is in use, it stops there, before it opens the database or runs anything. Then it opens the
+					database, checks the plugins, applies the migrations, runs the app's <code>init!</code>, starts
+					the background loops, and answers requests.
 				</li>
 				<li>
 					<strong>Stopping.</strong> On SIGTERM or Ctrl-C, the server stops listening and taking new jobs,
 					then waits up to ten seconds for the requests, streams and jobs still running.
 				</li>
 				<li>
-					<strong>Without a database</strong> (a Postgres app with no URL), the server still starts; what
-					needs the database says so when it is used.
+					<strong>Without a database</strong> (a Postgres app with no URL), a server whose app or plugins
+					have tables (migrations) doesn't start, and says which have them, rather than start and fail at
+					every query. Under <code>--dev</code> or <code>--debug</code> it starts, and a line on the log
+					says so. An app with no tables starts either way; what needs the database says so when it is
+					used.
 				</li>
 			</ul>
 
@@ -131,6 +135,7 @@ view! = |_|
 			<ul>
 				<li>Copy it into a container with the app's static files (<code>--static</code>).</li>
 				<li>Give it its database: a Postgres app a <code>DATABASE_URL</code>; a SQLite app a file on a volume (<code>--database-url sqlite:/data/app.db</code>).</li>
+				<li>Give it its settings (<code>APP_SECRET</code>, <code>SMTP_URL</code>, an API's key) as environment variables, or in a file it reads as it starts (<code>--env-file</code>; the environment wins). A plugin whose setting is missing stops the start, saying which.</li>
 				<li>Put a proxy in front of it for TLS, and tell the app its public address with <code>PUBLIC_URL</code>, so the links it sends point there (<a href={Paths.platform_settings}>settings</a>).</li>
 			</ul>
 			<p>
@@ -154,7 +159,8 @@ view! = |_|
 					Postgres connections plus one that listens for notifications, or SQLite's file in the
 					process, its calls on threads of their own); time zones; TCP and TLS sockets; live topics and
 					rooms; channels' streams; background loops and isolated calls; actors' mailboxes and timers;
-					values in memory (<code>Kv</code>); secure random numbers; and rendering pages of components.
+					values in memory (<code>Kv</code>); secure random numbers, AES-GCM and P-256; reading
+					<code>.env</code>; and rendering pages of components.
 				</li>
 				<li>
 					<strong>Roc</strong> (<code>server/platform/*.roc</code>): migrations, plugins (checking and
@@ -290,12 +296,13 @@ view! = |_|
 			<Heading id="background">Background loops and isolated calls</Heading>
 			<p>
 				As it starts, the server asks the platform's Roc which loops to run in the background: the
-				plugins' loops (the jobs plugin's workers and its schedules) and their checks (the email plugin's
-				look at the SMTP server). Each runs as a call of its own until the server stops; one that crashes
-				starts again a second later. A loop sleeps with <code>Live.next!</code>, which wakes when something
-				is published on a topic it listens to, when its time is up, or with <code>Gone</code> when the
-				server stops. <code>Db.notify!</code> (and Postgres's <code>NOTIFY</code>) publish on
-				<code>{"db:<channel>"}</code>, which is how job workers sleep until a job is queued.
+				plugins' loops (the jobs plugin's workers, its schedules and its hourly sweep of finished jobs) and
+				their checks (the email plugin's look at the SMTP server). Each runs as a call of its own until
+				the server stops; one that crashes starts again a second later. A loop sleeps with
+				<code>Live.next!</code>, which wakes when something is published on a topic it listens to, when its
+				time is up, or with <code>Gone</code> when the server stops. <code>Db.notify!</code> (and Postgres's
+				<code>NOTIFY</code>) publish on <code>{"db:<channel>"}</code>, which is how job workers sleep until
+				a job is queued.
 			</p>
 			<p>
 				An <strong>isolated call</strong> runs Roc inside another call, guarded on its own: a crash in it
@@ -315,7 +322,8 @@ view! = |_|
 				A <strong>plugin</strong> is a package that adds to an app what only the server runs: routes,
 				tables, background loops, files, scripts every page loads, development pages, work at start,
 				checks. You install one in a line: name the package in the app's header, and list its plugin in
-				the program. The jobs, email, push and audio packages are plugins.
+				the program. The jobs, email, auth, push, Stripe and audio packages, among others, are
+				plugins.
 			</p>
 			<Code
 				title="main.roc"
@@ -402,9 +410,9 @@ view! = |_|
 			<Callout kind="note" title="Built on">
 				<p>
 					tokio and hyper (HTTP), corosensei (coroutines), tokio-postgres with deadpool, rusqlite with
-					SQLite compiled in, turso_core (Turso's engine), chrono-tz (time zones), rustls with ring (TLS,
-					and random numbers), and Roc's glue for the types the platform's header names (<code>just
-					glue</code> writes <code>server/host/src/roc_platform_abi.rs</code>).
+					SQLite compiled in, turso_core (Turso's engine), chrono-tz (time zones), rustls with ring (TLS;
+					ring for random numbers, AES-GCM and P-256 too), and Roc's glue for the types the platform's
+					header names (<code>just glue</code> writes <code>server/host/src/roc_platform_abi.rs</code>).
 				</p>
 			</Callout>
 		</NoHydration>

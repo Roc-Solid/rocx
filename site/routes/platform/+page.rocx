@@ -79,11 +79,11 @@ view! = |_|
 				with live in the browser platform (<code>web/platform</code>), and the build copies them into the
 				server platform: <code>Html</code>, <code>Solid</code>, <code>Store</code>, <code>Repeat</code>,
 				<code>Loading</code>, <code>Errored</code>, <code>Context</code>, <code>Transition</code>,
-				<code>Router</code>, <code>Search</code>, <code>Leave</code>, <code>A</code>, <code>Title</code>,
+				<code>Router</code>, <code>Search</code>, <code>Leave</code>, <code>Title</code>,
 				<code>Submission</code>, <code>Submissions</code>, <code>Browser</code> and
 				<code>HttpStatusCode</code> for components; <code>Server</code>, <code>Endpoint</code>,
-				<code>Call</code>, <code>Channel</code>, <code>Events</code>, <code>Middleware</code> and
-				<code>OpenApi</code> for HTTP. The server's host renders a page exactly as
+				<code>FormBody</code>, <code>Call</code>, <code>Channel</code>, <code>Events</code>,
+				<code>Middleware</code> and <code>OpenApi</code> for HTTP. The server's host renders a page exactly as
 				the browser's runtime would, byte for byte, so hydration finds what it expects.
 			</p>
 
@@ -127,8 +127,8 @@ view! = |_|
 				</Feature>
 				<Feature title="Settings" href={Paths.platform_settings}>
 					<p>
-						Environment variables, the app's public URL, and whether the server runs in development
-						mode.
+						Environment variables (and a <code>.env</code> file, read as the server starts), the app's
+						public URL, and whether the server runs in development mode.
 					</p>
 				</Feature>
 				<Feature title="Crypto" href={Paths.platform_crypto}>
@@ -243,21 +243,24 @@ view! = |_|
 				plain={Bool.True}
 			/>
 			<p>
-				A release build takes a few commands, as each example's README shows. From the repository's root:
+				A release build is one command (<a href={"${Paths.tooling}#commands"}>rocx</a>):
 			</p>
 			<Code
 				title="A release build"
-				source={"just web-host    # the browser platform's host, once (rocx dev builds it too)\nbin/rocx build my-app --client my-app/build/client\n.tools/roc-active build --target=wasm32 --opt=size --output=my-app/build/client/static/rocx/app.wasm my-app/build/client/main.roc\nnode server/build.mjs my-app/main.roc my-app/build/server [--opt=speed] [--target=arm64musl]\n\ncd my-app && build/server --port 8080 --static build/client/static"}
+				source={"rocx build my-app --release dist [--target arm64musl]\n\ndist/server --port 8080 --static dist/static"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
 			<p>
 				<code>rocx build</code> turns the <code>.rocx</code> files into Roc and writes the browser's copy of
-				the app; the next line compiles that copy to wasm. <code>server/build.mjs</code> builds the
-				Rust host with cargo, then the app with <code>roc build</code>, which links the two into one
-				executable. With <code>--target=arm64musl</code> (or <code>x64musl</code>) it cross-compiles a
-				static Linux executable to copy into a container. The executable takes its port, its database and
-				the rest as flags or environment variables (<a href={"${Paths.platform_server}#running"}>running it</a>).
+				the app, which it compiles to wasm, optimized for size. Then it compiles the server's program,
+				optimized for speed, and links it with the Rust host into one executable,
+				<code>dist/server</code>, with the migrations and the plugins' files inside it;
+				<code>dist/static</code> holds what it serves as files. With <code>--target arm64musl</code> (or
+				<code>x64musl</code>) it cross-compiles a static Linux executable to copy into a container. The
+				executable takes its port, its database and the rest as flags or environment variables
+				(<a href={"${Paths.platform_server}#running"}>running it</a>). Each example's README also shows the
+				steps one at a time.
 			</p>
 
 			<Heading id="why">Why this shape</Heading>

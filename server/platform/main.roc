@@ -52,7 +52,7 @@
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.get!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,
-##   `Store`, `Repeat`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Search`, `Leave`, `A`,
+##   `Store`, `Repeat`, `Loading`, `Errored`, `Context`, `Call`, `Router`, `Search`, `Leave`,
 ##   `HttpStatusCode`, `Transition`, `Title`, `Browser`, `Submission`, `Submissions`), and HTTP's
 ##   (`Server`, `Endpoint`, `FormBody`, `Channel`, `Middleware`, `Events`, `OpenApi`), are the browser's platform's (web/platform),
 ##   copied here by the build, so the same code compiles on both.
