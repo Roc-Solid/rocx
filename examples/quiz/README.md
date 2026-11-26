@@ -93,7 +93,7 @@ Then open http://localhost:18150.
 | Transitions: each phase is its own `if` or `match` part that flies, scales or fades in and out (`transition:in`, `transition:out`); names that grow into the lobby (`transition`); podium steps that grow up in turn (`Transition.grow(Bottom).delay(…)`) | `routes/host/[code]/+page.rocx`, `routes/play/[code]/+page.rocx`, `Ui/Lobby.rocx`, `Ui/Podium.rocx` |
 | `transition:move`: the leaderboard's rows gliding to their new places | `Ui/Board.rocx` |
 | Charts (packages/charts): how the room answered, as a `<BarChart>` | `Ui/Tally.rocx` |
-| Forms (packages/forms): one schema for a page and its endpoint (`LiveForm`, `<TextField>`, `<IssueSummary>`), a custom parser in `try_map`, refusals shown at their fields, plain posts that come back with a flash | `Draft.roc` + `routes/sets/`, `Joining.roc` + `routes/+page.rocx` + `routes/join/+server.roc`, `routes/play/[code]/` |
+| Forms (packages/forms): one schema for a page and its endpoint (`LiveForm`, `<TextField>`, `<IssueSummary>`); the endpoint names it as its body's rules (`post_body = Joining.form`, D-093), so what doesn't pass, as a form or as JSON, is refused with its issues before the handler runs; a custom parser in `try_map`, refusals shown at their fields, plain posts that come back with a flash | `Draft.roc` + `routes/sets/`, `Joining.roc` + `routes/+page.rocx` + `routes/join/+server.roc`, `routes/play/[code]/` |
 | SQLite in the server's process: migrations, seeds that can run twice, a transaction, a `json` column | `main.roc`, `migrations/`, `Sets.roc` |
 | Configuration from the environment: how long a question and a reveal last | `Rooms.timing!` (`QUIZ_QUESTION_MS`, `QUIZ_REVEAL_MS`) |
 | Middleware that refuses other sites' posts and hands every route the visitor (from a cookie) | `Visitor.roc` |
@@ -165,8 +165,8 @@ node --test 'examples/quiz/test/*.test.mjs'                      # over HTTP and
   question, and plays it as the pages do: a whole game with a host and three players over the
   room's channel, each question's tallies and points checked, and the final scores; a question
   nobody answers, closed by the room's own timer; presence (a phone that goes shows as dropped, and
-  comes back); the join forms' refusals at their fields and a plain post's flash; the editor;
-  seeding run twice; the pages as the server renders them.
+  comes back); the join forms' refusals at their fields (sent as JSON too) and a plain post's flash;
+  the editor; seeding run twice; the pages as the server renders them.
 - **`test/browser.test.mjs`**, in Chromium (skipped without it), hydrating strictly: joining by code
   from the front page, the lobby, answering the first question with a tap, the reveal; then the
   host's screen as the host (its buttons, said on the channel from the page) and as anyone else (no

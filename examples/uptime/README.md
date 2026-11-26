@@ -130,8 +130,8 @@ Where to look in the code for each Roc Solid feature the app uses.
 | Feature | Where |
 |---|---|
 | Each page's data comes from an endpoint at the page's own URL (`GET /` as JSON, and so on). The page reads it with `Endpoint.get!` while the server renders it, and the data travels in the page for hydration. The same JSON is the app's API. | `routes/**/+server.roc`, `Status.roc`, `Report.roc` |
-| A 404 for a monitor or incident that doesn't exist: the page's `<Errored>` shows `Ui/Missing.rocx`, which sets the status with `<HttpStatusCode>`. | `routes/monitors/[id]/+page.rocx`, `routes/incidents/[id]/+page.rocx`, `Ui/Missing.rocx` |
-| Forms that work without JavaScript and, with it, are sent in place (`use_submission!`): subscribe, sign in, check now, pause, post an update, break the demo. | `Ui/SubscribeForm.rocx`, `Ui/AdminRow.rocx`, `Ui/UpdateForm.rocx`, `routes/admin/+page.rocx`, `routes/admin/sign-in/+page.rocx` |
+| A 404 for a monitor or incident that doesn't exist: the page's `<Errored>` shows `Ui/Missing.rocx`, which sets the status with `<HttpStatusCode>`. An id that isn't a number is no route at all, since the params are typed (`params : { id : I64 }`, D-092). | `routes/monitors/[id]/+page.rocx`, `routes/incidents/[id]/+page.rocx`, `routes/monitors/[id]/+server.roc`, `Ui/Missing.rocx` |
+| Forms that work without JavaScript and, with it, are sent in place by the runtime, each component reading its form's answer (`use_submission!`): subscribe, sign in, check now, pause, post an update, break the demo. | `Ui/SubscribeForm.rocx`, `Ui/AdminRow.rocx`, `Ui/UpdateForm.rocx`, `routes/admin/+page.rocx`, `routes/admin/sign-in/+page.rocx` |
 | Pure components (`view`): the state pill, the 90-day strip, the banner, the incident card, and the monitor card. Effectful components (`view!`): the forms (they make submissions), the group (its list of rows), and the 404 (it sets the status). | `Ui/` |
 | Pure components tested in `expect`s with packages/testing's `Dom`, and stories for the component catalog (`<story>`, shown at `/__rocx/stories` under `rocx dev`). | `Ui/Banner.rocx`, `Ui/IncidentCard.rocx`, `Ui/StatePill.rocx`, `Ui/UptimeStrip.rocx` |
 | Scoped styles in each component, design tokens in one stylesheet (light and dark), a skip link, focus rings, labels and landmarks. | `Ui/*.rocx`, `routes/**/*.rocx`, `static/uptime.css` |
@@ -195,7 +195,7 @@ node --test 'examples/uptime/test/*.test.mjs'
   collector. It tests:
   - the status page and its JSON (the banner, the groups, the 90 days, the past incident);
   - the app's own monitors checking `/health` and `/demo/flaky`, and the demo's switch;
-  - a monitor's page and JSON, and the 404s;
+  - a monitor's page and JSON, and the 404s (an id that isn't a number among them);
   - subscribing, as a plain form and as the runtime sends it, a wrong address, and the unsubscribe
     link;
   - the admin's sign-in (a wrong password is refused and never sent back: no cookie, no `value`;

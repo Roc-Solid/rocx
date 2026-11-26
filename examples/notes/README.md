@@ -99,7 +99,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 | Sign-in as packages/auth's plugin, listed in `main.roc` with the app's `admit!`: anyone with a mailed link gets in, as the person with that address or someone new (with a notebook of their own). | `main.roc`, `Account.admit!`, `Store.person_for!` |
 | A sign-in link made by the plugin (`Auth.link!`: kept by its hash, good once, for 15 minutes) and mailed in the app's own words (`Email.send!`, packages/email's plugin). | `routes/sign-in/`, `Account.send_link!` |
 | The page a link opens: whom it signs in (`Auth.link_for!`, which doesn't use the link), and a plain form whose button posts the token to the plugin's `/auth/link`. A mail scanner that follows links doesn't use yours up. | `routes/sign-in/link/` |
-| A sign-in that didn't work comes back to the sign-in page with `?error=` (a link used or expired, an address turned away), and the page says why. | `routes/sign-in/+page.rocx` (`problem_of`) |
+| A sign-in that didn't work comes back to the sign-in page with `?error=` (a link used or expired, an address turned away), and the page says why. | `routes/sign-in/+page.rocx` (packages/auth's `SignInError.message`) |
 | Sessions kept by the plugin: a random token in the `notes_session` cookie, its hash in the database, for 30 days, kept going while in use. | `Middlewares.signed_in` (`Auth.required`), `Account.session!` |
 | Signing out, and signing out of every browser (every session of yours ended). | `routes/sign-out/` (`Auth.sign_out!`), `routes/settings/everywhere/` (`Auth.sign_out_everywhere!`) |
 | Middleware that puts the person into the request's context and guards the pages (`signed_in`), the JSON API (`api`) and MCP (`agent`). A route file names its own with `middleware = …`. | `Middlewares.roc`, each route file |
@@ -134,7 +134,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 | Tags, pinning and archiving. | `Notebook.tag!`, `Notebook.pin!`, `Notebook.archive!`, `routes/notes/[id]/+server.roc` |
 | Pages that read their own endpoint (`Endpoint.get!`), with the types they answer with in one module, shared by the server and the browser. | `Pages.roc`, each `+page.rocx` |
 | A 404 for a note that doesn't exist or isn't yours. The endpoint refuses both alike, so ids tell nothing, and `Endpoint.get!` turns the refusal into the app's error page. | `routes/notes/[id]/+page.rocx`, `routes/+error.rocx` |
-| Forms that work without JavaScript, and that the page sends in place with it (`use_submission!`). | every `<form method="post">` |
+| Forms that work without JavaScript. With it, the runtime sends each form to one of the app's endpoints with `fetch` and the page stays (D-095); a page that shows the answer reads it with `use_submission!`. | every `<form method="post">` |
 | Pure components (`view`) for what only shows its props; an effectful component (`view!`) for what keeps state, here the editor's draft and tabs (`create_signal!`). | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx`, `Ui/Brand.rocx` (pure); `Ui/Editor.rocx` (effectful) |
 | Pure components tested in `expect`s with packages/testing's `Dom`. | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx` |
 | Scoped styles and a look of its own (ink, paper, a highlighter), light and dark, narrow screens. | each component's `<style>`; the design tokens in `routes/+layout.rocx` |
@@ -313,6 +313,6 @@ unticked checkbox, the app's public address, a plain form's flash, guard's refus
    What differs from Postgres: FTS5 keeps stopwords, so every word asked for (`the`, `for`) must be
    in the note; a link's address isn't searched, because `Note.plain` leaves it out; and a snippet
    is one piece of about 24 words, not two.
-7. **Tags are a JSON column.** SQLite has no arrays, so a note's tags are a column declared `json`:
+6. **Tags are a JSON column.** SQLite has no arrays, so a note's tags are a column declared `json`:
    written as `Text(Json.to_str(tags))`, read back as a list, and searched with `json_each`
    (`Store.tagged`, and the sidebar's counts).

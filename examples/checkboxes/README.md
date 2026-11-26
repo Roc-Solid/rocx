@@ -24,7 +24,7 @@ cd examples/checkboxes && ../../bin/rocx dev
 Open http://localhost:8080 in two windows side by side. `rocx dev` builds the app (the server and
 the browser's half), serves it under `--dev` along with the app's `static/` (its stylesheet), and
 builds it again each time you save a file. The app has no database, so it doesn't matter where you
-start it from; `../../bin/rocx dev examples/checkboxes` from the root works too.
+start it from; `bin/rocx dev examples/checkboxes` from the root works too.
 
 ### Build it as it would ship
 

@@ -89,11 +89,12 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 
 | Feature | Where |
 |---|---|
-| A middleware around every request. `Middleware.same_origin` refuses a change sent from another site's page; `identify` puts who you are, from your session (`Auth.optional`), into every handler's `context`; `logged` logs each answer (`Log.info!`, or `Log.error!` with why for a 5xx) | [`Middlewares.roc`](Middlewares.roc), named in [`main.roc`](main.roc) |
+| A middleware around every request. `Middleware.same_origin` refuses a change sent from another site's page; `identify` puts who you are, from your session (`Auth.optional`), into every handler's `context`; `logged` logs each answer (`Log.info!`, or `Log.error!` for a 5xx) | [`Middlewares.roc`](Middlewares.roc), named in [`main.roc`](main.roc) |
 | A plugin: packages/auth keeps sessions in the app's database, its cookie `tasks_session`. With no `admit!`, nobody signs in by a link or a provider; the app starts sessions itself | [`main.roc`](main.roc) (`Auth.plugin`) |
 | A session started and ended by an endpoint (`Auth.sign_in!` for the person picked, `Auth.sign_out!`), then a redirect | [`routes/me/+server.roc`](routes/me/+server.roc) |
 | SQLite in the server's process, with migrations and a seed that is safe to run twice | [`main.roc`](main.roc), [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`migrations/0002_seed.sql`](migrations/0002_seed.sql) |
 | Queries: `Db.all!` into typed rows, `Db.one!` for the one row a query reads, `Db.run!`, a transaction, and `Db.Nullable` for optional columns | [`Store.roc`](Store.roc) (`Row`, `task_of`, `task!`, `move!`) |
+| A database that failed: why goes on the log (`Log.error!`), and the client gets a plain 500, since the database's text can name the app's tables and values | [`Store.roc`](Store.roc) (`refusal!`) |
 | One endpoint for a plain form and the runtime, answering each in its way: `Endpoint.posted_by` tells them apart (a redirect for a form; for the runtime, which sends every form to an endpoint, JSON and what to read again, `Router.revalidate!`). The task's page reads the answer and goes to the list | [`routes/api/tasks/delete/+server.roc`](routes/api/tasks/delete/+server.roc), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 
 ### Forms and changes
@@ -140,6 +141,7 @@ Over HTTP, they cover:
 - the pages, and every form, posted both as a browser without JavaScript posts it and as the
   runtime sends it;
 - the endpoints as JSON, and what lands in the database (nulls included);
+- a task sent as JSON, read and refused by the same form as one posted (D-093);
 - who you are: a session whose cookie is a token, not a name (a cookie naming someone is nobody),
   ended when you pick someone else or forget yourself;
 - the middleware's log, and its refusal of another site's post;

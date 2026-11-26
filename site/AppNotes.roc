@@ -87,7 +87,7 @@ AppNotes := [].{
 			path: Paths.examples_uptime,
 			blurb: "An uptime monitor and its status page",
 			summary: "An uptime monitor and its public status page: jobs check each service on time, incidents open and close themselves, subscribers are emailed, and the page follows it all live.",
-			shows: ["Jobs, cron and email as plugins", "OpenTelemetry metrics from a middleware", "The admin's tables over the app's database, and its jobs page, behind a password and packages/auth's sessions", "Charts, and a channel for the live page"],
+			shows: ["Jobs, cron and email as plugins", "OpenTelemetry metrics, sent by packages/otel's plugin: each request's time, each check's latency, and each monitor up or down", "The admin's tables over the app's database, and its jobs page, behind a password and packages/auth's sessions", "Charts, and a channel for the live page"],
 			shots: [
 				{ file: "status", alt: "The status page: each service's state, its uptime and its last days", caption: "The status page", phone: Bool.False },
 				{ file: "monitor", alt: "A monitor's page: its response time charted, and its incidents", caption: "A monitor", phone: Bool.False },
@@ -145,7 +145,7 @@ AppNotes := [].{
 			kind: Benchmark,
 			path: Paths.examples_sqlite_vs_turso,
 			blurb: "SQLite against Turso, timed in Roc",
-			summary: "One app timing the same database work on SQLite and on Turso: writes alone and in a transaction, reads by key and by an index, sums, JSON, a recursive query, eight callers at once on rows of their own, on one row, and reading beside writing; a sale written to four tables in one transaction, with its job queued in it and without; then a million orders fetched one and a hundred at a time, and joined to their customers. Each is timed in Roc, in the server, around the Db calls it makes. Its results are on this page.",
+			summary: "One app timing the same database work on SQLite and on Turso: writes alone and in a transaction, reads by key and by an index, sums, JSON, a recursive query, eight callers at once on rows of their own, on one row, and reading beside writing; a sale written to four tables in one transaction, with its job queued in it and without; then a million orders fetched one and a hundred at a time, and joined to their customers. Each is timed in Roc, in the server, around the Db calls it makes. Its results are on this page, all but the sale's four workloads, which haven't been measured for it yet.",
 			shows: ["The same SQL on two engines: --database-url picks one", "Turso's concurrent writes (MVCC): a transaction that loses to another runs again", "A job queued in the same transaction as its sale: the outbox pattern", "Eight actors as eight callers at once, and timing in Roc (Time.now_nanos!)", "A million rows, loaded by SQL from a count, fetched and joined"],
 			shots: [],
 		},

@@ -29,7 +29,8 @@ view! = |_|
 				Each example is a real app in the repository's <code>examples/</code> directory, built with Roc
 				Solid from the database to the browser. Read one to see how the pieces fit together in an app
 				rather than a snippet. Each has a README that tours it and points to the file that shows each
-				feature, tests of its own, and a page here with its screenshots and numbers.
+				feature, and a page here with its numbers and, for most, screenshots. All but hello have tests of
+				their own.
 			</PageHero>
 
 			<Heading id="start">Where to start</Heading>

@@ -89,10 +89,10 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 | Fractional ranks: a move writes one row, and two cards dropped into one gap at once each get a rank of their own (below) | `Rank.roc`, `Board.rank_for`, `Store.move!` |
 | The rules both halves share: the order cards show in, where a move puts a card, a move applied to the page's copy, validation | `Board.roc` |
 | Middleware: same-origin checks and security headers on every request, a member check, and a rate limit on writes (packages/guard) | `Middlewares.roc` (`default`, `member`, `writer`); each route file's `middleware = …` |
-| Who you are: a name and a colour, kept as a session by packages/auth's plugin with no `admit!` (nobody signs in by a link or a provider). Joining starts it (`Auth.sign_in!`), `Auth.required` reads it and sends a page asked for without one to join, and a channel's check reads it from the stream's cookies | `main.roc` (`Auth.plugin`), `routes/join/+server.roc`, `Middlewares.member` |
+| Who you are: a name and a colour, kept as a session by packages/auth's plugin with no `admit!` (nobody signs in by a link or a provider). Joining starts it and ends the one the browser had (`Auth.switch!`), `Auth.required_with` reads it and sends a page asked for without one to join, and a channel's check reads it from the stream's cookies | `main.roc` (`Auth.plugin`), `routes/join/+server.roc`, `Middlewares.member` |
 | SQLite in the server's process: migrations, transactions that take turns, a `json` column, every query in one module | `main.roc`, `migrations/`, `Store.roc` |
 | A seed that can run twice: three people and a board that looks lived in | `migrations/0002_seed.sql` |
-| Forms that work without JavaScript: each has `method="post"` and an `action`; with JavaScript, the page sends it (`on:submit` with an action, or `use_submission!`) and stays | every `<form>` |
+| Forms that work without JavaScript: each has `method="post"` and an `action`. With JavaScript, each is sent with `fetch` and the page stays: most through an action (`on:submit`), the rest by the runtime, which sends any form to one of the app's endpoints itself (D-095), their answers read with `use_submission!` | every `<form>` |
 | Pure and effectful components: `view` for what only shows its props, `view!` for what keeps state | `Ui/Avatar.rocx` (pure); `Ui/ColumnView.rocx`, `Ui/CardTile.rocx`, `Ui/CardPanel.rocx` (effectful) |
 | Scoped styles, light and dark | each component's `<style>`; the colour tokens in `routes/+layout.rocx` |
 
@@ -101,8 +101,8 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 The board's page makes the state its parts share once, in `routes/b/[board]/+page.rocx`, and hands
 it to each component as `shared` (`Ui/Shared.roc` says what is in it). Each entry is an accessor or
 a setter: `board!` (the board as it shows), `dragging!` and `over!` (the card being dragged and where
-it would land), `open!` (the card that is open), `here!` (who is on the board). A part that reads one
-of them is patched when it changes, and only that part.
+it would land), `open!` (the card that is open), `others!` (who else is on the board). A part that
+reads one of them is patched when it changes, and only that part.
 
 ### Moves before the server has them
 
@@ -246,8 +246,8 @@ in the platform or in rocx since, and the app uses the fix:
 - A module below the routes can publish on a route's channel: `News.tell!` publishes on
   `Api.channel_b_board`, typed, because `Generated/Api` is the app's contract and imports no route
   file (D-037 in DECISIONS.md).
-- Packages bring their own server code: the routes import `guard.Guard` and
-  `presence.PresenceServer`, with nothing copied into the app.
+- Packages bring their own server code: `Middlewares.roc` imports `guard.Guard` and the presence
+  route `presence.PresenceServer`, with nothing copied into the app.
 - Presence runs on a channel, so a page holds one stream for the board's news and its presence room.
 - A page says its presence's typed `data` (`here.update!`), so the card a person has open is
   `Board.Viewing`, and their status stays `Online` or `Away`: it was a status word (`card-12`) once,

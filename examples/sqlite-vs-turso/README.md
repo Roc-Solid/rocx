@@ -134,6 +134,8 @@ small run to warm up, then ten runs in a row at size 100 (20,000 items). On anot
 the big run at a million orders, ten times in a row. Every run's times are kept. The docs page shows
 the first run, the first three, or all ten (their average, fastest and slowest), with the machine
 they ran on (`site/machine.mjs`). The site's build reads the committed JSON file and doesn't measure.
+The file was last measured before the sale's four workloads were added, so the page doesn't show
+them yet; the next `just db-bench` adds them.
 
 The big run gets a file of its own because, on Turso's MVCC, what an earlier run wrote (versions
 kept in memory) slows later reads two or three times, even of tables it never touched.
