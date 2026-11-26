@@ -173,9 +173,9 @@ Help := [].{
 					[
 						"rocx routes [dir] [--server] [--client]",
 						"",
-						"The app's routes, each with its method, its file, its middleware's chain and what its",
-						"comment says: the first sentence of an endpoint's (what its OpenAPI operation says), or",
-						"of a page's file's first.",
+						"The app's routes, each with its method, its middleware's chain and what its comment",
+						"says: the first sentence of an endpoint's (its OpenAPI summary), or of a page's file's",
+						"first.",
 						"",
 						"  --server         only the endpoints",
 						"  --client         only the pages (the error page too)",

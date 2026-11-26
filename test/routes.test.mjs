@@ -221,12 +221,12 @@ test("rocx routes: each route's comment in brief (an endpoint's, what OpenAPI sa
 		put("routes/quiet/+server.roc", "import pf.Server\n\nget! = |_| Ok(1)\n");
 		const lines = (text) => text.split("\n").map((line) => line.split(/ {2,}/));
 		assert.deepEqual(lines(routesTable(dir)), [
-			["METHOD", "PATH", "FILE", "MIDDLEWARE (outermost first)", "DESCRIPTION"],
-			["GET", "/", "routes/+page.rocx", "-", "The page at /: rendered by the server, then live in the browser."],
-			["GET", "/hello", "routes/hello/+server.roc", "-", "A greeting, as JSON."],
-			["POST", "/hello", "routes/hello/+server.roc", "-", "A greeting for `name`, written down for good and kept on the server…"],
-			["GET", "/quiet", "routes/quiet/+server.roc", "-"],
-			["*", "(anything else)", "routes/+error.rocx", "-", "What a path no page has shows."],
+			["METHOD", "PATH", "MIDDLEWARE (outermost first)", "DESCRIPTION"],
+			["GET", "/", "-", "The page at /: rendered by the server, then live in the browser."],
+			["GET", "/hello", "-", "A greeting, as JSON."],
+			["POST", "/hello", "-", "A greeting for `name`, written down for good and kept on the server…"],
+			["GET", "/quiet", "-"],
+			["*", "(anything else)", "-", "What a path no page has shows."],
 		]);
 		assert.deepEqual(lines(routesTable(dir, "server")).map((row) => `${row[0]} ${row[1]}`), ["METHOD PATH", "GET /hello", "POST /hello", "GET /quiet"], "--server: the endpoints");
 		assert.deepEqual(lines(routesTable(dir, "client")).map((row) => `${row[0]} ${row[1]}`), ["METHOD PATH", "GET /", "* (anything else)"], "--client: the pages, and the error page");

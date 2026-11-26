@@ -3680,8 +3680,9 @@ Routes := [].{
 					_ => Bool.False
 				},
 		)
-		rows = kept.map(|row| [row.method, row.path, row.file, if (row.middleware == None) "-" else Routes.or_empty(row.middleware), row.doc])
-		header = ["METHOD", "PATH", "FILE", "MIDDLEWARE (outermost first)", "DESCRIPTION"]
+		# No file: a route's path says it (a group's middleware is in its chain).
+		rows = kept.map(|row| [row.method, row.path, if (row.middleware == None) "-" else Routes.or_empty(row.middleware), row.doc])
+		header = ["METHOD", "PATH", "MIDDLEWARE (outermost first)", "DESCRIPTION"]
 		widths = header.map_with_index(|title, i| rows.fold(Text.length(title), |widest, row| if (Text.length(row.get(i) ?? "") > widest) Text.length(row.get(i) ?? "") else widest))
 		lines = [header].concat(rows).map(|row| Text.trim_end(Str.join_with(row.map_with_index(|cell, i| if (i + 1 == row.len()) cell else Text.pad_end(cell, widths.get(i) ?? 0)), "  ")))
 		Ok(Str.join_with(lines, "\n"))
