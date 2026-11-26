@@ -359,7 +359,7 @@ host's GPU.
 | | |
 |---|---|
 | APK | 983,554 bytes (960 KB): `libapp.so` 940,664 bytes, stored uncompressed (`extractNativeLibs="false"`); `classes.dex` 35 KB |
-| In `libapp.so` | 766 KB of code; the app's Roc is about 186 KB of it, the rest the host (the engine, Rust's std, serde_json, jni) |
+| In `libapp.so` | 766 KB of code; the app's Roc is about 186 KB of it, the rest the host (the engine, Rust's std, serde_json then, the engine's own JSON reader since spike/wasm-engine's round 3, jni) |
 | Build, first | 81 s (the host built from nothing by cargo, under load) |
 | Build, a `.rocx` changed | 4.2–4.5 s (Roc 2.5–3 s; the Mac's check about 1 s) |
 | Build, the Kotlin shell changed | 10–18 s (kotlinc's start, R8) |

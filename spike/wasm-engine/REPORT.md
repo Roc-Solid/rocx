@@ -128,3 +128,24 @@ Roc's JSON into the engine's own nodes, faster too), no formatted messages, and 
 drags, transitions and moves, actions and submissions, channels, `<Meta>`/`<Link>`/`<Style>`,
 requests and timers through the page, SVG; and nodes freed beyond a list's rows (a hole's markup
 replaced is still kept).
+
+## Round 3: markup read without serde_json (2026-11-26, the user's go)
+
+The engine reads Roc's JSON with a reader of its own (`native/core/src/json.rs`) instead of
+serde_json: an object is its entries in order (a node has a handful), a key or a short value markup
+always has (`"t"`, `"tag"`, `"e"`, `"class"`) is borrowed from a table instead of allocated, a
+string with no escapes is copied in one go, and a number is an integer (Roc's ids; a fraction or
+an exponent read roughly, which markup never has). No maps, float parsing or error messages. It
+writes the two small answers it gives Roc (a request's, a submission's) itself.
+
+At opt-level s: the engine's page 397,640 bytes of wasm, 118,520 with brotli (426,889 and 129,698
+with serde_json: 29 KB and 11 KB less). On the benchmark's page (2 rounds of 15, the machine at load
+13 to 15, the ratio to today's page in the same rounds): create 1,000 1.05x today's (1.08x with
+serde_json), 10,000 1.04x (1.13x), append 1.02x (1.19x), update 1.00x (1.13x); swap and clear
+within the noise of before. The same tables; the phone's screens (native/mac, phone-hello and
+examples/tasks against their servers) the same as master's engine's, a submission's round trip
+included.
+
+Of the engine's code now (opt-level s, 374 KB): engine.rs 41%, Roc's 33%, formatting 4% (14 KB),
+the maps' hashing and hashbrown's copies of it some 5%. What would shrink it next: no formatted
+messages (`format!` in warnings and logs), and wasm-opt.

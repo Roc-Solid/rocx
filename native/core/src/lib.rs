@@ -17,6 +17,7 @@ pub mod engine;
 mod hosted;
 mod fx;
 mod http;
+mod json;
 pub mod native;
 pub mod roc;
 pub mod svg;

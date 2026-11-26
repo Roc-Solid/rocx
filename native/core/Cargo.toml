@@ -14,7 +14,6 @@ path = "src/lib.rs"
 dynamic = []
 
 [dependencies]
-serde_json = "1"
 # Roc's memory, shared with the browser's host (web/host): each allocation numbered by the call into
 # Roc that made it, so what a call that ends early held is freed; and, in a browser, Zig's
 # allocator for wasm.

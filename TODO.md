@@ -72,9 +72,9 @@ When an item lands, delete its line here in the same commit.
 ## Framework work, decided but not built
 
 - **The engine in the browser (spike/wasm-engine/REPORT.md, "Round 2").** native/core's engine is
-  within 0 to 16% of today's runtime on the benchmark's page (clear 1.55x), but its wasm is 128 KB
-  with brotli at opt-level s against today's 67 KB for wasm and runtime.js together: markup read
-  without serde_json, no formatted messages and wasm-opt would shrink it. Its nodes are freed only
+  within 0 to 5% of today's runtime on the benchmark's page (clear about 1.6x), but its wasm is
+  119 KB with brotli at opt-level s (markup read without serde_json since round 3) against today's
+  67 KB for wasm and runtime.js together: no formatted messages and wasm-opt would shrink it. Its nodes are freed only
   when a list's row goes (a hole's replaced markup stays), and it lacks what the browser needs of
   runtime.js (hydration, navigation, drags, transitions, actions, channels, head tags, SVG).
 - **native/mac never shows a first frame when the app's stylesheet can't be fetched** (an origin

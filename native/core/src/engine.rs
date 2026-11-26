@@ -16,7 +16,7 @@ use crate::abi::RocErasedCallable as Callable;
 use crate::dom::{Dom, NodeId, Range};
 use crate::roc::{self, Abort, Wait};
 use crate::{Level, log};
-use serde_json::Value;
+use crate::json::{self, Value};
 use std::cell::RefCell;
 use crate::fx::{HashMap, HashSet};
 use std::collections::{BTreeSet, VecDeque};
@@ -983,20 +983,20 @@ fn settle(id: u64, out: String) {
         }
         CompKind::Show => settle_show(id, out),
         CompKind::For => {
-            let entries: Vec<Value> = serde_json::from_str(&out).unwrap_or_default();
+            let entries = json::parse(&out).and_then(Value::into_array).unwrap_or_default();
             settle_for(id, entries)
         }
         CompKind::Text | CompKind::Attr | CompKind::Optional | CompKind::Style | CompKind::Flag | CompKind::Class => {
             let Target::Node(node) = target else { return };
-            let value: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+            let value = json::parse(&out).unwrap_or(Value::Null);
             with(|engine| patch(engine, kind, node, &name, &value));
         }
         CompKind::Html | CompKind::Root => {
-            let parsed: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+            let parsed = json::parse(&out).unwrap_or(Value::Null);
             // D-070's hole answers text alone as a JSON string, as a text hole's run answers.
             let nodes = match parsed {
                 Value::Array(nodes) => nodes,
-                Value::String(text) => vec![serde_json::json!({ "t": "s", "v": text })],
+                Value::String(text) => vec![Value::text_node(text)],
                 other => vec![other],
             };
             let peek = with(|engine| {
@@ -2473,7 +2473,7 @@ fn component(reference: Option<u64>, owner: Option<u64>, scope: &Scope) -> (Opti
         }
     });
     match result {
-        Ok(json) => (Some(comp), vec![serde_json::from_str(&json).unwrap_or(Value::Null)]),
+        Ok(out) => (Some(comp), vec![json::parse(&out).unwrap_or(Value::Null)]),
         // A wait here is the app's mistake, and its frame stays (as the browser's throws).
         Err((Abort::Wait(_), _)) => {
             log(Level::Error, "rocx: a component read a value that isn't in yet outside its markup: read it in a hole ({…}), which waits");
@@ -2650,7 +2650,7 @@ pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), St
                     if status == 200 {
                         // The reads the answer names (`x-rocx-revalidate`, `Router.revalidate!` in
                         // the endpoint, D-054), or every one.
-                        let keys = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("x-rocx-revalidate")).and_then(|(_, value)| serde_json::from_str::<Vec<String>>(value).ok());
+                        let keys = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("x-rocx-revalidate")).and_then(|(_, value)| json::parse(value).and_then(Value::into_strings));
                         revalidate(Some((key, entry)), keys, status, body);
                     } else {
                         submission_done(&key, entry, status, body);
@@ -2662,7 +2662,12 @@ pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), St
         _ => {
             let waiters = with(|engine| {
                 let answer = match result {
-                    Ok((status, _, body)) => Answer::Ok(serde_json::json!({ "status": status, "body": body }).to_string()),
+                    Ok((status, _, body)) => {
+                        let mut answer = format!("{{\"status\":{status},\"body\":");
+                        json::quote(&body, &mut answer);
+                        answer.push('}');
+                        Answer::Ok(answer)
+                    }
                     Err(why) => Answer::Failed(why),
                 };
                 engine.requests.insert(id, answer);
@@ -2676,11 +2681,18 @@ pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), St
 // ---- Submissions ----
 
 fn submission_json(entry: &Submission, listed: bool) -> String {
-    let mut value = serde_json::json!({ "state": entry.state, "input": entry.input, "json": entry.json, "status": entry.status, "body": entry.body });
+    // serde_json's order: its keys sorted.
+    let mut out = String::from("{\"body\":");
+    json::quote(&entry.body, &mut out);
     if listed {
-        value["id"] = serde_json::json!(entry.id);
+        out.push_str(&format!(",\"id\":{}", entry.id));
     }
-    value.to_string()
+    out.push_str(",\"input\":");
+    json::quote(&entry.input, &mut out);
+    out.push_str(&format!(",\"json\":{},\"state\":", entry.json));
+    json::quote(entry.state, &mut out);
+    out.push_str(&format!(",\"status\":{}}}", entry.status));
+    out
 }
 
 pub fn action(url: String) {
@@ -3223,7 +3235,7 @@ pub fn optimistic_set(id: u64, value: Callable) -> Result<(), Callable> {
 
 /// `Router.revalidate!` in a handler (D-054): the reads of those URLs read again once it is done.
 pub fn revalidate_keys(keys: String) -> Result<(), String> {
-    let keys: Vec<String> = serde_json::from_str(&keys).map_err(|why| format!("Router.revalidate!: {why}"))?;
+    let keys = json::parse(&keys).and_then(Value::into_strings).ok_or_else(|| format!("Router.revalidate!: not a list of strings: {keys}"))?;
     with(|engine| match engine.handler() {
         Some(handler) => {
             handler.writes.push(Write::Revalidate(keys));
