@@ -247,10 +247,10 @@ view! = |_|
 			</Versus>
 			<p>
 				In the browser, an event handler (an <code>on:click</code>, say) sends any endpoint with
-				<code>{"Endpoint.send!(endpoint, arg, Call.fetch!)"}</code> and gets <code>Ok(result)</code> or
+				<code>{"Endpoint.send!(endpoint, arg)"}</code> and gets <code>Ok(result)</code> or
 				<code>Err(problem)</code>. The event handler pauses while the answer is on its way: it runs again once
 				the answer is in, and only that run's writes are kept. This component asks the shout endpoint for the
-				word clicked, <code>{"Endpoint.send!(Api.get_api_shout_word({ word: word }), {}, Call.fetch!)"}</code>,
+				word clicked, <code>{"Endpoint.send!(Api.get_api_shout_word({ word: word }), {})"}</code>,
 				and shows the answer, or why there is none. On the static copy of this site, these three words'
 				answers are files, which the server wrote as the site was built:
 			</p>
@@ -420,7 +420,7 @@ view! = |_|
 					<code>curl -N -H 'accept: text/event-stream' localhost:8080/api/count/3</code>.
 				</li>
 				<li>
-					<strong>A component listens</strong> with <code>Endpoint.listen!(endpoint, Call.listen!, heard!)</code>.
+					<strong>A component listens</strong> with <code>Endpoint.listen!(endpoint, heard!)</code>.
 					<code>heard!</code> runs for each event, as a click's handler would: with <code>Event(counted)</code>,
 					typed as the endpoint's events; then <code>Ended</code>; or <code>Failed(problem)</code>, where a
 					refusal is <code>Refused(status, why)</code>. Started from an

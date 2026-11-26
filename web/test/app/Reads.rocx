@@ -2,7 +2,6 @@ import pf.Html
 import pf.Solid exposing [create_memo!, refresh!]
 import pf.Router
 import pf.Endpoint
-import pf.Call
 import pf.Errored
 import Api
 
@@ -15,7 +14,6 @@ Reads := [].{
 		listen! = || {
 			Endpoint.listen!(
 				Api.changes({}),
-				Call.listen!,
 				|heard|
 					match heard {
 						Event(_) => refresh!(data!)

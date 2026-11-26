@@ -46,7 +46,7 @@ spike/native-apps/phone-hello/routes/+page.rocx
   docs site): one page with a counter (a signal, a button, a text hole), a value
   read from `GET /api/greeting` through `Api` with `Endpoint.get!` in a memo, shown under
   `<Loading>` and `<Errored>`, with "Ask again" (`refresh!`), and a field whose text a button sends
-  to `POST /api/echo` with `Endpoint.send!(Api.post_api_echo({}), { text }, Call.fetch!)`, from a
+  to `POST /api/echo` with `Endpoint.send!(Api.post_api_echo({}), { text })`, from a
   handler that waits for the answer, which is typed (`{ shout : Str, length : U64 }`, or a refusal).
 - **`examples/pomodoro`** (2026-11-24), the first example app made for both: a focus timer whose
   page is a ring in SVG, buttons in a flex row and a bar of a percentage's width, and whose

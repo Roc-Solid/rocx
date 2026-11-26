@@ -72,7 +72,7 @@ SiteSources := [].{
 		Whole("endpoint_shout", "site/routes/api/shout/+server.roc"),
 		Whole("endpoint_shout_word", "site/routes/api/shout/[word]/+server.roc"),
 		Whole("endpoint_count", "site/routes/api/count/[to]/+server.roc"),
-		Pick("demo_count_update", "site/Demos/Count.rocx", ["start! = || {", "set_heard!([])", "set_state!(Listening)", "Endpoint.listen!(", "Api.events_api_count_to(", "Call.listen!,", "|event|", "match event {", "Event(counted) =>", "Ended =>", "Failed(problem) =>", "}", ")", "}"]),
+		Pick("demo_count_update", "site/Demos/Count.rocx", ["start! = || {", "set_heard!([])", "set_state!(Listening)", "Endpoint.listen!(", "Api.events_api_count_to(", "|event|", "match event {", "Event(counted) =>", "Ended =>", "Failed(problem) =>", "}", ")", "}"]),
 		Lines("endpoint_api", "site/Generated/Api.roc", ShoutApi),
 		Lines("endpoint_handlers", "site/Generated/Handlers.roc", ShoutHandlers),
 		Whole("demo_shout", "site/Demos/Shout.rocx"),

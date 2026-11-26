@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Call
 import pf.Solid exposing [create_signal!]
 import pf.Endpoint
 import pf.Server as Http
@@ -24,7 +23,6 @@ Count := [].{
 			set_state!(Listening)
 			Endpoint.listen!(
 				Api.events_api_count_to({ to: to!() }),
-				Call.listen!,
 				|event|
 					match event {
 						Event(counted) => set_heard!(heard!().append(counted))

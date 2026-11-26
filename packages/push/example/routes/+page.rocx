@@ -3,14 +3,13 @@ import pf.Server
 import pf.Solid exposing [create_signal!]
 import push.PushButton
 import pf.Endpoint
-import pf.Call
 import ../Generated/Api
 
 ## Asks the server to notify everyone (`POST /push/announce`), from the button's handler: how
 ## many it queued, or why not.
 announce! : {} => Str
 announce! = |{}|
-	match Endpoint.send!(Api.post_push_announce({}), {}, Call.fetch!) {
+	match Endpoint.send!(Api.post_push_announce({}), {}) {
 		Ok(said) => said
 		Err(problem) => Server.explain(problem)
 	}

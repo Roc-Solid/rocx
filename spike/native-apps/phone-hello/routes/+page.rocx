@@ -1,7 +1,6 @@
 import pf.Html
 import pf.Solid exposing [create_memo!, create_signal!, refresh!]
 import pf.Endpoint
-import pf.Call
 import pf.Loading
 import pf.Errored
 import pf.Server
@@ -20,7 +19,7 @@ view! = |_| {
 	# A handler that waits for the server: it stops while the answer is on its way, and runs again
 	# once it is in, as in the browser.
 	send! = || {
-		match Endpoint.send!(Api.post_api_echo({}), { text: draft!() }, Call.fetch!) {
+		match Endpoint.send!(Api.post_api_echo({}), { text: draft!() }) {
 			Ok(answer) => set_said!("${answer.shout} (${answer.length.to_str()} characters)")
 			Err(problem) => set_said!("Not sent: ${Server.explain(problem)}")
 		}

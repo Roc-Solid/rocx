@@ -817,7 +817,7 @@ view! = |_|
 			</p>
 			<Code
 				title="rocx"
-				source={"import pf.Solid exposing [create_signal!, create_effect!, on_cleanup!, set_interval!]\n\n(heard!, set_heard!) = create_signal!(0.U64)\ncreate_effect!(\n\t|| room!(),\n\t|room| {\n\t\t# the room's stream, while this is on the page; another when the room changes\n\t\tEndpoint.listen!(Api.events_room({ room }), Call.listen!, |_| set_heard!(heard!() + 1))\n\t\ton_cleanup!(|| set_heard!(0))\n\t},\n)\n\n(seconds!, set_seconds!) = create_signal!(0.U64)\ncreate_effect!(\n\t|| running!(),\n\t# a tick a second while running: the next apply's cleanups stop it\n\t|running|\n\t\tif running {\n\t\t\t_ = set_interval!(1000, || set_seconds!(seconds!() + 1))\n\t\t\t{}\n\t\t} else {\n\t\t\t{}\n\t\t},\n)"}
+				source={"import pf.Solid exposing [create_signal!, create_effect!, on_cleanup!, set_interval!]\n\n(heard!, set_heard!) = create_signal!(0.U64)\ncreate_effect!(\n\t|| room!(),\n\t|room| {\n\t\t# the room's stream, while this is on the page; another when the room changes\n\t\tEndpoint.listen!(Api.events_room({ room }), |_| set_heard!(heard!() + 1))\n\t\ton_cleanup!(|| set_heard!(0))\n\t},\n)\n\n(seconds!, set_seconds!) = create_signal!(0.U64)\ncreate_effect!(\n\t|| running!(),\n\t# a tick a second while running: the next apply's cleanups stop it\n\t|running|\n\t\tif running {\n\t\t\t_ = set_interval!(1000, || set_seconds!(seconds!() + 1))\n\t\t\t{}\n\t\t} else {\n\t\t\t{}\n\t\t},\n)"}
 				numbers={Bool.False}
 			/>
 			<ul>

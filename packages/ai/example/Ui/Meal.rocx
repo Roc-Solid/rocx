@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Call
 import pf.Solid exposing [create_signal!]
 import pf.Endpoint
 import pf.Server as Http
@@ -18,7 +17,7 @@ Meal := [].{
 		(state!, set_state!) = create_signal!(idle)
 		read! = || {
 			answered : Try(Meal.Read, Http.Problem)
-			answered = Endpoint.send!(Api.post_api_meal({}), { text: described!() }, Call.fetch!)
+			answered = Endpoint.send!(Api.post_api_meal({}), { text: described!() })
 			match answered {
 				Ok(meal) => set_state!(Done(meal))
 				Err(problem) => set_state!(Failed(explain(problem)))

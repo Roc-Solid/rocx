@@ -1,4 +1,3 @@
-import pf.Call
 import pf.Endpoint
 import pf.Channel
 import pf.Events
@@ -28,7 +27,7 @@ Api := [].{
 	## Renames who you are, from a handler: the new name, or why there is none.
 	rename! : Str => Str
 	rename! = |name|
-		match Endpoint.send!(Endpoint.remote("POST", "/api/rename"), name, Call.fetch!) {
+		match Endpoint.send!(Endpoint.remote("POST", "/api/rename"), name) {
 			Ok(renamed) => renamed
 			Err(problem) => Server.explain(problem)
 		}

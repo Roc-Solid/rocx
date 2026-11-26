@@ -507,7 +507,7 @@ function contractApp() {
 	// A route of respond! alone, which Handlers doesn't import, so it may import Handlers (an MCP route
 	// would): it runs another route's handler there and then.
 	put("routes/raw/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../Generated/Handlers\n\n## Every method: the hello endpoint\'s answer, run here.\nrespond! : { request : Server.Request, params : {}, context : {} } => Server.Response\nrespond! = |{ request, context, .. }|\n\tmatch Endpoint.run!(Handlers.get_hello({}), request, context, {}) {\n\t\tOk(said) => Server.response(200, [], "${said.from} ${said.n.to_str()}")\n\t\tErr(_) => Server.response(500, [], "no answer")\n\t}\n');
-	put("routes/+page.rocx", 'import pf.Html\nimport pf.Endpoint\nimport pf.Call\nimport ../Generated/Api\n\nview! = |_| {\n\tlatest = Endpoint.get!(Api.get_hello({}))\n\tsend! = || {\n\t\t_ = Endpoint.send!(Api.post_publish({}), { n: latest.n }, Call.fetch!)\n\t\t{}\n\t}\n\t<button type="button" on:click={send!}>{latest.from}</button>\n}\n');
+	put("routes/+page.rocx", 'import pf.Html\nimport pf.Endpoint\nimport ../Generated/Api\n\nview! = |_| {\n\tlatest = Endpoint.get!(Api.get_hello({}))\n\tsend! = || {\n\t\t_ = Endpoint.send!(Api.post_publish({}), { n: latest.n })\n\t\t{}\n\t}\n\t<button type="button" on:click={send!}>{latest.from}</button>\n}\n');
 	return dir;
 }
 
@@ -586,9 +586,9 @@ test("the contract (D-037): a wrong body or answer against it doesn't compile, i
 		writeFileSync(page, readFileSync(page, "utf8").replace("{ n: latest.n }", '{ n: "one" }').replace("{latest.from}", "{latest.title}"));
 		for (const [checked, copy] of both().map((each, i) => [each, i ? "browser" : "server"])) {
 			assert.notEqual(checked.status, 0, copy);
-			assert.match(checked.stdout, /routes\/\+page\.rocx:9:\d+/, `${copy}: the send, at the .rocx line:\n${checked.stdout}`);
-			assert.match(checked.stdout, /_ = Endpoint\.send!\(Api\.post_publish\(\{\}\), \{ n: "one" \}, Call\.fetch!\)/, `${copy}: the .rocx line, quoted`);
-			assert.match(checked.stdout, /routes\/\+page\.rocx:12:\d+/, `${copy}: the read, at its line`);
+			assert.match(checked.stdout, /routes\/\+page\.rocx:8:\d+/, `${copy}: the send, at the .rocx line:\n${checked.stdout}`);
+			assert.match(checked.stdout, /_ = Endpoint\.send!\(Api\.post_publish\(\{\}\), \{ n: "one" \}\)/, `${copy}: the .rocx line, quoted`);
+			assert.match(checked.stdout, /routes\/\+page\.rocx:11:\d+/, `${copy}: the read, at its line`);
 			assert.doesNotMatch(checked.stdout, /(build\/client\/|Generated\/)\S*\.roc:\d+:\d+/, `${copy}: never a line of rocx's copy`);
 		}
 		// An actor publishes what the channel doesn't carry: at its line in Room.roc.

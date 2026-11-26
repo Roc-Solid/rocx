@@ -135,7 +135,6 @@ page turns right to left for Arabic:
 import pf.Html
 import pf.Context
 import pf.Endpoint
-import pf.Call
 import intl.Language
 import ../I18n
 import ../Generated/Styles
@@ -144,7 +143,7 @@ import ../Generated/Api
 view! = |{ children, .. }| {
 	# A reader's pick is kept in the `locale` cookie (POST /locale), so the next page is in it too.
 	remember! = |tag| {
-		_kept = Endpoint.send!(Api.post_locale({}), { tag: tag }, Call.fetch!)
+		_kept = Endpoint.send!(Api.post_locale({}), { tag: tag })
 		{}
 	}
 	# The reader's locale: GET /locale, answered as the server renders the page, carried in it.

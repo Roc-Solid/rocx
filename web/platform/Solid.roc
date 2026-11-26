@@ -11,7 +11,7 @@ import Store
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
-##     create_effect!(|| room!(), |room| Endpoint.listen!(Api.events_room({ room }), Call.listen!, heard!))
+##     create_effect!(|| room!(), |room| Endpoint.listen!(Api.events_room({ room }), heard!))
 Solid := [].{
 
 	## A value that changes: its accessor and its setter (a tuple: Roc's list patterns may not
@@ -222,7 +222,7 @@ Solid := [].{
 	## (`on_cleanup!`), then `apply`; values aren't compared. It belongs to the component or
 	## computation that made it, and goes with it, its cleanups run. On the server neither half runs.
 	##
-	##     create_effect!(|| room!(), |room| Endpoint.listen!(Api.events_room({ room }), Call.listen!, heard!))
+	##     create_effect!(|| room!(), |room| Endpoint.listen!(Api.events_room({ room }), heard!))
 	##
 	## Solid's `apply` returns its cleanup: here it calls `on_cleanup!`, since Roc has no "nothing" a
 	## function may return. Neither half is given the previous value. A listen or a timer started in

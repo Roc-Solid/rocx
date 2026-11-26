@@ -1,6 +1,5 @@
 import pf.Html
 import pf.Browser
-import pf.Call
 import pf.Endpoint
 import pf.Server
 import pf.Time
@@ -166,7 +165,7 @@ Editor := [].{
 			token = token!()
 			if (token.is_empty()) {} else {
 				taken : Try(Str, Server.Problem)
-				taken = Endpoint.send!(lease, { token: token }, Call.fetch!)
+				taken = Endpoint.send!(lease, { token: token })
 				_ = taken
 				{}
 			}

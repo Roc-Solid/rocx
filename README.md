@@ -758,7 +758,7 @@ from a signal) fetches the endpoint's URL. A read that its middleware answers wi
 signed-out visitor sent to sign in) makes the whole page that redirect.
 
 **From handlers.** A handler sends to any endpoint with
-`Endpoint.send!(Api.post_api_shout({}), draft!(), Call.fetch!)`.
+`Endpoint.send!(Api.post_api_shout({}), draft!())`.
 
 **Forms.** `<form method="post" action={Endpoint.url_of(join)}>` posts to an endpoint. The endpoint
 reads the form's fields by its body's type: a number from its text, an unticked box as `Bool.False`,
@@ -799,7 +799,7 @@ with files, or an action given a dropped or picked file, is sent as multipart an
 
 **Events.** An endpoint's `events!` streams server-sent events: a loop that sends and sleeps, a call
 of its own on the server, ended by `?` when the client goes. A component listens with
-`Endpoint.listen!(Api.events_…(params), Call.listen!, |event| …)`, and each event runs the handler.
+`Endpoint.listen!(Api.events_…(params), |event| …)`, and each event runs the handler.
 Start it in an effect (`create_effect!(|| org!(), |org| Endpoint.listen!(…))`): it listens while
 its component is on the page, starts again when what the effect read changes, and stops when the
 component goes.

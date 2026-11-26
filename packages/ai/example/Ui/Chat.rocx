@@ -1,5 +1,4 @@
 import pf.Html
-import pf.Call
 import pf.Solid exposing [create_signal!]
 import pf.Endpoint
 import pf.Server as Http
@@ -50,7 +49,7 @@ Chat := [].{
 			text = draft!().trim()
 			if !text.is_empty() and state!() != Thinking {
 				posted : Try({}, Http.Problem)
-				posted = Endpoint.send!(Api.post_api_chat_chat({ chat: chat }), { text: text }, Call.fetch!)
+				posted = Endpoint.send!(Api.post_api_chat_chat({ chat: chat }), { text: text })
 				set_draft!("")
 				set_lines!(lines!().append({ id: lines!().len(), who: "you", text: text }))
 				set_reply!("")
@@ -58,7 +57,7 @@ Chat := [].{
 				match posted {
 					Ok({}) => {
 						set_state!(Thinking)
-						Endpoint.listen!(Api.events_api_chat_chat({ chat: chat }), Call.listen!, heard!)
+						Endpoint.listen!(Api.events_api_chat_chat({ chat: chat }), heard!)
 					}
 					Err(problem) => set_state!(Failed(explain(problem)))
 				}
@@ -66,7 +65,7 @@ Chat := [].{
 		}
 		sum! = || {
 			summed : Try({ text : Str }, Http.Problem)
-			summed = Endpoint.send!(Api.post_api_notes_summary({}), {}, Call.fetch!)
+			summed = Endpoint.send!(Api.post_api_notes_summary({}), {})
 			match summed {
 				Ok(answer) => set_summary!(answer.text)
 				Err(problem) => set_summary!(explain(problem))
