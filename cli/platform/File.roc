@@ -18,6 +18,14 @@ File := [].{
 			Err(why) => Err(CantRead("${path}: ${why}"))
 		}
 
+	## The file's bytes (an image, a wasm module): `read!` is for text.
+	read_bytes! : Str => Try(List(U8), [CantRead(Str)])
+	read_bytes! = |path|
+		match Host.read_bytes!(path) {
+			Ok(bytes) => Ok(bytes)
+			Err(why) => Err(CantRead("${path}: ${why}"))
+		}
+
 	write! : Str, Str => Try({}, [CantWrite(Str)])
 	write! = |path, text|
 		match Host.write_file!(path, text) {

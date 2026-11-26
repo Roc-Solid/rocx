@@ -460,6 +460,13 @@ const LISTENED = Symbol("rocx listened");
 
 /** Attributes that name themselves (the others are handlers, keys, classes and styles). */
 const NAMED = new Set(["v", "o", "vo", "oo", "f", "fo"]);
+
+/** Whether an element's markup gives it an `aria-current` of its own: a link that does isn't marked
+ * (D-086). */
+function ownsCurrent(node) {
+	for (const [kind, name] of node.a) if (NAMED.has(kind) && name === "aria-current") return true;
+	return false;
+}
 /** The names refused, each said once. */
 const refusedNames = new Set();
 
@@ -510,6 +517,9 @@ const escape = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;
 
 /** The bootstrap the host puts before a page's `</body>` (server/host/src/signals.rs's `START`). */
 const START = '<script type="module" data-rocx src="/rocx/start.js"></script>';
+/** The runtime and the app's wasm, which start.js loads, asked for from the `<head>` (signals.rs's
+ * `PRELOADS`): the host's own elements, which hydrating passes over. */
+const PRELOADS = '<link rel="modulepreload" data-rocx href="/rocx/runtime.js"><link rel="preload" data-rocx href="/rocx/app.wasm" as="fetch" crossorigin>';
 
 /** The bootstrap with the build's id (`Router.app!`, D-040), as signals.rs's `start` writes it. */
 const startWith = (build) => (build === null ? START : `<script type="module" data-rocx data-build="${build.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}" src="/rocx/start.js"></script>`);
@@ -1040,6 +1050,9 @@ export class Runtime {
 		// false for a site refused).
 		this.templateIds = new Map();
 		this.templates = [null];
+		/** The links the runtime marks (D-086): `<a href>`s it made or adopted with no `aria-current`
+		 * of their own. */
+		this.links = new WeakSet();
 		/** Each `.map`'s rows (a "for" node), by key; its rows' indexes; and, by position, its items. */
 		this.lists = new Map();
 		this.boundaries = new Map();
@@ -1893,14 +1906,14 @@ export class Runtime {
 		entry.request = { href, method, headers, body };
 		source.list.push(entry);
 		source.cleared = false;
-		this.send(key, source, entry);
+		this.sendSubmission(key, source, entry);
 	}
 
 	/** A submission sent (again, for `retry!`): pending until it is answered; in the transition open
 	 * now, if any (`create_optimistic!`'s writes, D-054), which ends once its submissions are done. A
 	 * result reads again the reads its answer names (`x-rocx-revalidate`: `Router.revalidate!` in
 	 * its handler), or every one the page read. */
-	send(key, source, entry) {
+	sendSubmission(key, source, entry) {
 		const { href, method, headers, body } = entry.request;
 		const input = entry.input;
 		const transition = this.transition;
@@ -1962,7 +1975,7 @@ export class Runtime {
 		const entry = id === 0 ? (source.cleared ? undefined : source.list.at(-1)) : source.list.find((each) => each.id === id);
 		if (!entry?.request || entry.state === "pending") return;
 		Object.assign(entry, { state: "pending", status: 0, body: "" });
-		this.send(key, source, entry);
+		this.sendSubmission(key, source, entry);
 	}
 
 	/**
@@ -2118,6 +2131,39 @@ export class Runtime {
 		if (this.committed === target) return;
 		this.committed = target;
 		for (const observer of this.locationSource.observers) this.schedule(observer);
+		this.markLinks();
+	}
+
+	/**
+	 * Whether a link to `href` (an app's own path, `/…`, as the markup writes it) is where the page is,
+	 * `"page"` (its path, and its query if it has one, the page's), above it, `"true"` (a path the
+	 * page is under, never `/`), or neither, `null`: its `aria-current` (D-086), as signals.rs's
+	 * `current` says it. `<A>`'s active state, on every link.
+	 */
+	linkMark(href) {
+		if (typeof href !== "string" || !href.startsWith("/") || href.startsWith("//")) return null;
+		const [path, query = ""] = Runtime.target(href).split(/\?(.*)/s);
+		const [here, asked = ""] = this.location().split(/\?(.*)/s);
+		if (path === here) return !query || query === asked ? "page" : null;
+		return !query && path !== "/" && here.startsWith(`${path}/`) ? "true" : null;
+	}
+
+	/** A link the runtime made or adopted, with no `aria-current` of its own: marked as the page is
+	 * now (`linkMark`), and kept, to be marked again as the page moves (`markLinks`). Its mark is its
+	 * last attribute, as the server writes it. */
+	markLink(element) {
+		this.links.add(element);
+		const href = element.getAttribute("href");
+		const mark = href === null ? null : this.linkMark(this.unbased(href));
+		const was = element.getAttribute("aria-current");
+		if (mark === was) return;
+		element.removeAttribute("aria-current");
+		if (mark) element.setAttribute("aria-current", mark);
+	}
+
+	/** Every link the runtime marks, marked again: the page moved (a navigation in place, D-040). */
+	markLinks() {
+		for (const link of this.page?.querySelectorAll?.("a[href]") ?? []) if (this.links.has(link)) this.markLink(link);
 	}
 
 	/** Says whether a navigation in place is on its way (`Router.is_routing!`). */
@@ -3335,7 +3381,7 @@ export class Runtime {
 	 * What it came to: "ok", "pending" (it waits) or "failed"; nothing if it didn't run. */
 	run(computation) {
 		if (computation.disposed) return;
-		if (computation.kind === "leave") return this.probeLeave(computation);
+		if (computation.kind === "leave") return this.probeLeave(computation); //#nav
 		if (computation.recheck) {
 			// Here only because a memo an `is_pending!` it called reads changed: run only if that
 			// would answer otherwise now.
@@ -3602,6 +3648,8 @@ export class Runtime {
 				target.toggleAttribute(name, value);
 				if (name in target) target[name] = value;
 			}
+			// A link's new address: its mark too (D-086).
+			if (name === "href" && this.links.has(target)) this.markLink(target);
 			return;
 		}
 		if (target?.document) return this.settleDocument(computation, JSON.parse(out));
@@ -3625,7 +3673,7 @@ export class Runtime {
 			}
 			this.stats.patches++;
 			this.notify("patch", { kind, name, node: target.start.parentNode });
-			this.measure();
+			this.measure(); //#moves
 			const fragment = document.createDocumentFragment();
 			for (const node of nodes) fragment.append(this.build(node, computation, computation.scope));
 			replaceRange(target, fragment);
@@ -3776,7 +3824,7 @@ export class Runtime {
 		this.flushing = false;
 		// What moved glides, before what came plays its transition in (one that is a moved element's
 		// doesn't).
-		if (this.measured) this.glide();
+		if (this.measured) this.glide(); //#moves
 		if (this.entering.length) this.playEntering();
 		// The title before the page's functions, so one sees the page as the flush left it.
 		if (this.titlesDirty) this.showTitle();
@@ -3956,8 +4004,8 @@ export class Runtime {
 				source.list = source.list.filter((entry) => entry.id !== write.id);
 				this.submissionsChanged(source);
 			} else if (write.submit) this.sendAction(write.submit);
-			else if (write.navigate) this.navigate(write.navigate.to, write.navigate);
-			else if (write.leaveRetry) this.retryLeave(write.leaveRetry.id, write.leaveRetry.force);
+			else if (write.navigate) this.navigate(write.navigate.to, write.navigate); //#nav
+			else if (write.leaveRetry) this.retryLeave(write.leaveRetry.id, write.leaveRetry.force); //#nav
 		}
 	}
 
@@ -4041,7 +4089,7 @@ export class Runtime {
 		computation.adopting = false;
 		const first = computation.holds === undefined;
 		computation.holds = holds;
-		if (!first && !adopting) this.measure();
+		if (!first && !adopting) this.measure(); //#moves
 		const { node, target, scope } = computation;
 		const outs = first || adopting ? [] : this.transitioned(target, "out");
 		if (outs.length) {
@@ -4085,7 +4133,7 @@ export class Runtime {
 		const later = computation.settled === true;
 		computation.settled = true;
 		// Rows that go, come or move change the page: where what glides is, first.
-		if (later && !adopting && (entries.length !== list.rows.size || entries.some(({ k }, index) => list.indexes.get(k)?.value !== index || !list.rows.has(k)))) this.measure();
+		if (later && !adopting && (entries.length !== list.rows.size || entries.some(({ k }, index) => list.indexes.get(k)?.value !== index || !list.rows.has(k)))) this.measure(); //#moves
 		const cursor = adopting ? new Cursor(target.start.nextSibling) : null;
 		// The rows' boxes aren't the run's to let go of: each is its row's, or let go of here. Taken out
 		// of what the run keeps in one pass (one search a row was quadratic in the rows).
@@ -4649,7 +4697,7 @@ export class Runtime {
 					// Its first markup, as its run would have patched it in.
 					this.stats.patches++;
 					this.notify("patch", { kind: "html", name: null, node: range.start.parentNode });
-					this.measure();
+					this.measure(); //#moves
 					const fragment = document.createDocumentFragment();
 					for (const child of nodes) fragment.append(this.build(child, computation, scope));
 					range.end.before(fragment);
@@ -4702,7 +4750,7 @@ export class Runtime {
 				if (nodes) {
 					this.stats.patches++;
 					this.notify("patch", { kind: "html", name: null, node: range.start.parentNode });
-					this.measure();
+					this.measure(); //#moves
 					const fragment = document.createDocumentFragment();
 					for (const child of nodes) fragment.append(this.build(child, computation, scope));
 					range.end.before(fragment);
@@ -4813,6 +4861,7 @@ export class Runtime {
 		this.bind(element, node, owner, scope);
 		this.styled(element, node);
 		Runtime.inOrder(element, node);
+		if (node.tag === "a" && !ownsCurrent(node)) this.markLink(element);
 		const inside = within(node, scope);
 		for (const child of node.c) element.append(this.build(child, owner, inside));
 		return element;
@@ -4826,11 +4875,12 @@ export class Runtime {
 	 */
 	skeleton(node, scope) {
 		const slots = [];
-		const root = this.skeletal(node, scope, [], slots);
-		return { root, slots };
+		const links = [];
+		const root = this.skeletal(node, scope, [], slots, links);
+		return { root, slots, links };
 	}
 
-	skeletal(node, scope, path, slots) {
+	skeletal(node, scope, path, slots, links) {
 		if (node.t === "s") return document.createTextNode(node.v);
 		if (node.t !== "e") {
 			slots.push({ path, svg: Boolean(scope.svg) });
@@ -4844,8 +4894,11 @@ export class Runtime {
 		for (const [, name, value] of written.a) if (name !== "class") element.setAttribute(name, this.written(name, value));
 		Runtime.inOrder(element, written);
 		if (written.a.length !== node.a.length) slots.push({ path, node });
+		// A link, marked in each copy (D-086) unless its markup gives it an `aria-current`: its own
+		// attributes', or its parts' (`slot`, the slot they are in).
+		if (node.tag === "a") links.push({ path, own: ownsCurrent(written), slot: written.a.length !== node.a.length ? slots.length - 1 : -1 });
 		const inside = within(node, scope);
-		node.c.forEach((child, index) => element.append(this.skeletal(child, inside, [...path, index], slots)));
+		node.c.forEach((child, index) => element.append(this.skeletal(child, inside, [...path, index], slots, links)));
 		return element;
 	}
 
@@ -4853,14 +4906,17 @@ export class Runtime {
 	 * element's attributes as `element` writes and binds them, a child as `build` makes it. */
 	instantiate(template, parts, owner, scope) {
 		const root = template.root.cloneNode(true);
-		const { slots } = template;
+		const { slots, links } = template;
+		const find = (path) => {
+			let found = root;
+			for (const index of path) found = found.childNodes[index];
+			return found;
+		};
 		// Every slot's node first: a part put in may be several nodes, which would move the paths after it.
 		const nodes = new Array(slots.length);
-		for (let i = 0; i < slots.length; i++) {
-			let found = root;
-			for (const index of slots[i].path) found = found.childNodes[index];
-			nodes[i] = found;
-		}
+		for (let i = 0; i < slots.length; i++) nodes[i] = find(slots[i].path);
+		const linked = links.length ? links.map((link) => find(link.path)) : null;
+		const filled = links.length ? new Array(slots.length) : null;
 		let at = 0;
 		for (let i = 0; i < slots.length; i++) {
 			const slot = slots[i];
@@ -4871,10 +4927,12 @@ export class Runtime {
 				const node = writable({ tag: slot.node.tag, a, c: [] }, this);
 				if (node.a !== a) own = own.filter((attr) => node.a.includes(attr));
 				this.fill(nodes[i], node, own, owner, scope);
+				if (filled) filled[i] = node;
 			} else {
 				nodes[i].replaceWith(this.build(parts[at++], owner, slot.svg && !scope.svg ? { ...scope, svg: true } : scope));
 			}
 		}
+		if (linked) links.forEach((link, i) => !link.own && !(link.slot >= 0 && ownsCurrent(filled[link.slot])) && this.markLink(linked[i]));
 		return root;
 	}
 
@@ -5103,11 +5161,13 @@ export class Runtime {
 				if (node.tag === "body" && cursor.top && cursor.node?.localName === "head" && !cursor.node.firstChild) cursor.node = cursor.node.nextSibling;
 				const element = cursor.take((found) => found.nodeType === 1 && found.localName === node.tag, `<${node.tag}>`);
 				this.bind(element, node, owner, scope);
+				// A link the server marked (or didn't): the runtime's to mark from now on (D-086).
+				if (node.tag === "a" && !ownsCurrent(node)) this.markLink(element);
 				const inner = within(node, scope);
 				if (RCDATA.has(node.tag) && node.c.some((child) => child.t !== "s" && child.t !== "raw")) return this.adoptText(element, node, owner, inner);
 				if (cursor.rebuild && this.arriving && (node.tag === "html" || node.tag === "body")) Runtime.attributesFrom(element, node, node.tag === "html" ? this.arriving.documentElement : this.arriving.body);
 				if (cursor.rebuild && node.tag === "head") {
-					if (this.arriving?.head) this.reconcileHead(element, this.arriving.head);
+					if (this.arriving?.head) this.reconcileHead(element, this.arriving.head); //#nav
 					return this.keepHead(element, node, owner, inner);
 				}
 				if (cursor.rebuild && node.tag === "body") return this.renderBody(element, node, owner, inner);
@@ -5291,7 +5351,7 @@ export class Runtime {
 			this.hydrating = null;
 		}
 		// The app's pages, from here on, navigated to in place (D-040).
-		this.listenForNavigation();
+		this.listenForNavigation(); //#nav
 	}
 
 	/**
@@ -5395,14 +5455,14 @@ export class Runtime {
 				};
 				requestAnimationFrame(tick);
 			} else if (kind === "view") this.viewport(element, value, scope, owner);
-			else if (kind === "pt") this.pointAt(element, name, value, scope, owner, () => element.getBoundingClientRect());
+			else if (kind === "pt") this.pointAt(element, name, value, scope, owner, () => element.getBoundingClientRect()); //#point
 			else if (kind === "dd") this.setDrag(element, name, value);
 			else if (kind === "ddo") {
 				const computation = new Computation(this, { kind: "drag", runner: this.kept.get(value), owner, scope, target: element, name });
 				if (this.isStatic(computation, this.run(computation))) this.forget(computation, owner);
 			}
 		}
-		if (drag) this.dragAndDrop(element, drag);
+		if (drag) this.dragAndDrop(element, drag); //#drag
 	}
 
 	/**
@@ -5521,7 +5581,7 @@ export class Runtime {
 		for (const [kind, name, value, wanted] of node.a) {
 			if (kind === "pt") {
 				const view = this.page.defaultView;
-				this.pointAt(target, name, value, scope, owner, () => ({ left: 0, top: 0, width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 }));
+				this.pointAt(target, name, value, scope, owner, () => ({ left: 0, top: 0, width: view?.innerWidth ?? 0, height: view?.innerHeight ?? 0 })); //#point
 				continue;
 			}
 			if (kind !== "on" && kind !== "onp" && kind !== "onk") continue;
@@ -5952,8 +6012,8 @@ export class Runtime {
 	}
 
 	/** A node of the markup's JSON as HTML, every hole run once, with the comments hydration finds holes by. */
-	html(node, owner, scope) {
-		const all = (nodes) => nodes.map((child) => this.html(child, owner, scope)).join("");
+	serverHtml(node, owner, scope) {
+		const all = (nodes) => nodes.map((child) => this.serverHtml(child, owner, scope)).join("");
 		// Inside RCDATA (`<title>`), no comments: the parser would show them. Inside a <NoHydration>,
 		// none either: the browser never hydrates what is there.
 		const mark = (label, inner) => (scope.rcdata || scope.region ? inner : `<!--${label}-->${inner}<!--/${label}-->`);
@@ -5976,14 +6036,14 @@ export class Runtime {
 				const label = node.t === "h" ? "html" : "list";
 				const { out, inert } = this.onceInert(node.r, owner, scope);
 				const parsed = JSON.parse(out);
-				const inner = (Array.isArray(parsed) ? parsed : [parsed]).map((child) => this.html(child, owner, scope)).join("");
+				const inner = (Array.isArray(parsed) ? parsed : [parsed]).map((child) => this.serverHtml(child, owner, scope)).join("");
 				return inert ? inner : mark(label, inner);
 			}
 			case "hx": {
 				// A hole of either kind (D-070): a text hole's comments while it shows text alone.
 				const { out, inert } = this.onceInert(node.r, owner, scope);
 				const nodes = answered(JSON.parse(out));
-				const inner = nodes.map((child) => this.html(child, owner, scope)).join("");
+				const inner = nodes.map((child) => this.serverHtml(child, owner, scope)).join("");
 				return inert ? inner : mark(loneText(nodes) === null ? "html" : "x", inner);
 			}
 			case "f":
@@ -5995,7 +6055,7 @@ export class Runtime {
 				// One whose case read nothing that changes is static (D-052, D-070): no comments.
 				const { out, inert } = this.onceInert(node.r, owner, scope);
 				const holds = JSON.parse(out);
-				const shown = !holds ? this.html(node.fallback, owner, scope) : node.with ? this.html(JSON.parse(this.once(node.with, owner, scope)), owner, scope) : all(node.c);
+				const shown = !holds ? this.serverHtml(node.fallback, owner, scope) : node.with ? this.serverHtml(JSON.parse(this.once(node.with, owner, scope)), owner, scope) : all(node.c);
 				return inert ? shown : mark("show", shown);
 			}
 			case "for": {
@@ -6003,9 +6063,9 @@ export class Runtime {
 				const entries = JSON.parse(this.once(node.r, owner, scope));
 				const rows = entries.map(({ k, r }, index) => {
 					list.indexes.set(k, { value: index, observers: null });
-					return mark("row", this.html(JSON.parse(this.once(r, owner, scope)), owner, scope));
+					return mark("row", this.serverHtml(JSON.parse(this.once(r, owner, scope)), owner, scope));
 				});
-				return mark("for", rows.length ? rows.join("") : mark("fallback", this.html(node.fallback, owner, scope)));
+				return mark("for", rows.length ? rows.join("") : mark("fallback", this.serverHtml(node.fallback, owner, scope)));
 			}
 			case "errored":
 				try {
@@ -6013,11 +6073,11 @@ export class Runtime {
 				} catch (error) {
 					if (!(error instanceof Failed)) throw error;
 					const fallback = JSON.parse(this.once(node.r, owner, scope, { id: 0, failed: error.message }));
-					const shown = this.html(fallback, owner, scope);
+					const shown = this.serverHtml(fallback, owner, scope);
 					return scope.rcdata || scope.region ? shown : `<!--errored:failed-->${shown}<!--/errored-->`;
 				}
 			case "c":
-				return this.html(JSON.parse(this.once(node.r, owner, scope)), owner, scope);
+				return this.serverHtml(JSON.parse(this.once(node.r, owner, scope)), owner, scope);
 			case "nh": {
 				// Static markup in its markers (one inside another is its part); or, rendering against a
 				// page (`renderToString({ regions })`), the page's own, as it has it.
@@ -6027,10 +6087,10 @@ export class Runtime {
 					return `<!--nohydration-->${this.regions.shift()}<!--/nohydration-->`;
 				}
 				const inner = { ...scope, region: true };
-				return `<!--nohydration-->${node.c.map((child) => this.html(child, owner, inner)).join("")}<!--/nohydration-->`;
+				return `<!--nohydration-->${node.c.map((child) => this.serverHtml(child, owner, inner)).join("")}<!--/nohydration-->`;
 			}
 			case "ctx":
-				return node.c.map((child) => this.html(child, owner, provided(scope, node))).join("");
+				return node.c.map((child) => this.serverHtml(child, owner, provided(scope, node))).join("");
 			case "listen":
 				// `<Document>`, `<Window>`: nothing on the page; in a <NoHydration>, handlers that would never run.
 				if (scope.region && node.a.length) throw new Error(inRegion(node.to === "window" ? "Window" : "Document", node.a[0][1]));
@@ -6041,18 +6101,30 @@ export class Runtime {
 				const classes = [];
 				const attributes = [];
 				const styles = [];
+				// A link's address, for its mark (D-086).
+				let href = null;
 				for (const [kind, name, value] of node.a) {
 					if (scope.region && (kind === "on" || kind === "onp" || kind === "onk" || kind === "frame" || kind === "view" || kind === "pt" || kind === "dd" || kind === "ddo")) throw new Error(inRegion(node.tag, name));
 					if (kind === "v" && name === "class") classes.push(value);
 					else if (kind === "v" && name === "style") styles.push(value);
-					else if (kind === "v") attributes.push(`${name}="${escape(value)}"`);
-					else if (kind === "o" && value !== "") attributes.push(`${name}="${escape(value)}"`);
-					else if (kind === "ci" && value) classes.push(name);
+					else if (kind === "v") {
+						if (name === "href") href = value;
+						attributes.push(`${name}="${escape(value)}"`);
+					} else if (kind === "o" && value !== "") {
+						if (name === "href") href = value;
+						attributes.push(`${name}="${escape(value)}"`);
+					} else if (kind === "ci" && value) classes.push(name);
 					else if (kind === "f" && value) attributes.push(name);
-					else if (kind === "vo") attributes.push(`${name}="${escape(JSON.parse(this.once(value, owner, scope)))}"`);
-					else if (kind === "oo") {
+					else if (kind === "vo") {
+						const computed = JSON.parse(this.once(value, owner, scope));
+						if (name === "href") href = computed;
+						attributes.push(`${name}="${escape(computed)}"`);
+					} else if (kind === "oo") {
 						const optional = JSON.parse(this.once(value, owner, scope));
-						if (optional !== "") attributes.push(`${name}="${escape(optional)}"`);
+						if (optional !== "") {
+							if (name === "href") href = optional;
+							attributes.push(`${name}="${escape(optional)}"`);
+						}
 					} else if (kind === "fo" && JSON.parse(this.once(value, owner, scope))) attributes.push(name);
 					else if (kind === "co" && JSON.parse(this.once(value, owner, scope))) classes.push(name);
 					else if (kind === "sv" && value) styles.push(`${name}: ${value}`);
@@ -6068,9 +6140,12 @@ export class Runtime {
 				}
 				if (classes.length) attributes.unshift(`class="${escape(classes.join(" "))}"`);
 				if (styles.length) attributes.push(`style="${escape(styles.join("; "))}"`);
+				// A same-app link where the page is, or above it, marked last (D-086), as signals.rs marks it.
+				const mark = node.tag === "a" && !ownsCurrent(node) ? this.linkMark(href) : null;
+				if (mark) attributes.push(`aria-current="${mark}"`);
 				const open = `<${node.tag}${attributes.map((attribute) => ` ${attribute}`).join("")}>`;
 				const inner = RCDATA.has(node.tag) ? { ...scope, rcdata: true } : scope;
-				return VOID.has(node.tag) ? open : `${open}${node.c.map((child) => this.html(child, owner, inner)).join("")}</${node.tag}>`;
+				return VOID.has(node.tag) ? open : `${open}${node.c.map((child) => this.serverHtml(child, owner, inner)).join("")}</${node.tag}>`;
 			}
 			default:
 				throw new Error(`rocx: unknown node ${node.t}`);
@@ -6138,7 +6213,7 @@ export class Runtime {
 			this.current = null;
 		}
 		try {
-			const markup = this.html(JSON.parse(out), root, scope);
+			const markup = this.serverHtml(JSON.parse(out), root, scope);
 			const html = DOCUMENT.test(markup) ? Runtime.documentOf(markup, this.recorded, Runtime.withoutSecrets(this.flashed, this.secrets), this.titled, this.pageScripts ?? [], this.headed, this.built) : `<!--app-->${markup}<!--/app-->`;
 			return { html, answers: this.recorded };
 		} finally {
@@ -6204,11 +6279,14 @@ export class Runtime {
 	 * the page read (if it did), the answers script, the plugins' scripts (`scripts`, by URL) and
 	 * the bootstrap (start.js, with the build's id if the page's root told it: `data-build`) just
 	 * before the last `</body>`, or at the end with none. The `<Meta>`s, `<Link>`s and `<Style>`s
-	 * it rendered (`heads`) go before `</head>`.
+	 * it rendered (`heads`) go before `</head>`, then the preloads of what start.js loads.
 	 */
 	static documentOf(markup, answers, flash = "", title = null, scripts = [], heads = [], build = null) {
 		if (title !== null) markup = Runtime.titled(markup, title);
 		markup = Runtime.headed(markup, heads);
+		// What start.js loads, asked for as the `<head>` is read.
+		const head = markup.indexOf("</head>");
+		if (head >= 0) markup = `${markup.slice(0, head)}${PRELOADS}${markup.slice(head)}`;
 		const doctype = /^<!doctype/i.test(markup.trimStart()) ? "" : "<!doctype html>";
 		const before = `${flash ? Runtime.flashScript(flash) : ""}${Runtime.answersScript(answers)}${Runtime.scriptTags(scripts)}${startWith(build)}`;
 		const at = markup.lastIndexOf("</body>");

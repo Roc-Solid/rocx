@@ -3689,7 +3689,7 @@ const scripts = (answers) => `<script type="application/json" class="rocx-answer
  * /probe/member` (behind `members_only`) renders, inside its <Errored>; `answers`, the GETs the
  * render recorded. */
 const documentPage = (member, answers) =>
-	'<!doctype html><html lang="en"><head><title>A page</title></head><body>' +
+	'<!doctype html><html lang="en"><head><title>A page</title><link rel="modulepreload" data-rocx href="/rocx/runtime.js"><link rel="preload" data-rocx href="/rocx/app.wasm" as="fetch" crossorigin></head><body>' +
 	'<p class="count"><!--x-->1<!--/x--></p>' +
 	'<!--loading--><p class="shouted"><!--x-->PAGE<!--/x--></p><!--/loading-->' +
 	'<!--errored:failed--><p class="failed">nothing above provides Probe.missing: render this under its provider</p><!--/errored-->' +
@@ -3817,7 +3817,7 @@ test("pages of components: an effect, a cleanup and a timer don't run on the ser
 test("pages of components: a hole in <title> or <textarea> (RCDATA, read as text) is written without comments, which would show", { skip }, async () => {
 	assert.equal(
 		await text("/page-rcdata"),
-		`<!doctype html><html><head><title>2 notes</title></head><body><textarea>&lt;b&gt;2&lt;/b&gt;</textarea><p><!--x-->2<!--/x--></p>${scripts("[]")}</body></html>`,
+		`<!doctype html><html><head><title>2 notes</title><link rel="modulepreload" data-rocx href="/rocx/runtime.js"><link rel="preload" data-rocx href="/rocx/app.wasm" as="fetch" crossorigin></head><body><textarea>&lt;b&gt;2&lt;/b&gt;</textarea><p><!--x-->2<!--/x--></p>${scripts("[]")}</body></html>`,
 	);
 });
 

@@ -166,19 +166,20 @@ When an item lands, delete its line here in the same commit.
   scripts. All of `just site` in Roc would need a way to run the wasm, or to drop the measured
   rendering times.
 - **js-framework-benchmark: what is still slower** (D-074; `just js-bench`, `benchmarks/jsframework/`).
-  After the host's clean, the rows' reorder, the minified runtime, the leaner bookkeeping and quoting
-  (2026-11-25), the runner's clean run (beb7be7): CPU geomean 2.06× the fastest (Solid 1.16×, Joy
-  1.26×, React 1.63×); creating 1,000 rows 45.8 ms against vanillajs's 18.6, 10,000 474 against 201,
-  appending 52.5 against 22.5; run memory 4.6 MB against Solid's 2.7.
-  Per row there are about four calls into wasm (each in a host frame, whose notes of what it
-  allocates cost about nothing since 2026-11-25: a header and a log, not a hash map; a row still
-  makes about 110 allocations to keep 8), Roc building the row's markup as JSON, the runtime
-  parsing it and making the elements one by one, and comment markers around every row and hole. The
-  JS heap with 1,000 rows is 2.75 MB against vanillajs's 0.66 (four computations a row, each with its
-  sources' Set); the wasm memory grows to its high-water mark and stays. The download is ~72 KB
-  compressed against Joy's 47. Ready to use, cold, is the last of them (312 ms against React's 212):
-  the benchmark's server compresses each file as it sends it (brotli at its slowest), which costs by
-  the raw byte, and the runtime is 162 KB raw; shortening its names, as esbuild would, makes it 112.
+  The five steps of 2026-11-25/26 are in: `create_selector!` (D-083), the host's allocation notes
+  without a hash map, `.map` rows as templates (D-084), fewer calls and listeners per row (known rows
+  make no box, the wasm's imports called directly, handlers delegated), and the runtime shaken to
+  what an app uses (D-087, with D-086's links and preload hints). By hand (click to layout, median of
+  15) creating 1,000 rows went from about 36 ms to 23, against vanillajs's 16 and Solid's 15; the
+  benchmark page's runtime from 175 KB raw (37.5 with brotli) to 124 (27.5).
+  What is left, measured: each hole is a computation of its own, run by a call into wasm (about 4
+  calls a row, each with the runtime's bookkeeping: a computation, its sources' Sets, its frame);
+  a row is still a range between two comments; a list read again runs Roc over every item (its key
+  inspected, `row_last!` and `row_set!` with the key as text). Running a row's holes' first runs in
+  the row's own call (as Joy runs one call an update) would take most of the per-hole cost, but a
+  hole that waits would then make its row wait: not done. A binary command buffer in place of JSON
+  was not built: templates already send only a row's parts, and the JSON parse is a small cost now.
+  The wasm (133 KB raw, 40 with brotli) is the bigger half of what a page downloads.
   The entries go upstream once the repository is public and its compiler can be downloaded.
 - **Errors in an editor, beyond a build's** (the user, 2026-11-24: `rocx check` is enough for now;
   the VS Code extension shows a `rocx dev` task's on each build, and a `rocx check` task's): `rocx

@@ -1,20 +1,19 @@
 import pf.Html
-import pf.A
 import pf.Solid exposing [create_signal!]
 import ../../../Generated/Paths
 
 ## A shop's part (D-040, phase 2): a level of its own below the root layout, given its own param
 ## (`cat`), with a counter and a field that a navigation within the part keeps, and links that say
-## which is current (`<A>`, its active state following each navigation).
+## which is current (D-086: the runtime's `aria-current`, following each navigation).
 view! = |{ params, children, .. }| {
 	(count!, set_count!) = create_signal!(0.U64)
 	<section class="shop" data-cat={params.cat}>
 		<button class="shop-count" on:click={|| set_count!(count!() + 1)}>Shop clicks {count!().to_str()}</button>
 		<input class="shop-input" />
 		<p class="shop-nav">
-			<A class="shop-all" href={Paths.shop_cat({ cat: params.cat })} end>All</A>
-			<A class="shop-one" href={Paths.shop_cat_item({ cat: params.cat, item: "1" })}>One</A>
-			<A class="shop-two" href={Paths.shop_cat_item({ cat: params.cat, item: "2" })} active_class="lit">Two</A>
+			<a class="shop-all" href={Paths.shop_cat({ cat: params.cat })}>All</a>
+			<a class="shop-one" href={Paths.shop_cat_item({ cat: params.cat, item: "1" })}>One</a>
+			<a class="shop-two" href={Paths.shop_cat_item({ cat: params.cat, item: "2" })}>Two</a>
 			<a class="shop-games" href={Paths.shop_cat_item({ cat: "games", item: "1" })}>Games</a>
 		</p>
 		<NoHydration><p class="shop-note">The shop's note, for {params.cat}</p></NoHydration>

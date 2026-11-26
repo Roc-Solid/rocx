@@ -151,6 +151,9 @@ struct Render {
     /// The first redirect a GET the page read was answered with as it rendered (its
     /// middleware sending the visitor elsewhere): the page's answer instead.
     redirect: Option<Redirect>,
+    /// Where the page is (its path and query, as `Router.location!` says it): a link there, or above
+    /// it, is marked (`aria-current`, D-086).
+    here: String,
     /// The build's id, if the page's root told it (`Router.app!`, D-040): its bootstrap's
     /// `data-build`, which the browser checks a page it fetched against before rendering it.
     build: Option<String>,
@@ -232,6 +235,10 @@ enum Stop {
 /// build's id (`Router.app!`, D-040), `data-build` before `src` (web/runtime.js's `start`).
 const START: &str = r#"<script type="module" data-rocx src="/rocx/start.js"></script>"#;
 
+/// The runtime and the app's wasm, which start.js loads, asked for from the `<head>` (web/runtime.js's
+/// `PRELOADS`): the host's own elements, which hydrating passes over.
+const PRELOADS: &str = r#"<link rel="modulepreload" data-rocx href="/rocx/runtime.js"><link rel="preload" data-rocx href="/rocx/app.wasm" as="fetch" crossorigin>"#;
+
 /// The bootstrap, with the build's id when the page's root told it.
 fn start(build: Option<&str>) -> String {
     match build {
@@ -248,7 +255,7 @@ fn start(build: Option<&str>) -> String {
 /// read that its middleware answered with a redirect (a signed-out visitor sent to sign in) makes
 /// the page that redirect, caught or not, as SolidStart answers a redirect thrown while it renders.
 pub fn render_page(page: roc::Page) -> Result<Rendered, Crash> {
-    begin(Render::default());
+    begin(Render { here: hosted::asked().map(|asked| asked.target).unwrap_or_default(), ..Render::default() });
     let root = Scope::default();
     let walked = page.rendering(|| {
         guarded(Frame::of(root.clone(), None, None), || page.mount())
@@ -311,6 +318,12 @@ fn headed(markup: &str, heads: &[(String, String)]) -> String {
 fn document(markup: &str, answers: &[[String; 3]], flash: Option<&str>, build: Option<&str>) -> String {
     let begun = markup.trim_start().get(..9).is_some_and(|start| start.eq_ignore_ascii_case("<!doctype"));
     let doctype = if begun { "" } else { "<!doctype html>" };
+    // What start.js loads, asked for as the `<head>` is read, beside it rather than after it.
+    let markup = match markup.find("</head>") {
+        Some(at) => format!("{}{PRELOADS}{}", &markup[..at], &markup[at..]),
+        None => markup.to_string(),
+    };
+    let markup = markup.as_str();
     let scripts = format!("{}{}{}{}", flash.map(flash_script).unwrap_or_default(), answers_script(answers), crate::files::script_tags(), start(build));
     match markup.rfind("</body>") {
         Some(at) => format!("{doctype}{}{scripts}{}", &markup[..at], &markup[at..]),
@@ -582,9 +595,14 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             let mut styles: Vec<String> = Vec::new();
             // An `<input type="password">`'s name, for the flash's note (`without_secrets`).
             let (mut secret, mut named) = (false, String::new());
+            // A link's `href`, and whether the markup gives it an `aria-current` of its own (D-086).
+            let (mut href, mut authored) = (None::<String>, false);
             for attribute in field("a").as_array().into_iter().flatten() {
                 let part = |index: usize| attribute.get(index).unwrap_or(&Value::Null);
                 let name = part(1).as_str().unwrap_or("");
+                if name.eq_ignore_ascii_case("aria-current") {
+                    authored = true;
+                }
                 if part(0).as_str() == Some("v") {
                     match name {
                         "type" => secret = shown(part(2)).eq_ignore_ascii_case("password"),
@@ -601,10 +619,19 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                     "on" | "onp" | "onk" | "frame" | "view" if scope.region => return Err(Stop::Crashed(in_region(tag, name))),
                     "v" if name == "class" => classes.push(shown(part(2))),
                     "v" if name == "style" => styles.push(shown(part(2))),
-                    "v" => attributes.push(format!("{name}=\"{}\"", escape(&shown(part(2))))),
+                    "v" => {
+                        let value = shown(part(2));
+                        if name == "href" {
+                            href = Some(value.clone());
+                        }
+                        attributes.push(format!("{name}=\"{}\"", escape(&value)));
+                    }
                     "o" => {
                         let value = shown(part(2));
                         if !value.is_empty() {
+                            if name == "href" {
+                                href = Some(value.clone());
+                            }
                             attributes.push(format!("{name}=\"{}\"", escape(&value)));
                         }
                     }
@@ -616,6 +643,9 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                     "oo" => {
                         let value = shown(&parse(&once(part(2), scope, None)?)?);
                         if !value.is_empty() {
+                            if name == "href" {
+                                href = Some(value.clone());
+                            }
                             attributes.push(format!("{name}=\"{}\"", escape(&value)));
                         }
                     }
@@ -637,8 +667,11 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                         }
                     }
                     "vo" => {
-                        let value = parse(&once(part(2), scope, None)?)?;
-                        attributes.push(format!("{name}=\"{}\"", escape(&shown(&value))));
+                        let value = shown(&parse(&once(part(2), scope, None)?)?);
+                        if name == "href" {
+                            href = Some(value.clone());
+                        }
+                        attributes.push(format!("{name}=\"{}\"", escape(&value)));
                     }
                     "fo" => {
                         if truthy(&parse(&once(part(2), scope, None)?)?) {
@@ -662,12 +695,40 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             if !styles.is_empty() {
                 attributes.push(format!("style=\"{}\"", escape(&styles.join("; "))));
             }
+            // A same-app link where the page is, or above it: its `aria-current`, last (D-086).
+            if tag == "a"
+                && !authored
+                && let Some(current) = href.as_deref().and_then(|href| current(href, &with(|render| render.here.clone()).unwrap_or_default()))
+            {
+                attributes.push(format!("aria-current=\"{current}\""));
+            }
             let open = format!("<{tag}{}>", attributes.iter().map(|attribute| format!(" {attribute}")).collect::<String>());
             let inner = if RCDATA.contains(&tag) { Scope { rcdata: true, ..scope.clone() } } else { scope.clone() };
             Ok(if VOID.contains(&tag) { open } else { format!("{open}{}</{tag}>", children(node, &inner)?) })
         }
         other => Err(Stop::Crashed(format!("rocx: unknown node {other}"))),
     }
+}
+
+/// A same-app link's `aria-current` (D-086), as web/runtime.js's `current` says it: `page` where the
+/// page is (`href`'s path, and its query if it has one, the page's: `here`), `true` above it (a path
+/// the page is under, never `/`), else none. Only an app's own path (`/…`, not `//…`) is one.
+fn current(href: &str, here: &str) -> Option<&'static str> {
+    if !href.starts_with('/') || href.starts_with("//") {
+        return None;
+    }
+    let split = |url: &str| -> (String, String) {
+        let url = url.split('#').next().unwrap_or("");
+        let (path, query) = url.split_once('?').unwrap_or((url, ""));
+        let trimmed = if path.len() > 1 { path.trim_end_matches('/') } else { path };
+        ((if trimmed.is_empty() { "/" } else { trimmed }).to_string(), query.to_string())
+    };
+    let (path, query) = split(href);
+    let (at, asked) = split(here);
+    if path == at {
+        return (query.is_empty() || query == asked).then_some("page");
+    }
+    (query.is_empty() && path != "/" && at.strip_prefix(path.as_str()).is_some_and(|rest| rest.starts_with('/'))).then_some("true")
 }
 
 /// Why a handler inside a `<NoHydration>` is refused (web/runtime.js's `inRegion`): the browser never

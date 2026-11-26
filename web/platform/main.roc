@@ -11,7 +11,7 @@
 ##
 ## The modules both platforms have are written here, and the server platform's build copies them:
 ## the components' (`Html`, `Solid`, `Store`, `Repeat`, `Transition`, `Loading`, `Errored`, `Context`,
-## `Call`, `Router`, `Search`, `Leave`, `A`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`,
+## `Call`, `Router`, `Search`, `Leave`, `Submission`, `Submissions`, `Title`, `HttpStatusCode`,
 ## `Browser`) and HTTP's (`Server`, `Endpoint`, `FormBody`, `Channel`, `Middleware`, `Events`,
 ## `OpenApi`). Roc compiles only what a program reaches, so what
 ## only the server uses (`Middleware`, `OpenApi`) costs the browser's wasm nothing. `Time` is the
@@ -20,7 +20,7 @@ platform ""
 	requires {
 		main! : {} => Html
 	}
-	exposes [A, Browser, Call, Channel, Context, Endpoint, Errored, Events, Html, HttpStatusCode, Leave, Loading, Middleware, Navigate, OpenApi, Repeat, Router, Search, Server, Solid, Store, Submission, Submissions, Time, Title, Transition]
+	exposes [Browser, Call, Channel, Context, Endpoint, Errored, Events, Html, HttpStatusCode, Leave, Loading, Middleware, Navigate, OpenApi, Repeat, Router, Search, Server, Solid, Store, Submission, Submissions, Time, Title, Transition]
 	packages {}
 	provides { "roc_mount": mount_for_host!, "roc_run": run_for_host! }
 	hosted {
@@ -136,7 +136,6 @@ import Submission
 import Submissions
 import Time
 import Title
-import A
 import Search
 import Leave
 import Navigate

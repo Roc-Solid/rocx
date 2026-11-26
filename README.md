@@ -476,7 +476,7 @@ element.
 | You write | It means |
 |---|---|
 | `<a href={Paths.lists_id({ id })}>`, `<a href={…} replace noscroll>` | A link to one of the app's pages is rendered in place, without loading a document. `replace` replaces the history entry, `noscroll` keeps the scroll position. `rel="external"`, a `target`, `download` or a modifier key leave the link to the browser |
-| `<A href={Paths.lists_id({ id })} active_class="current">…</A>` | A link with Solid Router's active state: `aria-current="page"` and the class (`active` by default) while the location is at its path (`end`) or under it. Also `replace`, `noscroll`, `preload={Bool.False}` (`import pf.A`) |
+| `a[aria-current="page"]`, `a[aria-current="true"]` (CSS) | Every link to one of the app's pages says where the page is, as Solid Router's `<A>` did (D-086): `aria-current="page"` at its path (and its query, if it has one), `"true"` at a path under it (never `/`). The runtime keeps it right as you navigate; a link that writes its own `aria-current` is left alone. `data-rocx-preload="off"` stops its prefetch |
 | `navigate!(Paths.tasks_id({ id: task!().id }))` | In a handler: goes to one of the app's pages, rendered in place, once the handler is done (Solid Router's `useNavigate`). `navigate_with!(to, { replace: Bool.True, scroll: Bool.True })`. Another site, or a path no page has, is loaded by the browser |
 | `{if signed_in!() { … } else { <Navigate href={Paths.sign_in} /> }}` | Sends the visitor elsewhere as the page renders: the server answers a 303, the browser navigates there, replacing the entry (`import pf.Navigate`) |
 | `<div class="progress" class:on={Router.is_routing!({})}>` | Whether a navigation in place is on its way: true from the click until the new page is on screen (Solid Router's `useIsRouting`). False on the server |
@@ -570,7 +570,7 @@ routes as `Routes` does, and renders the page inside its layouts.
 - A layout is kept across navigations unless its body read the location once
   (`Router.location!({})` outside a hole or memo). Then the runtime makes that level anew on each
   navigation, so it never shows what the last page knew, and a dev build says so in the console.
-  Read the location where you use it (in markup, a memo, `<A>`) and the layout is kept, with its
+  Read the location where you use it (in markup, a memo) and the layout is kept, with its
   sidebar's scroll, an open menu and its signals.
 
 With `--client <out>`, `rocx build` also writes the browser's copy of the app: `<out>/main.roc` (the
@@ -588,7 +588,10 @@ the answers to the reads it made while rendering. `--base /docs/` puts every URL
 `--route <path>` asks for one no page links to (a page with params, `/feed.xml`); `--built <build>`
 uses a build already made. What only a server answers (methods that write, events, channels, a page
 with middleware of its own) isn't in the copy, and the build lists it. The docs site is built this
-way.
+way. The copy's `runtime.js`, as `--release`'s, has only what the app uses (D-087): the host
+functions its wasm imports and the runtime's code they and the page reach, navigating in place only
+for an app of more than one page (or one that navigates), drags, a pointer's point and glides only
+where its markup has them. The benchmark's page ships 124 KB of the runtime's 175.
 
 The browser's copy keeps each endpoint's method, URL and types but not its handler, and each route
 file without its middleware. If a page or component reaches a module that imports what only the

@@ -372,6 +372,14 @@ pub extern "C" fn roc_host_read(path: RocStr) -> TextResult {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn roc_host_read_bytes(path: RocStr) -> abi::HostReadBytesResult {
+    match std::fs::read(taken(path)) {
+        Ok(bytes) => abi::HostReadBytesResult { payload: abi::HostReadBytesResultPayload { ok: ManuallyDrop::new(unsafe { abi::RocListWith::from_slice(&bytes, &host()) }) }, tag: abi::HostReadBytesResultTag::Ok },
+        Err(error) => abi::HostReadBytesResult { payload: abi::HostReadBytesResultPayload { err: ManuallyDrop::new(roc_str(&error.to_string())) }, tag: abi::HostReadBytesResultTag::Err },
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn roc_host_real_path(path: RocStr) -> TextResult {
     text_result(std::fs::canonicalize(taken(path)).map(|real| real.to_string_lossy().into_owned()).map_err(|error| error.to_string()))
 }

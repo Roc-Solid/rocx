@@ -129,7 +129,6 @@ Most modules are **shared**: written here and copied into `server/platform` by
 | `Browser` | yes | `call!`: the page's own JavaScript, from a handler; `focus!`. |
 | `Router` | yes | `location!`, `navigate!`, `navigate_with!`, `is_routing!`, `use_search_params!`, `use_before_leave!`, `use_submission!`, `use_submissions!`, `use_action!`, `revalidate!`, and `app!` (what `Generated/Root` tells the runtime about the app). |
 | `Search`, `Leave` | yes | The query (`get!`, `all!`, `set!`, `set_with!`); a navigation about to leave (`to`, `from`, `options`, `delta`, `default_prevented`, `prevent!`, `retry!`). |
-| `A` | yes | `<A>`: a link with Solid Router's active state. |
 | `Navigate` | no | `<Navigate href>`: here, a navigation that replaces the history entry; the server's is a 303. |
 | `Call` | yes | `fetch!` (a request) and `listen!` (a stream of server-sent events). |
 | `Endpoint` | yes | An endpoint as a typed value: read it (`get!`, `read!`, `with_query`), send it (`send!`), listen to it, subscribe to a channel (`subscribe!`, `say!`, `resync!`, and on the server `publish!`, `publish_latest!`), bind a form (`url_of`, `with_fields`), and, on the server, run and answer it (`bind`, `run!`, `respond!`, `posted_by`). |
@@ -1444,8 +1443,8 @@ when told to). In Chromium, strictly, the tests check:
   stream opened again for the same channels; 200 navigations leaving no allocation behind.
 - **Under `/rocx/`:** all of the above, the URLs the runtime writes under the base.
 - **Kept levels** (phase 2): a kept layout's signal, a field's text and its region survive a
-  navigation within it, and a new `cat` makes it anew; a page with new params is made anew; `<A>`'s
-  active state (and `end`) follows; the page with its layouts kept is the page a load renders,
+  navigation within it, and a new `cat` makes it anew; a page with new params is made anew; the links'
+  `aria-current` follows (D-086); the page with its layouts kept is the page a load renders,
   byte for byte.
 - **The query in place:** `set!` merges, `""` takes a name out, `set_with!`'s replace, back between
   queries, and a plain link to a query, all in place, no document fetched and only the read whose

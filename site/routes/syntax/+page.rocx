@@ -311,7 +311,7 @@ view! = |_|
 				The platform also has components you import like any other: <code>{"<Loading fallback={…}>"}</code>
 				and <code>{"<Errored fallback={…}>"}</code> for <a href={"${Paths.components}#waiting"}>waiting
 				and failing</a>, <code>{"<Repeat>"}</code> for rows without a list, <code>{"<Title>"}</code> for
-				the document's title, and <code>{"<A>"}</code> and <code>{"<Navigate>"}</code> for
+				the document's title, and <code>{"<Navigate>"}</code> for
 				<a href={"${Paths.routing}#navigating"}>navigating</a>
 				(<code>import pf.Loading</code>, and so on).
 			</p>

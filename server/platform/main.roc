@@ -74,7 +74,7 @@ platform ""
 			routes : List({ method : Str, path : Str, file : Str }),
 		}
 	}
-	exposes [A, Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, Html, Http, HttpResponse, HttpStatusCode, Kv, Leave, Live, Loading, Log, Middleware, Navigate, OpenApi, P256, Plugin, Random, Repeat, Router, Search, Server, Solid, Store, Submission, Submissions, Tcp, Time, Title, Transition]
+	exposes [Actor, AesGcm, Blobs, Browser, Call, Channel, Context, Db, Endpoint, Env, Errored, Events, Html, Http, HttpResponse, HttpStatusCode, Kv, Leave, Live, Loading, Log, Middleware, Navigate, OpenApi, P256, Plugin, Random, Repeat, Router, Search, Server, Solid, Store, Submission, Submissions, Tcp, Time, Title, Transition]
 	packages {}
 	provides {
 		"roc_actor": actor_for_host!,
@@ -276,7 +276,6 @@ import Submissions
 import Tcp
 import Time
 import Title
-import A
 import Search
 import Leave
 import Navigate

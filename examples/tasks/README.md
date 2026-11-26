@@ -76,7 +76,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 | Feature | Where |
 |---|---|
 | A layout: the document around every page, with the lists down the side. It reads `GET /api/team` in a memo, so the counts follow each change | [`routes/+layout.rocx`](routes/+layout.rocx) |
-| Links that navigate without a page load. `<A>` also marks the list you are on (`aria-current`) | [`routes/+layout.rocx`](routes/+layout.rocx) |
+| Links that navigate without a page load, the list you are on marked (`aria-current`, as every link is) | [`routes/+layout.rocx`](routes/+layout.rocx) |
 | Pages, and a dynamic route's `params` (`/lists/:id`, `/tasks/:id`) | [`routes/+page.rocx`](routes/+page.rocx), [`routes/me/+page.rocx`](routes/me/+page.rocx), [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 | The error page: for a path no page has (404), and a page that failed (500) | [`routes/+error.rocx`](routes/+error.rocx) |
 | Endpoints at a page's own URL. A browser's `GET /lists/:id` is the page; anything else gets the list as JSON, which is also what the page reads. `POST /lists/:id` adds a task | [`routes/lists/[id]/+server.roc`](routes/lists/[id]/+server.roc), [`routes/tasks/[id]/+server.roc`](routes/tasks/[id]/+server.roc), [`routes/+server.roc`](routes/+server.roc) (`POST /`, a new list) |

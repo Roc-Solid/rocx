@@ -177,7 +177,7 @@ function copyIfChanged(from, to) {
  * platform, so the same code compiles on both. The ones components are written with (`Router`,
  * `Submission`, `Title` and `HttpStatusCode` among them), and HTTP's (`Server`, `Endpoint`, `FormBody`,
  * `Channel`, `Middleware`, `Events`, `OpenApi`). */
-export const SHARED_MODULES = ["Html", "Solid", "Store", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "A", "Search", "Leave"];
+export const SHARED_MODULES = ["Html", "Solid", "Store", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "Search", "Leave"];
 
 /** Copies the shared modules into the server platform where they differ. */
 export function syncShared() {

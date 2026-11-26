@@ -15,7 +15,7 @@ Hosts := [].{
 	## server platform, so the same code compiles on both (server/build.mjs's SHARED_MODULES, which
 	## this list follows).
 	shared_modules : List(Str)
-	shared_modules = ["Html", "Solid", "Store", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "A", "Search", "Leave"]
+	shared_modules = ["Html", "Solid", "Store", "Repeat", "Loading", "Errored", "Call", "Server", "Context", "Endpoint", "FormBody", "Middleware", "Events", "OpenApi", "Router", "HttpStatusCode", "Transition", "Browser", "Submission", "Submissions", "Title", "Channel", "Search", "Leave"]
 
 	## Where rocx is: the folder above the one its binary is in (`bin/rocx`), its links followed. A
 	## clone of the repo, or an installed version (`~/.rocx/versions/<v>`, with `VERSION` in it).

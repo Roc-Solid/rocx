@@ -105,7 +105,10 @@ view! = |_|
 							<code>static/rocx/</code>: <code>start.js</code>, the runtime, and the app's stylesheet,
 							named by its content (<code>styles-<var>hash</var>.css</code>). The runtime is minified
 							(its comments and indentation gone: about half its size with brotli), but in a
-							<code>--dev</code> build, which keeps it as it is written, to read and debug. An app of endpoints alone
+							<code>--dev</code> build, which keeps it as it is written, to read and debug. A
+							<code>--static</code> or <code>--release</code> build ships only what the app uses of it
+							(D-087): the host functions its wasm imports and the code they and the page reach;
+							navigating in place only for an app of more than one page. An app of endpoints alone
 							has no browser program, and the build says so. If the browser's copy reaches a module that
 							imports what only the server has (<code>pf.Db</code>, directly or through another module),
 							the build warns at the import a page or component makes, before the browser's build would

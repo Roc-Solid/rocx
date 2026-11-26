@@ -24,7 +24,9 @@ import Dev
 import Fs
 import Hosts
 import Remap
+import Minify
 import Routes
+import Shake
 import Text
 import Value
 
@@ -249,7 +251,69 @@ Static := [].{
 			return Err(Failed("rocx build wrote no browser's copy (${client_main}): the app has no pages"))
 		}
 		Dev.web_host!(tools)?
-		Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=yes", "--output=${Fs.join([client, "static", "rocx", "app.wasm"])}", client_main], "the browser's build")
+		Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=yes", "--output=${Fs.join([client, "static", "rocx", "app.wasm"])}", client_main], "the browser's build")?
+		Static.shake!(rocx, dir, client)
+	}
+
+	## The runtime with only what the app's wasm reaches (`Shake`, D-087), minified, in place of the
+	## one `rocx build` wrote; that one, said why, if the runtime can't be read so.
+	shake! : Str, Str, Str => Try({}, [Failed(Str)])
+	shake! = |rocx, home, client| {
+		dir = Fs.join([client, "static", "rocx"])
+		source =
+			match File.read!(Fs.join([rocx, "web", "runtime.js"])) {
+				Ok(text) => text
+				Err(CantRead(why)) => return Err(Failed(why))
+			}
+		wasm =
+			match File.read_bytes!(Fs.join([dir, "app.wasm"])) {
+				Ok(bytes) => bytes
+				Err(CantRead(why)) => return Err(Failed(why))
+			}
+		imported = Shake.wasm_imports(wasm)
+		match Shake.runtime(source, imported, Static.features!(home, client, imported)) {
+			Ok(shaken) =>
+				match File.write!(Fs.join([dir, "runtime.js"]), Minify.js(shaken)) {
+					Ok({}) => Ok({})
+					Err(CantWrite(why)) => Err(Failed(why))
+				}
+			Err(Unshaped(why)) => {
+				_ = Stderr.line!("rocx: runtime.js ships whole, as it can't be read to leave out what the app doesn't use: ${why}")
+				Ok({})
+			}
+		}
+	}
+
+	## The runtime's features (`Shake.features`) the app uses: navigating in place, when it has more
+	## than one page or its wasm calls what navigates (`navigate!`, `use_before_leave!`,
+	## `is_routing!`); drags, a pointer's point and moves, when the browser's copy of its code (its
+	## components, and its packages') writes them.
+	features! : Str, Str, List(Str) => List(Str)
+	features! = |home, client, imported| {
+		pages = Static.files_under!(Fs.join([home, "routes"])).keep_if(|path| Fs.basename(path) == "+page.rocx").len()
+		var $code = ""
+		for path in Static.files_under!(client) {
+			if path.ends_with(".roc") {
+				$code = $code.concat(Fs.read_or_empty!(path)).concat("\n")
+			}
+		}
+		code = $code
+		navigates = pages > 1 or ["js_navigate", "js_before_leave", "js_leave_prevent", "js_leave_retry", "js_is_routing"].any(|name| imported.contains(name))
+		drags = ["Html.drag_data", "Html.drag_image", "Html.on_data", "\"dragstart\"", "\"drop\""].any(|word| code.contains(word))
+		points = code.contains("Html.on_point")
+		moves = code.contains("Html.transition(Move") or code.contains("Html.transition_of(Move")
+		[("nav", navigates), ("drag", drags), ("point", points), ("moves", moves)].keep_if(|(_, on)| on).map(|(feature, _)| feature)
+	}
+
+	## Every file under `dir`, its directories' too (none if it isn't one).
+	files_under! : Str => List(Str)
+	files_under! = |dir| {
+		var $out = []
+		for name in Fs.entries!(dir) {
+			path = Fs.join([dir, name])
+			$out = if (Fs.is_dir!(path)) $out.concat(Static.files_under!(path)) else $out.append(path)
+		}
+		$out
 	}
 
 	## `roc build`, its reports pointed into the .rocx files; warnings alone are shown, not fatal.

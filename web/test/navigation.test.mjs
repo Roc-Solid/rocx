@@ -788,7 +788,7 @@ test("View Transitions: a navigation is one only when the app asks (<html data-r
  * are now (a level kept is the same element; one made anew is another). */
 const MARK = "window.levels = { shop: document.querySelector('.shop'), item: document.querySelector('.item-page') }";
 
-test("kept levels (D-040, phase 2): a layout below the root is kept while its key (its file, its own params) is the same, its signal, a field's text and its region with it, and made anew when it changes; a page is made anew when its params change; <A>'s active state follows; the page as a load renders it", { skip }, async () => {
+test("kept levels (D-040, phase 2): a layout below the root is kept while its key (its file, its own params) is the same, its signal, a field's text and its region with it, and made anew when it changes; a page is made anew when its params change; links' aria-current follows (D-086); the page as a load renders it", { skip }, async () => {
 	const site = await navSite();
 	try {
 		const tab = await open(site, "/shop/books/1");
@@ -797,7 +797,7 @@ test("kept levels (D-040, phase 2): a layout below the root is kept while its ke
 		await tab.wait("document.querySelector('.shop-count').textContent === 'Shop clicks 1' && document.querySelector('.item-count').textContent === 'Item clicks 1'");
 		await tab.eval(`document.querySelector('.shop-input').value = 'kept text'; ${MARK}`);
 		const active = "[...document.querySelectorAll('.shop-nav a')].map((a) => [a.className.replace(/rx-\\w+/, '').trim(), a.getAttribute('aria-current')])";
-		assert.deepEqual(await tab.eval(active), [["shop-all", null], ["shop-one active", "page"], ["shop-two", null], ["shop-games", null]], "<A>: aria-current and its class at its path; `end` only there");
+		assert.deepEqual(await tab.eval(active), [["shop-all", "true"], ["shop-one", "page"], ["shop-two", null], ["shop-games", null]], "a link where the page is: aria-current page; one to a path the page is under: true");
 		site.asked.length = 0;
 		await tab.click(".shop-two");
 		await tab.wait("location.pathname === '/shop/books/2' && document.querySelector('.item-page h1')?.textContent === 'Item 2 of books'");
@@ -808,7 +808,7 @@ test("kept levels (D-040, phase 2): a layout below the root is kept while its ke
 			[true, false, "Shop clicks 1", "kept text", "Item clicks 0"],
 			"the shop's layout kept, its signal and the field's text with it; the page, with new params, made anew",
 		);
-		assert.deepEqual(await tab.eval(active), [["shop-all", null], ["shop-one", null], ["shop-two lit", "page"], ["shop-games", null]], "<A>'s active state follows the navigation, `active_class` its own");
+		assert.deepEqual(await tab.eval(active), [["shop-all", "true"], ["shop-one", null], ["shop-two", "page"], ["shop-games", null]], "the marks follow the navigation (the kept layout's links marked again)");
 		assert.deepEqual(await tab.eval("[document.querySelector('.shop-note').textContent, document.querySelector('.note').textContent, document.title]"), ["The shop's note, for books", "The layout's note, for An item in a shop", "An item in a shop · Nav"], "a kept level's regions are the document's; the root layout's title follows the page's meta");
 		const navigated = await tab.eval(SNAPSHOT);
 		const loaded = await browser.page();
@@ -829,7 +829,7 @@ test("kept levels (D-040, phase 2): a layout below the root is kept while its ke
 		);
 		await tab.click(".shop-all");
 		await tab.wait("location.pathname === '/shop/games' && document.querySelector('.front h1')?.textContent === 'All of games'");
-		assert.deepEqual(await tab.eval(active), [["shop-all active", "page"], ["shop-one", null], ["shop-two", null], ["shop-games", null]], "`end`: at its path itself");
+		assert.deepEqual(await tab.eval(active), [["shop-all", "page"], ["shop-one", null], ["shop-two", null], ["shop-games", null]], "at the link's own path: page");
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(tab.console.filter((entry) => entry.type === "warning" || entry.type === "error"), []);
 		await tab.close();

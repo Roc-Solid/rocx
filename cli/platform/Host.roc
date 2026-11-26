@@ -51,6 +51,9 @@ Host := [].{
 	## The file's text.
 	read! : Str => Try(Str, Str)
 
+	## The file's bytes.
+	read_bytes! : Str => Try(List(U8), Str)
+
 	## Writes the file, its directory made first.
 	write_file! : Str, Str => Try({}, Str)
 

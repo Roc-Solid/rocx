@@ -36,6 +36,7 @@ platform ""
 		"roc_host_now_ns": Host.now_ns!,
 		"roc_host_pid": Host.pid!,
 		"roc_host_read": Host.read!,
+		"roc_host_read_bytes": Host.read_bytes!,
 		"roc_host_real_path": Host.real_path!,
 		"roc_host_rename": Host.rename!,
 		"roc_host_run": Host.run!,

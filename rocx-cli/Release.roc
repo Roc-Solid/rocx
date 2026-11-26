@@ -145,6 +145,7 @@ Release := [].{
 		if pages {
 			Dev.web_host!(tools)?
 			Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=yes", "--output=${Fs.join([client, "static", "rocx", "app.wasm"])}", client_main], "the browser's build")?
+			Static.shake!(root, dir, client)?
 		}
 		stage = "${asked.out}.building"
 		Fs.delete_all!(stage)

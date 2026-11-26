@@ -753,7 +753,7 @@ view! = |_|
 				and navigating while rendering fails. <code>{"Router.location!({})"}</code> and
 				<code>{"Router.is_routing!({})"}</code> say where the page is and whether a navigation is on its way;
 				<code>{"use_search_params!({})"}</code> reads and changes the query in place;
-				<code>{"<A href={…}>"}</code> is a link that knows when the page is at its path; and a component that
+				every link says when the page is at its path (<code>aria-current</code>); and a component that
 				must send the visitor elsewhere as it renders renders <code>{"<Navigate href={…} />"}</code>. All of
 				it is on the routing page: <a href={"${Paths.routing}#navigating"}>navigating, without a load</a>.
 			</p>
@@ -1290,7 +1290,8 @@ view! = |_|
 						<tr><td><code>{"const navigate = useNavigate(); navigate(\"/blog/hello\", { replace: true })"}</code></td><td><code>{"navigate_with!(Paths.blog_slug({ slug: \"hello\" }), { replace: Bool.True, scroll: Bool.True })"}</code>, in a handler; a plain <code>{"<a href>"}</code> navigates in place, as Solid Router's does</td></tr>
 						<tr><td><code>useIsRouting()</code>, <code>useLocation()</code></td><td><code>{"Router.is_routing!({})"}</code>, <code>{"Router.location!({})"}</code>, both tracked</td></tr>
 						<tr><td><code>{"const [params, set] = useSearchParams(); set({ days: 30 })"}</code></td><td><code>{"search = use_search_params!({})"}</code>, <code>{"search.set!([(\"days\", \"30\")])"}</code>, in a handler</td></tr>
-						<tr><td><code>{"<A href=\"/lists/7\" activeClass=\"current\" end>"}</code>, <code>{"<Navigate href=\"/login\" />"}</code></td><td><code>{"<A href={Paths.lists_id({ id })} active_class=\"current\" end>"}</code>, <code>{"<Navigate href={Paths.login} />"}</code></td></tr>
+						<tr><td><code>{"<A href=\"/lists/7\" activeClass=\"current\" end>"}</code></td><td><code>{"<a href={Paths.lists_id({ id })}>"}</code>, styled by <code>{"a[aria-current=\"page\"]"}</code> (at its path) or <code>{"a[aria-current]"}</code> (under it too): every link is marked</td></tr>
+						<tr><td><code>{"<Navigate href=\"/login\" />"}</code></td><td><code>{"<Navigate href={Paths.login} />"}</code></td></tr>
 						<tr><td><code>{"<Title>{post().title}</Title>"}</code> (@solidjs/meta)</td><td><code>{"<Title>{post!().title}</Title>"}</code> (<code>import pf.Title</code>)</td></tr>
 						<tr><td><code>{"<Meta name=\"description\" content={…} />"}</code>, <code>{"<Link …/>"}</code>, <code>{"<Style>"}</code> (@solidjs/meta)</td><td>the same, with nothing to import</td></tr>
 						<tr><td><code>{"<TransitionGroup>"}</code>, from <code>solid-transition-group</code></td><td><code>{"transition={Transition.fade}"}</code> on the element, as Svelte writes it</td></tr>

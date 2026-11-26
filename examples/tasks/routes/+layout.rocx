@@ -3,7 +3,6 @@ import pf.Solid exposing [create_memo!]
 import pf.Endpoint
 import pf.Router
 import pf.Errored
-import pf.A
 import ../Tasks
 import ../Generated/Api
 import ../Generated/Paths
@@ -15,8 +14,9 @@ import ../components/Avatar
 ## from `GET /api/team`, read in a memo: after a change on a page (a task done), the runtime reads
 ## the page's reads again, this one too, so the counts down the side follow. A story (a dev build's
 ## catalog, `/__rocx/stories/…`) is the component alone, in the page's frame, without the rest.
-## Where it is, it reads where that is used (`story!`, and each list's `<A>`), not once in its
-## body, so a navigation keeps it, the lists down the side with their scroll (D-040).
+## Where it is, it reads where that is used (`story!`), not once in its body, so a navigation keeps
+## it, the lists down the side with their scroll (D-040); the runtime marks the list you are on
+## (`aria-current`, D-086).
 view! = |{ meta, children, .. }| {
 	team = Api.get_api_team({})
 	team! = create_memo!(|| Endpoint.get!(team))
@@ -60,10 +60,10 @@ view! = |{ meta, children, .. }| {
 								<ul>
 									{...team!().lists.map(|list|
 										<li key={list.id}>
-											<A href={Paths.lists_id({ id: list.id })}>
+											<a href={Paths.lists_id({ id: list.id })}>
 												<span class="name">{list.name}</span>
 												<span class="open" aria-label={"${list.open.to_str()} open"}>{list.open.to_str()}</span>
-											</A>
+											</a>
 										</li>
 									)}
 								</ul>

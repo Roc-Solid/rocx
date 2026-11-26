@@ -5212,3 +5212,71 @@ can't expose another's modules).
 
 **Reversible:** yes: packages/ai is a package nothing else depends on; packages/tools' three
 modules could go back into packages/mcp.
+
+## D-086 Every link says where the page is; `<A>` is gone
+
+**Status.** Built (2026-11-26), the user's call: with markup simplified (D-070, D-071), a second link
+tag was one too many.
+
+**Context.** `<A>` (D-040, `import pf.A`) was Solid Router's: an `<a>` that read the location in Roc
+and wrote `aria-current="page"` and a class while the page was at its path (`end`) or under it.
+Every other link navigated in place just the same; only `<A>` knew where the page was, and each one
+was a component, a computation reading the location, and a class to learn.
+
+**Decision.** `<A>` is gone (and `A` from both platforms). Every `<a>` whose `href` is one of the
+app's own paths (`/…`, not `//…`) and whose markup writes no `aria-current` of its own is marked:
+`aria-current="page"` where the page is (its path, and its query if the link has one), `"true"` at
+a path the page is under (`/lists` while at `/lists/7`; never `/`). The server writes the mark last
+on the element (signals.rs's `current`, and the runtime's `renderToString`, the same rule); the
+runtime marks a link it makes (`element`, a template's copy) or adopts, again when its `href`
+changes, and every link it marks when a navigation in place commits (`markLinks`). Styling is CSS:
+`a[aria-current="page"]` for `<A end>`, `a[aria-current]` for `<A>`. `active_class` has no
+successor; `replace`, `noscroll`, `data-rocx-preload` and `data-rocx-link` were already an `<a>`'s.
+
+**Why.** One link tag, as HTML has, and the active state for free, in the server's HTML too (no
+frame before the runtime marks it), accessible by default.
+
+**Costs.** A page's links all carry a mark when they are where it is, which a page that marks its
+own way (a class) must say with `aria-current` to keep it to itself. A relative `href` (`../x`) or
+another origin's is never marked.
+
+**Reversible:** yes: the marking is a few lines in signals.rs and the runtime; `A.roc` is in git.
+
+
+## D-087 The runtime an app ships has only what it uses
+
+**Status.** Built (2026-11-26), the user's go: step 1 of the js-framework-benchmark plan (D-074),
+with D-086's links; its benchmark page's runtime is 124 KB raw instead of 175 (27.5 KB with brotli
+instead of 37.5).
+
+**Context.** web/runtime.js answers every host function an app's wasm may call and has the code each
+needs: navigating in place (D-040), forms and actions, drags, glides, the server-side renderer the
+tests use, and more. A page of the benchmark's ran about a third of it; all of it was downloaded, and
+the benchmark's server, compressing each file as it sends it, spends time by the raw byte.
+
+**Decision.** `rocx build --static` and `--release`, once the app's wasm is built, write runtime.js
+shaken (`rocx-cli/Shake.roc`) and then minified: the entries of `makeImports` the wasm doesn't
+import go (its import section says which: `Shake.wasm_imports`, read with the CLI platform's new
+`File.read_bytes!`), and then every member of `Runtime` no kept code names (`.name`, comments aside),
+starting from what is outside the class, the constructor, the fields, the imports kept, and what
+start.js, the tests and pages' scripts call (`Shake.kept`). A few lines are a feature's (`… //#nav`,
+`//#drag`, `//#point`, `//#moves`) and go where the app doesn't use it (`Static.features!`):
+navigating in place when it has one page and its wasm calls nothing that navigates; drags, a
+pointer's point and `transition:move`'s glides when the browser's copy of its code doesn't write
+them. The runtime is read by its lines, as it is written (members at one tab, closing with a lone
+`}`; imports at three); a runtime written otherwise ships whole, with a warning. `rocx build
+--client` and dev builds ship it whole, as do the tests that load web/runtime.js. Two methods were
+renamed so a name names one thing (the forms' `send` is `sendSubmission`, the server-side `html` is
+`serverHtml`); start.js's page also asks for runtime.js and the wasm from `<head>` (preload hints),
+and the runtime compiles the wasm as it downloads (`instantiateStreaming`).
+
+**Why.** What a page downloads and the benchmark's "ready to use" both grow with the runtime's
+bytes; most apps use a part of it.
+
+**Costs.** A member reached only by a name built at run time (`this[name]`) would be left out: the
+runtime has none, and the docs site's static copy, every page hydrated and its demos used by the
+site's tests, is a shaken build. A line tag must be on a whole statement. The decision of what a feature is reads the
+app's code for words (`Html.on_point`), so a feature used only through a package's JavaScript
+would need its tag never to be decided off.
+
+**Reversible:** yes: Static.shake! is one call; without it runtime.js ships whole and minified.
