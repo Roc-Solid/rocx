@@ -435,6 +435,10 @@ pub struct Engine {
     /// The stylesheets `<link>`s name, by their `href`.
     sheets: HashMap<String, Sheet>,
     warned: HashSet<String>,
+    /// Templates (D-084): each site's id, and each id's skeleton once it is here (`None` before,
+    /// and for id 0, which says "no template").
+    template_ids: HashMap<String, usize>,
+    templates: Vec<Option<Rc<Value>>>,
     /// A request to send: made in a run, sent once the engine is let go of (`send_requests`).
     outbox: Vec<(u64, String, String, Vec<(String, String)>, String)>,
 }
@@ -507,6 +511,8 @@ pub fn init(origin: String, path: String) {
             held: HashMap::new(),
             sheets: HashMap::new(),
             warned: HashSet::new(),
+            template_ids: HashMap::new(),
+            templates: vec![None],
             outbox: Vec::new(),
         })
     });
@@ -1972,6 +1978,27 @@ pub fn build(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
             fragment
         }
         "e" => element(node, owner, scope),
+        // A template (D-084): its skeleton the first time, kept; then the skeleton built with the
+        // row's parts put in, in its slots' order, as the markup they make up would be.
+        "tpl" => {
+            let id = node.get("s").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let skeleton = with(|engine| {
+                if let Some(skeleton) = node.get("k")
+                    && let Some(slot) = engine.templates.get_mut(id)
+                {
+                    *slot = Some(Rc::new(skeleton.clone()));
+                }
+                engine.templates.get(id).cloned().flatten()
+            });
+            let Some(skeleton) = skeleton else {
+                return with(|engine| {
+                    engine.warn_once("tpl", "rocx native: a template's copy came before its skeleton: left out");
+                    engine.dom.fragment()
+                });
+            };
+            let parts = node.get("p").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+            instantiate(&skeleton, parts, &mut 0, owner, scope)
+        }
         "loading" => {
             let (at, range, fragment, inner) = with(|engine| {
                 let at = engine.id();
@@ -2084,11 +2111,55 @@ fn children(node: &Value) -> impl Iterator<Item = &Value> {
 fn element(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
     let tag = node.get("tag").and_then(Value::as_str).unwrap_or("div");
     let attrs: Vec<&Vec<Value>> = node.get("a").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_array).collect();
+    let element = element_of(tag, &attrs, owner, scope);
+    for child in children(node) {
+        let built = build(child, owner, scope);
+        with(|engine| engine.dom.append(element, built));
+    }
+    element
+}
+
+/// A template's skeleton node (`Html.template`, D-084) built with its parts, from part `at` on: an
+/// element's attributes with a part where each `["?"]` is, its children in turn, and a part built
+/// where each other child goes.
+fn instantiate(skeleton: &Value, parts: &[Value], at: &mut usize, owner: Option<u64>, scope: &Scope) -> NodeId {
+    match skeleton.get("t").and_then(Value::as_str) {
+        Some("s") => with(|engine| engine.dom.text(skeleton.get("v").and_then(Value::as_str).unwrap_or(""))),
+        Some("e") => {
+            let tag = skeleton.get("tag").and_then(Value::as_str).unwrap_or("div");
+            let mut attrs: Vec<&Vec<Value>> = Vec::new();
+            for attr in skeleton.get("a").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_array) {
+                if attr.first().and_then(Value::as_str) == Some("?") {
+                    if let Some(part) = parts.get(*at).and_then(Value::as_array) {
+                        attrs.push(part);
+                    }
+                    *at += 1;
+                } else {
+                    attrs.push(attr);
+                }
+            }
+            let element = element_of(tag, &attrs, owner, scope);
+            for child in children(skeleton) {
+                let built = instantiate(child, parts, at, owner, scope);
+                with(|engine| engine.dom.append(element, built));
+            }
+            element
+        }
+        _ => {
+            let part = parts.get(*at).unwrap_or(&Value::Null);
+            *at += 1;
+            build(part, owner, scope)
+        }
+    }
+}
+
+/// An element of `tag` with `attrs` set, bound and computed: its children are its caller's.
+fn element_of(tag: &str, attrs: &[&Vec<Value>], owner: Option<u64>, scope: &Scope) -> NodeId {
     let field = |attr: &Vec<Value>, at: usize| attr.get(at).and_then(Value::as_str).unwrap_or("").to_string();
     let element = with(|engine| {
         let element = engine.dom.element(tag);
         let mut classes = Vec::new();
-        for attr in &attrs {
+        for attr in attrs {
             let kind = field(attr, 0);
             let name = field(attr, 1);
             match kind.as_str() {
@@ -2100,7 +2171,7 @@ fn element(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
         if !classes.is_empty() {
             engine.dom.set_attr(element, "class", &classes.join(" "));
         }
-        for attr in &attrs {
+        for attr in attrs {
             let kind = field(attr, 0);
             let name = field(attr, 1);
             match kind.as_str() {
@@ -2113,7 +2184,7 @@ fn element(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
         }
         element
     });
-    for attr in &attrs {
+    for attr in attrs {
         let kind = field(attr, 0);
         let name = field(attr, 1);
         let computed = match kind.as_str() {
@@ -2144,10 +2215,6 @@ fn element(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
             }),
             _ => {}
         }
-    }
-    for child in children(node) {
-        let built = build(child, owner, scope);
-        with(|engine| engine.dom.append(element, built));
     }
     element
 }
@@ -2757,6 +2824,19 @@ fn show_title(engine: &mut Engine) {
 }
 
 // ---- What the hosted functions do ----
+
+/// A template's state, by its site (D-084, runtime.js's `js_template`): its id times two, plus one
+/// once its skeleton is here. Ids start at 1: 0 says "no template".
+pub fn template(site: String) -> u32 {
+    with(|engine| {
+        let next = engine.templates.len();
+        let id = *engine.template_ids.entry(site).or_insert(next);
+        if id == engine.templates.len() {
+            engine.templates.push(None);
+        }
+        (id * 2 + usize::from(engine.templates[id].is_some())) as u32
+    })
+}
 
 pub fn keep(callable: Callable) -> u64 {
     with(|engine| {
