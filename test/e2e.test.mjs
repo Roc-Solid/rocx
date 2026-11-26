@@ -232,7 +232,9 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		buildHost();
 		buildApp(join(dir, "main.roc"), join(dir, "build", "server"), { opt: "speed" });
 		writeFileSync(join(dir, "build", "started.txt"), "e2e");
-		const flags = ["--static", join(client, "static"), "--context-file", join(dir, "build", "started.txt")];
+		// The app has tables (its migrations, the jobs plugin's): without a database (no DATABASE_URL),
+		// only --debug starts it (D-045's later note), as it does the tests' servers.
+		const flags = ["--static", join(client, "static"), "--context-file", join(dir, "build", "started.txt"), ...(process.env.DATABASE_URL ? [] : ["--debug"])];
 		const server = await start(join(dir, "build", "server"), flags);
 		servers.push(server);
 
@@ -522,7 +524,8 @@ test("the contract (D-037): a route, an actor and a job each import Generated/Ap
 		assert.match(api, /\tchannel_news : \{\} -> Endpoint\(context, \{\}, Channel\(Str, News\.Said, \[\]\)\)\n/);
 		buildHost();
 		buildApp(join(dir, "main.roc"), join(dir, "build", "server"));
-		server = await start(join(dir, "build", "server"), db ? ["--database-url", db.url] : []);
+		// Without a database, only --debug starts an app with tables (the jobs plugin's).
+		server = await start(join(dir, "build", "server"), db ? ["--database-url", db.url] : ["--debug"]);
 		// A tab's stream of its channels, as the runtime opens it: `resync`, then each message.
 		const response = await fetch(`${server.url}/rocx/live?tab=t1&c=${encodeURIComponent("/news")}`, { headers: { accept: "text/event-stream" }, signal: gone.signal });
 		assert.equal(response.status, 200);
