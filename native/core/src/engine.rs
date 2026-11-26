@@ -439,7 +439,7 @@ pub struct Engine {
     /// Templates (D-084): each site's id, and each id's skeleton once it is here (`None` before,
     /// and for id 0, which says "no template").
     template_ids: HashMap<String, usize>,
-    templates: Vec<Option<Rc<Value>>>,
+    templates: Vec<Option<Rc<Template>>>,
     /// A request to send: made in a run, sent once the engine is let go of (`send_requests`).
     outbox: Vec<(u64, String, String, Vec<(String, String)>, String)>,
 }
@@ -1987,22 +1987,25 @@ pub fn build(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
         // row's parts put in, in its slots' order, as the markup they make up would be.
         "tpl" => {
             let id = node.get("s").and_then(Value::as_u64).unwrap_or(0) as usize;
-            let skeleton = with(|engine| {
+            let template = with(|engine| {
                 if let Some(skeleton) = node.get("k")
-                    && let Some(slot) = engine.templates.get_mut(id)
+                    && id < engine.templates.len()
                 {
-                    *slot = Some(Rc::new(skeleton.clone()));
+                    let mut html = String::new();
+                    template_html(skeleton, &mut html);
+                    let root = compile(&mut engine.dom, skeleton);
+                    engine.templates[id] = Some(Rc::new(Template { root, html }));
                 }
                 engine.templates.get(id).cloned().flatten()
             });
-            let Some(skeleton) = skeleton else {
+            let Some(template) = template else {
                 return with(|engine| {
                     engine.warn_once("tpl", "rocx native: a template's copy came before its skeleton: left out");
                     engine.dom.fragment()
                 });
             };
             let parts = node.get("p").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-            instantiate(id, &skeleton, parts, owner, scope)
+            instantiate(id, &template, parts, owner, scope)
         }
         "loading" => {
             let (at, range, fragment, inner) = with(|engine| {
@@ -2124,10 +2127,63 @@ fn element(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
     element
 }
 
-/// A template's slot (D-084), in its parts' order: an element whose attributes include parts (its
-/// skeleton node), or the placeholder where a child goes.
+/// A template (D-084): its skeleton, compiled once (`compile`), and its markup for the page.
+pub(crate) struct Template {
+    root: Skel,
+    html: String,
+}
+
+/// A skeleton's node, ready to copy: an element's tag and written attributes shared, its attributes
+/// in the markup's order (`None` where a part goes), the text written in the file, a slot.
+enum Skel {
+    Text(Rc<str>),
+    Element { tag: String, written: Vec<(Rc<str>, Rc<str>)>, attrs: Vec<Option<Vec<Value>>>, parts: bool, children: Vec<Skel> },
+    Slot,
+}
+
+/// A skeleton's JSON (`Html.skeleton`), compiled: what `skeletal` copies.
+fn compile(dom: &mut Dom, node: &Value) -> Skel {
+    match node.get("t").and_then(Value::as_str) {
+        Some("s") => Skel::Text(Rc::from(node.get("v").and_then(Value::as_str).unwrap_or(""))),
+        Some("e") => {
+            let attrs: Vec<Option<Vec<Value>>> = node
+                .get("a")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_array)
+                .map(|attr| (attr.first().and_then(Value::as_str) != Some("?")).then(|| attr.clone()))
+                .collect();
+            let field = |attr: &Vec<Value>, at: usize| attr.get(at).and_then(Value::as_str).unwrap_or("").to_string();
+            let written: Vec<&Vec<Value>> = attrs.iter().flatten().collect();
+            // The classes first, then the others, as `fill` sets them.
+            let classes: Vec<String> = written.iter().filter(|attr| field(attr, 1) == "class").map(|attr| field(attr, 2)).collect();
+            let mut shared = Vec::new();
+            if !classes.is_empty() {
+                shared.push((dom.name("class"), Rc::from(classes.join(" "))));
+            }
+            for attr in &written {
+                if field(attr, 1) != "class" {
+                    shared.push((dom.name(&field(attr, 1)), Rc::from(field(attr, 2))));
+                }
+            }
+            let parts = attrs.iter().any(Option::is_none);
+            Skel::Element {
+                tag: node.get("tag").and_then(Value::as_str).unwrap_or("div").to_string(),
+                written: shared,
+                attrs,
+                parts,
+                children: children(node).map(|child| compile(dom, child)).collect(),
+            }
+        }
+        _ => Skel::Slot,
+    }
+}
+
+/// A template's slot, in its parts' order: an element whose attributes include parts (its
+/// attributes, `None` where each part goes), or the placeholder where a child goes.
 enum Slot<'a> {
-    Attrs(NodeId, &'a Value),
+    Attrs(NodeId, &'a [Option<Vec<Value>>]),
     Child(NodeId),
 }
 
@@ -2135,33 +2191,32 @@ enum Slot<'a> {
 /// makes it: the skeleton built quietly here and copied on the page at once (a CLONE op, its
 /// markup sent the first time: TEMPLATE), then each slot filled in its parts' order, an element's
 /// attribute parts as `element` sets and binds them, a child built where its placeholder was.
-fn instantiate(id: usize, skeleton: &Value, parts: &[Value], owner: Option<u64>, scope: &Scope) -> NodeId {
+fn instantiate(id: usize, template: &Template, parts: &[Value], owner: Option<u64>, scope: &Scope) -> NodeId {
     let mut slots = Vec::new();
     let root = with(|engine| {
         if cfg!(target_arch = "wasm32") && !engine.dom.template_sent(id) {
-            let mut html = String::new();
-            template_html(skeleton, &mut html);
-            engine.dom.template_op(id, &html);
+            engine.dom.template_op(id, &template.html);
         }
         let mut nodes = Vec::new();
-        let root = engine.dom.quietly(|dom| skeletal(dom, skeleton, &mut nodes, &mut slots));
+        let root = engine.dom.quietly(|dom| skeletal(dom, &template.root, &mut nodes, &mut slots));
         engine.dom.clone_op(id, &nodes);
         root
     });
     let mut at = 0;
     for slot in slots {
         match slot {
-            Slot::Attrs(element, node) => {
+            Slot::Attrs(element, attrs) => {
                 let (mut all, mut own) = (Vec::new(), Vec::new());
-                for attr in node.get("a").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_array) {
-                    if attr.first().and_then(Value::as_str) == Some("?") {
-                        if let Some(part) = parts.get(at).and_then(Value::as_array) {
-                            all.push(part);
-                            own.push(part);
+                for attr in attrs {
+                    match attr {
+                        Some(written) => all.push(written),
+                        None => {
+                            if let Some(part) = parts.get(at).and_then(Value::as_array) {
+                                all.push(part);
+                                own.push(part);
+                            }
+                            at += 1;
                         }
-                        at += 1;
-                    } else {
-                        all.push(attr);
                     }
                 }
                 fill(element, &all, &own, owner, scope);
@@ -2184,10 +2239,9 @@ fn instantiate(id: usize, skeleton: &Value, parts: &[Value], owner: Option<u64>,
 /// text written in the file (but empty text, which markup can't hold), and a placeholder comment
 /// where each other child goes; each node in document order (`nodes`), each slot in its parts'
 /// order (`slots`).
-fn skeletal<'a>(dom: &mut Dom, node: &'a Value, nodes: &mut Vec<NodeId>, slots: &mut Vec<Slot<'a>>) -> Option<NodeId> {
-    match node.get("t").and_then(Value::as_str) {
-        Some("s") => {
-            let text = node.get("v").and_then(Value::as_str).unwrap_or("");
+fn skeletal<'a>(dom: &mut Dom, node: &'a Skel, nodes: &mut Vec<NodeId>, slots: &mut Vec<Slot<'a>>) -> Option<NodeId> {
+    match node {
+        Skel::Text(text) => {
             if text.is_empty() {
                 return None;
             }
@@ -2195,40 +2249,27 @@ fn skeletal<'a>(dom: &mut Dom, node: &'a Value, nodes: &mut Vec<NodeId>, slots: 
             nodes.push(made);
             Some(made)
         }
-        Some("e") => {
-            let element = dom.element(node.get("tag").and_then(Value::as_str).unwrap_or("div"));
+        Skel::Element { tag, written, attrs, parts, children } => {
+            let element = dom.element(tag);
             nodes.push(element);
-            let written: Vec<&Vec<Value>> = node.get("a").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_array).filter(|attr| attr.first().and_then(Value::as_str) != Some("?")).collect();
-            set_written(dom, element, &written);
-            if node.get("a").and_then(Value::as_array).is_some_and(|attrs| attrs.len() != written.len()) {
-                slots.push(Slot::Attrs(element, node));
+            for (name, value) in written {
+                dom.set_shared_attr(element, name, value);
             }
-            for child in children(node) {
+            if *parts {
+                slots.push(Slot::Attrs(element, attrs));
+            }
+            for child in children {
                 if let Some(made) = skeletal(dom, child, nodes, slots) {
                     dom.append(element, made);
                 }
             }
             Some(element)
         }
-        _ => {
+        Skel::Slot => {
             let placeholder = dom.comment();
             nodes.push(placeholder);
             slots.push(Slot::Child(placeholder));
             Some(placeholder)
-        }
-    }
-}
-
-/// The attributes written in the file, as `fill` sets them: the classes first, then the others.
-fn set_written(dom: &mut Dom, element: NodeId, attrs: &[&Vec<Value>]) {
-    let field = |attr: &Vec<Value>, at: usize| attr.get(at).and_then(Value::as_str).unwrap_or("").to_string();
-    let classes: Vec<String> = attrs.iter().filter(|attr| field(attr, 1) == "class").map(|attr| field(attr, 2)).collect();
-    if !classes.is_empty() {
-        dom.set_attr(element, "class", &classes.join(" "));
-    }
-    for attr in attrs {
-        if field(attr, 1) != "class" {
-            dom.set_attr(element, &field(attr, 1), &field(attr, 2));
         }
     }
 }
@@ -2295,16 +2336,15 @@ fn element_of(tag: &str, attrs: &[&Vec<Value>], owner: Option<u64>, scope: &Scop
 /// An element given its attributes `own` (`all` of them, in the markup's order; the others are on
 /// it already, a template's written ones): set, bound and computed (runtime.js's `fill`).
 fn fill(element: NodeId, all: &[&Vec<Value>], own: &[&Vec<Value>], owner: Option<u64>, scope: &Scope) {
-    let field = |attr: &Vec<Value>, at: usize| attr.get(at).and_then(Value::as_str).unwrap_or("").to_string();
     with(|engine| {
-        if own.iter().any(|attr| matches!(field(attr, 0).as_str(), "ci") || (field(attr, 0) == "v" && field(attr, 1) == "class")) {
+        if own.iter().any(|attr| text_at(attr, 0) == "ci" || (text_at(attr, 0) == "v" && text_at(attr, 1) == "class")) {
             let mut classes = Vec::new();
             for attr in all {
-                let kind = field(attr, 0);
-                let name = field(attr, 1);
-                match kind.as_str() {
-                    "v" if name == "class" => classes.push(field(attr, 2)),
-                    "ci" if attr.get(2).and_then(Value::as_bool) == Some(true) => classes.push(name),
+                let kind = text_at(attr, 0);
+                let name = text_at(attr, 1);
+                match kind {
+                    "v" if name == "class" => classes.push(text_at(attr, 2).to_string()),
+                    "ci" if attr.get(2).and_then(Value::as_bool) == Some(true) => classes.push(name.to_string()),
                     _ => {}
                 }
             }
@@ -2313,21 +2353,21 @@ fn fill(element: NodeId, all: &[&Vec<Value>], own: &[&Vec<Value>], owner: Option
             }
         }
         for attr in own {
-            let kind = field(attr, 0);
-            let name = field(attr, 1);
-            match kind.as_str() {
-                "v" if name != "class" => engine.dom.set_attr(element, &name, &field(attr, 2)),
-                "o" if !field(attr, 2).is_empty() => engine.dom.set_attr(element, &name, &field(attr, 2)),
-                "f" if attr.get(2).and_then(Value::as_bool) == Some(true) => engine.dom.set_attr(element, &name, ""),
-                "sv" if !field(attr, 2).is_empty() => engine.dom.set_style(element, &name, &field(attr, 2)),
+            let kind = text_at(attr, 0);
+            let name = text_at(attr, 1);
+            match kind {
+                "v" if name != "class" => engine.dom.set_attr(element, name, text_at(attr, 2)),
+                "o" if !text_at(attr, 2).is_empty() => engine.dom.set_attr(element, name, text_at(attr, 2)),
+                "f" if attr.get(2).and_then(Value::as_bool) == Some(true) => engine.dom.set_attr(element, name, ""),
+                "sv" if !text_at(attr, 2).is_empty() => engine.dom.set_style(element, name, text_at(attr, 2)),
                 _ => {}
             }
         }
     });
     for attr in own {
-        let kind = field(attr, 0);
-        let name = field(attr, 1);
-        let computed = match kind.as_str() {
+        let kind = text_at(attr, 0);
+        let name = text_at(attr, 1);
+        let computed = match kind {
             "vo" => Some(CompKind::Attr),
             "fo" => Some(CompKind::Flag),
             "co" => Some(CompKind::Class),
@@ -2337,25 +2377,30 @@ fn fill(element: NodeId, all: &[&Vec<Value>], own: &[&Vec<Value>], owner: Option
         };
         if let Some(computed) = computed {
             let runner = kept_box(attr.get(2).and_then(Value::as_u64));
-            let comp = with(|engine| engine.new_comp(computed, runner, owner, scope.clone(), Target::Node(element), &name));
+            let comp = with(|engine| engine.new_comp(computed, runner, owner, scope.clone(), Target::Node(element), name));
             let outcome = run(comp);
             if is_static(comp, outcome) {
                 forget(comp, owner);
             }
             continue;
         }
-        match kind.as_str() {
+        match kind {
             "on" | "onp" | "onk" => {
                 let runner = attr.get(2).and_then(Value::as_u64).unwrap_or(0);
                 let wanted = attr.get(3).and_then(Value::as_str).map(str::to_string);
-                with(|engine| engine.listeners.entry(element).or_default().push(Listener { event: name.clone(), kind: kind.clone(), runner, wanted, scope: scope.clone(), owner }));
+                with(|engine| engine.listeners.entry(element).or_default().push(Listener { event: name.to_string(), kind: kind.to_string(), runner, wanted, scope: scope.clone(), owner }));
             }
             "frame" | "view" | "tr" | "tro" | "k" | "ko" => with(|engine| {
-                engine.warn_once(&format!("attr {kind}"), &format!("rocx native: `{kind}` ({}) isn't on phones yet: ignored", attr_name(&kind)));
+                engine.warn_once(&format!("attr {kind}"), &format!("rocx native: `{kind}` ({}) isn't on phones yet: ignored", attr_name(kind)));
             }),
             _ => {}
         }
     }
+}
+
+/// An attribute's field `at` as text ("" when it isn't).
+fn text_at(attr: &[Value], at: usize) -> &str {
+    attr.get(at).and_then(Value::as_str).unwrap_or("")
 }
 
 fn attr_name(kind: &str) -> &'static str {

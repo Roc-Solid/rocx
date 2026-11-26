@@ -163,7 +163,7 @@ impl Projection<'_> {
         let mut at = Some(node);
         while let Some(node) = at {
             if let Kind::Element { tag, .. } = &self.dom().nodes[node].kind {
-                out.push(css::Element { tag: tag.clone(), id: self.dom().attr(node, "id").unwrap_or("").to_string(), classes: self.dom().attr(node, "class").unwrap_or("").split_whitespace().map(str::to_string).collect() });
+                out.push(css::Element { tag: tag.to_string(), id: self.dom().attr(node, "id").unwrap_or("").to_string(), classes: self.dom().attr(node, "class").unwrap_or("").split_whitespace().map(str::to_string).collect() });
             }
             at = self.dom().nodes[node].parent;
         }
@@ -356,7 +356,7 @@ impl Projection<'_> {
         for child in children {
             let inline = match &self.dom().nodes[child].kind {
                 Kind::Text(_) => true,
-                Kind::Element { tag, .. } => INLINE.contains(&tag.as_str()) && self.inline_only(child),
+                Kind::Element { tag, .. } => INLINE.contains(&&**tag) && self.inline_only(child),
                 _ => continue,
             };
             if inline {
@@ -393,7 +393,7 @@ impl Projection<'_> {
     fn inline_only(&self, node: NodeId) -> bool {
         self.dom().children(node).all(|child| match &self.dom().nodes[child].kind {
             Kind::Text(_) | Kind::Comment | Kind::Fragment => true,
-            Kind::Element { tag, .. } => HIDDEN.contains(&tag.as_str()) || (INLINE.contains(&tag.as_str()) && self.inline_only(child)),
+            Kind::Element { tag, .. } => HIDDEN.contains(&&**tag) || (INLINE.contains(&&**tag) && self.inline_only(child)),
         })
     }
 
@@ -407,8 +407,8 @@ impl Projection<'_> {
     fn inline_text(&self, node: NodeId) -> String {
         match &self.dom().nodes[node].kind {
             Kind::Text(text) => text.clone(),
-            Kind::Element { tag, .. } if tag == "br" => "\u{2028}".into(),
-            Kind::Element { tag, .. } if HIDDEN.contains(&tag.as_str()) => String::new(),
+            Kind::Element { tag, .. } if &**tag == "br" => "\u{2028}".into(),
+            Kind::Element { tag, .. } if HIDDEN.contains(&&**tag) => String::new(),
             _ => self.dom().children(node).map(|child| self.inline_text(child)).collect(),
         }
     }

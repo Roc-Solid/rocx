@@ -3,11 +3,16 @@
 //! browser's step by step. The phone never sees it: `native.rs` turns it into native views after
 //! each flush.
 
+use crate::fx::HashSet;
+use std::rc::Rc;
+
 pub type NodeId = usize;
 
 #[derive(Debug)]
 pub enum Kind {
-    Element { tag: String, attrs: Vec<(String, String)>, styles: Vec<(String, String)> },
+    /// Its tag and its attributes' names are shared (`Dom::name`), and a template's written values
+    /// are its skeleton's: an element made, or a copy of a template, allocates no text of its own.
+    Element { tag: Rc<str>, attrs: Vec<(Rc<str>, Rc<str>)>, styles: Vec<(String, String)> },
     Text(String),
     /// A range's marker (`<!--x-->`), which only the engine sees.
     Comment,
@@ -63,11 +68,13 @@ pub struct Dom {
     quiet: bool,
     /// The templates the page has been sent (TEMPLATE ops), by id.
     sent: Vec<bool>,
+    /// Tags and attribute names, each kept once (`name`).
+    names: HashSet<Rc<str>>,
 }
 
 impl Dom {
     pub fn new() -> Dom {
-        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new(), texts: Vec::new(), freed: Vec::new(), spare: Vec::new(), quiet: false, sent: Vec::new() };
+        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new(), texts: Vec::new(), freed: Vec::new(), spare: Vec::new(), quiet: false, sent: Vec::new(), names: HashSet::default() };
         dom.root = dom.element("rocx-root");
         dom
     }
@@ -200,7 +207,18 @@ impl Dom {
     }
 
     pub fn element(&mut self, tag: &str) -> NodeId {
-        self.add(Kind::Element { tag: tag.to_string(), attrs: Vec::new(), styles: Vec::new() })
+        let tag = self.name(tag);
+        self.add(Kind::Element { tag, attrs: Vec::new(), styles: Vec::new() })
+    }
+
+    /// A tag or an attribute's name, kept once: the same text, shared.
+    pub fn name(&mut self, text: &str) -> Rc<str> {
+        if let Some(name) = self.names.get(text) {
+            return name.clone();
+        }
+        let name: Rc<str> = Rc::from(text);
+        self.names.insert(name.clone());
+        name
     }
 
     pub fn text(&mut self, data: &str) -> NodeId {
@@ -221,7 +239,7 @@ impl Dom {
 
     pub fn tag(&self, node: NodeId) -> Option<&str> {
         match &self.nodes[node].kind {
-            Kind::Element { tag, .. } => Some(tag),
+            Kind::Element { tag, .. } => Some(&**tag),
             _ => None,
         }
     }
@@ -402,17 +420,32 @@ impl Dom {
 
     pub fn attr(&self, node: NodeId, name: &str) -> Option<&str> {
         match &self.nodes[node].kind {
-            Kind::Element { attrs, .. } => attrs.iter().find(|(named, _)| named == name).map(|(_, value)| value.as_str()),
+            Kind::Element { attrs, .. } => attrs.iter().find(|(named, _)| &**named == name).map(|(_, value)| &**value),
             _ => None,
         }
     }
 
     pub fn set_attr(&mut self, node: NodeId, name: &str, value: &str) {
         self.op(8, &[node as u32], &[name, value]);
+        if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind
+            && let Some(entry) = attrs.iter_mut().find(|(named, _)| &**named == name)
+        {
+            entry.1 = Rc::from(value);
+            return;
+        }
+        let name = self.name(name);
+        if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind {
+            attrs.push((name, Rc::from(value)));
+        }
+    }
+
+    /// An attribute whose name and value are shared already (a template's written one).
+    pub fn set_shared_attr(&mut self, node: NodeId, name: &Rc<str>, value: &Rc<str>) {
+        self.op(8, &[node as u32], &[name, value]);
         if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind {
             match attrs.iter_mut().find(|(named, _)| named == name) {
-                Some(entry) => entry.1 = value.to_string(),
-                None => attrs.push((name.to_string(), value.to_string())),
+                Some(entry) => entry.1 = value.clone(),
+                None => attrs.push((name.clone(), value.clone())),
             }
         }
     }
@@ -420,7 +453,7 @@ impl Dom {
     pub fn remove_attr(&mut self, node: NodeId, name: &str) {
         self.op(9, &[node as u32], &[name]);
         if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind {
-            attrs.retain(|(named, _)| named != name);
+            attrs.retain(|(named, _)| &**named != name);
         }
     }
 
