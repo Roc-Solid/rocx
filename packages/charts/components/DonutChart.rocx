@@ -15,9 +15,9 @@ import charts.Path
 ##
 ## A slice is its label's, and keeps its colour while others come and go: five colours
 ## (`--chart-1` to `--chart-5`), so a sixth slice shares one; fold the smallest into "Other".
-## `label` names the chart for screen readers, `format` writes a value, `total` is the word under
-## the total ("Total" unless said), and `thickness` is the ring's, in the SVG's units, of its 150
-## radius (52 unless said; 150 is a pie).
+## `label` names the chart for screen readers, `format` writes a value (`Format.short` unless
+## said), `total` is the word under the total ("Total" unless said), and `thickness` is the ring's,
+## in the SVG's units, of its 150 radius (52 unless said; 150 is a pie).
 DonutChart := [].{
 	Slice : { label : Str, value : Dec }
 
@@ -34,7 +34,7 @@ DonutChart := [].{
 	## Where a slice is drawn, in turns: 0 is twelve o'clock, 1 all the way round.
 	Arc : { key : Str, from : Dec, to : Dec }
 
-	Props := { data! : () => List(DonutChart.Slice), label : Str, format : Dec -> Str, total : Str ?? "Total", thickness : Dec ?? 52.0 }
+	Props := { data! : () => List(DonutChart.Slice), label : Str, format : (Dec -> Str) ?? Format.short, total : Str ?? "Total", thickness : Dec ?? 52.0 }
 
 	view! : Props => Html
 	view! = |props| {

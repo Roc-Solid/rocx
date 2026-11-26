@@ -884,6 +884,18 @@ test("charts: each glides to other data and stops, Auto gives it more until pres
 	await settled("chart-line");
 	assert.notEqual(between, day, "the line moves");
 	assert.notEqual(await line(), between, "a frame at a time");
+	// The hours along the bottom, one apart (LineChart.evenly), as the demo writes them; pointed at,
+	// the hour nearest the pointer: its value over the plot, its hour on the axis, in the ticks' place.
+	const across = `${all("[data-demo=chart-line] .ticks .across")}.map((tick) => tick.textContent)`;
+	assert.deepEqual(await page.eval(across), ["0:00", "5:00", "10:00", "15:00", "20:00"]);
+	await page.eval(`document.querySelector("[data-demo=chart-line] svg").scrollIntoView({ block: "center" })`);
+	const plot = await page.eval(`(() => { const box = document.querySelector("[data-demo=chart-line] svg").getBoundingClientRect(); return { x: box.left, y: box.top, width: box.width, height: box.height }; })()`);
+	await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: plot.x + (plot.width * (48 + (572 * 14) / 23)) / 640, y: plot.y + plot.height / 2 });
+	await page.wait(`document.querySelector("[data-demo=chart-line] .spot").classList.contains("shown")`, 3000);
+	assert.equal(await page.eval(`[...document.querySelectorAll("[data-demo=chart-line] .spot text")].at(-1).textContent`), "14:00");
+	await page.wait(`getComputedStyle(document.querySelector("[data-demo=chart-line] .ticks .across")).opacity === "0"`, 3000);
+	await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: plot.x - 40, y: plot.y - 40 });
+	await page.wait(`!document.querySelector("[data-demo=chart-line] .spot").classList.contains("shown")`, 3000);
 
 	// Slices: a slice keeps its colour; one whose language is gone shrinks to nothing, and goes.
 	const slices = () => page.eval(`Object.fromEntries(${all("[data-demo=chart-donut] .slice")}.map((slice) => [slice.getAttribute("aria-label").split(":")[0], slice.dataset.slot]))`);

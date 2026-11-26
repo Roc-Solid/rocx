@@ -117,6 +117,11 @@ expect Path.smooth([(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)]) == "M0,0C0.33,0.5 0.67,
 # A straight run stays straight.
 expect Path.smooth([(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)]) == "M0,0C0.33,0.33 0.67,0.67 1,1C1.33,1.33 1.67,1.67 2,2"
 expect Path.smooth([(0.0, 0.0), (1.0, 1.0)]) == "M0,0L1,1"
+# Points unevenly spaced (a line chart's days to scale): a straight run stays straight, each curve a
+# third of its own width.
+expect Path.smooth([(0.0, 0.0), (1.0, 1.0), (4.0, 4.0)]) == "M0,0C0.33,0.33 0.67,0.67 1,1C2,2 3,3 4,4"
+# A rise over a long gap, then a short one: no dip below the first point, nor past the last.
+expect Path.smooth([(0.0, 10.0), (6.0, 4.0), (7.0, 0.0)]) == "M0,10C2,9 4,8 6,4C6.33,3.33 6.67,1.67 7,0"
 expect Path.arc({ x: 0.0, y: 0.0, inner: 0.0, outer: 10.0, from: 0.0, to: 0.25 }) == "M0,-10A10,10 0 0 1 10,0L0,0Z"
 expect Path.arc({ x: 50.0, y: 50.0, inner: 20.0, outer: 40.0, from: 0.25, to: 1.0 }) == "M90,50A40,40 0 1 1 50,10L50,30A20,20 0 1 0 70,50Z"
 expect Path.arc({ x: 0.0, y: 0.0, inner: 0.0, outer: 10.0, from: 0.5, to: 0.5 }) == ""

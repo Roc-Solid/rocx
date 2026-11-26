@@ -16,8 +16,8 @@ import charts.Ticks
 ## axis as it fades (`transition:out`) while the others close up, and sorted, each slides to its
 ## place. Pointing at a bar, or reaching it with Tab, shows its value.
 ##
-## `label` names the chart for screen readers, `format` writes a value (`Format.short`, or
-## `|mm| "${Format.num(mm, 0)} mm"`), and `padding` is the share of each bar's slot left empty
+## `label` names the chart for screen readers, `format` writes a value (`Format.short` unless said,
+## or `|mm| "${Format.num(mm, 0)} mm"`), and `padding` is the share of each bar's slot left empty
 ## (0.3 unless said).
 BarChart := [].{
 	Bar : { label : Str, value : Dec }
@@ -31,7 +31,7 @@ BarChart := [].{
 	## What is drawn: the bars, how many slots there are, and the axis's ends.
 	Drawn : { bars : List(BarChart.Placed), count : Dec, domain : (Dec, Dec) }
 
-	Props := { data! : () => List(BarChart.Bar), label : Str, format : Dec -> Str, padding : Dec ?? 0.3 }
+	Props := { data! : () => List(BarChart.Bar), label : Str, format : (Dec -> Str) ?? Format.short, padding : Dec ?? 0.3 }
 
 	view! : Props => Html
 	view! = |props| {

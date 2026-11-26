@@ -427,6 +427,15 @@ Plate := [].{
 			_ => day
 		}
 
+	## Weights as a line chart's points: across by their day, to scale (days since 1970,
+	## `Date.days`), up by kg. One whose day isn't a date is left out.
+	weight_points : List(Plate.Weight) -> List({ x : Dec, y : Dec })
+	weight_points = |weights| weights.keep_oks(|weight| Date.from_str(weight.day).map_ok(|date| { x: Date.days(date).to_dec(), y: weight.kg }))
+
+	## A line chart's day (days since 1970, as `weight_points` puts it) as its axis says it: "Nov 22".
+	day_at : Dec -> Str
+	day_at = |x| Plate.short_day(Date.from_days(Dec.round(x).to_i64_try() ?? 0).to_str())
+
 	## A day without its year: "Nov 22".
 	short_day : Str -> Str
 	short_day = |day|
@@ -533,5 +542,8 @@ expect Plate.day_label("2026-11-21", "2026-11-22") == "Yesterday"
 expect Plate.day_label("2026-11-23", "2026-11-22") == "Tomorrow"
 expect Plate.day_label("2026-11-20", "2026-11-22") == "Fri, Nov 20"
 expect Plate.day_label("2025-03-03", "2026-11-22") == "Mar 3, 2025"
+expect Plate.weight_points([{ day: "2026-11-20", kg: 72.4 }, { day: "2026-11-21", kg: 72.1 }, { day: "2026-11-26", kg: 71.8 }]).map(|point| point.x) == [20777.0, 20778.0, 20783.0]
+expect Plate.weight_points([{ day: "someday", kg: 70.0 }]) == []
+expect Plate.day_at(20777.0) == "Nov 20"
 expect Plate.full_name("Granola", "Acme Mills") == "Granola · Acme Mills"
 expect Plate.full_name("Granola", "") == "Granola"

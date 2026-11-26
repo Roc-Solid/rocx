@@ -76,7 +76,7 @@ view! = |_|
 				<li><code>label</code>, what the chart shows, in words, for screen readers.</li>
 				<li>
 					<code>format</code>, which writes a value as text for the ticks and the readouts:
-					<code>Format.short</code> (<code>1.3k</code>), or a function of your own.
+					<code>Format.short</code> (<code>1.3k</code>) unless you give a function of your own.
 				</li>
 			</ul>
 			<p>
@@ -108,7 +108,7 @@ view! = |_|
 							</td>
 						</tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
-						<tr><td><code>{"format : Dec -> Str"}</code></td><td>A value as text: on the ticks, and on a bar when it is pointed at or focused.</td></tr>
+						<tr><td><code>{"format : (Dec -> Str) ?? Format.short"}</code></td><td>A value as text: on the ticks, and on a bar when it is pointed at or focused.</td></tr>
 						<tr><td><code>{"padding : Dec ?? 0.3"}</code></td><td>The share of each bar's slot left empty. Blueprint's thin bars use 0.55, Paper's wide ones 0.12.</td></tr>
 					</tbody>
 				</table>
@@ -141,7 +141,7 @@ view! = |_|
 						</tr>
 						<tr><td><code>{"series : List(Str)"}</code></td><td>The series' names, bottom one first. The legend over the chart shows each in its colour.</td></tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
-						<tr><td><code>{"format : Dec -> Str"}</code></td><td>A value as text: on the ticks, and a column's total when it is pointed at or focused.</td></tr>
+						<tr><td><code>{"format : (Dec -> Str) ?? Format.short"}</code></td><td>A value as text: on the ticks, and a column's total when it is pointed at or focused.</td></tr>
 						<tr><td><code>{"padding : Dec ?? 0.3"}</code></td><td>The share of each column's slot left empty.</td></tr>
 					</tbody>
 				</table>
@@ -163,22 +163,31 @@ view! = |_|
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
 						<tr>
-							<td><code>{"data! : () => List(Dec)"}</code></td>
+							<td><code>{"data! : () => List({ x : Dec, y : Dec })"}</code></td>
 							<td>
-								The values, left to right, evenly spaced. When they change, the line glides to them. If
-								there are more values or fewer than before, the line jumps to the new data instead.
+								The points, left to right: each across by its <code>x</code> (a number such as a day, an
+								hour or a time in milliseconds), to scale, and up by its <code>y</code>. When they change,
+								the line glides to them. If there are more points or fewer than before, the line jumps to
+								the new data instead. For values evenly spaced, <code>{"LineChart.evenly(values)"}</code>
+								puts them one apart, as the demo's hours are.
 							</td>
 						</tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
-						<tr><td><code>{"format : Dec -> Str"}</code></td><td>A value as text: on the ticks, and the value under the pointer.</td></tr>
-						<tr><td><code>smooth : Bool</code></td><td>Monotone curves through the values (they never overshoot a point) instead of straight segments.</td></tr>
+						<tr><td><code>{"format : (Dec -> Str) ?? Format.short"}</code></td><td>A value as text: on the ticks up the side, and over the point under the pointer.</td></tr>
+						<tr><td><code>{"format_x : (Dec -> Str) ?? Format.short"}</code></td><td>An <code>x</code> as text: on the ticks along the bottom, and the point's under the pointer.</td></tr>
+						<tr><td><code>{"smooth : Bool ?? Bool.False"}</code></td><td>Monotone curves through the points (they never overshoot one) instead of straight segments.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				The axis runs from the least value to the greatest, widened to round numbers. Pointing along the
-				chart shows the value under the pointer. The strips the pointer finds a value by are laid out by
-				CSS, not Roc, so a chart whose values change every frame redraws only its path and its axis.
+				The axis up the side runs from the least value to the greatest, widened to round numbers. The one
+				along the bottom runs from the least <code>x</code> to the greatest, with ticks on round numbers
+				between, so points logged on irregular days sit as far apart as the days are:
+				<a href={Paths.examples_plate}>Plate</a>'s weight is drawn so, each day a number
+				(<code>Date.days</code>). Pointing along the chart shows the point nearest the pointer, its value over
+				the plot and its <code>x</code> on the axis. The strips the pointer finds a point by come from where
+				the data puts the points, not where the line is drawn, so a line gliding to new values doesn't move
+				them.
 			</p>
 
 			<Heading id="sparkline">{"<Sparkline>"}</Heading>
@@ -224,7 +233,7 @@ view! = |_|
 							</td>
 						</tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
-						<tr><td><code>{"format : Dec -> Str"}</code></td><td>A value as text: the total, and each slice's value in the legend.</td></tr>
+						<tr><td><code>{"format : (Dec -> Str) ?? Format.short"}</code></td><td>A value as text: the total, and each slice's value in the legend.</td></tr>
 						<tr><td><code>{"total : Str ?? \"Total\""}</code></td><td>The word under the total.</td></tr>
 						<tr><td><code>{"thickness : Dec ?? 52"}</code></td><td>The ring's width, out of a radius of 150. Blueprint's 24 is a thin ring; Paper's 150 is a pie. Above 90 there is no room in the middle, so the total isn't shown.</td></tr>
 					</tbody>
@@ -257,8 +266,8 @@ view! = |_|
 							</td>
 						</tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
-						<tr><td><code>{"format_x : Dec -> Str"}</code></td><td>A value across: on the ticks along the bottom, and on a dot when it is pointed at or focused.</td></tr>
-						<tr><td><code>{"format_y : Dec -> Str"}</code></td><td>A value up: on the ticks up the side, and on a dot.</td></tr>
+						<tr><td><code>{"format_x : (Dec -> Str) ?? Format.short"}</code></td><td>A value across: on the ticks along the bottom, and on a dot when it is pointed at or focused.</td></tr>
+						<tr><td><code>{"format_y : (Dec -> Str) ?? Format.short"}</code></td><td>A value up: on the ticks up the side, and on a dot.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -282,7 +291,7 @@ view! = |_|
 						<tr><td><code>{"rows : List(Str)"}</code></td><td>The rows' labels, down the side.</td></tr>
 						<tr><td><code>{"columns : List(Str)"}</code></td><td>The columns' labels. Each appears in the readout; along the bottom there is room for about eight, so with more columns only every second or third is shown.</td></tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
-						<tr><td><code>{"format : Dec -> Str"}</code></td><td>A value as text: the scale's ends, and the cell pointed at.</td></tr>
+						<tr><td><code>{"format : (Dec -> Str) ?? Format.short"}</code></td><td>A value as text: the scale's ends, and the cell pointed at.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -363,7 +372,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Scale</code></td><td><code>Scale.linear(domain, range)</code> maps values to places: <code>scale.at(value)</code> is a place, <code>scale.invert(place)</code> a value. <code>.nice(count)</code> widens the domain to round numbers, <code>.ticks(count)</code> lists them, and <code>Scale.extent(values)</code> is the least and the greatest.</td></tr>
+						<tr><td><code>Scale</code></td><td><code>Scale.linear(domain, range)</code> maps values to places: <code>scale.at(value)</code> is a place, <code>scale.invert(place)</code> a value. <code>.nice(count)</code> widens the domain to round numbers, <code>.ticks(count)</code> lists them, and <code>Scale.extent(values)</code> is the least and the greatest. <code>Scale.strips(places, range)</code> gives each place the stretch nearer it than its neighbours, which the line chart's pointer finds its points by.</td></tr>
 						<tr><td><code>Band</code></td><td><code>Band.band(count, range, padding)</code> gives a slot to each bar: <code>.at(slot)</code>, <code>.width()</code>, <code>.center(slot)</code>. A count and a slot may be fractions, as they are while a chart glides from seven bars to six.</td></tr>
 						<tr><td><code>Ticks</code></td><td>About <code>count</code> ticks at 1, 2 or 5 times a power of ten.</td></tr>
 						<tr><td><code>Path</code></td><td>SVG path data: <code>line</code>, <code>smooth</code> (monotone curves), <code>area</code>, <code>smooth_area</code>, and <code>arc</code> (a donut's slice).</td></tr>
@@ -389,6 +398,10 @@ view! = |_|
 				<li>
 					You can't reach a heatmap's cells, a line chart's points or a sparkline's with Tab. To a screen
 					reader, each of these charts is one image, named by its label.
+				</li>
+				<li>
+					A line chart's ticks along the bottom fall on round numbers of its <code>x</code>: days since 1970
+					in steps of 1, 2, 5, 10 or 20, not each Monday or the first of each month.
 				</li>
 				<li>
 					rocx requires HTML tags in lower case, so SVG's camel-cased elements

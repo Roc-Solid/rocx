@@ -116,7 +116,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/p
 | A form whose result is worked out as you type, by the same function the server uses | [`routes/foods/[id]/+page.rocx`](routes/foods/[id]/+page.rocx) (the preview), [`routes/goals/+page.rocx`](routes/goals/+page.rocx) (the targets) |
 | A form's starting values read once, on purpose (`untrack!`), and a row per position (`.map_with_index(\|portion, index\| <option key={index} …>)`) | [`routes/foods/[id]/+page.rocx`](routes/foods/[id]/+page.rocx) |
 | Optimistic removal (`use_submissions!`): an entry or an ingredient goes at once. Entries are keyed rows that fade in and out (`transition:in`, `transition:out`) | [`components/Diary.rocx`](components/Diary.rocx), [`components/MealPart.rocx`](components/MealPart.rocx), [`routes/recipes/[id]/+page.rocx`](routes/recipes/[id]/+page.rocx) |
-| Charts from packages/charts: energy each day (`BarChart`), weight (`LineChart`), in the app's colours | [`routes/trends/+page.rocx`](routes/trends/+page.rocx) |
+| Charts from packages/charts: energy each day (`BarChart`), weight on the days it was logged, each to scale (`LineChart`, a day a number: `Plate.weight_points`, `Plate.day_at`), in the app's colours | [`routes/trends/+page.rocx`](routes/trends/+page.rocx) |
 | An SVG ring drawn from data (`stroke-dasharray`), and bars sized by a CSS variable (`style:--share`) | [`components/Summary.rocx`](components/Summary.rocx) |
 | Pure components (`view`): `Summary` and `HitRow` have stories and expects, `Facts` has expects | [`components/Summary.rocx`](components/Summary.rocx), [`components/HitRow.rocx`](components/HitRow.rocx), [`components/Facts.rocx`](components/Facts.rocx) |
 

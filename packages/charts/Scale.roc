@@ -39,6 +39,22 @@ Scale := { domain : (Dec, Dec), range : (Dec, Dec) }.{
 		Ticks.between(d0, d1, count)
 	}
 
+	## Around each of `places` (left to right), the stretch of `(from, to)` nearer it than the places
+	## beside it: from halfway to the one before to halfway to the one after, the first from `from`
+	## and the last to `to`. One place alone has the whole of it. What a line chart's pointer finds
+	## its points by: `Scale.strips([48.0, 143.0, 620.0], (48.0, 620.0))`.
+	strips : List(Dec), (Dec, Dec) -> List((Dec, Dec))
+	strips = |places, (from, to)| {
+		count = places.len()
+		places.map_with_index(
+			|place, i| {
+				start = if (i == 0) from else (place + (places.get(i - 1) ?? place)) / 2.0
+				end = if (i + 1 == count) to else (place + (places.get(i + 1) ?? place)) / 2.0
+				(start, end)
+			},
+		)
+	}
+
 	## The least and the greatest of `values`, for a domain: `(0, 0)` for none.
 	extent : List(Dec) -> (Dec, Dec)
 	extent = |values|
@@ -57,3 +73,13 @@ expect Scale.linear((3.0, 97.0), (0.0, 1.0)).nice(5).domain == (0.0, 100.0)
 expect Scale.linear((0.0, 1.0), (0.0, 1.0)).ticks(4) == [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 expect Scale.extent([3.0, -1.5, 8.0, 2.0]) == (-1.5, 8.0)
 expect Scale.extent([]) == (0.0, 0.0)
+
+# Points on days 0, 1 and 6 of a week, to scale on a plot from 0 to 600: the first's strip reaches
+# halfway to the second, and the last's from halfway to the one before it.
+expect {
+	across = Scale.linear(Scale.extent([0.0, 1.0, 6.0]), (0.0, 600.0))
+	places = [0.0, 1.0, 6.0].map(|day| across.at(day))
+	places == [0.0, 100.0, 600.0] and Scale.strips(places, (0.0, 600.0)) == [(0.0, 50.0), (50.0, 350.0), (350.0, 600.0)]
+}
+expect Scale.strips([20.0], (0.0, 40.0)) == [(0.0, 40.0)]
+expect Scale.strips([], (0.0, 40.0)) == []

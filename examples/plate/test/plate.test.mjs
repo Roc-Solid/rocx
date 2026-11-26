@@ -316,12 +316,13 @@ test("trends: each day of the range, an average day, and weights", { skip }, asy
 	const person = app.client();
 	const now = await today(person);
 	assert.equal((await person.submit("/weights", { day: shifted(now, -6), kg: "72.4" })).status, 200);
+	await person.submit("/weights", { day: shifted(now, -5), kg: "72.1" });
 	await person.submit("/weights", { day: now, kg: "71.8" });
 	const week = await person.read("/trends");
 	assert.equal(week.range, 7);
 	assert.equal(week.totals.length, 7);
 	assert.equal(week.totals.at(-1).day, now);
-	assert.deepEqual(week.weights, [{ day: shifted(now, -6), kg: 72.4 }, { day: now, kg: 71.8 }]);
+	assert.deepEqual(week.weights, [{ day: shifted(now, -6), kg: 72.4 }, { day: shifted(now, -5), kg: 72.1 }, { day: now, kg: 71.8 }]);
 	// The latest weight is the profile's, which the targets are worked out from.
 	assert.equal((await person.read("/goals")).profile.weight_kg, 71.8);
 	assert.equal((await person.read("/trends?days=30")).totals.length, 30);
@@ -329,7 +330,16 @@ test("trends: each day of the range, an average day, and weights", { skip }, asy
 	const page = await person.get("/trends?days=30");
 	assert.equal(page.dom.getByRole("link", { name: "Month" }).attr("aria-current"), "page");
 	page.dom.getByRole("group", { name: "Energy eaten each day, in kcal" });
-	page.dom.getByText("Down 0.6 kg since " + new Date(`${shifted(now, -6)}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }));
+	const short = (day) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+	page.dom.getByText("Down 0.6 kg since " + short(shifted(now, -6)));
+	// Weight on its days, to scale: the day after the first is a sixth of the way across (48 to 620
+	// of the chart's 640), not half, and the axis along the bottom names the days.
+	const weight = page.dom.getByRole("img", { name: "Weight on the days it was logged, in kg" });
+	const line = (function find(node) {
+		return node.tag === "path" && node.hasClass("line") ? node : node.elements.map(find).find(Boolean);
+	})(weight);
+	assert.match(line.attr("d"), /^M48,[\d.]+C.* 143\.33,[\d.]+C.* 620,[\d.]+$/);
+	assert.ok(weight.text.includes(short(shifted(now, -6))) && weight.text.includes(short(now)), weight.text);
 	await person.submit("/weights", { day: now, kg: "70" });
 });
 

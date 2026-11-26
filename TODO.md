@@ -40,6 +40,9 @@ When an item lands, delete its line here in the same commit.
   (§1) and passkeys (§2) wait there too.
 - **packages/presence:** the questions at the end of its `PROPOSALS.md` (a room by the page's path,
   the timeout).
+- **packages/charts:** a line chart's ticks along the bottom fall on round numbers of its `x` (days
+  since 1970 in steps of 1, 2, 5, 10 or 20; hours in fives), not each Monday or the first of a
+  month. Ticks that know days, hours and months wait for an app that needs them.
 - **Uploads straight to storage.** A file dropped or chosen (D-055) is kept through the app's
   server, as a field of an action's multipart form (D-054). A browser `PUT` to a signed URL
   (`Storage.signed_url!`, D-047's plugin route) would spare the server a large file's bytes, but it

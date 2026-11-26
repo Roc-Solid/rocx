@@ -1,6 +1,7 @@
 ## A day on the calendar, as `<input type="date">` sends it: `2026-11-21`, a year from 1 to 9999.
-## Days compare (`start.is_before(end)`), count (`Date.days_between(start, end)`) and write
-## themselves back the same way (`date.to_str()`).
+## Days compare (`start.is_before(end)`), count (`Date.days_between(start, end)`), are numbers and
+## back (`Date.days`, `Date.from_days`: a line chart's axis of days) and write themselves back the
+## same way (`date.to_str()`).
 Date := { year : I64, month : I64, day : I64 }.{
 
 	## The day `text` names (`2026-02-28`), if it is one: `2026-02-30` isn't.
@@ -45,6 +46,22 @@ Date := { year : I64, month : I64, day : I64 }.{
 		day_of_year = (153 * (if (date.month > 2) date.month - 3 else date.month + 9) + 2) // 5 + date.day - 1
 		day_of_era = year_of_era * 365 + year_of_era // 4 - year_of_era // 100 + day_of_year
 		era * 146097 + day_of_era - 719468
+	}
+
+	## The day `count` days after 1970-01-01 (before it, for fewer than none): `Date.days`, the
+	## other way. A day outside the years 1 to 9999 is still a date, which `to_str` writes as best it
+	## can.
+	from_days : I64 -> Date
+	from_days = |count| {
+		# Howard Hinnant's civil_from_days: years start in March, so a leap day ends one.
+		z = count + 719468
+		era = (if (z >= 0) z else z - 146096) // 146097
+		day_of_era = z - era * 146097
+		year_of_era = (day_of_era - day_of_era // 1460 + day_of_era // 36524 - day_of_era // 146096) // 365
+		day_of_year = day_of_era - (365 * year_of_era + year_of_era // 4 - year_of_era // 100)
+		shifted = (5 * day_of_year + 2) // 153
+		m = if (shifted < 10) shifted + 3 else shifted - 9
+		{ year: year_of_era + era * 400 + (if (m <= 2) 1 else 0), month: m, day: day_of_year - (153 * shifted + 2) // 5 + 1 }
 	}
 
 	## How many days from `start` to `end`: 1 from one day to the next; less than none backwards.
@@ -117,6 +134,21 @@ expect Date.days(day_of("1970-01-02")) == 1
 expect Date.days(day_of("1969-12-31")) == -1
 expect Date.days(day_of("2000-03-01")) == 11017
 expect Date.days_between(day_of("2024-02-28"), day_of("2024-03-01")) == 2
+expect Date.from_days(0).to_str() == "1970-01-01"
+expect Date.from_days(-1).to_str() == "1969-12-31"
+expect Date.from_days(11016).to_str() == "2000-02-29"
+expect Date.from_days(11017).to_str() == "2000-03-01"
+expect Date.from_days(-719162).to_str() == "0001-01-01"
+# Each day of four years, there and back: the leap day, and every month's end, in place.
+expect {
+	var $n = 20000
+	var $same = Bool.True
+	while $n < 21461 {
+		$same = $same and Date.days(Date.from_days($n)) == $n
+		$n = $n + 1
+	}
+	$same
+}
 expect Date.days_between(day_of("2026-12-31"), day_of("2027-01-01")) == 1
 expect day_of("2026-11-21").is_before(day_of("2026-11-22"))
 expect !day_of("2026-11-21").is_before(day_of("2026-11-21"))

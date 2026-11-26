@@ -16,9 +16,10 @@ import charts.Ticks
 ## shrinks into the axis as it fades. Once they are there, nothing runs. Pointing at a column, or
 ## reaching it with Tab, shows its total.
 ##
-## `label` names the chart for screen readers, `format` writes a value, and `padding` is the share
-## of each column's slot left empty (0.3 unless said). Five colours (`--chart-1` to `--chart-5`):
-## a sixth series shares one. A value below zero counts as zero.
+## `label` names the chart for screen readers, `format` writes a value (`Format.short` unless
+## said), and `padding` is the share of each column's slot left empty (0.3 unless said). Five
+## colours (`--chart-1` to `--chart-5`): a sixth series shares one. A value below zero counts as
+## zero.
 StackedBarChart := [].{
 	Column : { label : Str, values : List(Dec) }
 
@@ -31,7 +32,7 @@ StackedBarChart := [].{
 	## What is drawn: the columns, how many slots there are, and the axis's ends.
 	Drawn : { columns : List(StackedBarChart.Placed), count : Dec, domain : (Dec, Dec) }
 
-	Props := { data! : () => List(StackedBarChart.Column), series : List(Str), label : Str, format : Dec -> Str, padding : Dec ?? 0.3 }
+	Props := { data! : () => List(StackedBarChart.Column), series : List(Str), label : Str, format : (Dec -> Str) ?? Format.short, padding : Dec ?? 0.3 }
 
 	view! : Props => Html
 	view! = |props| {

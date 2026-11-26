@@ -15,7 +15,7 @@ import ../../Generated/Paths
 
 ## How the days have gone: energy eaten each day of the last week, month or three months
 ## (`?days=7`, `30`, `90`) against the target, the average day's energy and macronutrients, and
-## weight over the same time, with a form that logs today's. The range is an address, a link
+## weight over the same time (each on its day, to scale), with a form that logs today's. The range is an address, a link
 ## each, so it can be shared and works without JavaScript.
 meta = { title: "Trends" }
 
@@ -74,7 +74,7 @@ view! = |_| {
 				<>
 					<p class="quiet">{Ranges.change(trends!().weights)}</p>
 					<div class="chart">
-						<LineChart data!={trends!().weights.map(|weight| weight.kg)} label="Weight on the days it was logged, in kg" format={|kg| "${Format.num(kg, 1)} kg"} smooth={Bool.True} />
+						<LineChart data!={Plate.weight_points(trends!().weights)} label="Weight on the days it was logged, in kg" format={|kg| "${Format.num(kg, 1)} kg"} format_x={Plate.day_at} smooth={Bool.True} />
 					</div>
 				</>
 			} else {

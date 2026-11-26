@@ -40,8 +40,9 @@ Every chart takes:
   changes. `data!={rain!()}` passes any expression that reads signals, as a getter written by hand.
 - `label`, what the chart shows, for screen readers (`label!` on `<Sparkline>`, which changes with
   its data).
-- `format` (`format_x` and `format_y` on `<ScatterChart>`), which writes a value as text:
-  `Format.short`, or `|mm| "${Format.num(mm, 0)} mm"`.
+- `format` (`format_x` and `format_y` on `<ScatterChart>`; `format` and `format_x` on
+  `<LineChart>`), which writes a value as text: `Format.short` (`1.3k`) unless said, or a function
+  of your own, `|mm| "${Format.num(mm, 0)} mm"`.
 
 Values are `Dec`, Roc's decimal. examples/plate (`<BarChart>`, `<LineChart>`), examples/quiz
 (`<BarChart>`) and examples/uptime (`<LineChart>`, `<Heatmap>`, `<Sparkline>`) use the package.
@@ -57,7 +58,7 @@ rather than making another. Two items with the same label are two marks (`Keys.u
 |---|---|
 | `data! : () => List({ label : Str, value : Dec })` | A bar for each item, in order. A new value glides its bar there. A new bar grows from the axis while the others make room. A bar whose label is gone shrinks into the axis and fades (`transition:out`) while the others close up. A new order slides each bar to its place. |
 | `label : Str` | What the chart shows, for screen readers. |
-| `format : Dec -> Str` | A value as text: on the ticks, and on a bar when it is pointed at or focused. |
+| `format : (Dec -> Str) ?? Format.short` | A value as text: on the ticks, and on a bar when it is pointed at or focused. |
 | `padding : Dec ?? 0.3` | The share of each bar's slot left empty. |
 
 The axis runs from zero (or from the least value, if one is negative) to the greatest value,
@@ -71,7 +72,7 @@ value.
 | `data! : () => List({ label : Str, values : List(Dec) })` | A column for each item, with one value per series stacked from the axis up. Each part glides to its new size. A new column grows from the axis while the others make room; one whose label is gone shrinks into the axis and fades. A value below zero counts as zero. |
 | `series : List(Str)` | The series' names, bottom one first, each in its colour in the legend over the chart. |
 | `label : Str` | What the chart shows, for screen readers. |
-| `format : Dec -> Str` | A value as text: on the ticks, and a column's total when it is pointed at or focused. |
+| `format : (Dec -> Str) ?? Format.short` | A value as text: on the ticks, and a column's total when it is pointed at or focused. |
 | `padding : Dec ?? 0.3` | The share of each column's slot left empty. |
 
 The axis runs from zero to the tallest column, widened to round numbers. Each column can be
@@ -81,15 +82,23 @@ reached with Tab, and a screen reader reads its label and each series' value.
 
 | Prop | |
 |---|---|
-| `data! : () => List(Dec)` | The values, left to right, evenly spaced. New values glide the line to them. With more values or fewer than before, the line jumps to the new data. |
+| `data! : () => List({ x : Dec, y : Dec })` | The points, left to right: each across by its `x` (a number: a day, an hour, a time in milliseconds), to scale, and up by its `y`. New points glide the line to them. With more points or fewer than before, the line jumps to the new data. `LineChart.evenly(values)` puts values one apart (`x` 0, 1, 2…). |
 | `label : Str` | What the chart shows, for screen readers. |
-| `format : Dec -> Str` | A value as text: on the ticks, and the value under the pointer. |
-| `smooth : Bool` | Monotone curves through the values (never past a point) instead of straight segments. |
+| `format : (Dec -> Str) ?? Format.short` | A value (`y`) as text: on the ticks up the side, and over the point under the pointer. |
+| `format_x : (Dec -> Str) ?? Format.short` | An `x` as text: on the ticks along the bottom, and the point's under the pointer. |
+| `smooth : Bool ?? Bool.False` | Monotone curves through the points (never past one) instead of straight segments. |
 
-The axis runs from the least value to the greatest, widened to round numbers. The strips the
-pointer finds a value by are laid out by CSS, so a chart whose values change every frame redraws
-only its path and its axis. The chart is one image to a screen reader; its points can't be
-reached with Tab.
+The axis up the side runs from the least value to the greatest, widened to round numbers. The one
+along the bottom runs from the least `x` to the greatest, so the line spans the plot, with ticks on
+round numbers between (`Ticks.between`). Pointing along the chart shows the point nearest the
+pointer: its value over the plot and its `x` on the axis, in place of the ticks. The strips the
+pointer finds a point by are worked out from where the data puts the points (`Scale.strips`), not
+where the line is drawn, so a line that glides to new values doesn't move them. The chart is one
+image to a screen reader; its points can't be reached with Tab.
+
+examples/plate draws weight on the days it was logged, a day to scale (`Date.days`, and
+`Date.from_days` for its labels); examples/uptime draws response times each half hour, its `x`
+the hours before now; the docs' demo is a day's visits, hour by hour, `LineChart.evenly`.
 
 ### `<Sparkline>`
 
@@ -107,7 +116,7 @@ number. It spans its values' range, so it shows their shape, not their size.
 |---|---|
 | `data! : () => List({ label : Str, value : Dec })` | A slice for each item, clockwise from twelve o'clock, its share of the ring its share of the total. A new value glides its slice to its new share. A new slice grows from nothing while the others make room; one whose label is gone shrinks to nothing where it was. A value below zero counts as zero. |
 | `label : Str` | What the chart shows, for screen readers. |
-| `format : Dec -> Str` | A value as text: the total, and each slice's value in the legend. |
+| `format : (Dec -> Str) ?? Format.short` | A value as text: the total, and each slice's value in the legend. |
 | `total : Str ?? "Total"` | The word under the total. |
 | `thickness : Dec ?? 52` | The ring's width, out of a radius of 150 (SVG units). 150 is a pie. Above 90 the middle has no room, and the total isn't shown. |
 
@@ -121,8 +130,8 @@ others come and go, and a new slice takes a colour no other slice has.
 |---|---|
 | `data! : () => List({ label : Str, x : Dec, y : Dec })` | A dot for each item, across by its `x` and up by its `y`. New values glide it to its place. A new dot swells from nothing where it goes, and one whose label is gone shrinks away (a `transition` both ways). |
 | `label : Str` | What the chart shows, for screen readers. |
-| `format_x : Dec -> Str` | A value across: on the ticks along the bottom, and on a dot when it is pointed at or focused. |
-| `format_y : Dec -> Str` | A value up: on the ticks up the side, and on a dot. |
+| `format_x : (Dec -> Str) ?? Format.short` | A value across: on the ticks along the bottom, and on a dot when it is pointed at or focused. |
+| `format_y : (Dec -> Str) ?? Format.short` | A value up: on the ticks up the side, and on a dot. |
 
 Each axis runs from its least value to its greatest, widened to round numbers. Each dot can be
 reached with Tab, and a screen reader reads its label and values.
@@ -135,7 +144,7 @@ reached with Tab, and a screen reader reads its label and values.
 | `rows : List(Str)` | The rows' labels, down the side. |
 | `columns : List(Str)` | The columns' labels. Each appears in the readout; along the bottom there is room for about eight, so with more columns only every second or third is shown. |
 | `label : Str` | What the chart shows, for screen readers. |
-| `format : Dec -> Str` | A value as text: the scale's ends, and the cell pointed at. |
+| `format : (Dec -> Str) ?? Format.short` | A value as text: the scale's ends, and the cell pointed at. |
 
 Under the grid are the colour scale and a readout of the cell under the pointer (its row, column
 and value). A new value changes a cell's strength (a custom property), and the browser fades the
@@ -160,7 +169,7 @@ Its numbers are `Dec`, so the ticks from 0 to 1 are exactly 0.2, 0.4, 0.6 and 0.
 
 | Module | Functions |
 |---|---|
-| `Scale` | `Scale.linear(domain, range)`, a value in a domain at a place in a range; `scale.at(value)`, the place; `scale.invert(place)`, the value; `scale.nice(count)`, the domain widened to round numbers; `scale.ticks(count)`, about `count` round values across it; `Scale.extent(values)`, the least and the greatest (`(0, 0)` for none) |
+| `Scale` | `Scale.linear(domain, range)`, a value in a domain at a place in a range; `scale.at(value)`, the place; `scale.invert(place)`, the value; `scale.nice(count)`, the domain widened to round numbers; `scale.ticks(count)`, about `count` round values across it; `Scale.extent(values)`, the least and the greatest (`(0, 0)` for none); `Scale.strips(places, (from, to))`, the stretch of `(from, to)` nearer each place than the places beside it (halfway to each neighbour; the first from `from`, the last to `to`), which a line chart's pointer finds its points by |
 | `Band` | `Band.band(count, range, padding)`, `count` equal slots across `range`, a `padding` share of each left empty; `.at(slot)`, where a bar starts; `.width()`, a bar's width; `.slot()`, a slot's width; `.center(slot)`, where its label goes. A count and a slot may be fractions: a chart gliding from seven bars to six has six and a half slots on the way |
 | `Ticks` | `Ticks.step(from, to, count)`, the step between about `count` ticks, 1, 2 or 5 times a power of ten; `Ticks.between(from, to, count)`, the ticks; `Ticks.nice(from, to, count)`, the ends widened to ticks |
 | `Path` | SVG path data for `<path d={…}>`: `line(points)`, `smooth(points)` (monotone curves, as D3's `curveMonotoneX`), `area(points, base)`, `smooth_area(points, base)`, `arc({ x, y, inner, outer, from, to })` (a donut's slice, or with `inner` 0 a pie's; `from` and `to` in turns, 0 at twelve o'clock) |
@@ -195,5 +204,7 @@ charts page has three (Neon, Blueprint and Paper), each one rule plus a prop or 
   new places rather than glide.
 - A heatmap's cells, a line chart's points and a sparkline's can't be reached with Tab: each of
   these charts is one image to a screen reader, named by its label.
+- A line chart's ticks along the bottom fall on round numbers of its `x`: days since 1970 in steps
+  of 1, 2, 5, 10 or 20, hours in steps of 5, not each Monday or the first of each month.
 - rocx requires HTML tags in lower case, so SVG's camel-cased elements (`<linearGradient>`,
   `<clipPath>`) can't be written yet.

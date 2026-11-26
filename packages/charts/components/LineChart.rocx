@@ -6,39 +6,51 @@ import charts.Path
 import charts.Scale
 import charts.Ticks
 
-## A line through `data!`'s values, left to right and evenly spaced, the area under it shaded, on
-## an axis around them widened to round numbers. With `smooth`, it curves through them, and never
-## past one (a monotone curve). When the values change, the line glides to them, and the axis's
-## ends to new round numbers, a frame at a time; once they are there, nothing runs. Pointing along
-## the chart shows the value under the pointer.
+## A line through `data!`'s points, left to right: each across by its `x` (a number: a day, an
+## hour, a time in milliseconds), to scale, and up by its `y`, the area under it shaded. The axis up
+## the side runs around the values, widened to round numbers; the one along the bottom runs from
+## the first `x` to the last, its ticks on round numbers. `LineChart.evenly(values)` puts values one
+## apart. With `smooth`, the line curves through the points, and never past one (a monotone curve).
+## When the data changes, the line glides to it, and the axes' ends with it, a frame at a time; once
+## they are there, nothing runs. Pointing along the chart shows the point nearest the pointer: its
+## value over the plot, and its `x` on the axis along the bottom.
 ##
-## `label` names the chart for screen readers, and `format` writes a value.
+## `label` names the chart for screen readers, `format` writes a value and `format_x` an `x` (each
+## `Format.short` unless said), and `smooth` is off unless said.
 LineChart := [].{
 
-	## What is drawn: the values, and the axis's ends, on their way to the data's.
-	Drawn : { values : List(Dec), domain : (Dec, Dec) }
+	## A point: across (`x`) and up (`y`).
+	Point : { x : Dec, y : Dec }
 
-	view! : { data! : () => List(Dec), label : Str, format : Dec -> Str, smooth : Bool } => Html
-	view! = |{ data!, label, format, smooth }| {
-		goal! = create_memo!(|| { values: data!(), domain: LineChart.domain(data!()) })
+	## What is drawn: the points, and the axes' ends, on their way to the data's.
+	Drawn : { points : List(LineChart.Point), across : (Dec, Dec), up : (Dec, Dec) }
+
+	Props := { data! : () => List(LineChart.Point), label : Str, format : (Dec -> Str) ?? Format.short, format_x : (Dec -> Str) ?? Format.short, smooth : Bool ?? Bool.False }
+
+	view! : Props => Html
+	view! = |{ data!, label, format, format_x, smooth }| {
+		goal! = create_memo!(|| LineChart.place(data!()))
 		(drawn!, set_drawn!) = create_signal!(untrack!(goal!))
 		(hover!, set_hover!) = create_signal!(Err(None))
-		y! = create_memo!(|| Scale.linear(drawn!().domain, (bottom, top)))
-		x! = create_memo!(|| Scale.linear((0.0, Dec.max(drawn!().values.len().to_dec() - 1.0, 1.0)), (left, right)))
-		points! = create_memo!(
+		x! = create_memo!(|| Scale.linear(drawn!().across, (left, right)))
+		y! = create_memo!(|| Scale.linear(drawn!().up, (bottom, top)))
+		places! = create_memo!(
 			|| {
 				(across, up) = (x!(), y!())
-				drawn!().values.map_with_index(|value, i| (across.at(i.to_dec()), up.at(value)))
+				drawn!().points.map(|point| (across.at(point.x), up.at(point.y)))
 			},
 		)
-		# The point under the pointer, and its value.
+		# The stretch of the plot nearer each point than the others, which the pointer finds it by:
+		# where the data puts the points, so a line gliding to new values doesn't move them.
+		strips! = create_memo!(|| LineChart.strips(goal!()))
+		# The point pointed at: where it is drawn, and the data's point.
 		spot! = || {
 			index = match hover!() {
 				Ok(i) => i
 				Err(_) => data!().len()
 			}
-			match (points!().get(index), data!().get(index)) {
-				(Ok(point), Ok(value)) => Ok((point, value))
+			match (places!().get(index), data!().get(index)) {
+				(Ok(at), Ok(point)) => Ok((at, point))
 				_ => Err(None)
 			}
 		}
@@ -60,45 +72,63 @@ LineChart := [].{
 				Err(_) => bottom
 			}
 		}
-		spot_text! = || {
+		spot_text! = |write|
 			match spot!() {
-				Ok((_, value)) => format(value)
+				Ok((_, point)) => write(point)
 				Err(_) => ""
 			}
-		}
 		<figure class="line-chart">
 			<svg viewBox="0 0 640 320" role="img" aria-label={label}>
-				<g class="ticks" aria-hidden="true">
-					{...LineChart.ticks(goal!().domain).map(|tick|
-						<g key={Format.num(tick, 9)} class:out={LineChart.outside(drawn!().domain, tick)}>
+				<g class="ticks" class:spotting={spotted!()} aria-hidden="true">
+					{...LineChart.ticks(goal!().up).map(|tick|
+						<g key={Format.num(tick, 9)} class:out={LineChart.outside(drawn!().up, tick)}>
 							<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick))} y2={Format.coord(y!().at(tick))} />
-							<text x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick))} dy="0.32em">{format(tick)}</text>
+							<text class="up" x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick))} dy="0.32em">{format(tick)}</text>
+						</g>
+					)}
+					{...LineChart.ticks(goal!().across).map(|tick|
+						<g key={Format.num(tick, 9)} class:out={LineChart.outside(drawn!().across, tick)}>
+							<text class="across" x={Format.coord(x!().at(tick))} y={Format.coord(bottom + 20.0)}>{format_x(tick)}</text>
 						</g>
 					)}
 				</g>
-				<path class="area" d={if (smooth) Path.smooth_area(points!(), bottom) else Path.area(points!(), bottom)} />
-				<path class="line" d={if (smooth) Path.smooth(points!()) else Path.line(points!())} />
+				<path class="area" d={if (smooth) Path.smooth_area(places!(), bottom) else Path.area(places!(), bottom)} />
+				<path class="line" d={if (smooth) Path.smooth(places!()) else Path.line(places!())} />
 				<g class="spot" class:shown={spotted!()} aria-hidden="true">
 					<line x1={Format.coord(spot_x!())} x2={Format.coord(spot_x!())} y1={Format.coord(top)} y2={Format.coord(bottom)} />
 					<circle cx={Format.coord(spot_x!())} cy={Format.coord(spot_y!())} r="4.5" />
-					<text x={Format.coord(spot_x!())} y={Format.coord(top - 8.0)}>{spot_text!()}</text>
+					<text x={Format.coord(spot_x!())} y={Format.coord(top - 8.0)}>{spot_text!(|point| format(point.y))}</text>
+					<text x={Format.coord(spot_x!())} y={Format.coord(bottom + 20.0)}>{spot_text!(|point| format_x(point.x))}</text>
 				</g>
 			</svg>
-			{# A column for each point, which the pointer finds it by: laid out by CSS, not Roc, so a
-			 chart whose values change every frame doesn't move them. }
-			<div class="columns" style:--gaps={Dec.max(data!().len().to_dec() - 1.0, 1.0).to_str()} on:pointerleave={|| set_hover!(Err(None))}>
-				{...data!().map_with_index(|item, i|
-					<span key={i} on:pointerenter={|| set_hover!(Ok(i))}></span>
+			{# A strip of the plot for each point, which the pointer finds it by, from top to bottom. }
+			<div class="strips" on:pointerleave={|| set_hover!(Err(None))}>
+				{...strips!().map_with_index(|(from, to), i|
+					<span key={i} style:left={share(from - left)} style:width={share(to - from)} on:pointerenter={|| set_hover!(Ok(i))}></span>
 				)}
 			</div>
-			{# Frames only while something moves: once the line and the axis are where the data says, none. }
+			{# Frames only while something moves: once the line and the axes are where the data says, none. }
 			{if drawn!() != goal!() {
 				<span hidden on:frame.ms={|ms| set_drawn!(LineChart.glide(drawn!(), goal!(), ms))}></span>
 			}}
 		</figure>
 	}
 
-	## The axis's ends: the least and the greatest value, widened to round numbers.
+	## `values`, one apart: the first at `x` 0, the next at 1, and so on. For values evenly spaced
+	## (each hour of a day): `data!={LineChart.evenly(visits!())}`.
+	evenly : List(Dec) -> List(LineChart.Point)
+	evenly = |values| values.map_with_index(|value, i| { x: i.to_dec(), y: value })
+
+	## Where the data puts the line: its points, the axis along the bottom from the least `x` to the
+	## greatest, and the one up the side around the values (`domain`).
+	place : List(LineChart.Point) -> LineChart.Drawn
+	place = |points| {
+		points,
+		across: Scale.extent(points.map(|point| point.x)),
+		up: LineChart.domain(points.map(|point| point.y)),
+	}
+
+	## The axis up the side's ends: the least and the greatest value, widened to round numbers.
 	domain : List(Dec) -> (Dec, Dec)
 	domain = |values| {
 		(low, high) = Scale.extent(values)
@@ -109,28 +139,44 @@ LineChart := [].{
 		}
 	}
 
-	## A frame's way from what is drawn toward the data: each value toward its own, and the axis's
-	## ends toward theirs. When there are more values or fewer, the line is the data's at once.
-	glide : LineChart.Drawn, LineChart.Drawn, F64 -> LineChart.Drawn
-	glide = |drawn, goal, ms| {
-		(d0, d1) = drawn.domain
-		(g0, g1) = goal.domain
-		# Within a five-hundredth of the axis is there: under a pixel.
-		close = (g1 - g0) / 500.0
-		values =
-			if drawn.values.len() == goal.values.len() {
-				List.map2(drawn.values, goal.values, |from, to| Ease.toward(from, to, ms, close))
-			} else {
-				goal.values
-			}
-		{ values, domain: (Ease.toward(d0, g0, ms, close), Ease.toward(d1, g1, ms, close)) }
+	## The stretch of the plot nearer each of `goal`'s points than the others, in the SVG's units:
+	## from halfway to the point before to halfway to the one after, the first from the plot's left
+	## edge and the last to its right.
+	strips : LineChart.Drawn -> List((Dec, Dec))
+	strips = |goal| {
+		across = Scale.linear(goal.across, (left, right))
+		Scale.strips(goal.points.map(|point| across.at(point.x)), (left, right))
 	}
 
-	## The axis's ticks.
+	## A frame's way from what is drawn toward the data: each point toward its own, and the axes'
+	## ends toward theirs. When there are more points or fewer, the line is the data's at once.
+	glide : LineChart.Drawn, LineChart.Drawn, F64 -> LineChart.Drawn
+	glide = |drawn, goal, ms| {
+		(a0, a1) = drawn.across
+		(ga0, ga1) = goal.across
+		(u0, u1) = drawn.up
+		(gu0, gu1) = goal.up
+		# Within a five-hundredth of an axis is there: under a pixel.
+		near_x = (ga1 - ga0) / 500.0
+		near_y = (gu1 - gu0) / 500.0
+		points =
+			if drawn.points.len() == goal.points.len() {
+				List.map2(drawn.points, goal.points, |from, to| { x: Ease.toward(from.x, to.x, ms, near_x), y: Ease.toward(from.y, to.y, ms, near_y) })
+			} else {
+				goal.points
+			}
+		{
+			points,
+			across: (Ease.toward(a0, ga0, ms, near_x), Ease.toward(a1, ga1, ms, near_x)),
+			up: (Ease.toward(u0, gu0, ms, near_y), Ease.toward(u1, gu1, ms, near_y)),
+		}
+	}
+
+	## An axis's ticks.
 	ticks : (Dec, Dec) -> List(Dec)
 	ticks = |(from, to)| Ticks.between(from, to, tick_count)
 
-	## Whether a tick is off the axis as drawn: one the axis is gliding toward, faded until it is on.
+	## Whether a tick is off its axis as drawn: one the axis is gliding toward, faded until it is on.
 	outside : (Dec, Dec), Dec -> Bool
 	outside = |(from, to), tick| tick < Dec.min(from, to) or tick > Dec.max(from, to)
 
@@ -163,8 +209,21 @@ LineChart := [].{
 
 		.ticks text {
 			fill: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
-			text-anchor: end;
 			font-variant-numeric: tabular-nums;
+		}
+
+		.ticks .up {
+			text-anchor: end;
+		}
+
+		.ticks .across {
+			text-anchor: middle;
+			transition: opacity 0.15s;
+		}
+
+		/* The point's own `x` takes the axis's place while one is pointed at. */
+		.ticks.spotting .across {
+			opacity: 0;
 		}
 
 		.line {
@@ -209,35 +268,41 @@ LineChart := [].{
 			font-variant-numeric: tabular-nums;
 		}
 
-		/* Over the plot (48 to 632 of the SVG's 640 across, 24 to 304 of its 320 down), each column
-		   as wide as the room between two points, and centred on its point. */
-		.columns {
+		/* Over the plot (48 to 620 of the SVG's 640 across, 24 to 288 of its 320 down); each strip
+		   placed across by Roc, in shares of the plot's width. */
+		.strips {
 			position: absolute;
-			display: flex;
 			top: 7.5%;
-			bottom: 5%;
-			left: calc(7.5% - 91.25% / var(--gaps) / 2);
-			right: calc(1.25% - 91.25% / var(--gaps) / 2);
+			bottom: 10%;
+			left: 7.5%;
+			right: 3.125%;
 		}
 
-		.columns span {
-			flex: 1;
+		.strips span {
+			position: absolute;
+			top: 0;
+			bottom: 0;
 		}
 	</style>
 }
 
-## The plot's edges in the SVG's units (640 by 320): room on the left for the ticks' labels.
+## The plot's edges in the SVG's units (640 by 320): room on the left for the values' ticks, below
+## for the ones across, and on the right for the last one's label.
 left : Dec
 left = 48.0
 
 right : Dec
-right = 632.0
+right = 620.0
 
 top : Dec
 top = 24.0
 
 bottom : Dec
-bottom = 304.0
+bottom = 288.0
 
 tick_count : U64
 tick_count = 5
+
+## A length across, in the SVG's units, as a share of the plot's width: `"50%"` for 286.
+share : Dec -> Str
+share = |x| "${Format.num(x * 100.0 / (right - left), 3)}%"

@@ -103,6 +103,11 @@ expect Ticks.between(0.1, 0.35, 5) == [0.1, 0.15, 0.2, 0.25, 0.3, 0.35]
 expect Ticks.between(10.0, 0.0, 5) == [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
 expect Ticks.between(-3.0, 3.0, 3) == [-2.0, 0.0, 2.0]
 expect Ticks.between(4.0, 4.0, 5) == [4.0]
+# Along a line chart's bottom: a week of days since 1970, a day apart; a day's half hours, counted
+# back from now in hours, five apart.
+expect Ticks.between(20777.0, 20783.0, 5) == [20777.0, 20778.0, 20779.0, 20780.0, 20781.0, 20782.0, 20783.0]
+expect Ticks.between(-23.5, 0.0, 5) == [-20.0, -15.0, -10.0, -5.0, 0.0]
+expect Ticks.between(0.0, 23.0, 5) == [0.0, 5.0, 10.0, 15.0, 20.0]
 expect Ticks.nice(3.0, 97.0, 5) == (0.0, 100.0)
 expect Ticks.nice(0.0, 113.0, 5) == (0.0, 120.0)
 expect Ticks.nice(97.0, 3.0, 5) == (100.0, 0.0)

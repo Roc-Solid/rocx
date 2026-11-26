@@ -8,10 +8,13 @@ import charts.Format
 ## the cell pointed at: its row, its column and its value. When the data changes, the browser
 ## fades each cell to its new colour (a CSS transition), so Roc runs no frames at all.
 ##
-## `label` names the chart for screen readers, and `format` writes a value. Every column's label is
-## in the readout; along the bottom, with more columns than room, only every second or third is.
+## `label` names the chart for screen readers, and `format` writes a value (`Format.short` unless
+## said). Every column's label is in the readout; along the bottom, with more columns than room,
+## only every second or third is.
 Heatmap := [].{
-	view! : { data! : () => List(List(Dec)), rows : List(Str), columns : List(Str), label : Str, format : Dec -> Str } => Html
+	Props := { data! : () => List(List(Dec)), rows : List(Str), columns : List(Str), label : Str, format : (Dec -> Str) ?? Format.short }
+
+	view! : Props => Html
 	view! = |{ data!, rows, columns, label, format }| {
 		(hover!, set_hover!) = create_signal!(Err(None))
 		most! = create_memo!(|| data!().fold(0.0, |most, row| row.fold(most, |m, value| Dec.max(m, value))))

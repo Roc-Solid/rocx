@@ -159,7 +159,7 @@ the server's run the same code, and a test runs it with nothing else.
 | `Form` | a form: fields by name (`Form.text`, `int`, `dec`, `checkbox`, `choice`, `date`, `field`, `optional`, `list`, `always`), put together with Roc's record builder; `.check`, `.check_at` (across fields), `.map`, `.try_map`, `.message`; `.parse(posted)`, `.parse_body(body)`, `.issues(posted)`; `.attributes(name)` and `.json_schema()`; `.names()`, `.is_list(name)`, `.secrets()`; `Form.decode(body)` |
 | `Value` | one value, read and checked: `Value.text(checks)`, `int`, `dec`, `checkbox`, `choice`, `date`; `.check`, `.map`, `.try_map`, `.parse(raw)`; `.attributes()`, `.schema()`, `.is_required()` |
 | `Issues` | what is wrong: `Issues.Issue` (`field`, `code`, `message`), `Issues.Code`; `english`, `key` and `params` (for translations); `at`, `under`, `messages`; `to_json`, `from_json`, `refusal`, `from_problem` |
-| `Date` | a day, as `<input type="date">` sends it: `from_str`, `to_str`, `year`, `month`, `day`, `days`, `days_between`, `is_before`, `is_after` |
+| `Date` | a day, as `<input type="date">` sends it: `from_str`, `to_str`, `year`, `month`, `day`, `days` (since 1970-01-01) and `from_days` (back), `days_between`, `is_before`, `is_after` |
 | `Regex` | regular expressions in plain Roc, in linear time: `compile`, `must`, `source`, `matches`, `found_in`, `find`, `find_all` |
 
 `roc test packages/forms/main.roc` runs their `expect`s.

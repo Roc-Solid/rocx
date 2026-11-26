@@ -5,8 +5,9 @@ import charts.LineChart
 import Random
 import Shuffle
 
-## A day of visits to a site, hour by hour: the charts page's `<LineChart>`. Another day moves each
-## hour's value, and the line glides to them; the axis glides to new round numbers when it has to.
+## A day of visits to a site, hour by hour: the charts page's `<LineChart>`, the hours one apart
+## (`LineChart.evenly`) and named along the bottom. Another day moves each hour's value, and the line
+## glides to them; the axis glides to new round numbers when it has to.
 LineDemo := [].{
 	Day : { seed : U64, visits : List(Dec) }
 
@@ -15,7 +16,7 @@ LineDemo := [].{
 		(day!, set_day!) = create_signal!(LineDemo.day(7))
 		(look!, set_look!) = create_signal!(Shuffle.first)
 		<Shuffle roll!={|| set_day!(LineDemo.day(day!().seed))} look!={look!} set_look!={set_look!}>
-			{<LineChart data!={day!().visits} label="Visits to a site, hour by hour" format={Format.short} smooth={look!() != Blueprint} />}
+			{<LineChart data!={LineChart.evenly(day!().visits)} label="Visits to a site, hour by hour" format_x={|hour| "${Format.num(hour, 0)}:00"} smooth={look!() != Blueprint} />}
 		</Shuffle>
 	}
 

@@ -67,7 +67,7 @@ view! = |{ params }| {
 			<section aria-labelledby="latency">
 				<h2 id="latency">Response time, last 24 hours</h2>
 				<div class="chart">
-					<LineChart data!={detail!().latency.map(|ms| ms.to_dec())} label="Average response time of the checks that passed, each half hour of the last 24 hours, in milliseconds" format={|ms| "${Format.num(ms, 0)} ms"} smooth={Bool.True} />
+					<LineChart data!={Words.half_hours(detail!().latency)} label="Average response time of the checks that passed, each half hour of the last 24 hours, in milliseconds" format={|ms| "${Format.num(ms, 0)} ms"} format_x={Words.hours_ago} smooth={Bool.True} />
 				</div>
 			</section>
 			<section aria-labelledby="failures">

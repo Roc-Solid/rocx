@@ -1,4 +1,5 @@
 import pf.Server
+import charts.Format
 import Days
 import Report
 
@@ -9,6 +10,18 @@ Words := [].{
 	## A latency: `168 ms`, or `<1 ms` for a check of this machine.
 	latency : U64 -> Str
 	latency = |ms| if (ms == 0) "<1 ms" else "${ms.to_str()} ms"
+
+	## Latencies each half hour, oldest first, as a line chart's points: across by the hours before
+	## the last (`-23.5` to `0` for a day's 48), up by milliseconds.
+	half_hours : List(U64) -> List({ x : Dec, y : Dec })
+	half_hours = |latencies| {
+		last = latencies.len().to_dec() - 1.0
+		latencies.map_with_index(|ms, i| { x: (i.to_dec() - last) / 2.0, y: ms.to_dec() })
+	}
+
+	## An `x` of `half_hours`, as the chart's axis says it: `now`, `5 h ago`, `3.5 h ago`.
+	hours_ago : Dec -> Str
+	hours_ago = |hours| if (hours >= 0.0) "now" else "${Format.num(-hours, 1)} h ago"
 
 	## The 90-day strip, for a screen reader: how many days went how.
 	strip : List(Report.Day) -> Str
@@ -62,6 +75,8 @@ Words := [].{
 
 expect Words.latency(0) == "<1 ms"
 expect Words.latency(168) == "168 ms"
+expect Words.half_hours([120, 80, 95]) == [{ x: -1.0, y: 120.0 }, { x: -0.5, y: 80.0 }, { x: 0.0, y: 95.0 }]
+expect Words.hours_ago(0.0) == "now" and Words.hours_ago(-20.0) == "20 h ago" and Words.hours_ago(-3.5) == "3.5 h ago"
 expect Words.strip([{ day: "2026-11-20", level: "good", uptime: "100%" }, { day: "2026-11-21", level: "good", uptime: "100%" }, { day: "2026-11-22", level: "minor", uptime: "98.10%" }]) == "The last 3 days: 2 fine, 1 with some downtime."
 expect Words.day({ day: "2026-11-10", level: "minor", uptime: "98.10%" }) == "Nov 10: 98.10%"
 expect Words.day({ day: "2026-11-10", level: "none", uptime: "—" }) == "Nov 10: no checks"

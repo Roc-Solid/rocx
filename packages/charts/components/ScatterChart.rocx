@@ -14,7 +14,7 @@ import charts.Ticks
 ## are there, nothing runs. Pointing at a dot, or reaching it with Tab, shows its label and values.
 ##
 ## `label` names the chart for screen readers; `format_x` and `format_y` write the values across
-## and up.
+## and up (`Format.short` unless said).
 ScatterChart := [].{
 	Dot : { label : Str, x : Dec, y : Dec }
 
@@ -27,7 +27,9 @@ ScatterChart := [].{
 	## What is drawn: the dots, and the axes' ends.
 	Drawn : { dots : List(ScatterChart.Placed), across : (Dec, Dec), up : (Dec, Dec) }
 
-	view! : { data! : () => List(ScatterChart.Dot), label : Str, format_x : Dec -> Str, format_y : Dec -> Str } => Html
+	Props := { data! : () => List(ScatterChart.Dot), label : Str, format_x : (Dec -> Str) ?? Format.short, format_y : (Dec -> Str) ?? Format.short }
+
+	view! : Props => Html
 	view! = |{ data!, label, format_x, format_y }| {
 		rows! = create_memo!(|| ScatterChart.keyed(data!()))
 		goal! = create_memo!(|| ScatterChart.place(rows!()))
