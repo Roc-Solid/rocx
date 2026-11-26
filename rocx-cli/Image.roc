@@ -129,6 +129,7 @@ Image := [].{
 				$entries = $entries.append(File({ path: "app/static/${Fs.relative(static, path)}", mode: Image.file_mode, bytes }))
 			}
 		}
+		_ = Stderr.line!("rocx: the image (its layer, gzipped, and its manifest)…")
 		layer_tar = Image.tarred($entries)?
 		diff_id = "sha256:${Crypto.SHA256.hash(layer_tar).to_hex()}"
 		layer_file = Fs.join([work, "layer.tar"])

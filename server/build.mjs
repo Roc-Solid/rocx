@@ -92,6 +92,8 @@ export function rocxBinary() {
 		buildCliHost();
 		if (fresh()) return out;
 		const building = `${out}.building-${process.pid}`;
+		// Said as it starts: a minute or so with nothing else on the screen.
+		process.stderr.write(`rocx: building the rocx command (bin/rocx, --opt=${opt}): its Roc changed; about a minute…\n`);
 		const result = spawnSync(roc(), ["build", `--opt=${opt}`, `--output=${building}`, join(sources, "main.roc")], { encoding: "utf8" });
 		// 1: errors (the binary would crash where they are); 2: warnings only.
 		if (result.status === 1 || !existsSync(building)) throw new Error(`building rocx (rocx-cli/main.roc) failed:\n${result.stdout}${result.stderr}`);

@@ -126,6 +126,9 @@ Release := [].{
 		}
 		work = Fs.join([dir, "build", "release"])
 		client = Fs.join([work, "client"])
+		# Each step says itself as it starts: the compiler's output is read, not shown, and the
+		# server's build takes minutes.
+		_ = Stderr.line!("rocx: the app's modules (rocx build)…")
 		match Build.build!([dir], { client: Some(client), cwd, dev: Bool.False, rocx: root }) {
 			Ok(built) if built.ok => {
 				said = built.said.keep_if(|line| !Dev.files_written(line))
@@ -136,13 +139,16 @@ Release := [].{
 			Ok(built) => return Err(Failed("${Str.join_with(built.said, "\n")}\nrocx build failed"))
 			Err(Problem(message)) => return Err(Failed("Error: ${message}\nrocx build failed"))
 		}
+		_ = Stderr.line!("rocx: the server's host for ${target}, if it changed…")
 		Hosts.server_host!(root, target)?
 		server = Fs.join([work, "server"])
 		specialize = if (Env.var!("ROCX_SPECIALIZE") == Ok("yes")) "yes" else "no"
+		_ = Stderr.line!("rocx: the server for ${target}, optimized for speed (a few minutes)…")
 		Static.roc_build!(tools, ["--target=${target}", "--opt=speed", "--specialize=${specialize}", "--output=${server}", main], "the server's build")?
 		client_main = Fs.join([client, "main.roc"])
 		pages = File.exists!(client_main)
 		if pages {
+			_ = Stderr.line!("rocx: the browser's wasm, optimized for size…")
 			Dev.web_host!(tools)?
 			Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]))?
 			Static.shake!(root, dir, client)?
