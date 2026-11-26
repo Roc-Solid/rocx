@@ -59,15 +59,36 @@ StripeStore := [].{
 	}
 
 	## Records what Stripe says of a Checkout Session (an event's, or its answer's), made here or
-	## not. Its status only leaves `open`, its payment stays `paid`, and its user, customer and
-	## subscription, once known, stay: an event that comes late takes nothing back.
-	seen! : { id : Str, user : Str, customer : Str, mode : Str, status : Str, payment_status : Str, amount_total : I64, currency : Str, subscription : Str, now : I64 } => Try({}, [DbErr(Str), ..others])
+	## not. Its status only leaves `open`, its payment stays `paid` (or `refunded`, `disputed`:
+	## `charged!`), and its user, customer, subscription and PaymentIntent, once known, stay: an
+	## event that comes late takes nothing back, nor gives back a payment taken back.
+	seen! : { id : Str, user : Str, customer : Str, mode : Str, status : Str, payment_status : Str, amount_total : I64, currency : Str, subscription : Str, payment_intent : Str, now : I64 } => Try({}, [DbErr(Str), ..others])
 	seen! = |session| {
 		_ = Db.run!(
-			"insert into stripe_checkouts (id, user_id, customer_id, mode, prices, status, payment_status, amount_total, currency, subscription_id, created_at, updated_at) values ($1, $2, $3, $4, '[]', $5, $6, $7, $8, $9, $10, $10) on conflict (id) do update set user_id = case when stripe_checkouts.user_id = '' then excluded.user_id else stripe_checkouts.user_id end, customer_id = case when excluded.customer_id = '' then stripe_checkouts.customer_id else excluded.customer_id end, status = case when stripe_checkouts.status = 'open' then excluded.status else stripe_checkouts.status end, payment_status = case when stripe_checkouts.payment_status = 'paid' then stripe_checkouts.payment_status else excluded.payment_status end, amount_total = excluded.amount_total, currency = excluded.currency, subscription_id = case when excluded.subscription_id = '' then stripe_checkouts.subscription_id else excluded.subscription_id end, updated_at = excluded.updated_at",
-			[Text(session.id), Text(session.user), Text(session.customer), Text(session.mode), Text(session.status), Text(session.payment_status), Int(session.amount_total), Text(session.currency), Text(session.subscription), Int(session.now)],
+			"insert into stripe_checkouts (id, user_id, customer_id, mode, prices, status, payment_status, amount_total, currency, subscription_id, payment_intent, created_at, updated_at) values ($1, $2, $3, $4, '[]', $5, $6, $7, $8, $9, $11, $10, $10) on conflict (id) do update set user_id = case when stripe_checkouts.user_id = '' then excluded.user_id else stripe_checkouts.user_id end, customer_id = case when excluded.customer_id = '' then stripe_checkouts.customer_id else excluded.customer_id end, status = case when stripe_checkouts.status = 'open' then excluded.status else stripe_checkouts.status end, payment_status = case when stripe_checkouts.payment_status in ('paid', 'refunded', 'disputed') then stripe_checkouts.payment_status else excluded.payment_status end, amount_total = excluded.amount_total, currency = excluded.currency, subscription_id = case when excluded.subscription_id = '' then stripe_checkouts.subscription_id else excluded.subscription_id end, payment_intent = case when excluded.payment_intent = '' then stripe_checkouts.payment_intent else excluded.payment_intent end, updated_at = excluded.updated_at",
+			[Text(session.id), Text(session.user), Text(session.customer), Text(session.mode), Text(session.status), Text(session.payment_status), Int(session.amount_total), Text(session.currency), Text(session.subscription), Int(session.now), Text(session.payment_intent)],
 		)?
 		Ok({})
+	}
+
+	## A one-time payment's charge changed (`StripeRules.charge_change`): the checkout paid by
+	## `intent` refunded (from `paid` or `disputed`), disputed (from `paid`), or paid again once its
+	## dispute is won (from `disputed`): the app's user it was for ("" when no checkout has
+	## `intent`, or it was in none of those).
+	charged! : Str, [Refunded, Disputed, Settled], I64 => Try(Str, [DbErr(Str), ..others])
+	charged! = |intent, to, now| {
+		(status, from) =
+			match to {
+				Refunded => ("refunded", "('paid', 'disputed')")
+				Disputed => ("disputed", "('paid')")
+				Settled => ("paid", "('disputed')")
+			}
+		read : Try(List({ user_id : Str }), [DbErr(Str), BadRow(Str)])
+		read = Db.all!("update stripe_checkouts set payment_status = $2, updated_at = $3 where payment_intent = $1 and payment_intent <> '' and payment_status in ${from} returning user_id", [Text(intent), Text(status), Int(now)])
+		match read {
+			Ok(rows) => Ok(rows.get(0).map_ok(|row| row.user_id) ?? "")
+			Err(DbErr(why)) | Err(BadRow(why)) => Err(DbErr(why))
+		}
 	}
 
 	## The Checkout Session `id`, as kept.

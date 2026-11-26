@@ -91,6 +91,7 @@ Send it at least these events:
 | `customer.subscription.created`, `.updated`, `.deleted` (and `.paused`, `.resumed`, `.trial_will_end`) | the subscription as the event says it | welcome, goodbye |
 | `invoice.paid`, `invoice.payment_failed` | | a receipt; ask them to update their card |
 | `customer.deleted` | the user's customer forgotten | |
+| `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed` | a one-time payment refunded in full is `refunded`, a disputed one `disputed` (and `paid` again when the dispute is won): neither is paid for (`paid_for!`, `payments!`) | take back what it gave |
 
 ## The example
 
@@ -189,7 +190,7 @@ All of these read the package's tables, never Stripe:
 | Function | Is |
 | --- | --- |
 | `subscribed! : Str => Bool` | whether the user has a subscription that is `paying` |
-| `paid_for! : Str, Str => Bool` | whether they pay for a price or a product (`price_…`, `prod_…`): a `paying` subscription with it among its items, or a one-time payment for the price that was paid |
+| `paid_for! : Str, Str => Bool` | whether they pay for a price or a product (`price_…`, `prod_…`): a `paying` subscription with it among its items, or a one-time payment for the price that was paid (and not refunded in full, nor disputed) |
 | `subscription! : Str => Try(Stripe.Subscription, [NotSubscribed, DbErr(Str), ..])` | their subscription: the one that hasn't ended (the one changed last, if several), else the one that ended last |
 | `subscriptions! : Str => Try(List(Stripe.Subscription), [DbErr(Str), ..])` | all of them, the one changed last first |
 | `payments! : Str => Try(List(Stripe.Payment), [DbErr(Str), ..])` | their one-time payments that were paid, the newest first |
@@ -292,18 +293,24 @@ the invoice's `parent`).
 a 409, a 429 or a 5xx, unless Stripe says not to): Stripe's JSON, or `StripeErr`.
 `StripeRules.text`, `int`, `bool`, `id_at`, `at` and `elements` read it.
 
+`post!`'s idempotency key is new each call, so it guards against a retry of that call, not against
+the app asking again (a job run again after a crash, a form sent twice). For a create the app may ask
+twice, `Stripe.post_with!` takes a key of the app's own, the same each time the same thing is asked:
+Stripe answers a key it has seen (for 24 hours) as it did the first time, and makes nothing more.
+
 ```roc
-refund = Stripe.post!("/v1/refunds", [("payment_intent", intent), ("metadata[reason]", "duplicate")])?
+refund = Stripe.post_with!({ path: "/v1/refunds", fields: [("payment_intent", intent)], idempotency_key: "refund-order-${order.id}" })?
 ```
 
 ## The tables
 
-`stripe/0001_stripe`, the same on SQLite and on Postgres (times are milliseconds, given by the
-package):
+`stripe/0001_stripe` and `stripe/0002_refunds`, the same on SQLite and on Postgres (times are
+milliseconds, given by the package):
 
 - `stripe_customers`: `user_id`, `customer_id`, `created_at`;
 - `stripe_checkouts`: `id`, `user_id`, `customer_id`, `mode`, `prices` (JSON), `status`,
-  `payment_status`, `amount_total`, `currency`, `subscription_id`, `created_at`, `updated_at`;
+  `payment_status` (`paid`, or `refunded` and `disputed` once a charge's event says so),
+  `amount_total`, `currency`, `subscription_id`, `payment_intent`, `created_at`, `updated_at`;
 - `stripe_subscriptions`: `id`, `user_id`, `customer_id`, `status`, `items` (JSON),
   `current_period_end`, `cancel_at_period_end`, `cancel_at`, `trial_end`, `version`, `updated_at`;
 - `stripe_events`: `id`, `event_type`, `created_at`, `handled_at`; swept after 30 days.

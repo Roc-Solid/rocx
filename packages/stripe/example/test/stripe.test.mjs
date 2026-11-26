@@ -18,6 +18,21 @@ import { fileURLToPath } from "node:url";
 import { buildForTests, startServer, testDatabase, testSqlite, until } from "../../../testing/index.mjs";
 import { API_VERSION, SECRET_KEY, WEBHOOK_SECRET, now, sign, standIn } from "./stand-in.mjs";
 
+/** A route the tests add: a refund asked of Stripe (`Stripe.post_with!`) with the app's own idempotency key, as a job run again after a crash would ask it. */
+const refundRoute = `import pf.Server
+import pf.Endpoint
+import stripe.Stripe
+
+## POST /test/refund: a refund of \`payment_intent\`, keyed \`refund-<payment_intent>\`: Stripe's
+## answer. Written by packages/stripe's tests into the app they build; the example has none.
+post! : { request : Server.Request, params : {}, context : {}, body : { payment_intent : Str } } => Try(Str, Endpoint.Refusal)
+post! = |{ body, .. }|
+	match Stripe.post_with!({ path: "/v1/refunds", fields: [("payment_intent", body.payment_intent)], idempotency_key: "refund-\${body.payment_intent}" }) {
+		Ok(answer) => Ok(answer)
+		Err(StripeErr(why)) => Err(Status(502, why))
+	}
+`;
+
 const example = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The example for `database`, in build/<database>/app: its folder. */
@@ -30,6 +45,8 @@ function app(database) {
 		.replaceAll('"../', '"../../../../')
 		.replace('database: Sqlite("data/stripe.db")', `database: ${database === "sqlite" ? 'Sqlite("data/stripe.db")' : "Postgres"}`);
 	writeFileSync(join(dir, "main.roc"), main);
+	mkdirSync(join(dir, "routes", "test", "refund"), { recursive: true });
+	writeFileSync(join(dir, "routes", "test", "refund", "+server.roc"), refundRoute);
 	return dir;
 }
 
@@ -282,6 +299,53 @@ for (const database of databases) {
 			assert.equal((await other.request(`/billing/done?session_id=${id}`, { headers: { accept: "application/json" } })).status, 404);
 			assert.equal((await other.request("/billing/done?session_id=..%2Fv1%2Fcustomers", { headers: { accept: "application/json" } })).status, 404);
 			assert.equal((await other.get("/pro")).location, "/?subscribe=1");
+		});
+
+		test("a one-time payment refunded in full, or disputed, isn't paid for any more (a late checkout event doesn't give it back); a dispute won gives it back; a part refunded doesn't take it", async () => {
+			const bought = async (email) => {
+				const { client, user } = await signedIn(email);
+				const { session } = stripe.complete(await checkout(client, "price_ebook"));
+				assert.equal((await deliver(stripe.event("checkout.session.completed", session))).status, 200);
+				assert.equal((await client.get("/ebook")).status, 200, "bought");
+				return { client, user, session };
+			};
+			const charge = (session, fields) => ({ id: `ch_test_${session.payment_intent}`, object: "charge", amount: 900, customer: session.customer, payment_intent: session.payment_intent, ...fields });
+			// Refunded: a part, still theirs; all of it, not; the completed event sent again doesn't give it back.
+			const { client: kim, session: kims } = await bought("kim@example.com");
+			assert.equal((await deliver(stripe.event("charge.refunded", charge(kims, { refunded: false, amount_refunded: 100 })))).status, 200);
+			assert.equal((await kim.get("/ebook")).status, 200, "a part refunded: still theirs");
+			assert.equal((await deliver(stripe.event("charge.refunded", charge(kims, { refunded: true, amount_refunded: 900 })))).status, 200);
+			assert.equal((await kim.get("/ebook")).location, "/", "refunded in full: not theirs");
+			assert.equal((await db.query(`select payment_status from stripe_checkouts where id = '${kims.id}'`))[0].payment_status, "refunded");
+			assert.equal((await deliver(stripe.event("checkout.session.completed", kims))).status, 200);
+			assert.equal((await kim.get("/ebook")).location, "/", "a late checkout event doesn't give it back");
+			// Disputed: held; lost, still held. Another's dispute won: theirs again.
+			const { client: lee, session: lees } = await bought("lee@example.com");
+			const dispute = (status) => ({ id: `dp_test_${lees.payment_intent}`, object: "dispute", amount: 900, charge: `ch_test_${lees.payment_intent}`, payment_intent: lees.payment_intent, status });
+			assert.equal((await deliver(stripe.event("charge.dispute.created", dispute("needs_response")))).status, 200);
+			assert.equal((await lee.get("/ebook")).location, "/", "disputed: held");
+			assert.equal((await deliver(stripe.event("charge.dispute.closed", dispute("lost")))).status, 200);
+			assert.equal((await lee.get("/ebook")).location, "/", "lost: still held");
+			assert.equal((await db.query(`select payment_status from stripe_checkouts where id = '${lees.id}'`))[0].payment_status, "disputed");
+			const { client: max, session: maxs } = await bought("max@example.com");
+			const maxDispute = (status) => ({ id: `dp_test_${maxs.payment_intent}`, object: "dispute", amount: 900, payment_intent: maxs.payment_intent, status });
+			assert.equal((await deliver(stripe.event("charge.dispute.created", maxDispute("needs_response")))).status, 200);
+			assert.equal((await max.get("/ebook")).location, "/");
+			assert.equal((await deliver(stripe.event("charge.dispute.closed", maxDispute("won")))).status, 200);
+			assert.equal((await max.get("/ebook")).status, 200, "won: theirs again");
+		});
+
+		test("Stripe.post_with!: the app's own idempotency key, the same each time the same thing is asked, so a call made again makes one refund", async () => {
+			const since = stripe.requests.length;
+			const first = await server.client().json("/test/refund", { payment_intent: "pi_test_again" });
+			const again = await server.client().json("/test/refund", { payment_intent: "pi_test_again" });
+			assert.equal(first.status, 200, first.text);
+			const asked = stripe.requests.slice(since).filter((each) => each.path === "/v1/refunds");
+			assert.deepEqual(
+				asked.map((each) => each.headers["idempotency-key"]),
+				["refund-pi_test_again", "refund-pi_test_again"],
+			);
+			assert.equal(JSON.parse(again.json()).id, JSON.parse(first.json()).id, "Stripe answered the key it had seen as it did the first time");
 		});
 
 		test("a one-time payment: fulfilled by on_event! once however often its event comes; an on_event! that fails rolls the event back, and Stripe's next try lands", async () => {

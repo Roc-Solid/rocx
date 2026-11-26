@@ -108,7 +108,9 @@ view! = |_|
 				In production, add a webhook endpoint in the Dashboard (Developers, Webhooks) at
 				<code>{"<public URL>/stripe/webhook"}</code>, and give the server its signing secret. Send it the
 				<code>checkout.session.*</code>, <code>customer.subscription.*</code>, <code>invoice.paid</code>,
-				<code>invoice.payment_failed</code> and <code>customer.deleted</code> events. When the server starts it
+				<code>invoice.payment_failed</code>, <code>customer.deleted</code>, <code>charge.refunded</code> and
+				<code>charge.dispute.*</code> events: a one-time payment refunded in full, or disputed, isn't paid for
+				any more (a dispute won gives it back). When the server starts it
 				logs which mode its keys are, and warns about live keys under <code>--dev</code>.
 			</p>
 
@@ -206,6 +208,8 @@ view! = |_|
 				For anything else of Stripe's API (a refund, a list of invoices), <code>Stripe.post!</code> and
 				<code>Stripe.get!</code> ask it as the package does: the secret key, a pinned
 				<code>Stripe-Version</code>, an idempotency key on a create, another try after a network error.
+				That key is new each call; for a create the app may ask twice (a job run again, a form sent twice),
+				<code>Stripe.post_with!</code> takes a key of the app's own, so Stripe makes it once.
 			</p>
 
 			<Heading id="testing">Testing without Stripe</Heading>

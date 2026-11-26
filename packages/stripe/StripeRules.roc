@@ -184,8 +184,9 @@ StripeRules := [].{
 	## `setup`), its status (`open`, `complete`, `expired`), its payment's (`paid`, `unpaid`,
 	## `no_payment_required`), the app's user (its `client_reference_id`, else its metadata's), its
 	## customer and subscription ("" for none), its total in the currency's smallest unit, its
-	## currency, its URL (while it is open), and its metadata.
-	Session : { id : Str, mode : Str, status : Str, payment_status : Str, user : Str, customer : Str, subscription : Str, amount_total : I64, currency : Str, url : Str, metadata : List((Str, Str)) }
+	## currency, its URL (while it is open), its metadata, and the PaymentIntent (`pi_…`) a payment's
+	## charge is for ("" for none: a subscription's, or one not paid yet).
+	Session : { id : Str, mode : Str, status : Str, payment_status : Str, user : Str, customer : Str, subscription : Str, amount_total : I64, currency : Str, url : Str, metadata : List((Str, Str)), payment_intent : Str }
 
 	## The Checkout Session `json` is.
 	session : Str -> Try(StripeRules.Session, Str)
@@ -207,7 +208,29 @@ StripeRules := [].{
 			currency: StripeRules.text(json, ["currency"]),
 			url: StripeRules.text(json, ["url"]),
 			metadata: StripeRules.strings(StripeRules.at(json, ["metadata"]) ?? "{}"),
+			payment_intent: StripeRules.id_at(json, ["payment_intent"]),
 		})
+	}
+
+	## What a charge's event (its object, `json`) does to the one-time payment it was for, by its
+	## PaymentIntent (`pi_…`): refunded in full (`charge.refunded`, `refunded`), the payment is taken
+	## back (`Refunded`); a dispute opened (`charge.dispute.created`, an inquiry too) holds it
+	## (`Disputed`) until it closes in the seller's favor (`charge.dispute.closed`, `won` or
+	## `warning_closed`: `Settled`). Anything else (a part refunded, a dispute lost, which stays
+	## held, a charge of no PaymentIntent): `Unchanged`.
+	charge_change : Str, Str -> [Refunded(Str), Disputed(Str), Settled(Str), Unchanged]
+	charge_change = |type, json| {
+		intent = StripeRules.id_at(json, ["payment_intent"])
+		if intent.is_empty() {
+			Unchanged
+		} else {
+			match type {
+				"charge.refunded" => if (StripeRules.bool(json, ["refunded"])) Refunded(intent) else Unchanged
+				"charge.dispute.created" => Disputed(intent)
+				"charge.dispute.closed" => if (["won", "warning_closed"].contains(StripeRules.text(json, ["status"]))) Settled(intent) else Unchanged
+				_ => Unchanged
+			}
+		}
 	}
 
 	## An invoice as its object says: its id (`in_…`), its customer, the subscription it bills ("" for
@@ -513,7 +536,13 @@ acacia = "{\"id\":\"sub_2\",\"customer\":{\"id\":\"cus_2\",\"object\":\"customer
 expect StripeRules.subscription(basil) == Ok({ id: "sub_1", customer: "cus_1", status: "active", items: [{ price: "price_pro", product: "prod_pro", quantity: 2 }], current_period_end: 1702592000, cancel_at_period_end: Bool.True, cancel_at: 1702592000, trial_end: 0, user: "u1" })
 expect StripeRules.subscription(acacia) == Ok({ id: "sub_2", customer: "cus_2", status: "past_due", items: [{ price: "price_basic", product: "prod_basic", quantity: 0 }], current_period_end: 1700000000, cancel_at_period_end: Bool.False, cancel_at: 0, trial_end: 1690000000, user: "" })
 expect StripeRules.subscription("{\"id\":\"in_1\"}").is_err()
-expect StripeRules.session("{\"id\":\"cs_test_1\",\"mode\":\"payment\",\"status\":\"complete\",\"payment_status\":\"paid\",\"client_reference_id\":\"u1\",\"customer\":\"cus_1\",\"subscription\":null,\"amount_total\":1500,\"currency\":\"eur\",\"url\":null,\"metadata\":{\"app_user_id\":\"u1\",\"order\":\"7\"}}") == Ok({ id: "cs_test_1", mode: "payment", status: "complete", payment_status: "paid", user: "u1", customer: "cus_1", subscription: "", amount_total: 1500, currency: "eur", url: "", metadata: [("app_user_id", "u1"), ("order", "7")] })
+expect StripeRules.session("{\"id\":\"cs_test_1\",\"mode\":\"payment\",\"status\":\"complete\",\"payment_status\":\"paid\",\"client_reference_id\":\"u1\",\"customer\":\"cus_1\",\"subscription\":null,\"amount_total\":1500,\"currency\":\"eur\",\"url\":null,\"metadata\":{\"app_user_id\":\"u1\",\"order\":\"7\"},\"payment_intent\":\"pi_1\"}") == Ok({ id: "cs_test_1", mode: "payment", status: "complete", payment_status: "paid", user: "u1", customer: "cus_1", subscription: "", amount_total: 1500, currency: "eur", url: "", metadata: [("app_user_id", "u1"), ("order", "7")], payment_intent: "pi_1" })
+expect StripeRules.charge_change("charge.refunded", "{\"id\":\"ch_1\",\"payment_intent\":\"pi_1\",\"refunded\":true,\"amount_refunded\":900}") == Refunded("pi_1")
+expect StripeRules.charge_change("charge.refunded", "{\"id\":\"ch_1\",\"payment_intent\":\"pi_1\",\"refunded\":false,\"amount_refunded\":100}") == Unchanged
+expect StripeRules.charge_change("charge.dispute.created", "{\"id\":\"dp_1\",\"charge\":\"ch_1\",\"payment_intent\":\"pi_1\",\"status\":\"needs_response\"}") == Disputed("pi_1")
+expect StripeRules.charge_change("charge.dispute.closed", "{\"id\":\"dp_1\",\"payment_intent\":\"pi_1\",\"status\":\"won\"}") == Settled("pi_1")
+expect StripeRules.charge_change("charge.dispute.closed", "{\"id\":\"dp_1\",\"payment_intent\":\"pi_1\",\"status\":\"lost\"}") == Unchanged
+expect StripeRules.charge_change("charge.refunded", "{\"id\":\"ch_1\",\"payment_intent\":null,\"refunded\":true}") == Unchanged
 expect StripeRules.session("{\"id\":\"cs_test_2\",\"client_reference_id\":null,\"metadata\":{\"app_user_id\":\"u2\"},\"subscription\":{\"id\":\"sub_3\"}}").map_ok(|s| (s.user, s.subscription)) == Ok(("u2", "sub_3"))
 expect StripeRules.invoice("{\"id\":\"in_1\",\"customer\":\"cus_1\",\"subscription\":\"sub_1\",\"status\":\"paid\",\"amount_due\":900,\"amount_paid\":900,\"currency\":\"usd\",\"hosted_invoice_url\":\"https://invoice.stripe.com/i/x\",\"attempt_count\":1,\"billing_reason\":\"subscription_cycle\"}").map_ok(|i| (i.subscription, i.amount_paid, i.attempt_count)) == Ok(("sub_1", 900, 1))
 expect StripeRules.invoice("{\"id\":\"in_2\",\"customer\":\"cus_1\",\"parent\":{\"type\":\"subscription_details\",\"subscription_details\":{\"subscription\":\"sub_9\",\"metadata\":{}}},\"status\":\"open\",\"amount_due\":900,\"amount_paid\":0,\"currency\":\"usd\",\"attempt_count\":2}").map_ok(|i| (i.subscription, i.hosted_url, i.attempt_count)) == Ok(("sub_9", "", 2))

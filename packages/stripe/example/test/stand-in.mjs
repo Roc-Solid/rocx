@@ -179,6 +179,7 @@ export async function standIn() {
 		if (method === "POST" && path === "/v1/customers") return customer(form);
 		if (method === "POST" && path === "/v1/checkout/sessions") return checkout(form);
 		if (method === "POST" && path === "/v1/billing_portal/sessions") return portal(form);
+		if (method === "POST" && path === "/v1/refunds") return { status: 200, body: { id: id("re"), object: "refund", amount: Number(form.amount ?? 900), payment_intent: form.payment_intent ?? null, status: "succeeded" } };
 		if (method === "GET" && (match = /^\/v1\/checkout\/sessions\/([^/]+)$/.exec(path))) {
 			const session = sessions.get(decodeURIComponent(match[1]));
 			if (!session) return refused(404, `No such checkout.session: '${decodeURIComponent(match[1])}'`, { code: "resource_missing", param: "id" });

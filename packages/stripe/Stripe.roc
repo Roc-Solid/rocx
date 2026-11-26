@@ -10,6 +10,7 @@ import crypto.Base64
 import StripeRules
 import StripeStore
 import "migrations/0001_stripe.sql" as table : Str
+import "migrations/0002_refunds.sql" as refunds : Str
 
 ## Payments and subscriptions through Stripe, as a plugin (D-082): Stripe's hosted Checkout for a
 ## one-time payment or a subscription (`checkout!`), its hosted Customer Portal for managing one
@@ -145,7 +146,7 @@ Stripe := [].{
 		{
 			name: "stripe",
 			routes: [{ method: "POST", path: at, kind: Endpoint, answer!: |request, _| webhook!(on_event!, request) }],
-			migrations: [{ name: "0001_stripe", sql: table }],
+			migrations: [{ name: "0001_stripe", sql: table }, { name: "0002_refunds", sql: refunds }],
 			checks: [{ name: "stripe.keys", run!: |_context| keys!(at) }],
 			needs: [Database, Env("STRIPE_SECRET_KEY"), Env("STRIPE_WEBHOOK_SECRET")],
 		}
@@ -230,7 +231,7 @@ Stripe := [].{
 				if !read.customer.is_empty() {
 					StripeStore.link!({ user: user, customer: read.customer, now: now })?
 				}
-				StripeStore.seen!({ id: read.id, user: user, customer: read.customer, mode: read.mode, status: read.status, payment_status: read.payment_status, amount_total: read.amount_total, currency: read.currency, subscription: read.subscription, now: now })?
+				StripeStore.seen!({ id: read.id, user: user, customer: read.customer, mode: read.mode, status: read.status, payment_status: read.payment_status, amount_total: read.amount_total, currency: read.currency, subscription: read.subscription, payment_intent: read.payment_intent, now: now })?
 				match StripeRules.at(text, ["subscription"]) {
 					Ok(object) if object.starts_with("{") =>
 						match StripeRules.subscription(object) {
@@ -278,7 +279,7 @@ Stripe := [].{
 
 	## Whether `user` has paid for `what`, a price (`price_…`) or a product (`prod_…`): a subscription
 	## that is `paying` has it among its items, or a one-time payment that has been paid was for the
-	## price. A database that can't be read is a no, and an error on the log.
+	## price (and hasn't been refunded in full, nor disputed: `charge.refunded`, `charge.dispute.*`). A database that can't be read is a no, and an error on the log.
 	paid_for! : Str, Str => Bool
 	paid_for! = |user, what| {
 		subscribed =
@@ -318,6 +319,13 @@ Stripe := [].{
 	## field).
 	post! : Str, List((Str, Str)) => Try(Str, [StripeErr(Str), ..others])
 	post! = |path, fields| posted!(path, fields, random_key!({})).map_err(stripe_err)
+
+	## As `post!`, with an `Idempotency-Key` of the app's own (`"refund-order-42"`), the same each
+	## time the same thing is asked: a job run again after a crash, or a form sent twice, makes one
+	## refund, not two (Stripe answers a key it has seen, for 24 hours, as it did the first time).
+	## "" makes a new one, as `post!` does.
+	post_with! : { path : Str, fields : List((Str, Str)), idempotency_key : Str } => Try(Str, [StripeErr(Str), ..others])
+	post_with! = |asked| posted!(asked.path, asked.fields, if (asked.idempotency_key.is_empty()) random_key!({}) else asked.idempotency_key).map_err(stripe_err)
 
 	## Anything else of Stripe's API that reads (`/v1/invoices`, with its query's fields): its JSON.
 	get! : Str, List((Str, Str)) => Try(Str, [StripeErr(Str), ..others])
@@ -593,7 +601,7 @@ known! = |customer|
 
 ## What an event is about, read before its transaction: a subscription, a Checkout Session, an
 ## invoice, a customer deleted, or anything else (its customer, if it names one).
-Read : [Sub(StripeRules.Subscription), Sess(StripeRules.Session), Inv(StripeRules.Invoice), Deleted(Str), Else(Str)]
+Read : [Sub(StripeRules.Subscription), Sess(StripeRules.Session), Inv(StripeRules.Invoice), Deleted(Str), Charged([Refunded(Str), Disputed(Str), Settled(Str), Unchanged], Str), Else(Str)]
 
 ## The plugin's webhook: the event checked against `STRIPE_WEBHOOK_SECRET` (else a 400), handled
 ## once, a 200 when it is (or was before), a 500 when it couldn't be, so Stripe sends it again.
@@ -689,6 +697,8 @@ read! = |event|
 		}
 	} else if event.type == "customer.deleted" {
 		Ok(Deleted(StripeRules.text(event.object, ["id"])))
+	} else if event.type == "charge.refunded" or event.type.starts_with("charge.dispute.") {
+		Ok(Charged(StripeRules.charge_change(event.type, event.object), StripeRules.id_at(event.object, ["customer"])))
 	} else {
 		Ok(Else(StripeRules.id_at(event.object, ["customer"])))
 	}
@@ -719,7 +729,7 @@ kept! = |event, ready, now|
 			if !user.is_empty() and !read.customer.is_empty() {
 				StripeStore.link!({ user: user, customer: read.customer, now: now })?
 			}
-			StripeStore.seen!({ id: read.id, user: user, customer: read.customer, mode: read.mode, status: read.status, payment_status: read.payment_status, amount_total: read.amount_total, currency: read.currency, subscription: read.subscription, now: now })?
+			StripeStore.seen!({ id: read.id, user: user, customer: read.customer, mode: read.mode, status: read.status, payment_status: read.payment_status, amount_total: read.amount_total, currency: read.currency, subscription: read.subscription, payment_intent: read.payment_intent, now: now })?
 			typed = session_of!({ ..read, user: user })?
 			Ok((user, Session(typed)))
 		}
@@ -737,6 +747,17 @@ kept! = |event, ready, now|
 		Deleted(customer) => {
 			user = known!(customer)?
 			_ = StripeStore.forget!(customer)?
+			Ok((user, Other))
+		}
+		Charged(change, customer) => {
+			changed =
+				match change {
+					Refunded(intent) => StripeStore.charged!(intent, Refunded, now)?
+					Disputed(intent) => StripeStore.charged!(intent, Disputed, now)?
+					Settled(intent) => StripeStore.charged!(intent, Settled, now)?
+					Unchanged => ""
+				}
+			user = if (changed.is_empty()) known!(customer)? else changed
 			Ok((user, Other))
 		}
 		Else(customer) => {
