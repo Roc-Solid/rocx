@@ -5490,6 +5490,55 @@ set.
 
 **Reversible:** yes: native/core's own allocator and guard are in git's history.
 
+## D-096 `Db.one!`: the one row a statement reads
+
+**Status.** Built (2026-11-26).
+
+**Context.** Some thirty places in the examples read one row as a list of them: `rows = Db.all!(…)?`,
+then `rows.first()` (or `.get(0)`) and a `map_err(|_| NotFound)` or a match. examples/notes and
+examples/board each had a helper of their own for it (`first`), packages/auth matches
+`rows.get(0)`. Three lines say what one could, and the annotation `rocx check --sql` reads (D-058)
+is a `List(T)` nobody wanted.
+
+**Decision.**
+
+```roc
+one! : Str, List(Value) => Try(row, [NotFound, DbErr(Str), BadRow(Str), ..others])
+    where [row.Json.Parseable([InvalidJson(Str)])]
+```
+
+- **Its row is read as `all!` reads each**, by column name into the record its caller annotated, a
+  column that may be null as `Db.Nullable(a)`; `DbErr` and `BadRow` are `all!`'s, its error union
+  open as theirs, so a store whose `Problem` is `[NotFound, DbErr(Str), BadRow(Str)]` (tasks,
+  plate, board, notes) returns it as it is, and a transaction's body `?`s it.
+- **None is `NotFound`**, the tag the examples' stores and `Endpoint.Refusal` already use: an
+  endpoint `?`s it into a 404.
+- **Several: the first**, in the statement's order, the rest dropped. A statement that may read
+  several says which it means (`order by … limit 1`).
+- **Checked as `all!` is.** `rocx check --sql` finds `Db.one!(` too, and reads its row's type from
+  a binding's annotation, `row : T` before `row = Db.one!(…)?` or `Try(T, …)` without the `?`, or
+  from the result of the function the call is the body of (`Try(T, …)`); the check app's
+  `DbCheck.Rows(T, Tags)` is the same as for `all!`'s rows (packages/dbcheck is unchanged).
+- tasks, plate, board and notes read their single rows with it (board's and notes' `first` helpers
+  are gone); the rest of the examples, packages/auth and `rocx new`'s template may move when they
+  are next touched.
+
+**Alternatives.**
+
+- **More than one row an error** (Ecto's `Repo.one`). How many rows a statement reads is known only
+  after it ran, so the error comes at run time, in production, for what the SQL can say (`limit 1`,
+  a primary key) and the check can't; an `update … returning` has written by then. Every call
+  converted took the first; sqlx's `fetch_one` and Rails's `find_by` do too.
+- **A `limit 1` added by the host.** Db's SQL is the app's, never rewritten (D-045).
+- **`Try(Try(row, [None]), …)`, an absent row not an error.** Every caller turned the inner `None`
+  into `NotFound`; one that doesn't mind matches `Err(NotFound)`.
+
+**Costs.** `one!` adds no `limit`: a statement that reads many rows still sends them all to Roc,
+which decodes them all and keeps the first, and a row after the first that doesn't fit is
+`BadRow`.
+
+**Reversible:** yes: `one!` is `all!` and `first()`, which its callers can go back to.
+
 ## D-097 VAPID keys without Node: `P256.generate!`, and the push plugin's own pair under `--dev`
 
 **Status.** Built (2026-11-26): TODO's "VAPID keys without Node", found landing D-080.

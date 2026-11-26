@@ -200,10 +200,14 @@ function suite({ engine, name, tag, run, server, home }) {
 		}
 	});
 
-	test("parameters are bound as what they are, at their names; rows are read into records: a declared boolean, json, a real, a null", { skip }, async () => {
+	test("parameters are bound as what they are, at their names; rows are read into records: a declared boolean, json, a real, a null; one row read alone (Db.one!), or NotFound", { skip }, async () => {
 		assert.equal(await server().post("/items?name=apple&count=3&done=yes&note=crisp&weight=0.25"), "1");
 		assert.equal(await server().post("/items?name=pear"), "2");
 		assert.equal(await server().text("/items"), "1 apple 3 done crisp a+b 0.25\n2 pear 0 open - a+b -");
+		// One row (Db.one!, D-096): the one there is, a null as Db.Nullable; the first of several, in the statement's order; or NotFound.
+		assert.equal(await server().text("/items/one?name=pear"), "2 pear -");
+		assert.equal(await server().text("/items/newest"), "pear", "the first of the two, newest first");
+		assert.equal(await server().text("/items/one?name=plum"), "none");
 		assert.equal(await server().text("/params/order"), "b a a");
 		assert.equal(await server().text("/params/types"), "integer integer text null");
 		assert.equal(await server().text("/params/missing"), "the statement uses $2, and 1 parameter was given");

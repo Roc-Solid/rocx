@@ -42,11 +42,7 @@ Store := [].{
 
 	## Someone, by id (what a session holds).
 	person! : Str => Try(Store.Person, Store.Problem)
-	person! = |id| {
-		found : Try(List(Store.Person), [DbErr(Str), BadRow(Str)])
-		found = Db.all!("select cast(id as text) as id, email from people where id = $1", [Text(numbered(id)?)])
-		first(found?)
-	}
+	person! = |id| Db.one!("select cast(id as text) as id, email from people where id = $1", [Text(numbered(id)?)])
 
 	## Someone, by address: the one there is, or someone new. Signing in with a link is how anyone
 	## joins, so a new person's notebook starts with a note of welcome (`welcome`).
@@ -63,9 +59,9 @@ Store := [].{
 				Ok(person)
 			}
 			_ => {
-				found : Try(List(Store.Person), [DbErr(Str), BadRow(Str)])
-				found = Db.all!("select cast(id as text) as id, email from people where lower(email) = lower($1)", [Text(email)])
-				first(found?)
+				found : Try(Store.Person, Store.Problem)
+				found = Db.one!("select cast(id as text) as id, email from people where lower(email) = lower($1)", [Text(email)])
+				found
 			}
 		}
 	}
@@ -188,9 +184,9 @@ Store := [].{
 	append! = |person, id, text|
 		Db.transaction!(
 			|{}| {
-				bodies : Try(List({ body : Str }), [DbErr(Str), BadRow(Str)])
-				bodies = Db.all!("select body from notes where person_id = $1 and id = $2", [Text(numbered(person)?), Text(numbered(id)?)])
-				body = Note.appended(first(bodies?)?.body, text)
+				was : { body : Str }
+				was = Db.one!("select body from notes where person_id = $1 and id = $2", [Text(numbered(person)?), Text(numbered(id)?)])?
+				body = Note.appended(was.body, text)
 				one!(
 					"update notes set body = $3, plain = $4, updated_at = $5 where person_id = $1 and id = $2 and length($3) <= 100000 returning ${full}",
 					[Text(numbered(person)?), Text(numbered(id)?), Text(body), Text(Note.plain(body)), Int(now!({}))],
@@ -242,12 +238,10 @@ Store := [].{
 	## A new token, by its hash (the token itself is never kept), its hint and its name.
 	add_token! : Str, { name : Str, hash : Str, hint : Str, read_only : Bool } => Try(Token.Listed, Store.Problem)
 	add_token! = |person, token| {
-		rows : Try(List(Token.Listed), [DbErr(Str), BadRow(Str)])
-		rows = Db.all!(
+		Db.one!(
 			"insert into tokens (person_id, name, hash, hint, read_only) values ($1, $2, $3, $4, $5) returning ${token_columns}",
 			[Text(numbered(person)?), Text(token.name), Text(token.hash), Text(token.hint), Bool(token.read_only)],
 		)
-		first(rows?)
 	}
 
 	## One of someone's tokens revoked: gone, so the next request with it is refused.
@@ -262,12 +256,12 @@ Store := [].{
 	bearer! : Str => Try({ person : Store.Person, token : Str, read_only : Bool }, Store.Problem)
 	bearer! = |hash| {
 		_ = Db.run!("update tokens set last_used_at = $2 where hash = $1 and (last_used_at is null or last_used_at < $2 - 60000)", [Text(hash), Int(now!({}))])?
-		rows : Try(List({ id : Str, email : Str, token : Str, read_only : Bool }), [DbErr(Str), BadRow(Str)])
-		rows = Db.all!(
+		row : { id : Str, email : Str, token : Str, read_only : Bool }
+		row = Db.one!(
 			"select cast(p.id as text) as id, p.email, cast(t.id as text) as token, t.read_only from tokens t join people p on p.id = t.person_id where t.hash = $1",
 			[Text(hash)],
-		)
-		first(rows?).map_ok(|row| { person: { id: row.id, email: row.email }, token: row.token, read_only: row.read_only })
+		)?
+		Ok({ person: { id: row.id, email: row.email }, token: row.token, read_only: row.read_only })
 	}
 }
 
@@ -377,21 +371,9 @@ summary = |row| { id: row.id, title: row.title, tags: row.tags, pinned: row.pinn
 numbered : Str -> Try(Str, [NotFound])
 numbered = |id| if (I64.from_str(id).is_ok()) Ok(id) else Err(NotFound)
 
-## The one row a query found, or `NotFound`.
-first : List(a) -> Try(a, [NotFound])
-first = |rows|
-	match rows {
-		[row, ..] => Ok(row)
-		[] => Err(NotFound)
-	}
-
-## The one note a query returns.
+## The one note a query returns (`Db.one!`, its row a `Note.Full`).
 one! : Str, List(Db.Value) => Try(Note.Full, Store.Problem)
-one! = |sql, params| {
-	rows : Try(List(Note.Full), [DbErr(Str), BadRow(Str)])
-	rows = Db.all!(sql, params)
-	first(rows?)
-}
+one! = |sql, params| Db.one!(sql, params)
 
 ## The note every new notebook starts with.
 welcome : { title : Str, body : Str, tags : List(Str) }

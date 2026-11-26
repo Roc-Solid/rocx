@@ -256,6 +256,10 @@ When an item lands, delete its line here in the same commit.
   type-checks its server, then fails on the browser's copy (`build/client`): `Api.openapi does not
   exist` in Generated/App.roc (an app of endpoints alone; examples/echo, the same, has no browser
   program). On master before the plugin too; the example isn't in `just examples`.
+- **Single rows read as lists** (`Db.one!`, D-096): tasks, plate, board and notes use it; uptime,
+  pomodoro, quiz, sqlite-vs-turso, packages/auth's and packages/stripe's stores (and their
+  examples) and `rocx new`'s template (`Accounts.roc`) still read one row with `Db.all!` and
+  `.first()` or `.get(0)`.
 - **Stale proposals:** `packages/testing/PROPOSALS.md` (`src/routes.mjs`, `outbox.rs`, `<For>`; item
   11 is done), `packages/forms/PROPOSALS.md` ("Nothing here is built").
 - **sqlite-vs-turso's sale workloads aren't measured yet:** `sale`, `sale-job`, `concurrent-sale`

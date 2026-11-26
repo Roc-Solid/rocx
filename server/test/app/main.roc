@@ -360,6 +360,17 @@ route! = |request, context| {
 				Err(BadRow(why)) => text(500, why)
 			}
 		}
+		("GET", "/notes/one") => {
+			# One row (`Db.one!`, D-096): the note `id`; with `id` 0 the first of them all; or none.
+			found : Try({ id : I64, body : Str, note : Db.Nullable(Str) }, [NotFound, DbErr(Str), BadRow(Str)])
+			found = Db.one!("select id, body, note from notes where id = $1 or $1 = 0 order by id", [Int(I64.from_str(param(request.query, "id")) ?? 0)])
+			match found {
+				Ok(each) => text(200, "${each.id.to_str()} ${each.body} ${noted(each.note)}")
+				Err(NotFound) => text(404, "none")
+				Err(DbErr(why)) => text(500, why)
+				Err(BadRow(why)) => text(500, why)
+			}
+		}
 		("GET", "/nullable") => {
 			found : Try(List({ maybe : Str }), [DbErr(Str), BadRow(Str)])
 			found = Db.all!("select null::text as maybe", [])

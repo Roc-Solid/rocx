@@ -86,6 +86,13 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.platform_notes.file}, in part"} source={Sources.platform_notes.rocx} numbers={Bool.False} />
 			<p>
+				<code>Db.one!</code> reads one row, decoded the same way, and is <code>NotFound</code> when the
+				statement reads none, which an endpoint answers with a 404. When it reads several, the first comes
+				back, in the statement's order, so a statement that may read several says which it means
+				(<code>order by … limit 1</code>). From the tasks example:
+			</p>
+			<Code title={"${Sources.platform_query.file}, in part"} source={Sources.platform_query.rocx} numbers={Bool.False} />
+			<p>
 				Parameters are written <code>$1</code>, <code>$2</code>… on both databases, and each is a
 				<code>Db.Value</code>: <code>Null</code>, <code>Text</code>, <code>Int</code> or <code>Bool</code>.
 				Postgres receives each as text and reads it as the type its place wants (<code>$1</code> in
@@ -111,8 +118,8 @@ view! = |_|
 			<Heading id="rows">Rows, as records</Heading>
 			<p>
 				The host reads each row's columns, as the database typed them, and hands Roc the rows as JSON.
-				<code>Db.all!</code> decodes each row into the record you annotated, matching fields to columns by
-				name. A row that doesn't fit is <code>BadRow</code>, saying why.
+				<code>Db.all!</code> and <code>Db.one!</code> decode each row into the record you annotated,
+				matching fields to columns by name. A row that doesn't fit is <code>BadRow</code>, saying why.
 			</p>
 			<ul>
 				<li>
@@ -270,7 +277,7 @@ view! = |_|
 			<p>
 				<code>rocx check --sql</code> checks an app's SQL with the engine it runs on, and its row types with
 				the compiler, without running anything. Each statement written as a string literal at a
-				<code>Db.all!</code> or a <code>Db.run!</code> is prepared (never run) on a scratch database, which
+				<code>Db.all!</code>, a <code>Db.one!</code> or a <code>Db.run!</code> is prepared (never run) on a scratch database, which
 				the app's own server builds from its migrations. For SQLite and Turso that is a file it removes
 				afterwards; for Postgres, a database it makes on the server <code>DATABASE_URL</code> names and drops
 				afterwards. It never migrates a database nobody named for it: without the <code>CREATEDB</code>
@@ -289,8 +296,9 @@ view! = |_|
 					gives as a list must be exactly the statement's <code>$1</code> to <code>$n</code>, each used.
 				</li>
 				<li>
-					<strong>The rows.</strong> For a <code>Db.all!</code> whose rows are annotated
-					(<code>rows : List(T)</code>, or the result of the function the call is in), it compares the record
+					<strong>The rows.</strong> For a <code>Db.all!</code> or a <code>Db.one!</code> whose rows are
+					annotated (<code>rows : List(T)</code>, <code>row : T</code>, or the result of the function the
+					call is in), it compares the record
 					with the statement's columns: a field the statement doesn't return, a type the column's values
 					can't decode into, and a plain field over a column that may be null (it has no
 					<code>not null</code>), which <code>Db.Nullable</code> should read. rocx writes the type into a

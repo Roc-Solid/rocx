@@ -12,15 +12,15 @@ The design is D-058 in `DECISIONS.md`.
 
 ## How it is used
 
-1. **rocx finds the statements.** `rocx check --sql <app>` finds each `Db.all!` and `Db.run!` whose
-   SQL is a string literal at the call.
+1. **rocx finds the statements.** `rocx check --sql <app>` finds each `Db.all!`, `Db.one!` and
+   `Db.run!` whose SQL is a string literal at the call.
 2. **The database describes them.** The app's own server, built as `rocx dev` builds it, prepares
    each statement on a scratch database migrated from the app's migrations, and reports its
    parameters and columns (`--describe-sql`). rocx reports a statement the engine refuses, or a call
    whose parameters don't match, itself; that part doesn't involve dbcheck.
 3. **rocx writes a check app.** It writes `build/sql/check/main.roc` beside a copy of the app's
-   sources. For each `Db.all!` whose row type rocx can read from its annotation, that app has a
-   constant like this:
+   sources. For each `Db.all!` or `Db.one!` whose row type rocx can read from its annotation
+   (`rows : List(T)`; `row : T` or `Try(T, …)` for `one!`), that app has a constant like this:
 
    ```roc
    ## examples/plate/Store.roc:122:11

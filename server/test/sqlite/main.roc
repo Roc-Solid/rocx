@@ -123,6 +123,17 @@ route! = |request, context| {
 			found = Db.all!("select id, name, count, done, note, meta, weight from items order by id", [])
 			lines(found, |row| "${row.id.to_str()} ${row.name} ${row.count.to_str()} ${if (row.done) "done" else "open"} ${shown(row.note)} ${tagged(row.meta)} ${weighed(row.weight)}")
 		}
+		# One row (`Db.one!`, D-096): the item called `name`, or none; the newest of them all.
+		("GET", "/items/one") => {
+			found : Try({ id : I64, name : Str, note : Db.Nullable(Str) }, [NotFound, DbErr(Str), BadRow(Str)])
+			found = Db.one!("select id, name, note from items where name = $1", [Text(param(query, "name"))])
+			one(found, |row| "${row.id.to_str()} ${row.name} ${shown(row.note)}")
+		}
+		("GET", "/items/newest") => {
+			found : Try({ name : Str }, [NotFound, DbErr(Str), BadRow(Str)])
+			found = Db.one!("select name from items order by id desc", [])
+			one(found, |row| row.name)
+		}
 		# `$2` before `$1`, and `$1` twice: each bound at its name.
 		("GET", "/params/order") => {
 			ordered : Try(List({ second : Str, first : Str, again : Str }), [DbErr(Str), BadRow(Str)])
@@ -580,6 +591,16 @@ lines : Try(List(row), [DbErr(Str), BadRow(Str)]), (row -> Str) -> Server.Respon
 lines = |rows, line|
 	match rows {
 		Ok(found) => text(200, Str.join_with(found.map(line), "\n"))
+		Err(DbErr(why)) => text(500, why)
+		Err(BadRow(why)) => text(500, why)
+	}
+
+## The one row, as `line` says; a 404 when there is none; or the error, a 500.
+one : Try(row, [NotFound, DbErr(Str), BadRow(Str)]), (row -> Str) -> Server.Response
+one = |found, line|
+	match found {
+		Ok(row) => text(200, line(row))
+		Err(NotFound) => text(404, "none")
 		Err(DbErr(why)) => text(500, why)
 		Err(BadRow(why)) => text(500, why)
 	}

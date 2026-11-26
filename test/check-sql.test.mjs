@@ -1,7 +1,7 @@
 // `rocx check --sql` (D-058), end to end: test/sql-check, a SQLite app whose statements and rows
-// are right or wrong on purpose, built and checked, on SQLite and on Turso; the server's Postgres
-// test app, whose wrong statements are its tests of what fails; an app with no SQL needs no
-// server. rocx's own scan, row types and report are tested by its expects (rocx-cli/Sql.roc),
+// (`Db.all!`'s and `Db.one!`'s, D-096) are right or wrong on purpose, built and checked, on SQLite
+// and on Turso; the server's Postgres test app, whose wrong statements are its tests of what
+// fails; an app with no SQL needs no server. rocx's own scan, row types and report are tested by its expects (rocx-cli/Sql.roc),
 // packages/dbcheck's rules by its own, the server's `--describe-sql` by server/test.
 //
 // Needs the toolchain (`just setup`: Roc, and Rust for the host); Postgres (DATABASE_URL) for one.
@@ -36,14 +36,15 @@ test("rocx check --sql: each statement the engine refuses, each call whose param
 	const { status, out } = check([join("test", "sql-check"), "--verbose"]);
 	assert.equal(status, 1, out);
 	assert.deepEqual(out.trimEnd().split("\n"), [
-		"test/sql-check/Store.roc:29:15: SQLite refuses it: no such column: bodyy in select bodyy as body from notes at offset 7",
-		"test/sql-check/Store.roc:33:16: parameter $2 is given, and the statement doesn't use it",
-		"test/sql-check/Store.roc:50:10: `body` is read as an integer, and notes.body is a TEXT (text)",
-		"test/sql-check/Store.roc:58:10: `note` is read as a plain value, and notes.note may be null (it has no `not null`): read it as Db.Nullable(…)",
-		"test/sql-check/Store.roc:66:10: `title` isn't a column the statement returns (it returns id)",
-		"test/sql-check/Store.roc:37:16: not checked: Db.unchecked",
-		"test/sql-check/Store.roc:72:22: not checked: its SQL is interpolated",
-		"rocx check --sql: 7 statements checked on SQLite (the rows of 5 against their records): 5 problems, 2 calls not checked (--verbose lists them)",
+		"test/sql-check/Store.roc:31:15: SQLite refuses it: no such column: bodyy in select bodyy as body from notes at offset 7",
+		"test/sql-check/Store.roc:35:16: parameter $2 is given, and the statement doesn't use it",
+		"test/sql-check/Store.roc:52:10: `body` is read as an integer, and notes.body is a TEXT (text)",
+		"test/sql-check/Store.roc:60:10: `note` is read as a plain value, and notes.note may be null (it has no `not null`): read it as Db.Nullable(…)",
+		"test/sql-check/Store.roc:68:10: `title` isn't a column the statement returns (it returns id)",
+		"test/sql-check/Store.roc:84:9: `note` is read as a plain value, and notes.note may be null (it has no `not null`): read it as Db.Nullable(…)",
+		"test/sql-check/Store.roc:39:16: not checked: Db.unchecked",
+		"test/sql-check/Store.roc:74:22: not checked: its SQL is interpolated",
+		"rocx check --sql: 9 statements checked on SQLite (the rows of 7 against their records): 6 problems, 2 calls not checked (--verbose lists them)",
 	]);
 });
 
@@ -51,8 +52,8 @@ test("rocx check --sql --engine turso: a SQLite app's statements on Turso, which
 	const { status, out } = check([join("test", "sql-check"), "--engine", "turso"]);
 	assert.equal(status, 1, out);
 	const lines = out.trimEnd().split("\n");
-	assert.match(lines[0], /^test\/sql-check\/Store\.roc:29:15: Turso refuses it: .*bodyy/);
-	assert.equal(lines.at(-1), "rocx check --sql: 7 statements checked on Turso (the rows of 5 against their records): 5 problems, 2 calls not checked (--verbose lists them)");
+	assert.match(lines[0], /^test\/sql-check\/Store\.roc:31:15: Turso refuses it: .*bodyy/);
+	assert.equal(lines.at(-1), "rocx check --sql: 9 statements checked on Turso (the rows of 7 against their records): 6 problems, 2 calls not checked (--verbose lists them)");
 });
 
 /** Where rocx reports each call in `file` (from the repo) whose text starts with `call`:
@@ -81,7 +82,7 @@ test("rocx check --sql on Postgres: the server's test app, on a scratch database
 	]
 		.sort((a, b) => a.offset - b.offset)
 		.map(({ line }) => line);
-	assert.deepEqual(out.trimEnd().split("\n"), [...problems, "rocx check --sql: 54 statements checked on Postgres (the rows of 25 against their records): 8 problems"]);
+	assert.deepEqual(out.trimEnd().split("\n"), [...problems, "rocx check --sql: 55 statements checked on Postgres (the rows of 26 against their records): 8 problems"]);
 });
 
 test("rocx dev's check (rocx check --sql --server --quiet): the server it built, none built again; what is wrong said the same; an app with no SQL says nothing", { skip }, () => {
@@ -90,7 +91,7 @@ test("rocx dev's check (rocx check --sql --server --quiet): the server it built,
 	const built = join(root, "test", "sql-check", "build", "sql", "server");
 	const checked = run([join("test", "sql-check"), "--server", built, "--quiet"]);
 	assert.equal(checked.status, 1, checked.stderr);
-	assert.equal(checked.stdout.trimEnd().split("\n").at(-1), "rocx check --sql: 7 statements checked on SQLite (the rows of 5 against their records): 5 problems, 2 calls not checked (--verbose lists them)");
+	assert.equal(checked.stdout.trimEnd().split("\n").at(-1), "rocx check --sql: 9 statements checked on SQLite (the rows of 7 against their records): 6 problems, 2 calls not checked (--verbose lists them)");
 	assert.doesNotMatch(checked.stdout + checked.stderr, /building/);
 	const quiet = run([join("examples", "hello"), "--quiet"]);
 	assert.equal(quiet.status, 0, quiet.stderr);

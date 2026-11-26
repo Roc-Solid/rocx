@@ -43,9 +43,9 @@ Store := [].{
 	## Today, as SQLite has it (`2026-11-24`, in UTC): what a task's due day is counted from.
 	today! : {} => Try(Str, Problem)
 	today! = |{}| {
-		rows : List({ today : Str })
-		rows = Db.all!("select date('now') as today", [])?
-		rows.first().map_ok(|row| row.today).map_err(|_| NotFound)
+		row : { today : Str }
+		row = Db.one!("select date('now') as today", [])?
+		Ok(row.today)
 	}
 
 	## Everyone on the team, by name.
@@ -66,18 +66,18 @@ Store := [].{
 	## A new list, named `name`: its id.
 	add_list! : Str => Try(Str, Problem)
 	add_list! = |name| {
-		rows : List({ id : I64 })
-		rows = Db.all!("insert into lists (name) values ($1) returning id", [Text(name)])?
-		rows.first().map_ok(|row| row.id.to_str()).map_err(|_| NotFound)
+		row : { id : I64 }
+		row = Db.one!("insert into lists (name) values ($1) returning id", [Text(name)])?
+		Ok(row.id.to_str())
 	}
 
 	## The list `id` (as its URL has it): its name.
 	list! : Str => Try({ id : Str, name : Str }, Problem)
 	list! = |id| {
 		key = number(id)?
-		rows : List({ name : Str })
-		rows = Db.all!("select name from lists where id = $1", [Int(key)])?
-		rows.first().map_ok(|row| { id, name: row.name }).map_err(|_| NotFound)
+		row : { name : Str }
+		row = Db.one!("select name from lists where id = $1", [Int(key)])?
+		Ok({ id, name: row.name })
 	}
 
 	## The list's tasks, in their order.
@@ -93,27 +93,24 @@ Store := [].{
 	task! : Str => Try({ task : Tasks.Task, list : { id : Str, name : Str } }, Problem)
 	task! = |id| {
 		key = number(id)?
-		rows : List({ id : I64, title : Str, notes : Str, due : Db.Nullable(Str), assignee : Db.Nullable(Str), done : Bool, list_id : I64, list_name : Str })
-		rows = Db.all!(
+		row : { id : I64, title : Str, notes : Str, due : Db.Nullable(Str), assignee : Db.Nullable(Str), done : Bool, list_id : I64, list_name : Str }
+		row = Db.one!(
 			"select t.id, t.title, t.notes, t.due, t.assignee, t.done, l.id as list_id, l.name as list_name from tasks t join lists l on l.id = t.list_id where t.id = $1",
 			[Int(key)],
 		)?
-		match rows.first() {
-			Ok(row) => Ok({ task: Store.task_of({ id: row.id, title: row.title, notes: row.notes, due: row.due, assignee: row.assignee, done: row.done }), list: { id: row.list_id.to_str(), name: row.list_name } })
-			Err(ListWasEmpty) => Err(NotFound)
-		}
+		Ok({ task: Store.task_of({ id: row.id, title: row.title, notes: row.notes, due: row.due, assignee: row.assignee, done: row.done }), list: { id: row.list_id.to_str(), name: row.list_name } })
 	}
 
 	## A new task, last on its list: its id.
 	add! : Str, { title : Str, due : Try(Date, [Missing]), assignee : Try(Str, [Missing]) } => Try(Str, Problem)
 	add! = |list, { title, due, assignee }| {
 		key = number(list)?
-		rows : List({ id : I64 })
-		rows = Db.all!(
+		row : { id : I64 }
+		row = Db.one!(
 			"insert into tasks (list_id, title, due, assignee, position) values ($1, $2, $3, $4, (select coalesce(max(position) + 1, 0) from tasks where list_id = $1)) returning id",
 			[Int(key), Text(title), nullable(due.map_ok(Date.to_str)), nullable(assignee)],
 		)?
-		rows.first().map_ok(|row| row.id.to_str()).map_err(|_| NotFound)
+		Ok(row.id.to_str())
 	}
 
 	## The task `id`, changed as its page's form says.
@@ -154,9 +151,8 @@ Store := [].{
 		Db.transaction!(
 			|{}| {
 				key = number(move.id)?
-				lists : List({ list_id : I64 })
-				lists = Db.all!("select list_id from tasks where id = $1", [Int(key)])?
-				list = lists.first().map_err(|_| NotFound)?
+				list : { list_id : I64 }
+				list = Db.one!("select list_id from tasks where id = $1", [Int(key)])?
 				order = Tasks.moved(Store.tasks!(list.list_id.to_str())?, move)
 				# Each task's position is where its id is in `order`, a JSON list (json_each's key
 				# is its place, from 0).

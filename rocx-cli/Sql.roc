@@ -1,5 +1,5 @@
 ## `rocx check --sql` (D-058): an app's SQL checked by its own database engine. rocx finds each
-## `Db.all!` and `Db.run!` whose SQL is a string literal at the call (`scan`), the app's server
+## `Db.all!`, `Db.one!` and `Db.run!` whose SQL is a string literal at the call (`scan`), the app's server
 ## describes those statements on a scratch database built from its migrations (`--describe-sql`,
 ## which rocx-cli/CheckSql.roc runs), and rocx reports what the engine refused and parameters that
 ## don't match what the call gives (`report`). What it can't check (SQL interpolated, in a
@@ -14,7 +14,7 @@ import Routes
 Sql := [].{
 
 	## A call as the scan finds it: where it is (its file as given, its line and column from 1), its
-	## function (`all!`, `run!`), its SQL (a literal's text, unescaped; or why there is none to
+	## function (`all!`, `one!`, `run!`), its SQL (a literal's text, unescaped; or why there is none to
 	## check), how many parameters it gives, when they are a list literal, and the type of its rows
 	## when its annotation can be read (`row_type`: `""` when not), with whether that names a type
 	## of the call's own module, `Store.Row` for `Row` (`qualified`).
@@ -44,8 +44,8 @@ Sql := [].{
 	is_generated : Str -> Bool
 	is_generated = |text| (Remap.trim_end(text).split_on("\n").last() ?? "").starts_with(Remap.marker)
 
-	## The calls in one file's `text`. A call is `Db.all!(` or `Db.run!(` not inside a comment or a
-	## string, nor after a letter, a digit, `_` or `.`.
+	## The calls in one file's `text`. A call is `Db.all!(`, `Db.one!(` or `Db.run!(` not inside a
+	## comment or a string, nor after a letter, a digit, `_` or `.`.
 	scan_text : Str, Str -> List(Found)
 	scan_text = |file, text| {
 		bytes = text.to_utf8()
@@ -69,8 +69,8 @@ Sql := [].{
 		$found
 	}
 
-	## The next `Db.all!(` or `Db.run!(` at or after `from`: where it starts, its function, and where
-	## its `(` is.
+	## The next `Db.all!(`, `Db.one!(` or `Db.run!(` at or after `from`: where it starts, its
+	## function, and where its `(` is.
 	next_call : List(U8), U64 -> Try({ at : U64, call : Str, open : U64 }, [NotFound])
 	next_call = |bytes, from| {
 		var $i = from
@@ -80,6 +80,9 @@ Sql := [].{
 			bare = !(Text.is_word(before) or before == '.')
 			if bare and Text.starts_with_at(bytes, "Db.all!(".to_utf8(), at) {
 				return Ok({ at, call: "all!", open: at + 7 })
+			}
+			if bare and Text.starts_with_at(bytes, "Db.one!(".to_utf8(), at) {
+				return Ok({ at, call: "one!", open: at + 7 })
 			}
 			if bare and Text.starts_with_at(bytes, "Db.run!(".to_utf8(), at) {
 				return Ok({ at, call: "run!", open: at + 7 })
@@ -139,22 +142,25 @@ Sql := [].{
 			}
 		if quoted.interpolated {
 			place(Interpolated, given)
-		} else if call == "all!" {
-			typed = Sql.row_type(file, bytes, at, open)
+		} else if call == "all!" or call == "one!" {
+			typed = Sql.row_type(file, bytes, at, open, call)
 			{ ..place(Literal(quoted.text), given), row: typed.row, qualified: typed.qualified }
 		} else {
 			place(Literal(quoted.text), given)
 		}
 	}
 
-	## The type of the rows of the `Db.all!` at `at` (its `(` at `open`) in the file `file`, `bytes`:
-	## `T` in the `List(T)` (or `Try(List(T), …)`) of the binding's annotation, `rows : List(T)`
-	## before `rows = Db.all!(…)`; or of the result of the function whose whole body the call is
-	## (`name! = |…| Db.all!(…)`, or the last expression of its `{ … }`). A name the module declares
-	## (`Row` in `Store := [].{ Row : … }`) is qualified with the module's (`Store.Row`). `""` when
-	## there is none to read, or it names a type the module keeps to itself.
-	row_type : Str, List(U8), U64, U64 -> { row : Str, qualified : Bool }
-	row_type = |file, bytes, at, open| {
+	## The type of the rows of the `Db.all!` or `Db.one!` (`call`) at `at` (its `(` at `open`) in the
+	## file `file`, `bytes`: `T` in the `List(T)` (or `Try(List(T), …)`) of the binding's
+	## annotation, `rows : List(T)` before `rows = Db.all!(…)`; for `one!`, the row's own
+	## (`row : T` before `row = Db.one!(…)?`, or `Try(T, …)`, `one_item`); or of the result of the
+	## function whose whole body the call is (`name! = |…| Db.all!(…)`, or the last expression of
+	## its `{ … }`). A name the module declares (`Row` in `Store := [].{ Row : … }`) is qualified
+	## with the module's (`Store.Row`). `""` when there is none to read, or it names a type the
+	## module keeps to itself.
+	row_type : Str, List(U8), U64, U64, Str -> { row : Str, qualified : Bool }
+	row_type = |file, bytes, at, open, call| {
+		item = |typed| if (call == "one!") Sql.one_item(typed) else Sql.list_item(typed)
 		none = { row: "", qualified: Bool.False }
 		line_start = Text.line_start(bytes, at)
 		prefix = Text.trim(Text.cut(bytes, line_start, at))
@@ -164,15 +170,15 @@ Sql := [].{
 				# The last expression of a block: the block is a function's body when the line it
 				# opens on is `name = |…| {`.
 				match Sql.enclosing_def(bytes, line_start, indent) {
-					Ok(def) if Sql.ends_block(bytes, open) => Sql.result_of(Sql.annotation(bytes, def.start, def.indent, def.name))
+					Ok(def) if Sql.ends_block(bytes, open) => item(Sql.result_of(Sql.annotation(bytes, def.start, def.indent, def.name)))
 					_ => ""
 				}
 			} else if prefix.ends_with("=") and !prefix.contains("|") {
 				name = Text.trim(prefix.drop_suffix("="))
-				if (Text.all_of(name, |c| Text.is_word(c)) and Sql.ends_expression(bytes, open)) Sql.list_item(Sql.annotation(bytes, line_start, indent, name)) else ""
+				if (Text.all_of(name, |c| Text.is_word(c)) and Sql.ends_expression(bytes, open)) item(Sql.annotation(bytes, line_start, indent, name)) else ""
 			} else if prefix.ends_with("|") and prefix.contains("= |") and Sql.ends_expression(bytes, open) {
 				name = Text.trim((prefix.split_first("=") ?? { before: "", after: "" }).before)
-				Sql.result_of(Sql.annotation(bytes, line_start, indent, name))
+				item(Sql.result_of(Sql.annotation(bytes, line_start, indent, name)))
 			} else {
 				""
 			}
@@ -380,8 +386,22 @@ Sql := [].{
 		}
 	}
 
-	## `T` from a function's annotation whose result (after its last `=>` or `->`) is
-	## `Try(List(T), …)`.
+	## `T` in the annotation of a `Db.one!`'s row: `T` itself (`row : T`, before `row =
+	## Db.one!(…)?`), or `Try(T, …)`; `""` for a `List(…)`, which no row is.
+	one_item : Str -> Str
+	one_item = |typed| {
+		text = Text.trim(typed)
+		if text.starts_with("Try(") and text.ends_with(")") {
+			Sql.top_level(text.drop_prefix("Try(").drop_suffix(")")).first() ?? ""
+		} else if text.starts_with("List(") {
+			""
+		} else {
+			text
+		}
+	}
+
+	## A function's result type, from its annotation: what follows its last `=>` or `->` (outside
+	## brackets); `""` for an annotation that isn't a function's.
 	result_of : Str -> Str
 	result_of = |typed| {
 		bytes = typed.to_utf8()
@@ -400,7 +420,7 @@ Sql := [].{
 			$i = $i + 1
 		}
 		match $after {
-			Ok(at) => Sql.list_item(Text.rest(bytes, at))
+			Ok(at) => Text.trim(Text.rest(bytes, at))
 			Err(_) => ""
 		}
 	}
@@ -1212,6 +1232,36 @@ expect {
 			("", Bool.False),
 			("{ kind : Store.Kind }", Bool.True),
 			("", Bool.False),
+		]
+}
+
+# `Db.one!`'s row (D-096): a binding's annotation, the row itself (the call `?`d) or a `Try` of it;
+# a function's result, `Try(T, …)`, a module's own type qualified; none for a list, which no row is.
+expect {
+	text =
+		\\Store := [].{
+		\\	Row : { id : I64 }
+		\\
+		\\	one! = |{}| {
+		\\		row : { id : I64, note : Db.Nullable(Str) }
+		\\		row = Db.one!("select id, note from notes where id = 1", [])?
+		\\		tried : Try(Plate.Entry, [NotFound, DbErr(Str), BadRow(Str)])
+		\\		tried = Db.one!("select * from entries limit 1", [])
+		\\		listed : List({ id : I64 })
+		\\		listed = Db.one!("select id from notes", [])?
+		\\		Ok(row)
+		\\	}
+		\\
+		\\	first! : {} => Try(Row, [NotFound, DbErr(Str), BadRow(Str)])
+		\\	first! = |{}| Db.one!("select id from things order by id limit 1", [])
+		\\}
+	found = Sql.scan_text("app/Store.roc", text)
+	found.map(|each| (each.call, each.row, each.qualified))
+		== [
+			("one!", "{ id : I64, note : Db.Nullable(Str) }", Bool.False),
+			("one!", "Plate.Entry", Bool.False),
+			("one!", "", Bool.False),
+			("one!", "Store.Row", Bool.True),
 		]
 }
 

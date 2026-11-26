@@ -93,7 +93,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 | A plugin: packages/auth keeps sessions in the app's database, its cookie `tasks_session`. With no `admit!`, nobody signs in by a link or a provider; the app starts sessions itself | [`main.roc`](main.roc) (`Auth.plugin`) |
 | A session started and ended by an endpoint (`Auth.sign_in!` for the person picked, `Auth.sign_out!`), then a redirect | [`routes/me/+server.roc`](routes/me/+server.roc) |
 | SQLite in the server's process, with migrations and a seed that is safe to run twice | [`main.roc`](main.roc), [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`migrations/0002_seed.sql`](migrations/0002_seed.sql) |
-| Queries: `Db.all!` into typed rows, `Db.run!`, a transaction, and `Db.Nullable` for optional columns | [`Store.roc`](Store.roc) (`Row`, `task_of`, `move!`) |
+| Queries: `Db.all!` into typed rows, `Db.one!` for the one row a query reads, `Db.run!`, a transaction, and `Db.Nullable` for optional columns | [`Store.roc`](Store.roc) (`Row`, `task_of`, `task!`, `move!`) |
 | One endpoint for a plain form and the runtime, answering each in its way: `Endpoint.posted_by` tells them apart (a redirect for a form, JSON for the runtime) | [`routes/api/tasks/delete/+server.roc`](routes/api/tasks/delete/+server.roc) |
 
 ### Forms and changes

@@ -18,7 +18,8 @@ import Host
 ## A statement's parameters are `$1`, `$2`, …, given as `Value`s, in both. Postgres reads each as the
 ## type its place wants (`where id = $1` reads `Int(7)` as an integer); SQLite is given each as it
 ## is (a `Bool` as 1 or 0). Rows come back as records: `all!` decodes each row's columns, by name,
-## into the record its caller wants. A column that may be null is read as `Nullable(a)`:
+## into the record its caller wants (`one!` the one row a statement reads, `NotFound` if none). A
+## column that may be null is read as `Nullable(a)`:
 ##
 ## ```roc
 ## notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
@@ -141,6 +142,26 @@ Db := [].{
 			Ok(rows) =>
 				match Json.parse(rows) {
 					Ok(decoded) => Ok(decoded)
+					Err(InvalidJson(why)) => Err(BadRow(misread(rows, why)))
+				}
+			Err(why) => Err(DbErr(why))
+		}
+
+	## The one row a statement reads, read as `all!` reads each (D-096): `NotFound` when it reads
+	## none. When it reads more than one, the first, in the statement's order: one that may read
+	## several says which it means (`order by … limit 1`). `DbErr` and `BadRow` are as `all!`'s.
+	##
+	## ```roc
+	## task : Try({ title : Str, done : Bool }, [NotFound, DbErr(Str), BadRow(Str)])
+	## task = Db.one!("select title, done from tasks where id = $1", [Int(id)])
+	## ```
+	one! : Str, List(Value) => Try(row, [NotFound, DbErr(Str), BadRow(Str), ..others])
+		where [row.Json.Parseable([InvalidJson(Str)])]
+	one! = |sql, params|
+		match Host.db_query!(sql, encoded(params)) {
+			Ok(rows) =>
+				match Json.parse(rows) {
+					Ok(decoded) => List.first(decoded).map_err(|_| NotFound)
 					Err(InvalidJson(why)) => Err(BadRow(misread(rows, why)))
 				}
 			Err(why) => Err(DbErr(why))

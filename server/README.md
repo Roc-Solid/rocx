@@ -310,6 +310,9 @@ give it back (writes then take turns, as on SQLite).
 notes : Try(List({ id : I64, body : Str, note : Db.Nullable(Str) }), [DbErr(Str), BadRow(Str)])
 notes = Db.all!("select id, body, note from notes where author = $1", [Int(author)])
 
+note : Try({ body : Str }, [NotFound, DbErr(Str), BadRow(Str)])
+note = Db.one!("select body from notes where id = $1", [Int(id)])        # the one row, or NotFound
+
 added = Db.run!("insert into notes (body) values ($1)", [Text(body)])     # the rows changed
 
 Db.transaction!(|{}| {
@@ -332,7 +335,9 @@ Parameters are `$1`, `$2`… on both kinds, each a `Db.Value`: `Null`, `Text(Str
   and read it with `json_each($1)`.
 
 Rows come back as JSON, and `Json.parse` decodes each into the record the caller annotated, by
-column name. A column that may be null is read as `Db.Nullable(a)` (`Null` or `Some(a)`, `null` or
+column name. `Db.one!` (D-096) reads one row: `NotFound` when the statement reads none, and the
+first when it reads several, so a statement that may read several says which with `order by …
+limit 1`. A column that may be null is read as `Db.Nullable(a)` (`Null` or `Some(a)`, `null` or
 the value in JSON). A null in a column read as a plain value is `BadRow`, naming the column. The
 record says what may be null, so the host never asks the catalog (D-022).
 
@@ -393,7 +398,7 @@ Postgres with an advisory lock, on SQLite with its write lock.
 
 `rocx check --sql <app>` checks an app's SQL against its own database engine:
 
-1. rocx finds each `Db.all!` and `Db.run!` whose SQL is a string literal at the call.
+1. rocx finds each `Db.all!`, `Db.one!` and `Db.run!` whose SQL is a string literal at the call.
 2. It builds the app's server (as `rocx dev` builds it) and runs it with `--describe-sql FILE`.
    That answers no HTTP. It runs the platform's start on a scratch database of the app's kind
    (every migration applied), prepares each statement without running it, prints what the engine
@@ -408,9 +413,9 @@ Postgres with an advisory lock, on SQLite with its write lock.
    column and whether it is `not null` (from SQLite's column metadata, Turso's plan, or Postgres's
    `pg_attribute`). rocx reports what the engine refused, and a call whose parameter list isn't
    `$1` to `$n`, at the call's line.
-4. Then it checks rows with the compiler. For each `Db.all!` whose row type rocx can read (a
-   binding's annotation, `rows : List(T)`, or the result type of the function the call is the body
-   of), rocx writes a check app beside a copy of the app's sources (`build/sql/check`), with a
+4. Then it checks rows with the compiler. For each `Db.all!` or `Db.one!` whose row type rocx can
+   read (a binding's annotation, `rows : List(T)` for `all!` and `row : T` or `Try(T, …)` for
+   `one!`, or the result type of the function the call is the body of), rocx writes a check app beside a copy of the app's sources (`build/sql/check`), with a
    `DbCheck.Rows(T, Tags)` for each, and runs `roc check`. `packages/dbcheck` reads `T`'s shape
    and refuses a field the statement doesn't return, a type the column's values can't decode
    into, or a plain field over a column that may be null. rocx reports each at the call.

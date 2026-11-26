@@ -47,9 +47,9 @@ Store := [].{
 	## Today, in the profile's time zone (`2026-11-22`).
 	today! : {} => Try(Str, Problem)
 	today! = |{}| {
-		rows : List({ today : Str })
-		rows = Db.all!("select date($1, 'unixepoch') as today", [Int(Store.local_now!({})?)])?
-		rows.first().map_ok(|row| row.today).map_err(|_| NotFound)
+		row : { today : Str }
+		row = Db.one!("select date($1, 'unixepoch') as today", [Int(Store.local_now!({})?)])?
+		Ok(row.today)
 	}
 
 	## The hour it is now, in the profile's time zone (0 to 23): which meal the time suggests.
@@ -68,9 +68,8 @@ Store := [].{
 	day! : Str => Try(Plate.Day, Problem)
 	day! = |day| {
 		_ = Date.from_str(day).map_err(|_| NotFound)?
-		around : List({ previous : Str, next : Str })
-		around = Db.all!("select date($1, '-1 day') as previous, date($1, '+1 day') as next", [Text(day)])?
-		sides = around.first().map_err(|_| NotFound)?
+		sides : { previous : Str, next : Str }
+		sides = Db.one!("select date($1, '-1 day') as previous, date($1, '+1 day') as next", [Text(day)])?
 		entries : List(Plate.Entry)
 		entries = Db.all!(
 			"select cast(id as text) as id, meal, coalesce(cast(food_id as text), '') as food, name, amount, grams, kcal, protein, carbs, fat from entries where day = $1 order by id",
@@ -88,8 +87,8 @@ Store := [].{
 		found = Store.food!(food)?
 		grams = Plate.grams_of(count, unit, found.portions)
 		eaten = Plate.scaled(found.per100, grams)
-		rows : List({ id : I64 })
-		rows = Db.all!(
+		row : { id : I64 }
+		row = Db.one!(
 			"insert into entries (day, meal, food_id, name, amount, grams, kcal, protein, carbs, fat) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id",
 			[
 				Text(day),
@@ -104,7 +103,7 @@ Store := [].{
 				dec(eaten.fat),
 			],
 		)?
-		rows.first().map_ok(|row| row.id.to_str()).map_err(|_| NotFound)
+		Ok(row.id.to_str())
 	}
 
 	## The entry `id` gone, and the day it was on (to go back to). Gone already is no problem: a
@@ -122,12 +121,11 @@ Store := [].{
 	food! : Str => Try(Plate.Food, Problem)
 	food! = |id| {
 		key = number(id)?
-		rows : List({ id : I64, name : Str, brand : Str, food_group : Str, source : Str, source_id : Str, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec, fiber : Db.Nullable(Dec), sugars : Db.Nullable(Dec), sat_fat : Db.Nullable(Dec), sodium : Db.Nullable(Dec), recipe : Str })
-		rows = Db.all!(
+		row : { id : I64, name : Str, brand : Str, food_group : Str, source : Str, source_id : Str, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec, fiber : Db.Nullable(Dec), sugars : Db.Nullable(Dec), sat_fat : Db.Nullable(Dec), sodium : Db.Nullable(Dec), recipe : Str }
+		row = Db.one!(
 			"select f.id, f.name, f.brand, f.food_group, f.source, f.source_id, f.kcal, f.protein, f.carbs, f.fat, f.fiber, f.sugars, f.sat_fat, f.sodium, coalesce(cast(r.id as text), '') as recipe from foods f left join recipes r on r.food_id = f.id where f.id = $1",
 			[Int(key)],
 		)?
-		row = rows.first().map_err(|_| NotFound)?
 		portions : List(Plate.Portion)
 		portions = Db.all!("select label, grams from portions where food_id = $1 order by position, id", [Int(key)])?
 		extras = [
@@ -197,9 +195,9 @@ Store := [].{
 	## The food with the barcode `code`, if there is one.
 	by_barcode! : Str => Try(Str, Problem)
 	by_barcode! = |code| {
-		rows : List({ id : I64 })
-		rows = Db.all!("select id from foods where barcode = $1", [Text(code)])?
-		rows.first().map_ok(|row| row.id.to_str()).map_err(|_| NotFound)
+		row : { id : I64 }
+		row = Db.one!("select id from foods where barcode = $1", [Text(code)])?
+		Ok(row.id.to_str())
 	}
 
 	## A new food: from Open Food Facts (`off`, by its barcode) or made in the app (`mine`), with
@@ -209,8 +207,8 @@ Store := [].{
 		Db.transaction!(
 			|{}| {
 				extra = |name| food.extras.find_first(|each| each.name == name).map_ok(|each| dec(each.amount)) ?? Null
-				rows : List({ id : I64 })
-				rows = Db.all!(
+				row : { id : I64 }
+				row = Db.one!(
 					"insert into foods (source, source_id, name, brand, barcode, kcal, protein, carbs, fat, fiber, sugars, sat_fat, sodium) values ($1, $2, $3, $4, nullif($2, ''), $5, $6, $7, $8, $9, $10, $11, $12) returning id",
 					[
 						Text(food.source),
@@ -227,7 +225,6 @@ Store := [].{
 						extra("Sodium"),
 					],
 				)?
-				row = rows.first().map_err(|_| NotFound)?
 				match food.portion {
 					Ok(portion) => {
 						_ = Db.run!("insert into portions (food_id, label, grams) values ($1, $2, $3)", [Int(row.id), Text(portion.label), dec(portion.grams)])?
@@ -256,9 +253,8 @@ Store := [].{
 	recipe! : Str => Try(Plate.Recipe, Problem)
 	recipe! = |id| {
 		key = number(id)?
-		rows : List({ food : Str, name : Str, servings : I64, notes : Str })
-		rows = Db.all!("select cast(food_id as text) as food, name, servings, notes from recipes where id = $1", [Int(key)])?
-		recipe = rows.first().map_err(|_| NotFound)?
+		recipe : { food : Str, name : Str, servings : I64, notes : Str }
+		recipe = Db.one!("select cast(food_id as text) as food, name, servings, notes from recipes where id = $1", [Int(key)])?
 		parts : List({ id : Str, food : Str, name : Str, brand : Str, grams : Dec, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec })
 		parts = Db.all!(
 			"select cast(i.id as text) as id, cast(f.id as text) as food, f.name, f.brand, i.grams, f.kcal, f.protein, f.carbs, f.fat from ingredients i join foods f on f.id = i.food_id where i.recipe_id = $1 order by i.position, i.id",
@@ -273,12 +269,10 @@ Store := [].{
 	add_recipe! = |{ name, servings }|
 		Db.transaction!(
 			|{}| {
-				foods : List({ id : I64 })
-				foods = Db.all!("insert into foods (source, name, kcal, protein, carbs, fat) values ('recipe', $1, 0, 0, 0, 0) returning id", [Text(name)])?
-				food = foods.first().map_err(|_| NotFound)?
-				rows : List({ id : I64 })
-				rows = Db.all!("insert into recipes (food_id, name, servings) values ($1, $2, $3) returning id", [Int(food.id), Text(name), Int(servings)])?
-				recipe = rows.first().map_err(|_| NotFound)?
+				food : { id : I64 }
+				food = Db.one!("insert into foods (source, name, kcal, protein, carbs, fat) values ('recipe', $1, 0, 0, 0, 0) returning id", [Text(name)])?
+				recipe : { id : I64 }
+				recipe = Db.one!("insert into recipes (food_id, name, servings) values ($1, $2, $3) returning id", [Int(food.id), Text(name), Int(servings)])?
 				_ = Db.run!("update foods set source_id = $2 where id = $1", [Int(food.id), Text(recipe.id.to_str())])?
 				Ok(recipe.id.to_str())
 			},
@@ -335,9 +329,8 @@ Store := [].{
 	## and its one portion, a serving, the whole mix's weight shared by the servings.
 	mix! : I64 => Try({}, Problem)
 	mix! = |recipe| {
-		rows : List({ food : I64, servings : I64 })
-		rows = Db.all!("select food_id as food, servings from recipes where id = $1", [Int(recipe)])?
-		found = rows.first().map_err(|_| NotFound)?
+		found : { food : I64, servings : I64 }
+		found = Db.one!("select food_id as food, servings from recipes where id = $1", [Int(recipe)])?
 		parts : List({ grams : Dec, kcal : Dec, protein : Dec, carbs : Dec, fat : Dec })
 		parts = Db.all!(
 			"select i.grams, f.kcal, f.protein, f.carbs, f.fat from ingredients i join foods f on f.id = i.food_id where i.recipe_id = $1",
@@ -363,14 +356,7 @@ Store := [].{
 
 	## The profile the targets are worked out from.
 	profile! : {} => Try(Plate.Profile, Problem)
-	profile! = |{}| {
-		rows : List(Plate.Profile)
-		rows = Db.all!(
-			"select sex, birth_year, height_cm, weight_kg, activity, goal, kcal_target, timezone from profile",
-			[],
-		)?
-		rows.first().map_err(|_| NotFound)
-	}
+	profile! = |{}| Db.one!("select sex, birth_year, height_cm, weight_kg, activity, goal, kcal_target, timezone from profile", [])
 
 	## The profile, changed. A time zone the zone database doesn't have (`Time.offset!`) is
 	## `BadZone`.

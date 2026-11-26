@@ -1,7 +1,8 @@
 import Probe
 
 ## A statement's rows checked against what the database said of its columns, when the app is
-## compiled (D-058): `rocx check --sql` writes a line for each `Db.all!` whose row type it can name,
+## compiled (D-058): `rocx check --sql` writes a line for each `Db.all!` or `Db.one!` (D-096)
+## whose row type it can name,
 ##
 ## ```roc
 ## ## examples/plate/Store.roc:122:11

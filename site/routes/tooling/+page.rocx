@@ -190,8 +190,8 @@ view! = |_|
 					<div>
 						<p>
 							Checks the app's SQL with its own database engine, and the rows it reads with the compiler.
-							Each statement written as a string at a <code>Db.all!</code> or <code>Db.run!</code> is
-							prepared on a scratch database built from the app's migrations: for SQLite or Turso, a file
+							Each statement written as a string at a <code>Db.all!</code>, <code>Db.one!</code> or
+							<code>Db.run!</code> is prepared on a scratch database built from the app's migrations: for SQLite or Turso, a file
 							it deletes afterwards; for Postgres, a database it creates on the server
 							<code>--database-url</code> (or <code>DATABASE_URL</code>) names, and drops afterwards.
 							Reported at their lines: what the engine refuses, a call whose parameters don't match its

@@ -1,13 +1,13 @@
 ## `rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…]` (D-058): the
 ## app's SQL checked by its own database engine, and its rows by the compiler. rocx finds each
-## `Db.all!`/`Db.run!` whose SQL is a string literal at the call (`Sql.scan!`); the app's server,
-## built as `rocx dev` builds it, describes them (`--describe-sql`) on a scratch database it builds
-## from the program's migrations: a SQLite or Turso file it removes after, or a Postgres database it
-## makes on the server `--database-url` (DATABASE_URL) names and drops after, unless
+## `Db.all!`/`Db.one!`/`Db.run!` whose SQL is a string literal at the call (`Sql.scan!`); the app's
+## server, built as `rocx dev` builds it, describes them (`--describe-sql`) on a scratch database it
+## builds from the program's migrations: a SQLite or Turso file it removes after, or a Postgres
+## database it makes on the server `--database-url` (DATABASE_URL) names and drops after, unless
 ## `--sql-database URL` (ROCX_SQL_DATABASE) names one it may migrate. What follows `--` goes to the
 ## server as it is. Then rocx writes a check app beside a copy of the app (build/sql/check): a
-## `DbCheck.Rows(T, Tags)` for each `Db.all!` whose row type it read, its string the statement's
-## columns, which packages/dbcheck checks when `roc check` compiles it. Exits 1 when the engine
+## `DbCheck.Rows(T, Tags)` for each `Db.all!` or `Db.one!` whose row type it read, its string the
+## statement's columns, which packages/dbcheck checks when `roc check` compiles it. Exits 1 when the engine
 ## refuses a statement, a call's parameters don't match it, or a row doesn't fit its columns, and
 ## when the check app doesn't compile (so no row would be checked), saying why.
 ##

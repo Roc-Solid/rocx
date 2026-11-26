@@ -878,7 +878,7 @@ rocx check [dir]         # the app (here, or in dir) checked from its sources: r
                          # problem at its .rocx line; exit 1 on an error, 2 on warnings alone
 rocx check -- <command>  # run a command (roc check …), its reports pointed into .rocx files
 rocx check --sql [dir]   # the app's SQL checked by its own database engine, and its rows by the
-                         # compiler: each literal statement at a Db.all!/Db.run! is prepared on a
+                         # compiler: each literal statement at a Db.all!/one!/run! is prepared on a
                          # scratch database built from the app's migrations; what the engine refuses,
                          # parameters that don't match the call, and a row record that doesn't fit the
                          # columns (a missing field, a type, a nullable column read as a plain value)

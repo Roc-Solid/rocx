@@ -8,7 +8,7 @@ import Rank
 ## Board in SQLite, a file beside the server: every query the app makes, in one place. The
 ## tables are migrations/0001_board.sql; the route files call these and say what each answer means
 ## to whoever asked. A row comes back as the record its query is annotated with, by column name
-## (`Db.all!`).
+## (`Db.all!`, or `Db.one!` for the one row a query reads).
 ##
 ## Ids are integers in SQLite and strings everywhere else: a query reads them as
 ## `cast(id as text)`, and a parameter sent as text is compared with an integer column, or written
@@ -46,9 +46,9 @@ Store := [].{
 		if I64.from_str(id).is_err() {
 			Err(NotFound)
 		} else {
-			found : Try(List(Board.Person), [DbErr(Str), BadRow(Str)])
-			found = Db.all!("select cast(id as text) as id, name, color from people where id = $1", [Text(id)])
-			first(found?)
+			found : Try(Board.Person, Store.Problem)
+			found = Db.one!("select cast(id as text) as id, name, color from people where id = $1", [Text(id)])
+			found
 		}
 
 	## Everyone, by name: the board's assignees and the joining page's quick picks.
@@ -59,12 +59,10 @@ Store := [].{
 	## case), whose colour becomes `color`. No passwords: picking a name is being them.
 	join! : Str, Str => Try(Board.Person, Store.Problem)
 	join! = |name, color| {
-		found : Try(List(Board.Person), [DbErr(Str), BadRow(Str)])
-		found = Db.all!(
+		Db.one!(
 			"insert into people (name, color) values ($1, $2) on conflict (lower(name)) do update set color = excluded.color returning cast(id as text) as id, name, color",
 			[Text(name), Text(color)],
 		)
-		first(found?)
 	}
 
 	# ---- Boards ----
@@ -99,9 +97,8 @@ Store := [].{
 	## A whole board, but who is asking and who is editing what: those aren't the database's to say.
 	board! : Str => Try({ slug : Str, name : Str, today : Str, columns : List(Board.Column), cards : List(Board.Card), people : List(Board.Person) }, Store.Problem)
 	board! = |slug| {
-		boards : Try(List({ id : Str, name : Str, today : Str }), [DbErr(Str), BadRow(Str)])
-		boards = Db.all!("select cast(id as text) as id, name, date('now') as today from boards where slug = $1", [Text(slug)])
-		board = first(boards?)?
+		board : { id : Str, name : Str, today : Str }
+		board = Db.one!("select cast(id as text) as id, name, date('now') as today from boards where slug = $1", [Text(slug)])?
 		columns : Try(List(Board.Column), [DbErr(Str), BadRow(Str)])
 		columns = Db.all!("select cast(id as text) as id, name, rank from columns where board_id = $1 order by rank, id", [Text(board.id)])
 		cards : Try(List({ id : Str, column : Str, rank : Str, title : Str, description : Str, labels : List(Str), assignee : Str, due : Str, archived : Bool }), [DbErr(Str), BadRow(Str)])
@@ -150,9 +147,8 @@ Store := [].{
 			|{}| {
 				# The transaction holds the write lock from its start: two columns added at once take
 				# turns for the last rank.
-				boards : Try(List({ id : Str }), [DbErr(Str), BadRow(Str)])
-				boards = Db.all!("select cast(id as text) as id from boards where slug = $1", [Text(slug)])
-				board = first(boards?)?
+				board : { id : Str }
+				board = Db.one!("select cast(id as text) as id from boards where slug = $1", [Text(slug)])?
 				last : Try(List({ rank : Str }), [DbErr(Str), BadRow(Str)])
 				last = Db.all!("select rank from columns where board_id = $1 order by rank desc limit 1", [Text(board.id)])
 				rank = Rank.between((last?.first() ?? { rank: "" }).rank, "")
@@ -167,9 +163,8 @@ Store := [].{
 	rename_column! = |slug, column, name|
 		Db.transaction!(
 			|{}| {
-				olds : Try(List({ old : Str }), [DbErr(Str), BadRow(Str)])
-				olds = Db.all!("select name as old from columns where id = $2 and board_id = (select id from boards where slug = $1)", [Text(slug), Text(column)])
-				row = first(olds?)?
+				row : { old : Str }
+				row = Db.one!("select name as old from columns where id = $2 and board_id = (select id from boards where slug = $1)", [Text(slug), Text(column)])?
 				_ = Db.run!("update columns set name = $2 where id = $1", [Text(column), Text(name)])?
 				Ok(row.old)
 			},
@@ -222,9 +217,9 @@ Store := [].{
 		if I64.from_str(card).is_err() {
 			Err(NotFound)
 		} else {
-			found : Try(List({ id : Str, title : Str, archived : Bool }), [DbErr(Str), BadRow(Str)])
-			found = Db.all!("select cast(id as text) as id, title, archived from cards where id = $2 and board_id = (select id from boards where slug = $1)", [Text(slug), Text(card)])
-			first(found?)
+			found : Try({ id : Str, title : Str, archived : Bool }, Store.Problem)
+			found = Db.one!("select cast(id as text) as id, title, archived from cards where id = $2 and board_id = (select id from boards where slug = $1)", [Text(slug), Text(card)])
+			found
 		}
 
 	## What a card says, written: its title, description, assignee (`""`: no one) and due date
@@ -306,12 +301,10 @@ Store := [].{
 	## the moves and new cards into it take turns. Its board's id and its name.
 	lock_column! : Str, Str => Try({ board : Str, name : Str }, Store.Problem)
 	lock_column! = |slug, column| {
-		found : Try(List({ board : Str, name : Str }), [DbErr(Str), BadRow(Str)])
-		found = Db.all!(
+		Db.one!(
 			"select cast(c.board_id as text) as board, c.name from columns c join boards b on b.id = c.board_id where b.slug = $1 and c.id = $2",
 			[Text(slug), Text(column)],
 		)
-		first(found?)
 	}
 
 	## Every card in a column, archived ones too, where they are: what a new rank must differ from.
@@ -322,11 +315,3 @@ Store := [].{
 ## Now, in milliseconds since the epoch: what a card's `updated_at` is set to.
 now! : {} => I64
 now! = |{}| Time.now_millis!({}).to_i64_wrap()
-
-## The one row a query found, or `NotFound`.
-first : List(row) -> Try(row, [NotFound, ..others])
-first = |rows|
-	match rows.first() {
-		Ok(row) => Ok(row)
-		Err(_) => Err(NotFound)
-	}

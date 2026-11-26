@@ -877,11 +877,17 @@ test("migrations: the platform's tables, then the app's (embedded in it), in ord
 	assert.equal(await again.stop(), 0);
 });
 
-test("Postgres: statements with parameters, rows decoded into records, nulls as Db.Nullable(a)", { skip: skipDb }, async () => {
+test("Postgres: statements with parameters, rows decoded into records, nulls as Db.Nullable(a); one row read alone (Db.one!), or NotFound", { skip: skipDb }, async () => {
 	assert.equal(await post("/notes", "first"), "added 1");
 	assert.equal(await post("/notes?noted", "second"), "added 1");
 	assert.equal(await text("/notes"), "1 first -\n2 second a note");
 	assert.equal(await text("/note"), "first", "Int(1) read as the bigint its place wants");
+	// One row (Db.one!, D-096): the one there is; the first of several, in the statement's order; or NotFound.
+	assert.equal(await text("/notes/one?id=2"), "2 second a note");
+	assert.equal(await text("/notes/one?id=0"), "1 first -", "the first of the two");
+	const none = await get("/notes/one?id=99");
+	assert.equal(none.status, 404);
+	assert.equal(await none.text(), "none");
 	const unmarked = await get("/nullable");
 	assert.equal(unmarked.status, 500);
 	assert.match(await unmarked.text(), /`maybe` is null in a row; a column that may be null is read as Db\.Nullable\(a\)/);

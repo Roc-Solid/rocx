@@ -16,6 +16,8 @@ Store := [].{
 			Store.numbers!({}).is_ok(),
 			Store.notes_plain!({}).is_ok(),
 			Store.titled!({}).is_ok(),
+			Store.first!({}).is_ok(),
+			Store.one_note!(1).is_ok(),
 		]
 		Str.join_with(said.map(|ok| if (ok) "ok" else "failed"), " ")
 	}
@@ -70,4 +72,16 @@ Store := [].{
 	## Not checked: its SQL is put together.
 	picked! : List(Str) => Try(List({ body : Str }), [DbErr(Str), BadRow(Str)])
 	picked! = |columns| Db.all!("select ${Str.join_with(columns, ", ")} from notes", [])
+
+	## Right: one row (`Db.one!`), read by the function's result.
+	first! : {} => Try({ id : I64, body : Str }, [NotFound, DbErr(Str), BadRow(Str)])
+	first! = |{}| Db.one!("select id, body from notes order by id limit 1", [])
+
+	## Wrong: one row, a column that may be null read as a plain value.
+	one_note! : I64 => Try(Str, [NotFound, DbErr(Str), BadRow(Str)])
+	one_note! = |id| {
+		row : { note : Str }
+		row = Db.one!("select note from notes where id = $1", [Int(id)])?
+		Ok(row.note)
+	}
 }

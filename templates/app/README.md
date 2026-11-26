@@ -77,8 +77,9 @@ lets you send from. (`MAIL_FROM`, when it is set, wins over `from`.)
 `DATABASE_URL` moves a SQLite or Turso file elsewhere too: `sqlite:/srv/app/app.db`.
 
 To add a table, add the next migration (`migrations/0002_….sql`). The server applies new ones as
-it starts, once each. Read and write with `Db.all!` and `Db.run!` in an endpoint. `rocx check
---sql` checks each statement against your database's engine, and each row against its Roc type.
+it starts, once each. Read and write with `Db.all!`, `Db.one!` and `Db.run!` in an endpoint.
+`rocx check --sql` checks each statement against your database's engine, and each row against its
+Roc type.
 
 To move to another database, change the line. The migration this app starts with works on all
 three (text ids, times as `bigint` milliseconds), and so does packages/auth's. Keep yours that way
