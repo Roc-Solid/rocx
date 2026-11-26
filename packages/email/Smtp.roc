@@ -72,9 +72,10 @@ Smtp := [].{
 			}
 		}
 
-	## Hands `data` (the message, its lines ending in CRLF) to the server, from `from` to `to`
-	## (bare addresses).
-	send! : Url, Str, Str, Str => Try({}, Str)
+	## Hands `data` (the message, its lines ending in CRLF) to the server, from `from` to each of
+	## `to` (bare addresses, a `RCPT TO` each). A recipient the server refuses fails it all, before
+	## the message goes: nobody gets it.
+	send! : Url, Str, List(Str), Str => Try({}, Str)
 	send! = |url, from, to, data| {
 		tcp = open!(url)?
 		sent = deliver!(tcp, from, to, data)
@@ -130,10 +131,12 @@ open! = |url| {
 	}
 }
 
-deliver! : Tcp, Str, Str, Str => Try({}, Str)
+deliver! : Tcp, Str, List(Str), Str => Try({}, Str)
 deliver! = |tcp, from, to, data| {
 	_ = command!(tcp, "MAIL FROM:<${from}>", 250)?
-	_ = command!(tcp, "RCPT TO:<${to}>", 250)?
+	for each in to {
+		_ = command!(tcp, "RCPT TO:<${each}>", 250).map_err(|why| "to ${each}: ${why}")?
+	}
 	_ = command!(tcp, "DATA", 354)?
 	_ = written(tcp.write_utf8!("${stuffed(data)}\r\n.\r\n"))?
 	_ = expect_reply!(tcp, 250)?

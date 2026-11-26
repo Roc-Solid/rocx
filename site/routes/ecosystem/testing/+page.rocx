@@ -225,8 +225,11 @@ view! = |_|
 			plugin</a> keeps the mail it would send instead of sending it, under <code>--debug</code> (which
 			<code>startServer</code> passes) as under <code>--dev</code>: the last 100 messages, in the server's
 			memory. Every server a test starts therefore begins with an empty mailbox. <code>app.mail()</code>
-			reads the messages, <code>waitForMail</code> waits for one that matches, and <code>links</code>
-			finds the links in a message:
+			reads the messages (each with its <code>to</code>, <code>cc</code>, <code>bcc</code>,
+			<code>reply_to</code>, <code>headers</code>, <code>subject</code>, <code>text</code>,
+			<code>html</code>, and the <code>raw</code> message, in which no header names the Bcc),
+			<code>waitForMail</code> waits for one that matches (a list such as <code>cc</code> matches when one
+			of its addresses does), and <code>links</code> finds the links in a message:
 		</p>
 		<Code title={Sources.testing_node_mail.file} source={Sources.testing_node_mail.rocx} numbers={Bool.False} />
 

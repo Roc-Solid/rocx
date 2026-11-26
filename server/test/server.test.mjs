@@ -1429,7 +1429,7 @@ test("email: without an SMTP server, kept in the outbox and logged", { skip }, a
 		assert.equal(await plain.text(`/mail?to=ada@example.com&run=${run}`, { method: "POST", body: "Hi there" }), "sent");
 		const outbox = JSON.parse(await plain.text("/__rocx/mail"));
 		const { id, at, raw, ...kept } = outbox.at(-1);
-		assert.deepEqual(kept, { from: "rocx <rocx@localhost>", to: "ada@example.com", subject: `Hello ${run}`, text: "Hi there", html: "<p>Hi there</p>" });
+		assert.deepEqual(kept, { from: "rocx <rocx@localhost>", to: "ada@example.com", cc: [], bcc: [], reply_to: "", headers: [], subject: `Hello ${run}`, text: "Hi there", html: "<p>Hi there</p>" });
 		assert.ok(id >= 1 && Math.abs(at - Date.now()) < 60_000, "an id, and when");
 		assert.match(raw, new RegExp(`^Subject: Hello ${run}\r$`, "m"), "the message as SMTP would carry it");
 		assert.deepEqual(JSON.parse(await plain.text("/__rocx/mail.json")), outbox);
@@ -1437,15 +1437,34 @@ test("email: without an SMTP server, kept in the outbox and logged", { skip }, a
 		const refused = await plain.get("/mail?to=not-an-address", { method: "POST", body: "x" });
 		assert.equal(refused.status, 500);
 		assert.match(await refused.text(), /^to not-an-address: /);
+		// Several recipients, Cc, Bcc, Reply-To and a header of the app's: kept as the app gave them;
+		// the raw message names no Bcc.
+		const query = moreQuery({ to: "Ada <ada@example.com>, grace@example.com", cc: ["lin@example.com"], bcc: ["secret@example.com"], reply_to: "help@example.com", header: ["List-Unsubscribe:<https://example.com/u>"] });
+		assert.equal(await plain.text(`/mail/more?${query}`, { method: "POST", body: "All of you" }), "sent");
+		const more = JSON.parse(await plain.text("/__rocx/mail.json")).at(-1);
+		assert.deepEqual(
+			{ to: more.to, cc: more.cc, bcc: more.bcc, reply_to: more.reply_to, headers: more.headers, html: more.html },
+			{ to: "Ada <ada@example.com>, grace@example.com", cc: ["lin@example.com"], bcc: ["secret@example.com"], reply_to: "help@example.com", headers: [{ name: "List-Unsubscribe", value: "<https://example.com/u>" }], html: "" },
+		);
+		assert.match(more.raw, /^Cc: lin@example\.com\r$/m);
+		assert.doesNotMatch(more.raw, /Bcc|secret@/);
 	} finally {
 		await plain.stop();
 	}
 });
 
-/** An SMTP server that takes every message and keeps it: just enough of the protocol. */
+/** The query of `/mail/more` (server/test/app): `to`, `reply_to`, and each of `cc`, `bcc` and `header` (`Name:value`) as often as given. */
+function moreQuery({ to = "", cc = [], bcc = [], reply_to = "", header = [] }) {
+	const pairs = [["to", to], ["reply_to", reply_to], ["run", run], ...cc.map((each) => ["cc", each]), ...bcc.map((each) => ["bcc", each]), ...header.map((each) => ["header", each])];
+	return pairs.map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join("&");
+}
+
+/** An SMTP server that takes every message and keeps it: just enough of the protocol. It refuses
+ * a recipient in `refuse` (550), as a server refuses an address it doesn't know. */
 async function smtpServer() {
 	const received = [];
 	const commands = [];
+	const refuse = new Set();
 	const server = createServer((socket) => {
 		socket.setEncoding("utf8");
 		let buffered = "";
@@ -1474,6 +1493,7 @@ async function smtpServer() {
 				commands.push(verb);
 				if (verb === "EHLO" || verb === "HELO") socket.write("250-rocx-test\r\n250 8BITMIME\r\n");
 				else if (verb === "MAIL") (envelope.from = line), socket.write("250 ok\r\n");
+				else if (verb === "RCPT" && [...refuse].some((address) => line.includes(`<${address}>`))) socket.write("550 no such user\r\n");
 				else if (verb === "RCPT") envelope.to.push(line), socket.write("250 ok\r\n");
 				else if (verb === "DATA") (data = ""), socket.write("354 go on\r\n");
 				else if (verb === "QUIT") socket.end("221 bye\r\n");
@@ -1482,7 +1502,7 @@ async function smtpServer() {
 		});
 	});
 	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-	return { port: server.address().port, received, commands, close: () => new Promise((resolve) => server.close(resolve)) };
+	return { port: server.address().port, received, commands, refuse, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 test("email: over SMTP, from a request and from a job, as text and HTML", { skip }, async () => {
@@ -1515,6 +1535,43 @@ test("email: over SMTP, from a request and from a job, as text and HTML", { skip
 	const encoded = smtp.received.at(-1).data;
 	assert.match(encoded, /^Subject: =\?utf-8\?b\?[A-Za-z0-9+\/=]+\?=\r$/m);
 	assert.match(encoded, /Content-Transfer-Encoding: base64/);
+	// Several recipients, Cc, Bcc, Reply-To and a header of the app's: a RCPT TO for each address
+	// (once each), the Cc and Reply-To headers, and no header naming the Bcc, nor its address.
+	const query = moreQuery({ to: 'Ada <ada@example.com>, "Lovelace, Grace" <grace@example.com>', cc: ["lin@example.com", "Max M <max@example.com>, ada@example.com"], bcc: ["secret@example.com"], reply_to: "Help <help@example.com>", header: ["List-Unsubscribe:<https://example.com/unsubscribe?t=1>"] });
+	assert.equal(await post(`/mail/more?${query}`, "All of you"), "sent");
+	const many = smtp.received.at(-1);
+	assert.deepEqual(many.to, ["ada@example.com", "grace@example.com", "lin@example.com", "max@example.com", "secret@example.com"].map((address) => `RCPT TO:<${address}>`));
+	assert.match(many.data, /^To: "Ada" <ada@example\.com>, "Lovelace, Grace" <grace@example\.com>\r$/m);
+	assert.match(many.data, /^Cc: lin@example\.com, "Max M" <max@example\.com>, ada@example\.com\r$/m);
+	assert.match(many.data, /^Reply-To: "Help" <help@example\.com>\r$/m);
+	assert.match(many.data, /^List-Unsubscribe: <https:\/\/example\.com\/unsubscribe\?t=1>\r$/m);
+	assert.match(many.data, /Content-Type: text\/plain/, "no html: text alone");
+	assert.doesNotMatch(many.data, /Bcc|secret@/);
+	// A header that would add a header of its own, or one the package writes, is refused, and
+	// nothing is sent.
+	const sentBefore = smtp.received.length;
+	for (const [header, said] of [
+		["X-Note:a\r\nBcc: them@example.com", /^header X-Note: a CR or LF in its value/],
+		["Subject:Free money", /^header Subject: the package writes it itself/],
+		["content-type:text/html", /^header content-type: the package writes it itself/],
+	]) {
+		const refused = await server.get(`/mail/more?${moreQuery({ to: "ada@example.com", header: [header] })}`, { method: "POST", body: "x" });
+		assert.equal(refused.status, 500);
+		assert.match(await refused.text(), said);
+	}
+	const badCc = await server.get(`/mail/more?${moreQuery({ to: "ada@example.com", cc: ["Lovelace, Ada <ada@example.com>"] })}`, { method: "POST", body: "x" });
+	assert.match(await badCc.text(), /^cc Lovelace: not an email address/);
+	assert.equal(smtp.received.length, sentBefore, "nothing sent");
+	// A recipient the SMTP server refuses fails the message for everyone, before it goes.
+	smtp.refuse.add("nobody@example.com");
+	try {
+		const refused = await server.get(`/mail/more?${moreQuery({ to: "ada@example.com, nobody@example.com" })}`, { method: "POST", body: "x" });
+		assert.equal(refused.status, 500);
+		assert.match(await refused.text(), /^email to ada@example\.com, nobody@example\.com: to nobody@example\.com: the server said 550 /);
+		assert.equal(smtp.received.length, sentBefore, "nobody got it");
+	} finally {
+		smtp.refuse.clear();
+	}
 	// An SMTP server that isn't there is an error, not a crash.
 	const nowhere = await start([], app, { SMTP_URL: "smtp://127.0.0.1:9" });
 	try {
@@ -1564,6 +1621,16 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 		assert.match(message, new RegExp(`<pre>Date: .+\\r\\nFrom: &quot;rocx&quot; &lt;rocx@localhost&gt;\\r\\nTo: ada@example.com\\r\\nSubject: Hello ${run}box\\r\\n`), "the raw message");
 		assert.doesNotMatch(message, /<b>there/, "nothing of the email's is markup on the page");
 		assert.equal((await dev.get("/__rocx/mail/999999999")).status, 404);
+
+		// Cc, Bcc and Reply-To: counted in the list, each on the message's page with the app's headers.
+		const query = moreQuery({ to: "ada@example.com", cc: ["Lin <lin@example.com>"], bcc: ["secret@example.com"], reply_to: "help@example.com", header: ["List-Unsubscribe:<https://example.com/u>"] });
+		assert.equal(await dev.text(`/mail/more?${query}`, { method: "POST", body: "All of you" }), "sent");
+		const withCopies = await dev.text("/__rocx/mail", { headers: { accept: "text/html" } });
+		assert.match(withCopies, /<td>ada@example\.com <span class="muted">\+1 cc, \+1 bcc<\/span><\/td>/);
+		const [, moreId] = new RegExp(`<a class="row-link" href="/__rocx/mail/(\\d+)"><strong>More ${run}</strong></a>`).exec(withCopies) ?? [];
+		const copies = await dev.text(`/__rocx/mail/${moreId}`);
+		assert.match(copies, /<dt>Cc<\/dt><dd>Lin &lt;lin@example\.com&gt;<\/dd><dt>Bcc<\/dt><dd>secret@example\.com <span class="muted">\(in no header\)<\/span><\/dd><dt>Reply-To<\/dt><dd>help@example\.com<\/dd>/);
+		assert.match(copies, /<dt>List-Unsubscribe<\/dt><dd>&lt;https:\/\/example\.com\/u&gt;<\/dd>/);
 
 		// Its stream says when mail comes.
 		const gone = new AbortController();

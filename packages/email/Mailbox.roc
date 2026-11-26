@@ -19,16 +19,17 @@ import admin.Look
 ## at `/__rocx/mail` and `/__rocx/mail.json`. Without either, the app answers them.
 Mailbox := [].{
 
-	## A message as it is kept: when, from and to whom, its subject, text, HTML ("" for none), and
-	## the message whole, as SMTP's DATA would carry it.
-	Message : { at : I64, from : Str, to : Str, subject : Str, text : Str, html : Str, raw : Str }
+	## A message as it is kept: when, from and to whom (`to`, `cc`, `bcc`, `reply_to` as the app gave
+	## them), the app's own headers, its subject, text, HTML ("" for none), and the message whole, as
+	## SMTP's DATA would carry it (in which no header names `bcc`).
+	Message : { at : I64, from : Str, to : Str, cc : List(Str), bcc : List(Str), reply_to : Str, headers : List({ name : Str, value : Str }), subject : Str, text : Str, html : Str, raw : Str }
 
 	keep! : Message => {}
 	keep! = |message| {
 		# Ids keep counting after a clear, so a page open on an old one never shows another.
 		id = Kv.increment!("email:mailbox:id", 1, {}) ?? 0
 		kept : Kept
-		kept = { id, at: message.at, from: message.from, to: message.to, subject: message.subject, text: message.text, html: message.html, raw: message.raw }
+		kept = { id, at: message.at, from: message.from, to: message.to, cc: message.cc, bcc: message.bcc, reply_to: message.reply_to, headers: message.headers, subject: message.subject, text: message.text, html: message.html, raw: message.raw }
 		Kv.push!("email:mailbox", kept, { keep: 100 })
 		Live.publish!("email:mailbox", message.subject)
 	}
@@ -76,7 +77,7 @@ Mailbox := [].{
 }
 
 ## A message kept, with its id.
-Kept : { id : I64, at : I64, from : Str, to : Str, subject : Str, text : Str, html : Str, raw : Str }
+Kept : { id : I64, at : I64, from : Str, to : Str, cc : List(Str), bcc : List(Str), reply_to : Str, headers : List({ name : Str, value : Str }), subject : Str, text : Str, html : Str, raw : Str }
 
 dev! : {} => Bool
 dev! = |{}| Env.dev!({})
@@ -119,7 +120,7 @@ listed! = |{}| {
 				|each| {
 					link = "/__rocx/mail/${each.id.to_str()}"
 					subject = if (each.subject.is_empty()) "(no subject)" else each.subject
-					"<tr><td class=\"when\">${AdminHtml.relative(each.at, now)}</td><td>${Look.escape(each.from)}</td><td>${Look.escape(each.to)}</td><td class=\"last\"><a class=\"row-link\" href=\"${link}\"><strong>${Look.escape(subject)}</strong></a></td></tr>"
+					"<tr><td class=\"when\">${AdminHtml.relative(each.at, now)}</td><td>${Look.escape(each.from)}</td><td>${Look.escape(each.to)}${copied(each)}</td><td class=\"last\"><a class=\"row-link\" href=\"${link}\"><strong>${Look.escape(subject)}</strong></a></td></tr>"
 				},
 			)
 			kept = "in the server's memory (the last 100, until it stops)"
@@ -142,6 +143,25 @@ listed! = |{}| {
 	}
 }
 
+## Who else a message went to, as the list shows it after `to`: ` +2 cc, +1 bcc` (an item each).
+copied : Kept -> Str
+copied = |message| {
+	cc = if (message.cc.is_empty()) [] else ["+${message.cc.len().to_str()} cc"]
+	bcc = if (message.bcc.is_empty()) [] else ["+${message.bcc.len().to_str()} bcc"]
+	said = cc.concat(bcc)
+	if (said.is_empty()) "" else " <span class=\"muted\">${Str.join_with(said, ", ")}</span>"
+}
+
+## A message's Cc, Bcc and Reply-To, as its page lists them: each it has. Bcc is said to be named
+## in no header.
+addressed : Kept -> Str
+addressed = |message| {
+	cc = if (message.cc.is_empty()) "" else "<dt>Cc</dt><dd>${Look.escape(Str.join_with(message.cc, ", "))}</dd>"
+	bcc = if (message.bcc.is_empty()) "" else "<dt>Bcc</dt><dd>${Look.escape(Str.join_with(message.bcc, ", "))} <span class=\"muted\">(in no header)</span></dd>"
+	reply_to = if (message.reply_to.is_empty()) "" else "<dt>Reply-To</dt><dd>${Look.escape(message.reply_to)}</dd>"
+	"${cc}${bcc}${reply_to}"
+}
+
 one! : I64 => Server.Response
 one! = |id| {
 	now = Time.now_millis!({}).to_i64_wrap()
@@ -153,6 +173,7 @@ one! = |id| {
 				Err(_) => AdminHtml.page(404, { title: "Mailbox", events: "", now, side: mail_side(messages.len(), Bool.False), body: "${Look.header({ eyebrow: "Dev mailbox", title: "No message #${id.to_str()}", actions: back })}<section class=\"panel\">${Look.empty("mail", "No message #${id.to_str()}", "It may have been cleared, or kept more than a week ago.")}</section>" })
 				Ok(message) => {
 					subject = if (message.subject.is_empty()) "(no subject)" else message.subject
+					headers = Str.join_with(message.headers.map(|header| "<dt>${Look.escape(header.name)}</dt><dd>${Look.escape(header.value)}</dd>"), "")
 					html =
 						if message.html.is_empty() {
 							""
@@ -163,7 +184,7 @@ one! = |id| {
 					body = Str.join_with(
 						[
 							Look.header({ eyebrow: "Message #${id.to_str()}", title: Look.escape(subject), actions: back }),
-							"<section class=\"panel\"><dl class=\"plain\"><dt>From</dt><dd>${Look.escape(message.from)}</dd><dt>To</dt><dd>${Look.escape(message.to)}</dd><dt>Subject</dt><dd>${Look.escape(message.subject)}</dd><dt>Date</dt><dd>${AdminHtml.moment(message.at)} <span class=\"muted\">(${AdminHtml.relative(message.at, now)})</span></dd></dl></section>",
+							"<section class=\"panel\"><dl class=\"plain\"><dt>From</dt><dd>${Look.escape(message.from)}</dd><dt>To</dt><dd>${Look.escape(message.to)}</dd>${addressed(message)}<dt>Subject</dt><dd>${Look.escape(message.subject)}</dd><dt>Date</dt><dd>${AdminHtml.moment(message.at)} <span class=\"muted\">(${AdminHtml.relative(message.at, now)})</span></dd>${headers}</dl></section>",
 							html,
 							"<section class=\"panel\"><h2>Text</h2><pre>${Look.escape(message.text)}</pre></section>",
 							"<section class=\"panel\"><details><summary>The message as SMTP would carry it</summary><pre>${Look.escape(message.raw)}</pre></details></section>",

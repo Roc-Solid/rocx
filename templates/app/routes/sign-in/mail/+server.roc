@@ -32,7 +32,7 @@ post! = |{ body, .. }| {
 }
 
 ## The mail with the link `url` in it, to `to`.
-message : Str, Str -> { to : Str, subject : Str, text : Str, html : Str }
+message : Str, Str -> Email.Message
 message = |to, url| {
 	to: to,
 	subject: "Sign in to {{title}}",

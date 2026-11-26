@@ -1890,6 +1890,23 @@ program = App.program({ …, plugins: [Email.plugin({ from: "Acme <hello@example
 needs the host; email is Roc on `Tcp` and `Kv`, and now the example of a plugin with dev-only paths
 and a check. **Reversible:** yes.
 
+**Later (2026-11-26):** `Email.Message` is a record with defaults (`Message := { to, subject, text,
+html ?? "", cc ?? [], bcc ?? [], reply_to ?? "", headers ?? [] }`), so a message has several
+recipients, Cc, Bcc, Reply-To and headers of the app's own, and `{ to, subject, text, html }` is
+still one. `to` stays a `Str` that may name several addresses, separated by commas as RFC 5322's
+address list has them (a comma inside a quoted name is the name's), rather than becoming a list:
+every message written before keeps working, the dev mailbox's `to` and packages/testing's
+`waitForMail({ to })` stay strings, and it reads as the header the recipient sees. A message built
+before it is sent must be typed `Email.Message` (a plain record type, even with the same fields,
+isn't one: the one change an app may need; the template's sign-in route had it). Every address is
+read before anything is sent; the SMTP client sends a `RCPT TO` for each address in `to`, `cc` and
+`bcc` (each once), and a refused one fails the message for everyone, before it goes. No header
+names the Bcc. An app's header is refused if a CR or LF in its name or value would start a header
+of its own (as one in an address's name or the subject can't: those are encoded words), or if it is one the package writes itself
+(`From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Date`, `Message-ID`, `MIME-Version`,
+`Content-*`). The mailbox's JSON gained `cc`, `bcc`, `reply_to` and `headers`, as the app gave
+them; its pages show them.
+
 ## D-036 A control-flow component's function child is effectful
 
 **Context.** `<For>`'s row and `<Show>`'s narrowed child (`{|post!, index!| …}`) were typed pure

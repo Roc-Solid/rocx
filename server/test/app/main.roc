@@ -174,6 +174,24 @@ param = |query, name| {
 	$found
 }
 
+## Every value a query's parameter has, in order (`cc=a&cc=b`): none when it has none.
+params : Str, Str -> List(Str)
+params = |query, name| {
+	var $found = []
+	for pair in query.split_on("&") {
+		match pair.split_first("=") {
+			Ok({ before: key, after: value }) =>
+				if key == name {
+					$found = $found.append(Server.decode_segment(value))
+				} else {
+					{}
+				}
+			Err(_) => {}
+		}
+	}
+	$found
+}
+
 ## What's after `prefix` in `path`, or "".
 after : Str, Str -> Str
 after = |path, prefix|
@@ -800,6 +818,21 @@ route! = |request, context| {
 				Ok({}) => text(200, "sent")
 				Err(EmailErr(why)) => text(500, why)
 			}
+		("POST", "/mail/more") => {
+			# Text alone (no html), to several, with Cc, Bcc, Reply-To and headers of its own
+			# (`header=Name:value`), each from the query.
+			headers = params(request.query, "header").map(
+				|header|
+					match header.split_first(":") {
+						Ok({ before, after: value }) => (before, value)
+						Err(_) => (header, "")
+					},
+			)
+			match Email.send!({ to: param(request.query, "to"), cc: params(request.query, "cc"), bcc: params(request.query, "bcc"), reply_to: param(request.query, "reply_to"), headers, subject: "More ${run}", text: Server.text_of(request) }) {
+				Ok({}) => text(200, "sent")
+				Err(EmailErr(why)) => text(500, why)
+			}
+		}
 		("POST", "/jobs/mail") =>
 			match Job.enqueue!(mail_job, { to: param(request.query, "to"), run }, {}) {
 				Ok({}) => text(202, "queued")

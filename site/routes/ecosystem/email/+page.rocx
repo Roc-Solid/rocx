@@ -7,15 +7,16 @@ import ../../../Generated/Paths
 import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 
-## The email package: installing the plugin, sending a message from a job, the SMTP server's URL,
-## the dev mailbox, and what it can't do yet. Static: the samples are server/test/app's, which the
+## The email package: installing the plugin, sending a message from a job, several recipients and
+## the rest of a message, the SMTP server's URL, the dev mailbox, and what it can't do yet. Static: the samples are server/test/app's, which the
 ## server's tests run.
 meta = {
 	title: "Email",
-	description: "packages/email, a plugin for Roc Solid's server: email over SMTP, as text or text and HTML, sent from a job so a failed send is tried again; with no SMTP server, kept in memory and shown in the dev mailbox.",
+	description: "packages/email, a plugin for Roc Solid's server: email over SMTP, as text or text and HTML, to several recipients with Cc, Bcc, Reply-To and headers of your own, sent from a job so a failed send is tried again; with no SMTP server, kept in memory and shown in the dev mailbox.",
 	toc: [
 		{ id: "install", label: "Installing it" },
 		{ id: "send", label: "Sending an email" },
+		{ id: "recipients", label: "Several recipients, Cc, Bcc, Reply-To" },
 		{ id: "smtp", label: "Connecting to an SMTP server" },
 		{ id: "mailbox", label: "The dev mailbox" },
 		{ id: "inside", label: "How it works" },
@@ -62,11 +63,11 @@ view! = |_|
 			<Heading id="send">Sending an email</Heading>
 			<p>
 				<code>{"Email.send!({ to, subject, text, html })"}</code> sends one message and waits for the SMTP
-				server's answer. <code>to</code> is one address, with or without a name
-				(<code>{"\"Ada Lovelace <ada@example.com>\""}</code>). <code>html</code> may be <code>""</code> for a
-				text-only email. It answers <code>{"Ok({})"}</code>, or <code>EmailErr</code> with the reason: an
-				address it can't read, a server that refuses the message or can't be reached, or no SMTP server
-				outside <code>--dev</code>.
+				server's answer. <code>to</code> is an address, with or without a name
+				(<code>{"\"Ada Lovelace <ada@example.com>\""}</code>), or several (below). <code>html</code> may be
+				left out, or <code>""</code>, for a text-only email. It answers <code>{"Ok({})"}</code>, or
+				<code>EmailErr</code> with the reason: an address it can't read, a header it refuses, a server that
+				refuses the message or can't be reached, or no SMTP server outside <code>--dev</code>.
 			</p>
 			<p>
 				Send from a <a href={Paths.ecosystem_jobs}>job</a> rather than from the request itself. The request
@@ -87,6 +88,52 @@ view! = |_|
 					so a server that lists the plugin and has no SMTP server doesn't start: it says
 					<code>{"email: SMTP_URL isn't set, so email can't be sent: …"}</code> and exits. Without the plugin,
 					each <code>Email.send!</code> answers <code>EmailErr</code> saying the same.
+				</p>
+			</Callout>
+
+			<Heading id="recipients">Several recipients, Cc, Bcc, Reply-To</Heading>
+			<p>
+				A message is a record with defaults (<code>Email.Message</code>): only <code>to</code>,
+				<code>subject</code> and <code>text</code> must be given, and the rest are there when you need them:
+			</p>
+			<Code
+				title="Minutes, to the team"
+				source={"Email.send!({\n\tto: \"Ada <ada@example.com>, \\\"Lovelace, Grace\\\" <grace@example.com>\",\n\tcc: [\"lin@example.com\"],\n\tbcc: [\"archive@example.com\"],\n\treply_to: \"team@example.com\",\n\theaders: [(\"List-Unsubscribe\", \"<https://example.com/unsubscribe?t=\${token}>\")],\n\tsubject: \"Minutes\",\n\ttext: minutes,\n})"}
+				numbers={Bool.False}
+			/>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Field</th><th>Default</th><th>What it is</th></tr></thead>
+					<tbody>
+						<tr><td><code>to : Str</code></td><td>(must be given)</td><td>one address or several, separated by commas, as an email's <code>To</code> header has them; a comma inside a quoted name is the name's (<code>{"\"Lovelace, Ada\" <ada@example.com>"}</code>). At least one.</td></tr>
+						<tr><td><code>html : Str</code></td><td><code>""</code></td><td>the same as HTML; <code>""</code> for text alone</td></tr>
+						<tr><td><code>cc : List(Str)</code></td><td><code>[]</code></td><td>more who see it, in its <code>Cc</code> header; each item one address or several</td></tr>
+						<tr><td><code>bcc : List(Str)</code></td><td><code>[]</code></td><td>more who get it, named in no header: only the SMTP server is told, so nobody who gets it sees them</td></tr>
+						<tr><td><code>reply_to : Str</code></td><td><code>""</code></td><td>where a reply goes; <code>""</code>: to who it is from</td></tr>
+						<tr><td><code>{"headers : List((Str, Str))"}</code></td><td><code>[]</code></td><td>headers of your own, such as <code>List-Unsubscribe</code></td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				<code>to</code> stays a <code>Str</code>, so every message written for one recipient still is one.
+				For a list of people, join it: <code>{"Str.join_with(addresses, \", \")"}</code>. The SMTP server is
+				told every address in <code>to</code>, <code>cc</code> and <code>bcc</code>, each once. If it
+				refuses one, nobody gets the message, and <code>Email.send!</code> says which address it refused.
+			</p>
+			<p>
+				A header of your own can't break the message: one whose name or value has a line break in it
+				(which would start a header of its own, a <code>Bcc</code> that quietly adds a recipient, say) is
+				refused, and so are the headers the package writes itself (<code>From</code>, <code>To</code>,
+				<code>Cc</code>, <code>Bcc</code>, <code>Reply-To</code>, <code>Subject</code>, <code>Date</code>,
+				<code>Message-ID</code>, <code>MIME-Version</code>, <code>Content-*</code>): use the field instead.
+				A value that isn't plain ASCII is encoded, as the subject is.
+			</p>
+			<Callout kind="note" title="A message you build first is an Email.Message">
+				<p>
+					A record written straight into <code>Email.send!</code>, or returned by a function whose type
+					says <code>Email.Message</code>, gets the defaults. A function typed with a plain record
+					(<code>{"-> { to : Str, subject : Str, text : Str, html : Str }"}</code>) or an untyped local
+					doesn't: write <code>Email.Message</code> in its type.
 				</p>
 			</Callout>
 
@@ -122,9 +169,10 @@ view! = |_|
 				A server started with <code>--dev</code> (as <code>rocx dev</code> starts it) answers
 				<code>/__rocx/mail</code> before your app does. It lists the email kept instead of sent, newest
 				first (when, from, to, subject), with a Clear button, and the list updates as mail arrives. Each
-				message has its own page at <code>{"/__rocx/mail/<id>"}</code>: its headers, its text, its HTML in a
-				sandboxed frame (no script runs in it, and a link opens in a new tab), and the whole message as SMTP
-				would have carried it.
+				message has its own page at <code>{"/__rocx/mail/<id>"}</code>: its headers (Cc, Bcc and Reply-To
+				too, and your own), its text, its HTML in a sandboxed frame (no script runs in it, and a link opens
+				in a new tab), and the whole message as SMTP would have carried it, in which no header names the
+				Bcc.
 			</p>
 			<p>
 				The last 100 messages are kept in the server's memory (<a href={Paths.platform_kv}><code>Kv</code></a>),
@@ -137,10 +185,11 @@ view! = |_|
 			<Heading id="inside">How it works</Heading>
 			<p>
 				The package is Roc on what the server platform gives every plugin. <code>Email.roc</code> writes the
-				message: a subject that isn't plain ASCII is encoded (RFC 2047), a body that isn't is sent as
-				Base64, and text with HTML becomes <code>multipart/alternative</code>. <code>Smtp.roc</code> is a
-				small SMTP client over the platform's <code>Tcp</code>, which has TLS. Each send opens its own
-				connection. <code>Mailbox.roc</code> is the dev mailbox: paths a plugin answers before the app,
+				message: it reads every address first, a subject or a name that isn't plain ASCII is encoded
+				(RFC 2047), a body that isn't is sent as Base64, and text with HTML becomes
+				<code>multipart/alternative</code>. <code>Smtp.roc</code> is a small SMTP client over the
+				platform's <code>Tcp</code>, which has TLS: a <code>RCPT TO</code> for each recipient, then the
+				message. Each send opens its own connection. <code>Mailbox.roc</code> is the dev mailbox: paths a plugin answers before the app,
 				only under <code>--dev</code> or <code>--debug</code>
 				(<a href={"${Paths.platform_server}#plugins"}>plugins</a>), drawn in the
 				<a href={Paths.ecosystem_admin}>admin's</a> look.
@@ -153,8 +202,8 @@ view! = |_|
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
-				<li>One recipient per message: no Cc, no Bcc.</li>
-				<li>No attachments, no Reply-To or other headers of your own.</li>
+				<li>No attachments.</li>
+				<li>No groups in an address list (<code>{"undisclosed-recipients:;"}</code>), and no comments in an address.</li>
 				<li>Mail kept for the mailbox lives in memory only, so a restart forgets it. That is on purpose.</li>
 			</ul>
 			<p>

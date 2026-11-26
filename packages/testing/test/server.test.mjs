@@ -123,6 +123,13 @@ test("mailbox: waited for by its fields, after the ones already there; links in 
 	await assert.rejects(server.waitForMail({ subject: "Never" }, { ms: 100 }), /timed out after 100 ms waiting for the mail; the mailbox has: \[\{"to":"ada@example.com","subject":"Old"\},\{"to":"ada@example.com","subject":"Welcome, Ada"\}\]/);
 });
 
+test("mailbox: a list's field (cc, bcc) matches when one of its items does", async () => {
+	mail = [{ to: "ada@example.com", cc: ["lin@example.com", "Max <max@example.com>"], bcc: ["secret@example.com"], reply_to: "", headers: [], subject: "Minutes", text: "", html: "" }];
+	assert.equal((await server.waitForMail({ cc: "lin@example.com", bcc: "secret@example.com" })).subject, "Minutes");
+	assert.equal((await server.waitForMail({ cc: /max@/ })).subject, "Minutes");
+	await assert.rejects(server.waitForMail({ cc: "ada@example.com" }, { ms: 100 }), /timed out/);
+});
+
 test("until: the first truthy value, or a timeout that says what it waited for", async () => {
 	let n = 0;
 	assert.equal(await until(() => ++n >= 3 && n, { every: 1 }), 3);

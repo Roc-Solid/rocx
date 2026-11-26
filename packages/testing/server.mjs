@@ -84,7 +84,12 @@ export class Server {
 		return new Client(this, options);
 	}
 
-	/** What `Email.send!` (packages/email) kept rather than sent (no `SMTP_URL`): every message, oldest first. */
+	/**
+	 * What `Email.send!` (packages/email) kept rather than sent (no `SMTP_URL`): every message,
+	 * oldest first, each `{ id, at, from, to, cc, bcc, reply_to, headers, subject, text, html, raw }`
+	 * (`to` and `reply_to` as the app wrote them, `cc` and `bcc` lists, `headers` `{ name, value }`s;
+	 * `raw` is the message as SMTP would carry it, in which no header names `bcc`).
+	 */
 	async mail() {
 		const answer = await fetch(`${this.url}/__rocx/mail.json`);
 		if (!answer.ok) throw new Error(`the mailbox: ${answer.status} ${await answer.text()} (it needs --debug or --dev)`);
@@ -93,10 +98,12 @@ export class Server {
 
 	/**
 	 * Waits for a message `match` says yes to (a function, or fields to compare: `{ to: "ada@…",
-	 * subject: /welcome/i }`), among those after the first `after`, for `ms` at most: the first.
+	 * subject: /welcome/i }`; a list's, `cc` or `bcc`, matches when one of its items does), among
+	 * those after the first `after`, for `ms` at most: the first.
 	 */
 	async waitForMail(match = () => true, { after = 0, ms = 5000 } = {}) {
-		const test = typeof match === "function" ? match : (message) => Object.entries(match).every(([field, wanted]) => (wanted instanceof RegExp ? wanted.test(message[field]) : message[field] === wanted));
+		const one = (value, wanted) => (wanted instanceof RegExp ? wanted.test(value) : value === wanted);
+		const test = typeof match === "function" ? match : (message) => Object.entries(match).every(([field, wanted]) => (Array.isArray(message[field]) ? message[field].some((item) => one(item, wanted)) : one(message[field], wanted)));
 		let seen = [];
 		try {
 			return await until(
