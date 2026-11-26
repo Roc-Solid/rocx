@@ -136,7 +136,7 @@ AppNotes := [].{
 			kind: Benchmark,
 			path: Paths.examples_echo,
 			blurb: "Two endpoints, to measure the server",
-			summary: "The smallest app on the server platform: two endpoints, through a middleware that only passes a request on. POST /echo answers with the JSON string it was sent; POST /echo/json reads an order that nests into a record of its type and writes it back. It has no browser half. It is there to measure the server itself, and what reading and writing JSON adds.",
+			summary: "The smallest app on the server platform: two endpoints, and nothing around them (no +middleware.roc). POST /echo answers with the JSON string it was sent; POST /echo/json reads an order that nests into a record of its type and writes it back. It has no browser half. It is there to measure the server itself, and what reading and writing JSON adds.",
 			shows: ["Everything a request goes through, and nothing more", "A body read into a typed record that nests, and written back", "The server's benchmark, on each endpoint"],
 			shots: [],
 		},
