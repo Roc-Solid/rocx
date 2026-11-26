@@ -268,6 +268,23 @@ function inside(range) {
 	return nodes;
 }
 
+/** Everything between a range's comments, gone at once (a list whose rows all went): its parent
+ * emptied when the range is all it holds, as vanillajs clears a table, else a DOM Range's contents
+ * deleted. */
+function clearRange(range) {
+	const parent = range.start.parentNode;
+	if (!parent) return;
+	if (parent.firstChild === range.start && parent.lastChild === range.end) {
+		parent.textContent = "";
+		parent.append(range.start, range.end);
+	} else {
+		const between = document.createRange();
+		between.setStartAfter(range.start);
+		between.setEndBefore(range.end);
+		between.deleteContents();
+	}
+}
+
 function removeRange(range) {
 	let node = range.start;
 	while (node) {
@@ -4172,7 +4189,14 @@ export class Runtime {
 			}
 			rows.set(k, row);
 		});
-		for (const [key, row] of list.rows) if (!rows.has(key)) this.dropRow(list, row, true);
+		const going = [];
+		for (const [key, row] of list.rows) if (!rows.has(key)) going.push(row);
+		// Every row going at once, none on its way out or leaving with a transition: the list emptied in
+		// one go (as vanillajs clears), not row by row.
+		if (!rows.size && going.length > 1 && !this.keeping && going.every((row) => !detached(row.range) && !this.transitioned(row.range, "out").length)) {
+			for (const row of going) this.dropRow(list, row, false, false);
+			clearRange(target);
+		} else for (const row of going) this.dropRow(list, row, true);
 		// The items of keys that are gone go too.
 		for (const [key, item] of list.items) {
 			if (!rows.has(key)) {
@@ -4231,8 +4255,9 @@ export class Runtime {
 	}
 
 	/** A row goes: at once, or (`animated`, its key gone from the list) once the transitions out of
-	 * what is in it are over. Inside a part that is leaving, it stays, to go with the part. */
-	dropRow(list, row, animated = false) {
+	 * what is in it are over. Inside a part that is leaving, it stays, to go with the part; with
+	 * `remove` false its nodes stay for the caller to take off with the others' (`clearRange`). */
+	dropRow(list, row, animated = false, remove = true) {
 		this.notify("row", { what: "dropped", key: row.key, nodes: [] });
 		const outs = animated && !this.keeping ? this.transitioned(row.range, "out") : [];
 		if (outs.length) this.keep(() => this.dispose(row.computation));
@@ -4241,7 +4266,7 @@ export class Runtime {
 		this.kept.delete(row.runner);
 		list.indexes.delete(row.key);
 		if (outs.length) this.leave(row.range, outs);
-		else if (!this.keeping) removeRange(row.range);
+		else if (!this.keeping && remove) removeRange(row.range);
 	}
 
 	/** A `.map`'s rows go: its rows, and its items. Its id stays: what made it still names it, and may

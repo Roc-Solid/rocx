@@ -182,7 +182,9 @@ When an item lands, delete its line here in the same commit.
   10,000 448 (474), selecting one 7.7 (11.8: vanillajs's), the download 66.2 KB (73.4), first paint
   37 ms (the best), run memory 4.8 MB, ready to use 288 ms (312; still the last, Leptos 266).
   Clearing 1,000 rows went from 17.4 ms to 19.8 in both runs that night, its script time the same
-  (about 3 ms by hand): not found yet.
+  (about 3 ms by hand): not found yet. Since 2026-11-26 a list whose rows all go is emptied at once
+  (its parent's content, as vanillajs clears; spike/wasm-engine's step 6 brought back): 13% less
+  script by hand; the next run says what it does to the runner's clear.
   What is left, measured: each hole is a computation of its own, run by a call into wasm (about 4
   calls a row, each with the runtime's bookkeeping: a computation, its sources' Sets, its frame);
   a row is still a range between two comments; a list read again runs Roc over every item (its key
