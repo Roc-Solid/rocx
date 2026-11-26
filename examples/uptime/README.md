@@ -142,7 +142,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 |---|---|
 | The admin's sign-in: a password from the environment, compared in constant time, then a session from packages/auth (`Auth.sign_in!`). The plugin is listed without `admit!`, so nobody signs in by a link or a provider. The session is a random token in the `uptime_admin` cookie (HttpOnly; `__Host-uptime_admin` and `Secure` when the public URL is HTTPS), kept as its hash in the database (`auth_sessions`) for 12 hours, and renewed while it is used. `Auth.required` sends a stranger to sign in (`?then=`) and back, and signing out is a form posting to the plugin's `/auth/sign-out`. Wrong passwords are limited to ten tries a minute (`Kv.increment!`). | `main.roc`, `Session.roc`, `Middlewares.admin`, `routes/admin/` |
 | packages/admin for the tables, behind the admin's middleware, with labels. The tables' `check` constraints refuse values that make no sense (named, like `monitors_url_check`), and the admin's form shows why. | `routes/admin/db/+server.roc`, `migrations/0001_uptime.sql` |
-| packages/otel: every request timed by route (`Otel.middleware`), a histogram of check latency by monitor and outcome, and a gauge of each monitor's up or down state. `Otel.roc` is copied from the package, as its README says, and a test checks the copy. | `Metrics.roc`, `Middlewares.roc`, `Otel.roc`, `test/copies.test.mjs` |
+| packages/otel: every request timed by route (`Otel.middleware`), a histogram of check latency by monitor and outcome, and a gauge of each monitor's up or down state, sent by the package's plugin (`Otel.plugin`). | `Metrics.roc`, `Middlewares.roc`, `main.roc` |
 | SQLite in the server's process (`database: Sqlite("data/uptime.db")`). Moments are milliseconds given from Roc and read as ISO 8601 with `strftime`; days with `date`. See [Moving from Postgres to SQLite](#moving-from-postgres-to-sqlite) for what SQLite lacks. | `main.roc`, `Store.roc`, `migrations/` |
 | Seed data that is safe to start with again: it is a migration, so it runs once. | `migrations/0002_seed.sql` |
 
@@ -217,7 +217,6 @@ node --test 'examples/uptime/test/*.test.mjs'
   opens the status page, sends a monitor down and up again through its jobs, and sees the banner,
   the incident and the state pill change with no reload, along with the screen reader announcement.
   It also subscribes from the page and sees the answer in place. Both tests skip without Chromium.
-- **`test/copies.test.mjs`** (1 test) checks that `Otel.roc` is still packages/otel's.
 
 ## Product calls
 
@@ -249,20 +248,17 @@ node --test 'examples/uptime/test/*.test.mjs'
 Writing the app turned up gaps in the platform and the packages. Most are fixed now; these are still
 worth knowing.
 
-1. **packages/otel's `Otel.roc` must be copied into the app**, as its README says: `rocx build`
-   lists the kinds of actor only from the app's own files. `Otel.roc` is a word-for-word copy, and
-   `test/copies.test.mjs` fails if it drifts.
-2. **A sweep on a cron leaves a job row each run.** Every 10 seconds is 8,640 finished jobs a day,
+1. **A sweep on a cron leaves a job row each run.** Every 10 seconds is 8,640 finished jobs a day,
    kept for a week by the plugin's tidy-up: about 60,000 rows that say nothing. A schedule that runs
    a function without a row, or a shorter keep for one kind, would suit a sweep better.
-3. **A job kind is a value in the module that defines it, so a module that module imports can't
+2. **A job kind is a value in the module that defines it, so a module that module imports can't
    queue it.** `Jobs.check` runs `Checks.run!`, and a check queues alerts (`Jobs.alert`). To avoid an
    import cycle, `Jobs` passes its own `alert!` down as an argument. Queueing a kind by its name,
    typed, would let any module queue any kind.
-4. **Wrong passwords are counted for everyone together**, ten tries a minute. The app was written
+3. **Wrong passwords are counted for everyone together**, ten tries a minute. The app was written
    before the server passed on the client's address; `Server.Request` now has `peer` (the
    connection's address), so a per-client limit is possible.
-5. **Roc and rocx gotchas met on the way:**
+4. **Roc and rocx gotchas met on the way:**
    - A one-field record written short is a block: `UptimeStrip.view({ days })` passes the list
      itself, so it has to be `{ days: days }`.
    - A parameter or a lambda's argument can't have the name of a member of the module's block.

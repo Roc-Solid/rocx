@@ -3,8 +3,8 @@ import Metric
 ## What an app's measurements add up to since `start_nanos`: a series for each instrument and set
 ## of attributes, as OpenTelemetry's cumulative sums. A counter's series is how many measurements
 ## and their sum; a histogram's adds how many fell in each bucket; a gauge's is how many times it was
-## set and the last value (`sum`). Kept as an actor's state, so it is plain data (JSON): `Dec`, not
-## `F64`, which JSON can't always write.
+## set and the last value (`sum`). Plain data, as the measurements that reach it through the
+## server's memory (`Kv`, JSON) are: `Dec`, not `F64`, which JSON can't always write.
 Points := [].{
 
 	Series : {
@@ -20,17 +20,17 @@ Points := [].{
 		buckets : List(U64),
 	}
 
-	## The series; since when they count (Unix nanoseconds, 0 before the first measurement); when
-	## they are next due to be sent (Unix milliseconds, 0 when nothing is scheduled); and how many
-	## measurements were dropped (a counter's negative value, an instrument measured as two kinds,
-	## or a series past `limit`).
-	State : { start_nanos : U64, due_ms : U64, dropped : U64, series : List(Series) }
+	## The series; since when they count (Unix nanoseconds, 0 before the first measurement); and how
+	## many measurements were dropped (a counter's negative value, an instrument measured as two
+	## kinds, or a series past `limit`).
+	State : { start_nanos : U64, dropped : U64, series : List(Series) }
 
 	empty : State
-	empty = { start_nanos: 0, due_ms: 0, dropped: 0, series: [] }
+	empty = { start_nanos: 0, dropped: 0, series: [] }
 
-	## How many series are kept at most: a label with a value per user or per URL would make a
-	## series for each, and fill memory; past it, new series are dropped, and the ones kept go on.
+	## How many series an instrument keeps at most (OpenTelemetry's SDKs' default): a label with a
+	## value per user or per URL would make a series for each, and fill memory; past it, its new
+	## series are dropped, and the ones kept go on.
 	limit : U64
 	limit = 2000
 
@@ -53,7 +53,7 @@ Points := [].{
 						Err(_) => dropped
 					}
 				Err(NotFound) =>
-					if state.series.len() >= Points.limit {
+					if state.series.keep_if(|series| series.name == measurement.name).len() >= Points.limit {
 						dropped
 					} else {
 						{ ..state, series: state.series.append(grown(started(measurement), measurement)) }
@@ -148,9 +148,10 @@ expect {
 	full = filled(Points.empty, Points.limit)
 	more = Points.add(Points.add(full, Metric.measure(signups, 1.0, [("n", "new")])), Metric.measure(signups, 1.0, [("n", Points.limit.to_str())]))
 	more.series.len() == Points.limit and more.dropped == 1 and more.series.first().map_ok(|series| series.count) == Ok(2)
+		and Points.add(more, Metric.measure(took, 0.5, [])).series.len() == Points.limit + 1
 }
 
-# It is what an actor keeps: JSON, both ways.
+# What reaches it through the server's memory is JSON, both ways.
 expect {
 	state = of([Metric.measure(took, 0.25, [("route", "/posts/[id]")]), Metric.measure(up, 1.0, [])])
 	parsed : Try(Points.State, _)

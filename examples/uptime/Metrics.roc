@@ -1,5 +1,5 @@
 import otel.Metric
-import Otel
+import otel.Otel
 
 ## What the app measures with packages/otel, sent to any OpenTelemetry collector when
 ## `OTEL_EXPORTER_OTLP_ENDPOINT` is set (and nothing at all when it isn't):

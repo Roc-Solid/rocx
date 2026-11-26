@@ -17,18 +17,17 @@ state.
    app [program] { otel: "…/packages/otel/main.roc", pf: platform "…/server/platform/main.roc" }
    ```
 
-2. Copy `server/Otel.roc` into the app, beside its `main.roc`, and `import Otel` where you use it.
-   A route file imports it by its path (`import ../../Otel`). The module keeps its sums in an actor,
-   and `rocx build` lists an actor's methods (here `Otel.measured` and `Otel.exported({})`) in the
-   app's `program.actors` only when they are in the app's own files. Server-only modules that reach
-   an app without copying are a proposal (PROPOSALS.md).
-3. Put `Otel.middleware({})` first in the app's middleware:
+2. List its plugin, and put `Otel.middleware({})` first in the app's middleware (`import otel.Otel`
+   wherever you record):
 
    ```roc
    # main.roc
+   import otel.Otel
+
    program = App.program({
        init!: |started| Ok({ facts: started }),
        middleware: Otel.middleware({}).then(Middlewares.default),
+       plugins: [Otel.plugin({})],
    })
    ```
 
@@ -38,13 +37,14 @@ state.
    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_SERVICE_NAME=shop ./server
    ```
 
-The package is not a plugin. `example/` does all of this (`cp ../server/Otel.roc . && rocx build .`):
-`GET /hello/<name>` counts `app.greetings`.
+Nothing is copied into the app. `example/` does all of this (`rocx build .`): `GET /hello/<name>`
+counts `app.greetings`. Without the plugin in the app's list, `Otel.record!` measures nothing, and
+says so once on the log.
 
 ## API
 
-The package is two halves. `main.roc` is the logic, plain Roc on no platform: `Metric`, `Points`,
-`Otlp`, `Config`. `server/Otel.roc` is the part on the server platform, which the app copies in.
+`Metric`, `Points`, `Otlp` and `Config` are plain Roc on no platform (the browser's half of an app
+may import them: `browser.roc`); `Otel` is on the server's platform, which the package names (D-033).
 
 | Function | What it does |
 |---|---|
@@ -52,6 +52,7 @@ The package is two halves. `main.roc` is the logic, plain Roc on no platform: `M
 | `Metric.histogram({ name, description, unit, buckets })` | A histogram: how many values fell in each bucket (`buckets` are upper bounds, smallest first; a value past every bound goes in the last), how many in all, and their sum. |
 | `Metric.gauge({ name, description, unit })` | A gauge: the last value set for each set of attributes, negative values too. |
 | `Metric.seconds` | OpenTelemetry's buckets for durations in seconds, 5 ms to 10 s. |
+| `Otel.plugin({})` | The plugin: reads the `OTEL_*` settings once at start, says where the metrics go (the `otel.metrics` check, on the log), and runs the loop that adds them up and sends them. |
 | `Otel.record!(instrument, value, attributes)` | Records a `Dec` value with `(key, value)` attributes. An attribute with an empty value is left out. Does nothing with metrics off. |
 | `Otel.middleware({})` | Times every request it runs around ([below](#every-request)). |
 | `Otel.request_duration` | The middleware's instrument, `http.server.request.duration`. |
@@ -69,15 +70,16 @@ up = Metric.gauge({ name: "app.service.up", description: "Whether the service an
 Otel.record!(up, 1, [("service", "payments")])
 ```
 
-The other modules are what `Otel` is built on, and what its expects test: `Points` (the sums, as an
-actor's state: `Points.empty`, `Points.add`, `Points.limit`), `Otlp.metrics` (the sums as OTLP/HTTP
+The other modules are what `Otel` is built on, and what its expects test: `Points` (the sums:
+`Points.empty`, `Points.add`, `Points.limit`), `Otlp.metrics` (the sums as OTLP/HTTP
 JSON) and `Config.from` (the settings the environment gives, or `Err(Off)`).
 
 ### Attributes and series
 
 Attributes are text. Each combination of attribute values is a separate series, so keep their
 values few: a user's id or a URL would make a series for each. An instrument keeps at most 2000
-series (`Points.limit`) and drops new ones past that; the ones it has go on.
+series (`Points.limit`) and drops new ones past that; the ones it has go on, and the log says how
+many were dropped at each export (`otel: measurements were dropped`).
 
 One name is one kind of instrument: a value recorded under a name already measured as another kind
 is dropped.
@@ -113,23 +115,22 @@ development.
 
 ## How it works
 
-Each instrument's sums are the state of an actor whose key is the instrument's name (the kind
-`rocx_otel_meter_2`; sums kept under the older `rocx_otel_meter`, from before gauges, aren't read).
-A value is a `tell!` of the actor's `measured` method, so the request doesn't wait for it. The actor
-sets itself a timer (`me.after!`, which calls its `exported` method) and, when it fires, sends its
-sums as OTLP/HTTP JSON (`Otlp`), then sets the next.
+A value recorded is put at the front of a list in the server's memory (`Kv.push!`, under
+`otel:measurements`, its newest 20,000 kept: `Otel.buffered`), so the request doesn't wait for it.
+The plugin's loop (`otel.export`) takes that list each second (`Kv.take!`) and adds it to the sums
+it keeps in its own memory (`Points`), oldest first; every `OTEL_METRIC_EXPORT_INTERVAL`, and once
+more as the server stops, it sends them all in one request as OTLP/HTTP JSON (`Otlp`).
 
-Counters and histograms are cumulative sums since the actor started. So a send that fails loses
+Counters and histograms are cumulative sums since the loop started. So a send that fails loses
 nothing: the next one carries it all, and the failure is logged as a warning
 (`otel: the metrics couldn't be sent`, or `otel: the collector refused the metrics` with its
 status). A gauge is sent as OTLP's `gauge`, one data point per series with its last value
-(`asDouble`), again at each export until it is set to another value. With a database, the sums
-outlive a restart and keep their start time.
+(`asDouble`), again at each export until it is set to another value. A restart starts the sums
+again, with a new start time, which a collector reads as a counter that was reset.
 
-**What it costs.** One actor message per value recorded, so two for a request that records one of
-its own. With a database, the platform writes an actor's state after each message that changes it,
-so each value is also a database write: fine for a start. An actor kept only in memory would remove
-the write (PROPOSALS.md).
+**What it costs.** One `Kv.push!` per value recorded, so two for a request that records one of its
+own: no database write, and nothing in the request's way. A server that records more than 20,000
+values in a second loses the oldest of them.
 
 ## Logs
 
@@ -175,7 +176,10 @@ In Docker or Kubernetes, point `include` at the container's log files instead.
 ## Checked against
 
 - `roc test packages/otel/main.roc`: instruments, sums, buckets, gauges' last values, the series
-  limit, the state as JSON both ways, OTLP's JSON (sums, histograms, gauges), the variables.
+  limit (each instrument's), the state as JSON both ways, OTLP's JSON (sums, histograms, gauges),
+  the variables.
+- examples/uptime's tests: the plugin sends every second to a stand-in collector; the latency
+  histogram, the request histogram, and a gauge that goes from 1 to 0.
 - The example, built native, sending to OpenTelemetry Collector 0.165.0 (`otlp` receiver, `debug`
   exporter): sums, histograms, attributes, timestamps and the resource all read back. Also run
   against Postgres, across a restart.
@@ -187,4 +191,3 @@ In Docker or Kubernetes, point `include` at the container's log files instead.
   the app passing it by hand. Roc has no such context, so traces wait on a talk with Roc's designers.
 - Up-down counters; exemplars; Prometheus's `/metrics` for pulling instead.
 - A job's duration and outcome (a wrapper for `Job.define`).
-- An actor kept only in memory, so a value isn't a database write.

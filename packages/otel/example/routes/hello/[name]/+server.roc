@@ -1,7 +1,7 @@
 import pf.Server
 import pf.Endpoint
 import otel.Metric
-import ../../../Otel
+import otel.Otel
 
 ## Greetings given, by whether the name was a long one.
 greetings : Metric.Instrument

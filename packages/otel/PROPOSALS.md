@@ -6,18 +6,14 @@ said.
 
 ## Server-only modules in packages
 
-Same as every package's (see packages/guard/PROPOSALS.md): `server/Otel.roc` imports the server
-platform, so today it's copied into the app by hand. `rocx build` already finds `Otel.meter`
-(`Actor.define`) once it's there.
+**Done (D-033, 2026-11-26).** `Otel` is the package's own: the package names the server platform,
+and `browser.roc` lists the rest. Its sums aren't an actor any more (which `rocx build` finds only
+in an app's own files), so nothing is copied into the app: it lists `Otel.plugin({})`.
 
 ## A kind of actor kept only in memory
 
-**Problem.** Each measurement is an actor message, and with a database the platform writes the
-actor's state to Postgres after each one: a write for every request. Metrics are cheap to lose on a
-restart, though keeping them makes the sums run on across it.
-
-**Recommended.** The `keep: [Postgres, Memory]` field on `Actor.define`'s record, which guard and
-presence ask for too. The package would set `keep: Memory`, and the README's cost note would go.
+**Not needed any more.** The sums are kept in the plugin's loop's memory, fed through `Kv`, so a
+measurement is no database write. Guard and presence may still want it for their own reasons.
 
 ## Traces
 

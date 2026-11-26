@@ -50,11 +50,8 @@ view! = |_|
 			<ol>
 				<li>Name the package in the app's header: <code>otel: "…/packages/otel/main.roc"</code>.</li>
 				<li>
-					Copy <code>packages/otel/server/Otel.roc</code> into the app, beside its <code>main.roc</code>, and
-					<code>import Otel</code> where you use it (a route file imports it by its path,
-					<code>import ../../Otel</code>). The module keeps its sums in an
-					<a href={Paths.platform_actors}>actor</a>, and <code>rocx build</code> finds an actor's methods only
-					in the app's own files.
+					List its plugin, <code>Otel.plugin({"{}"})</code>, in the program's <code>plugins</code>, and
+					<code>import otel.Otel</code> where you record. Nothing is copied into the app.
 				</li>
 				<li>Put <code>Otel.middleware({"{}"})</code> first in the app's middleware.</li>
 				<li>
@@ -66,7 +63,7 @@ view! = |_|
 			<Heading id="requests">Every request, timed</Heading>
 			<Code
 				title="main.roc, in part"
-				source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\tmiddleware: Otel.middleware({}).then(Middlewares.default),\n})"}
+				source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\tmiddleware: Otel.middleware({}).then(Middlewares.default),\n\tplugins: [Otel.plugin({})],\n})"}
 				numbers={Bool.False}
 			/>
 			<p>
@@ -156,15 +153,16 @@ view! = |_|
 
 			<Heading id="how">How it works</Heading>
 			<p>
-				Each instrument's sums are the state of an <a href={Paths.platform_actors}>actor</a>, keyed by the
-				instrument's name. Recording a value is a <code>tell!</code> to that actor, so a request never waits
-				for it. The actor sets itself a timer and sends its sums when it fires, as OTLP over HTTP, in JSON.
+				Recording a value puts it in the server's memory (<a href={Paths.platform_kv}>Kv</a>), so a request
+				never waits for it. The plugin's loop takes what is there each second and adds it to the sums it
+				keeps; every export interval, and once more as the server stops, it sends them all in one request,
+				as OTLP over HTTP, in JSON.
 			</p>
 			<p>
-				The sums are cumulative: each send says what has added up since the actor started. So a send that
-				fails loses nothing; the next one carries it all, and the failure is logged as a warning. With a
-				database, the actor's state outlives a restart. The cost is that the platform writes the state to
-				the database after each message that changes it, which is one write per value recorded.
+				The sums are cumulative: each send says what has added up since the loop started. So a send that
+				fails loses nothing; the next one carries it all, and the failure is logged as a warning. Nothing is
+				written to the database: a restart starts the sums again, with a new start time, which a collector
+				reads as a reset counter.
 			</p>
 
 			<Heading id="limits">Not yet</Heading>

@@ -1,6 +1,6 @@
 import pf.Middleware
 import auth.Auth
-import Otel
+import otel.Otel
 
 ## What runs around the app's answers. `default` runs around every request (main.roc names it);
 ## a route file names its own (`middleware = Middlewares.admin`), which runs inside it.
