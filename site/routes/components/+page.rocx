@@ -31,6 +31,7 @@ meta = {
 		{ id: "passing", label: "Props that change" },
 		{ id: "control", label: "if, match and .map" },
 		{ id: "stores", label: "Stores" },
+		{ id: "selectors", label: "Selectors" },
 		{ id: "contexts", label: "Contexts" },
 		{ id: "tree", label: "One page, one tree" },
 		{ id: "handlers", label: "Handlers" },
@@ -1428,7 +1429,7 @@ view! = |_|
 				<div class="roadmap-done">
 					<h3>Works now</h3>
 					<ul>
-						<li>Signals, memos, <code>refresh!</code>, <code>is_pending!</code>, <code>latest!</code>, <code>untrack!</code></li>
+						<li>Signals and <code>update!</code>, memos, <code>refresh!</code>, <code>is_pending!</code>, <code>latest!</code>, <code>untrack!</code></li>
 						<li>Holes in text, attributes, classes and styles; static when they read nothing that changes</li>
 						<li>Pure and effectful components; props as getters, read where they are used; accessor props; <code>{"{...rest}"}</code></li>
 						<li>A dev build's warning of a read made once in a component's body, and rocx build's of an arm's value or row's item read once</li>
@@ -1436,7 +1437,7 @@ view! = |_|
 						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
 						<li><code>if</code> and <code>match</code> in a hole, each part kept while its branch holds</li>
 						<li>A hole's <code>.map</code>, by key and by position; <code>{"<Repeat>"}</code>, by index</li>
-						<li>Stores, each part tracked by its value; rows told only when their item changed</li>
+						<li>Stores, each part tracked by its value; selectors; rows told only when their item changed</li>
 						<li><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code>, trying again</li>
 						<li>Handlers that wait for the server; keys with modifiers; frames; <code>on:viewport</code>; the document's and window's events</li>
 						<li>Effects as Solid 2.0 splits them; render effects; an effect's error handler; <code>on_cleanup!</code>, <code>on_settled!</code></li>

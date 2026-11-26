@@ -21,13 +21,13 @@ Decision numbers (D-0xx) point into `DECISIONS.md`, which records why things are
 
 - [Terms used here](#terms-used-here)
 - [Quick start](#quick-start)
-- [The big picture](#the-big-picture): the pieces, how a page comes alive, the modules
+- [The big picture](#the-big-picture): the pieces, how a page comes alive, the modules, the runtime an app ships
 - [Markup: what Roc hands the runtime](#markup-what-roc-hands-the-runtime)
-- [Reactivity](#reactivity): tracking, the flush, waiting, `is_pending!`, effects, ownership, timers, stores
+- [Reactivity](#reactivity): tracking, the flush, waiting, `is_pending!`, effects, ownership, timers, stores, selectors
 - [Components, props and control flow](#components-props-and-control-flow): props as getters, `if` and `match`, `.map`'s rows, `<Repeat>`, contexts
 - [Talking to the server](#talking-to-the-server): reads, forms, actions, optimistic values, the flash, channels
 - [Rendering on the server, and hydrating](#rendering-on-the-server-and-hydrating): documents, `<NoHydration>`, titles and the head
-- [Navigation in place (D-040)](#navigation-in-place-d-040)
+- [Navigation in place (D-040)](#navigation-in-place-d-040): which clicks, links that say where the page is, kept levels, prefetch, leaving
 - [Events and the DOM](#events-and-the-dom): keys, `<Document>`, the page's own functions, drags, transitions, glides
 - [The native engine (`native/`)](#the-native-engine-native)
 - [Tests](#tests)
@@ -59,7 +59,7 @@ Decision numbers (D-0xx) point into `DECISIONS.md`, which records why things are
 ```sh
 just setup        # the toolchain: the Roc fork, Zig, Rust (with its wasm32 target), Node. Once.
 just web-host     # host/ (Rust) -> platform/targets/wasm32/host.wasm (the tests build it too)
-just test-web     # this platform's tests and the docs site's, in Chromium
+just test-web     # web/memory's cargo tests, then this platform's tests and the docs site's, in Chromium
 
 # One suite, or the tests whose name matches:
 node --test --test-concurrency=1 web/test/platform.test.mjs
@@ -75,7 +75,8 @@ node --test --test-concurrency=1 --test-name-pattern="stores" web/test/platform.
 | Platform header | `platform/main.roc` | Says what an app provides (`main! : {} => Html`, its root), what the platform exposes, and which Roc function each hosted symbol is (`"roc_fetch": Host.fetch!`, …). Gives the host two entry points: `roc_mount` (the root's markup, as JSON) and `roc_run` (run a kept box). Its targets: `wasm32` for the browser, and `arm64musl` and `arm64mac` archives for the native engine (below). |
 | Platform modules | `platform/*.roc` | What components are written with: `Html`, `Solid`, `Router`, `Endpoint`… ([the modules](#the-modules)). |
 | Host interface | `platform/Host.roc` | Every hosted function, each a call into the runtime: signals, memos, rows, contexts, fetches, timers, submissions, navigation. Its `##` comments say what each does. |
-| Host | `host/` | Rust with no std, inside the wasm. Strings in and out, and one small wrapper per hosted function that calls a `js_*` import (`src/lib.rs`). Roc's memory is rocx-memory's (`web/memory`, shared with the phone's host, D-091): its allocator (`src/brk.rs`, slots of a power of two, as Zig's allocator for wasm has them), and each run's allocations noted, so a run that unwinds can be freed (`src/lib.rs`; [Waiting](#waiting-reads-that-arent-in-yet)). `just web-host` builds it with cargo for wasm32 and makes the relocatable object Roc links (`zig wasm-ld -r`): `platform/targets/wasm32/host.wasm`. Its glue, `src/roc_platform_abi.rs`, is `just glue`'s, the same as `native/core`'s. |
+| Host | `host/` | Rust with no std, inside the wasm (D-090). Strings in and out, and one small wrapper per hosted function that calls a `js_*` import (`host/src/lib.rs`). Roc's memory is rocx-memory's, the next row's. `just web-host` builds it with cargo for wasm32 and makes the relocatable object Roc links (`zig wasm-ld -r`): `platform/targets/wasm32/host.wasm`. Its glue, `host/src/roc_platform_abi.rs`, is `just glue`'s, the same as `native/core`'s. |
+| Memory | `memory/` | rocx-memory (D-091), a Rust crate with no std that this host and the phone's (`native/core`) both use: the allocator (`memory/src/brk.rs`, slots of a power of two, as Zig's allocator for wasm has them), and each run's allocations noted, so a run that unwinds can be freed (`memory/src/lib.rs`; [Waiting](#waiting-reads-that-arent-in-yet)). `just test-web` runs its `cargo test`. |
 | Runtime | `runtime.js` | The engine. Keeps boxes, signals, memos and computations; tracks what reads what; schedules and flushes; builds, hydrates and patches the DOM; talks to the server (reads, event streams, forms, the channel hub); navigates in place; and renders to a string as the server would. |
 | Bootstrap | `start.js` | The script the server puts before `</body>`. Loads `runtime.js` and `app.wasm` from beside itself and hydrates the document. |
 | Tests | `test/` | Two test apps (`test/app`, `test/nav`), a scripted server (`serve.mjs`), a browser driver (`browser.mjs`) and two suites ([Tests](#tests)). |
@@ -84,9 +85,11 @@ node --test --test-concurrency=1 --test-name-pattern="stores" web/test/platform.
 
 1. **Build.** `rocx build --client` writes the browser's copy of the app (`build/client`): the
    `.rocx` files as Roc, a `main.roc` whose `main!` is `Generated/Root`, and every `<NoHydration>`
-   emptied. It copies `start.js` and `runtime.js` into `build/client/static/rocx/`. Then
-   `roc build --target=wasm32` links the copy with `host.wasm` into `app.wasm` beside them.
-   `rocx dev` and `site/build.mjs` run both steps.
+   emptied. It copies `start.js` and `runtime.js` into `build/client/static/rocx/` (the runtime
+   minified, but in a dev build). Then `roc build --target=wasm32` links the copy with `host.wasm`
+   into `app.wasm` beside them. `rocx dev` and `site/build.mjs` run both steps. A static copy and
+   a release ship a runtime with only what the app uses ([The runtime an app
+   ships](#the-runtime-an-app-ships-d-087)).
 2. **Server render.** The server platform renders the page (`server/host/src/signals.rs`). Every
    hole runs once. Comments mark where each computed hole, part and row is (`<!--x-->…<!--/x-->`).
    Before `</body>` it writes the flash (if the page read one), the answers, the plugins' scripts
@@ -131,7 +134,7 @@ Most modules are **shared**: written here and copied into `server/platform` by
 | `Search`, `Leave` | yes | The query (`get!`, `all!`, `set!`, `set_with!`); a navigation about to leave (`to`, `from`, `options`, `delta`, `default_prevented`, `prevent!`, `retry!`). |
 | `Navigate` | no | `<Navigate href>`: here, a navigation that replaces the history entry; the server's is a 303. |
 | `Call` | yes | `fetch!` (a request) and `listen!` (a stream of server-sent events). |
-| `Endpoint` | yes | An endpoint as a typed value: read it (`get!`, `read!`, `with_query`), send it (`send!`), listen to it, subscribe to a channel (`subscribe!`, `say!`, `resync!`, and on the server `publish!`, `publish_latest!`), bind a form (`url_of`, `with_fields`), and, on the server, run and answer it (`bind`, `run!`, `respond!`, `posted_by`). |
+| `Endpoint` | yes | An endpoint as a typed value: read it (`get!`, `read!`, `with_query`), send it (`send!`), listen to it, subscribe to a channel (`subscribe!`, `say!`, `resync!`, and on the server `publish!`, `publish_latest!`), bind a form (`url_of`, `with_fields`), check its body by the app's rules (`checked`, D-093), and, on the server, run and answer it (`bind`, `run!`, `respond!`, `posted_by`). |
 | `Submission`, `Submissions` | yes | A form's or an action's submissions: `pending!`, `input!`, `field!`, `result!`, `error!`, `clear!`, `retry!`; `all!`, `pending_inputs!`. |
 | `FormBody` | yes | Reads a form's fields as the endpoint's body type (D-038). |
 | `Channel` | yes | What a route's `channel!` answers (`Channel.allow(who)`) and what a subscriber hears. |
@@ -143,6 +146,28 @@ Most modules are **shared**: written here and copied into `server/platform` by
 `Generated/Api` (written by `rocx build`) is the app's contract: each endpoint's method, URL and
 types, the same in the browser's copy as on the server (D-037). The browser answers no requests:
 the server platform answers every endpoint, the GETs a page reads among them.
+
+### The runtime an app ships (D-087)
+
+`runtime.js` answers every host function any app's wasm may call, and has the code each needs.
+`rocx build --static` and `--release`, once the app's wasm is built, ship it **shaken**
+(`rocx-cli/Shake.roc`), then minified:
+
+- the entries of `makeImports` the wasm doesn't import go (its import section says which);
+- then every member of `Runtime` that no kept code names (`.name`), starting from what is outside
+  the class, the constructor, the fields, the imports kept, and what `start.js`, the tests and
+  pages' scripts call (`Shake.kept`);
+- a line tagged with a feature (`… //#nav`, `//#drag`, `//#point`, `//#moves`) goes where the app
+  doesn't use it (`Static.features!`): navigating in place when the app has one page and its wasm
+  calls nothing that navigates; drags, a pointer's point and `transition:move`'s glides when the
+  browser's copy of its code doesn't write them.
+
+Shake reads the runtime by its lines, as it is written: a member starts at one tab and ends at the
+next line that is one tab and `}`, and the imports are the entries at three tabs. Keep that shape,
+and put a feature's tag on a whole statement. A runtime written another way ships whole, with a
+warning. A member reached only by a name built at run time (`this[name]`) would be left out: the
+runtime has none. `rocx build --client`, `rocx dev` and the tests that load `runtime.js` use it
+whole.
 
 ## Markup: what Roc hands the runtime
 
@@ -164,6 +189,7 @@ hole means `roc_run(box)`, and its answer is JSON again: a string for text, or m
 | `l` | `Html.list_of` | A list hole (`{...xs}`) whose list changes but isn't a `.map`'s rows: remade whole each time. |
 | `show` | `Html.branched` (`"b": 1`), `Html.switched` | A part. `r` answers the name of the branch that holds (`"#0"`), or `false`; `with` makes the part. |
 | `for` | `Html.each` (`Html.rows!`, `Html.rows_at!`, `<Repeat>`) | Rows. `r` answers `[{k, r}]`: each row's key and the box that makes it. |
+| `tpl` | `Html.template` | A `.map`'s row as a template (D-084): its site's id `s`, its skeleton `k` the first time, and its parts `p` ([below](#a-maps-rows-d-071)). |
 | `c` | `Html.component` | A component, run where it is rendered. |
 | `loading`, `errored` | `<Loading>`, `<Errored>` | Boundaries: `<Loading>`'s fallback, and a box that makes `<Errored>`'s. |
 | `ctx` | `Context.provide!` | A context's value for what is inside. |
@@ -174,7 +200,7 @@ Attributes are arrays, their kind first:
 
 | Kind | Written by |
 | --- | --- |
-| `v`, `vo` | `Html.attr`, `Html.attr_of` (computed: a box) |
+| `v`, `vo` | `Html.attr` (and `Html.attr_literal`, a value written in the file), `Html.attr_of` (computed: a box) |
 | `o`, `oo` | `Html.optional`, `Html.optional_of`: there only while not empty (`name??={…}`) |
 | `sv`, `so` | `Html.style_var`, `Html.style_of`: `style:color`, `style:--size` |
 | `f`, `fo` | `Html.flag`, `Html.flag_of`: a boolean attribute |
@@ -206,8 +232,9 @@ page's, the runtime warns once a name.
 rocx decides how to write a hole from what it calls:
 
 - A hole that calls nothing named with `!` reads nothing that changes. rocx writes it as
-  `Html.hole(x)`, and its attributes as `Html.attr`, `Html.class_if`, `Html.style_var`…. No box is
-  kept, and the server writes no comments around it.
+  `Html.shown(x)` (what `Html.hole(x)` shows, marked as a value, for templates: D-084), and such
+  an attribute as `Html.attr`, `Html.class_if`, `Html.style_var`…; an attribute's value written
+  in the file is `Html.attr_literal`. No box is kept, and the server writes no comments around it.
 - A hole that calls something named with `!` is a computation: `Html.hole_of(|| Html.hole(x))`.
   `Html.hole` shows text, a number or markup, picked by `x`'s type through Roc's encoding
   (`Html.Hole`). A value of any other type, a record or a `Bool`, is a compile error at the hole.
@@ -415,6 +442,24 @@ and is tracked by what it selected:
 
 A selection belongs to its reader's run and is made anew when the reader runs again.
 `runtime.stats.selections` counts the selections' runs; the tests read it.
+
+### Selectors: `create_selector!` (D-083)
+
+`is_picked! = create_selector!(picked!)` is Solid's `createSelector`, for a list where one row is
+picked: `class:picked={is_picked!(row.id)}` runs, when the pick moves, only the rows it leaves and
+comes to.
+
+- `Host.selector_new!` makes a computation of kind `selector` that answers its source's key, as
+  `Str.inspect` writes it, run now and again when what it reads changes.
+- `is_picked!(key)` (`Host.selector_is!`) answers whether `key`, inspected the same way, is it,
+  and is tracked by a source of that key alone (`selector.keys`).
+- When the key changes (`settle`), the readers of the key it was and of the key it is are
+  scheduled, and no other. A key no reader reads any more goes as its last reader goes, and the
+  keys are swept once there are twice as many as the last sweep left, so a pick costs the same
+  however many rows there are.
+- On the server it is computed once; the native engine has the same (`CompKind::Selector`).
+
+Keys compare as text: a key is inspected once per read.
 
 ### A read made once, said in a dev build (D-052)
 
@@ -976,7 +1021,9 @@ sections).
 
 `Generated/Root` calls `Router.app!` first, with the build's id, whether it is a dev build, and the
 route table (JSON: each page's path and its levels' code, root layout first; §18's ids, kept for
-wasm splitting later). The build's id is also on every page's bootstrap, as `data-build`.
+wasm splitting later; and `posts`, the paths of the endpoints that take a POST, for
+[forms](#forms-and-submissions), D-095). The build's id is also on every page's bootstrap, as
+`data-build`.
 
 As it hydrates the document, the runtime (`listenForNavigation`):
 
@@ -1001,6 +1048,21 @@ A click navigates in place (`clicked`, `linkOf`) when all of these hold:
 `<html data-rocx-navigation="off">` turns it off. `"explicit"` limits it to links with
 `data-rocx-link`. A GET form to one of the app's pages (`gotForm`) is a navigation to its URL with
 its fields as the query, by a link's rules.
+
+### Links say where the page is (D-086)
+
+There is no `<A>`: every `<a>` whose `href` is one of the app's own paths (`/…`, not `//…`), and
+whose markup writes no `aria-current` of its own (`ownsCurrent`), is marked (`linkMark`):
+
+- `aria-current="page"` where the page is: its path, and its query too if the link has one;
+- `aria-current="true"` at a path the page is under (`/lists` while at `/lists/7`; never `/`);
+- nothing otherwise. A relative `href` or another origin's is never marked.
+
+The server writes the mark last on the element (`current` in `signals.rs`; `renderToString` the
+same). The runtime marks a link it makes (`element`, a template's copy) or adopts, again when its
+`href` changes, and every link it keeps (`links`) when a navigation in place commits a location
+(`markLinks`). Styling is CSS: `a[aria-current="page"]` for a link to the page alone,
+`a[aria-current]` for one above it too.
 
 ### What a navigation does
 
@@ -1357,7 +1419,11 @@ area:
   `if`'s and the `match`'s parts (the arm's name following) and makes the keyed row anew; a
   `match` changes part when another arm holds. `Rows.rocx` (D-071): a thousand rows; one changed
   item runs one row's holes (3 runs), every item changed runs every row's (2,001), with patches and
-  allocations counted.
+  allocations counted; a selector (D-083) runs only the rows a pick leaves and comes to; rows made
+  once the page is up come from one skeleton, the same nodes `element` makes (D-084).
+- **Names markup can't have** (`names_app.roc`, D-079): a tag that isn't a plain name, an inline
+  handler, an attribute name that would end the tag and a `<script>` of data are never written,
+  rendered, hydrated or built, each said once on the console, and what is around them works.
 - **`<Repeat>` and `on:viewport`** (`Scroller.rocx`): ten thousand rows in a box, those that show
   rendered on the server, hydrated, then scrolled and made taller, the rows still in range kept.
 - **Props** (`Props.rocx`, D-039): value props given in a hole, outside one, in an `if` and in a

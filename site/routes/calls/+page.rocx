@@ -206,8 +206,9 @@ view! = |_|
 				A route's <code>+server.roc</code> (plain Roc; <code>+server.rocx</code> if it has markup) answers
 				HTTP methods at its path: <code>get!</code>, <code>post!</code>, <code>put!</code>,
 				<code>patch!</code> and <code>delete!</code>. Each handler is given a record: the request, the path's
-				params, what its middleware handed on (<code>context</code>) and, for a method with a body, the body,
-				read as its annotated type. It answers <code>Ok(result)</code>, sent as JSON, or
+				params (strings, or the <a href={"${Paths.routing}#params"}>types its annotation gives them</a>),
+				what its middleware handed on (<code>context</code>) and, for a method with a body, the body, read
+				as its annotated type. It answers <code>Ok(result)</code>, sent as JSON, or
 				<code>Err(refusal)</code>, sent as a status and why. An <code>Endpoint.Refusal</code> is
 				<code>BadRequest(why)</code> (400), <code>Unauthorized</code> (401), <code>Forbidden</code> (403),
 				<code>NotFound</code> (404), <code>Conflict(why)</code> (409), <code>Status(code, why)</code>,

@@ -114,9 +114,10 @@ view! = |_|
 			<Callout kind="tip" title="One kind of hole">
 				<p>
 					rocx runs before the compiler, so it can't know whether <code>x</code> is a <code>Str</code>,
-					a number or <code>Html</code>. It writes <code>Html.hole(x)</code>, and the compiler picks how
-					to show the value from its type, through Roc's encoding. You may see <code>{"{=x}"}</code> in
-					older code: it is the same hole.
+					a number or <code>Html</code>. It writes <code>Html.hole(x)</code> (inside
+					<code>{"Html.hole_of(|| …)"}</code> when it reads what changes, and as <code>Html.shown(x)</code>
+					when it doesn't), and the compiler picks how to show the value from its type, through Roc's
+					encoding. You may see <code>{"{=x}"}</code> in older code: it is the same hole.
 				</p>
 			</Callout>
 

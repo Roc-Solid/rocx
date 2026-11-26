@@ -450,15 +450,18 @@ view! = |_|
 			<Heading id="openapi">The OpenAPI document</Heading>
 			<p>
 				An app can serve an OpenAPI document (3.2) of its endpoints, for a client generator or for people
-				exploring the API. It lists each path and its params, each method with the doc comment above its
-				handler, and the JSON Schemas of what each endpoint is sent and answers. A schema is the handler's
+				exploring the API. It lists each path and its params (a <a href="#params">typed param</a> with its
+				type's schema), each method with the doc comment above its handler, and the JSON Schemas of what
+				each endpoint is sent and answers. A schema is the handler's
 				type as the compiler has it: this site's <code>{"GET /api/shout/{word}"}</code> answers
 				<code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>, and its document says so. The endpoints
 				pages read are in it too, since a page's data is an endpoint like any other. A body a form can send
 				(a record of text, numbers, yes-or-no, choices and lists of them) is listed three ways:
 				<code>application/json</code>, <code>application/x-www-form-urlencoded</code> and
 				<code>multipart/form-data</code>. The form's schema is the same, except that a yes-or-no or a list
-				may be left out, as a form leaves out a box nobody ticked.
+				may be left out, as a form leaves out a box nobody ticked. A body checked by rules
+				(<a href="#endpoints"><code>post_body</code></a>) is listed the same three ways, with the rules'
+				schema: what they require, and their lengths, patterns and ranges.
 			</p>
 			<h3>Turning it on</h3>
 			<p>It is off unless the app turns it on, with <code>openapi</code> in its <code>App.program</code>:</p>
@@ -593,8 +596,8 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>No static pages with params.</strong> This site's static copy writes the pages without
-					params (<code>Paths.all</code>) and without middleware of their own. A page with params would need a
-					list of the values to write.
+					params (<code>Paths.all</code>) and without middleware of their own (named in the page, or in the
+					<code>+server.roc</code> beside it). A page with params would need a list of the values to write.
 				</li>
 				<li>
 					<strong>One error page</strong>, the app's, at the root of <code>routes/</code>: <code>rocx build</code>

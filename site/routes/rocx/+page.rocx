@@ -99,13 +99,13 @@ view! = |_|
 			</p>
 			<Code title={Sources.demo_counter.file} source={Sources.demo_counter.rocx} />
 			<p>
-				<code>rocx build</code> writes <code>Counter.roc</code> beside it. Its lines 9 to 21 are these,
+				<code>rocx build</code> writes <code>Counter.roc</code> beside it. Its lines 9 to 20 are these,
 				the same lines as in the file above, with the markup turned into calls to the platform's
 				<code>Html</code> module:
 			</p>
 			<Code
 				title="Counter.roc, as rocx build writes it"
-				source={"view! : { start_value : () => I64 } => Html\nview! = |{ start_value: start_value! }| {\n\t(count!, set_count!) = create_signal!(start_value!())\n\tHtml.element(\"div\", [Html.attr(\"class\", \"counter rx-49lxy6\"), Html.class_of(\"negative\", || count!() < 0),], [\n\t\tHtml.element(\"button\", [Html.attr(\"type\", \"button\"), Html.on(\"click\", || set_count!(count!() - 1)), Html.attr(\"aria-label\", \"One less\"), Html.attr(\"class\", \"rx-49lxy6\"),], [Html.text(\"−\"),]), Html.text(\" \"),\n\t\tHtml.element(\"output\", [Html.attr(\"class\", \"rx-49lxy6\"),], [Html.hole_of(|| Html.hole(count!().to_str())),]), Html.text(\" \"),\n\t\tHtml.element(\"button\", [Html.attr(\"type\", \"button\"), Html.on(\"click\", || set_count!(count!() + 1)), Html.attr(\"aria-label\", \"One more\"), Html.attr(\"class\", \"rx-49lxy6\"),], [Html.text(\"+\"),]), Html.text(\" \"),\n\t\tHtml.element(\"button\", [Html.attr(\"type\", \"button\"), Html.attr(\"class\", \"reset rx-49lxy6\"), Html.on(\"click\", || set_count!(0)), Html.flag_of(\"disabled\", || count!() == 0),], [\n\t\t\tHtml.text(\"Reset\"),\n\t\t]),\n\t])\n}"}
+				source={"view! : { start_value : () => I64 } => Html\nview! = |{ start_value: start_value! }| {\n\t(count!, set_count!) = create_signal!(start_value!())\n\tHtml.element(\"div\", [Html.attr_literal(\"class\", \"counter rx-49lxy6\"), Html.class_of(\"negative\", || count!() < 0),], [\n\t\tHtml.element(\"button\", [Html.attr_literal(\"type\", \"button\"), Html.on(\"click\", || set_count!(count!() - 1)), Html.attr_literal(\"aria-label\", \"One less\"), Html.attr_literal(\"class\", \"rx-49lxy6\"),], [Html.text(\"−\"),]), Html.text(\" \"),\n\t\tHtml.element(\"output\", [Html.attr_literal(\"class\", \"rx-49lxy6\"),], [Html.hole_of(|| Html.hole(count!().to_str())),]), Html.text(\" \"),\n\t\tHtml.element(\"button\", [Html.attr_literal(\"type\", \"button\"), Html.on(\"click\", || set_count!(count!() + 1)), Html.attr_literal(\"aria-label\", \"One more\"), Html.attr_literal(\"class\", \"rx-49lxy6\"),], [Html.text(\"+\"),]), Html.text(\" \"),\n\t\tHtml.element(\"button\", [Html.attr_literal(\"type\", \"button\"), Html.attr_literal(\"class\", \"reset rx-49lxy6\"), Html.on(\"click\", || set_count!(0)), Html.flag_of(\"disabled\", || count!() == 0),], [\n\t\t\tHtml.text(\"Reset\"),\n\t\t]),\n\t])\n}"}
 				first={9}
 			/>
 			<ul>
@@ -114,8 +114,8 @@ view! = |_|
 					it becomes a function the browser runs again when the signal changes:
 					<code>{"{count!().to_str()}"}</code> is <code>{"Html.hole_of(|| …)"}</code>, and
 					<code>{"class:negative={…}"}</code> is <code>{"Html.class_of(\"negative\", || …)"}</code>.
-					What reads nothing that changes is written once, as a plain value (<code>Html.attr</code>,
-					<code>Html.text</code>).
+					What reads nothing that changes is written once, as a plain value: an attribute written in the
+					file is <code>Html.attr_literal</code>, and text <code>Html.text</code>.
 				</li>
 				<li>
 					A handler, <code>{"on:click={…}"}</code>, is a Roc function given to <code>Html.on</code>.

@@ -87,7 +87,10 @@ view! = |_| {
 				each a Roc closure the runtime keeps as a boxed value under an id. Running a hole means calling the
 				app's <code>run</code> with that box; the answer is JSON again: a text, an attribute's value, or
 				markup. The server platform renders the same JSON natively
-				(<a href={"${Paths.platform_server}#pages"}>pages, rendered on the server</a>). One more file,
+				(<a href={"${Paths.platform_server}#pages"}>pages, rendered on the server</a>). A list's rows are
+				cheaper: once the page is up, the first row made at a <code>.map</code> sends its skeleton (its
+				elements, and the attributes and text written in the file), which the runtime keeps and copies, and
+				each row after it sends only what fills the copy (its holes, handlers and values). One more file,
 				<code>web/start.js</code>, is the bootstrap the server puts at the end of every page: it loads the
 				runtime and the wasm from beside itself, and hydrates the document.
 			</p>
@@ -110,8 +113,8 @@ view! = |_| {
 					server</a>.
 				</li>
 				<li>
-					<code>Router</code>, <code>Search</code>, <code>Leave</code>, <code>A</code>,
-					<code>Navigate</code>, <code>Title</code> and <code>HttpStatusCode</code>:
+					<code>Router</code>, <code>Search</code>, <code>Leave</code>, <code>Navigate</code>,
+					<code>Title</code> and <code>HttpStatusCode</code>:
 					<a href={"${Paths.routing}#navigating"}>routing and navigation</a>.
 				</li>
 				<li>
@@ -247,10 +250,10 @@ view! = |_| {
 				A component reads a memo that waits for the server (an endpoint's answer, say) as a plain value,
 				with no async code in Roc. Until the answer is in, the read throws, in JavaScript, through the Roc
 				frames that asked. The runtime catches it where it ran the computation, puts Roc's stack pointer back
-				where it was, and runs the computation again when the answer comes. There is no JSPI and no async in
-				Roc. The first time, a <code>{"<Loading>"}</code> above shows its fallback meanwhile; after that,
-				what was shown stays until the new value is in (<a href={"${Paths.components}#waiting"}>waiting and
-				failing</a>).
+				where it was, and runs the computation again when the answer comes. What the stopped run allocated,
+				the host frees (<a href="#memory">memory</a>). There is no JSPI and no async in Roc. The first time,
+				a <code>{"<Loading>"}</code> above shows its fallback meanwhile; after that, what was shown stays
+				until the new value is in (<a href={"${Paths.components}#waiting"}>waiting and failing</a>).
 			</p>
 
 			<Heading id="numbers">The numbers</Heading>
@@ -276,7 +279,11 @@ view! = |_| {
 				Specializing Roc's lambda sets makes this site's wasm the smallest download of the three;
 				<code>--opt=speed</code> renders a little faster and is the biggest raw. Compiling this site's
 				wasm took {Facts.fact!("client_compile_ms")} ms in Node. The runtime is
-				{Facts.fact!("runtime_gzip")} of JavaScript, gzipped. The <a href={Paths.showcase}>showcase</a> measures
+				{Facts.fact!("runtime_gzip")} of JavaScript, gzipped: all of it, minified, as
+				<code>rocx build --client</code> writes it. A static copy or a release (<code>rocx build --static</code>,
+				<code>--release</code>) ships less: only the runtime's code that the app's wasm reaches, without
+				navigating in place, drags or glides where the app has none. This site's static copy is built that
+				way. The <a href={Paths.showcase}>showcase</a> measures
 				itself as it runs: frames a second, and what each costs, Roc and the patches together; and
 				<a href={Paths.examples_js_framework_benchmark}>js-framework-benchmark</a> measures the platform beside
 				Solid, Leptos, Joy, React and hand-written DOM code.
@@ -295,11 +302,15 @@ view! = |_| {
 
 			<Heading id="memory">Memory</Heading>
 			<p>
-				A page keeps its wasm instance for as long as it is open, so memory has to come back. The host
-				allocates through Roc's allocator and counts what is live. A box the runtime keeps (a hole's
-				closure, a signal's value) is released when what made it goes: a row dropped, an <code>if</code>
-				switching branch, a value replaced. The tests click, type, add and drop rows, and render pages
-				again and again, and check that the count of live allocations doesn't grow.
+				A page keeps its wasm instance for as long as it is open, so memory has to come back. Roc's memory
+				is the host's: a Rust crate, <code>web/memory</code>, which the phone's host uses too. It allocates
+				in slots of a power of two, as Zig's allocator for wasm does, and counts what is live. A box the
+				runtime keeps (a hole's closure, a signal's value) is released when what made it goes: a row
+				dropped, an <code>if</code> switching branch, a value replaced. A run that stops to wait skips the
+				frees Roc would make on the way out, so the host notes what each run allocates, and frees what a
+				stopped run still held once the runtime has let go of what that run made. The tests click, type, add
+				and drop rows, wait for the server, and render pages again and again, and check that the count of
+				live allocations doesn't grow.
 			</p>
 		</NoHydration>
 	</>
