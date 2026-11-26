@@ -71,6 +71,16 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **The engine in the browser (spike/wasm-engine/REPORT.md, "Round 2").** native/core's engine is
+  within 0 to 16% of today's runtime on the benchmark's page (clear 1.55x), but its wasm is 128 KB
+  with brotli at opt-level s against today's 67 KB for wasm and runtime.js together: markup read
+  without serde_json, no formatted messages and wasm-opt would shrink it. Its nodes are freed only
+  when a list's row goes (a hole's replaced markup stays), and it lacks what the browser needs of
+  runtime.js (hydration, navigation, drags, transitions, actions, channels, head tags, SVG).
+- **native/mac never shows a first frame when the app's stylesheet can't be fetched** (an origin
+  with no server, `--origin http://127.0.0.1:9`): the first frame waits for the sheet, which "one
+  that fails doesn't hold the screen" says it shouldn't. Seen on master's engine too; against the
+  app's own server it shows.
 - **One tracking for both of the web platform's hosts (D-090).** `web/host/src/track.rs` (Roc's
   memory with the header of the host's, the frames, and freeing what a run that unwound held) could be
   a crate `native/core` shares, which would end its leak of what a run that waits held

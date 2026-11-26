@@ -5,7 +5,8 @@
 #
 #   spike/wasm-engine/build.sh [out]     (default /tmp/wasm-engine: out/today, out/engine)
 #
-# NAMES=1 links the engine's wasm with --debug: its functions named, for profile.mjs.
+# NAMES=1 links the engine's wasm with --debug: its functions named, for profile.mjs. OPT sets the
+# engine's optimization (below).
 # The engine's page is linked with the web platform's exports swapped for the engine's for the
 # length of its build (web/platform/main.roc and its host.wasm are put back after, as they were).
 set -euo pipefail
@@ -18,7 +19,9 @@ rm -rf "$out"
 bin/rocx build benchmarks/jsframework/keyed --static "$today" --base "$base" >/dev/null
 client=benchmarks/jsframework/keyed/build/static/client/main.roc
 
-(cd native && cargo rustc -q -p rocx-native-core --target wasm32-unknown-unknown --release --crate-type staticlib)
+# OPT: the engine's optimization for the browser (default s: for size, as web/host's; the phone's
+# release is 3).
+(cd native && CARGO_PROFILE_RELEASE_OPT_LEVEL=${OPT:-s} cargo rustc -q -p rocx-native-core --target wasm32-unknown-unknown --release --crate-type staticlib)
 platform=web/platform/main.roc
 host=web/platform/targets/wasm32/host.wasm
 saved=$(mktemp -d)

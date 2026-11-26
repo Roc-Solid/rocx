@@ -5,6 +5,11 @@ the hosts one language, if the reactive engine ran in the wasm (native/core's, t
 JavaScript only made the DOM changes, a batch a flush? And would a Rust host be better than
 web/host/host.zig?
 
+**Since (the same day):** the Rust host on its own landed (D-090, web/host), and the engine was made
+fast in six steps, now in master: see "Round 2" at the end. The harness is in master too
+(`spike/wasm-engine/build.sh`, `time.mjs`, `profile.mjs`; the web platform's exports are swapped
+only for the length of the engine's link).
+
 ## What was built (branch spike/wasm-engine, not merged)
 
 - `native/core/src/dom.rs`: on wasm32, each change to the engine's document is also an op
@@ -71,10 +76,55 @@ hydration, navigating in place (D-040), drags (D-055), transitions and moves, ac
 submissions, channels, `<Meta>`/`<Link>`/`<Style>`, requests and timers through the page, and
 the abort-leak frees (roc.rs says its waits leak).
 
-## The Rust host on its own
+## The Rust host on its own (D-090 since)
 
 Porting web/host/host.zig to Rust, the engine aside, is a separate and smaller step: the allocation
 notes, the strings in and out, and the imports, about 1,000 lines. It would put every host in one
 language (the server's, the phone's and the CLI's are Rust). The size to watch: today's
 host.zig is 246 KB as an object but a small part of the linked wasm; a Rust host with std and
 dlmalloc would add more, unless it is `no_std` with an allocator of its own.
+
+## Round 2: the engine made fast (2026-11-26, the user's go)
+
+Every fix of "Why, and what it would take" but size, each also the phone's, each measured on the
+benchmark's page against today's (`build.sh`, then `time.mjs`: 2 rounds of 15, interleaved; the
+machine at load 4 to 9, so the ratio to today's page in the same rounds is the measure):
+
+| | the spike | step 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|---|
+| create 1,000 | 1.8x | 1.75x | 1.28x | 1.19x | 1.05x | 1.08x | **1.01x** |
+| create 10,000 | 2.8x | 1.6x | 1.25x | 1.18x | 1.16x | 1.10x | **1.08x** |
+| append 1,000 | 2.1x | 1.6x | 1.38x | 1.2x | 1.21x | 1.05-1.28x | **1.16x** |
+| update every 10th | 1.7x | 1.1x | 1.1x | 1.06x | 1.12x | 1.06x | **0.97x** |
+| swap two | 9.8x | 1.4x | 1.4x | 1.19x | 1.10x | 1.05x | **1.17x** (noise; 0.3 ms) |
+| clear | 2.3x | 1.55x | 1.5x | 1.9x | 2.0x | 1.87x | **1.55x** |
+
+1. No quadratic work in a long list: the document's nodes linked to their siblings (insert, detach,
+   next sibling in constant time), a list's keys in a set, and its rows moved as runtime.js's
+   `steady` does (the longest run in order stays; a swap moves two rows).
+2. Templates (D-084): `roc_template` answers as runtime.js does, so Roc writes a row's parts alone;
+   the engine keeps each skeleton and copies it.
+3. FxHash for the engine's maps; in a browser, web/host's allocator (Zig's for wasm, ported); a
+   dropped row's nodes freed (their ids used again after the next render; FREE so engine.js lets go
+   too: the document and engine.js had grown by every row ever made); a flush's strings decoded at
+   once.
+4. A template's copy is a CLONE on the page (its markup sent once: TEMPLATE), built quietly in the
+   engine's document, then its slots filled.
+5. No text allocated per tag and attribute: names shared (`Dom::name`), skeletons compiled once.
+6. A list whose rows all go is emptied at once (CLEAR).
+
+The same tables as today's page at every step. On the phone (native/mac against the apps' own
+servers): phone-hello and examples/tasks show the same screens as master's engine, view ids aside
+(a template makes a row's nodes in another order), with the same live allocations after.
+
+**Size, still the gap:** the engine's page is 562 KB of wasm at the phone's opt-level 3 (155 KB with
+brotli), 420 KB at `s` (128 KB; `build.sh`'s default now), 337 KB at `z` (112 KB), each about 5 to
+10% slower than 3; today's page is 134 KB of wasm and 124 KB of runtime.js (67 KB with brotli
+together). Of the engine's code at 3: engine.rs 43% (`run` alone 57 KB, everything inlined), Roc 25%,
+serde_json 9%, formatting 3%. What would shrink it: markup read without serde_json (a reader of
+Roc's JSON into the engine's own nodes, faster too), no formatted messages, and wasm-opt.
+
+**Still to do before a browser could run on it** (as before): hydration, navigating in place,
+drags, transitions and moves, actions and submissions, channels, `<Meta>`/`<Link>`/`<Style>`,
+requests and timers through the page, SVG; and nodes freed beyond a list's rows (a hole's markup
+replaced is still kept).
