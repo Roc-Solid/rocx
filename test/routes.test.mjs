@@ -253,11 +253,12 @@ test("no server functions (D-023): Routes answers nothing at /rocx/call/, and im
 const component = (extra = {}) => ({ view: "view!", meta: false, methods: [], middleware: null, docs: {}, ...extra });
 
 test("Root: the page at where it is, as levels (D-040): the root layout, its <Errored>, then a keyed part for each layout below it and the page", () => {
-	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/[slug]/+page.rocx", "blog/new/+page.rocx", "feed/+server.roc"];
+	const files = ["+layout.rocx", "+page.rocx", "+error.rocx", "blog/+layout.rocx", "blog/[slug]/+page.rocx", "blog/new/+page.rocx", "feed/+server.roc", "blog/[slug]/+server.roc"];
 	const table = routeTable(files);
 	const takes = new Set(["+layout.rocx"]);
 	const metas = new Set(["+page.rocx", "blog/[slug]/+page.rocx", "blog/new/+page.rocx", "+error.rocx"]);
-	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: ["get!"], middleware: null, docs: {} } : component({ meta: metas.has(file), takesMeta: takes.has(file) })]));
+	const methods = { "feed/+server.roc": ["get!"], "blog/[slug]/+server.roc": ["post!", "delete!"] };
+	const sources = new Map(files.map((file) => [file, file.endsWith("+server.roc") ? { view: null, meta: false, methods: methods[file], middleware: null, docs: {} } : component({ meta: metas.has(file), takesMeta: takes.has(file) })]));
 	const root = rootModule(table, { sources });
 	assert.match(root, /^import pf\.Html\nimport pf\.Router\nimport pf\.Solid\nimport pf\.Server\nimport pf\.Errored\nimport pf\.HttpStatusCode\nimport BlogLayout\nimport BlogNewPage\nimport BlogSlugPage\nimport RootError\nimport RootLayout\nimport RootPage\n\nRoot := \[\]\.\{$/m, "the component route files; no endpoint");
 	assert.match(
@@ -287,7 +288,8 @@ test("Root: the page at where it is, as levels (D-040): the root layout, its <Er
 	assert.match(root, /\tfailed = \|status, problem\| Html\.join\(\[Html\.component\(\|\| HttpStatusCode\.view!\(\{ code: status \}\)\), Html\.component\(\|\| RootError\.view!\(\{ status: \|\| status, problem: \|\| problem \}\)\)\]\)/);
 	assert.doesNotMatch(root, /document|Styles/, "the root layout is the document");
 	// The app, for the runtime (D-040): the build's id, and the route table the browser navigates
-	// by, each page with its levels' code (§18), in the order Root tries them.
+	// by, each page with its levels' code (§18), in the order Root tries them; and the paths of the
+	// endpoints that take a POST, whose forms it sends with fetch (D-095).
 	assert.match(root, /^\tbuild : Str\n\tbuild = "0badc0de"$/m);
 	const routes = JSON.parse(JSON.parse(/^\troutes = (".*")$/m.exec(root)[1].replace(/\\\$/g, "$")));
 	assert.deepEqual(routes, {
@@ -297,6 +299,7 @@ test("Root: the page at where it is, as levels (D-040): the root layout, its <Er
 			{ path: "/blog/[slug]", levels: [{ code: "RootLayout", path: "/" }, { code: "BlogLayout", path: "/blog" }, { code: "BlogSlugPage", path: "/blog/[slug]" }] },
 		],
 		error: "RootError",
+		posts: ["/blog/[slug]"],
 	});
 	assert.match(rootModule(table, { sources, build: "7f3a91c2", dev: true }), /Router\.app!\(\{ build: Root\.build, dev: Bool\.True, routes: Root\.routes \}\)\n[\s\S]*\tbuild = "7f3a91c2"/, "a dev build says so");
 	// A layout under a param is given that param alone; one level deep, no depth.

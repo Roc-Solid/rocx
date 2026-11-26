@@ -1,0 +1,38 @@
+import pf.Html
+import ../../Api
+
+meta = { title: "Notes", look: "notes" }
+
+## Forms that post, none of whose submissions any component reads (D-095): to this path's endpoint
+## (said well, said with a redirect, refused), to an item's (a path with a param), into a frame, and
+## to a path no endpoint has. What the server says of the notes, read again after a result.
+view! = |_|
+	<section class="notes">
+		<h1>Notes</h1>
+		<p class="said">{Api.say!("notes")}</p>
+		<form class="fine" method="post" action="/notes">
+			<input name="note" value="fine" />
+			<button type="submit">Add</button>
+		</form>
+		<form class="away" method="post" action="/notes">
+			<input name="note" value="away" />
+			<button type="submit">Add, then away</button>
+		</form>
+		<form class="refused" method="post" action="/notes">
+			<input name="note" value="refuse" />
+			<button type="submit">Add, refused</button>
+		</form>
+		<form class="item" method="post" action="/items/3?star=yes">
+			<input name="note" value="starred" />
+			<button type="submit">Star item 3</button>
+		</form>
+		<iframe name="sink" title="Where a framed form goes"></iframe>
+		<form class="framed" method="post" action="/notes" target="sink">
+			<input name="note" value="framed" />
+			<button type="submit">Add, into the frame</button>
+		</form>
+		<form class="elsewhere" method="post" action="/nowhere">
+			<input name="note" value="nowhere" />
+			<button type="submit">Post where no endpoint is</button>
+		</form>
+	</section>

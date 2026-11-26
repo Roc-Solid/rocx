@@ -1005,8 +1005,11 @@ view! = |_|
 				Router's <code>useSubmission</code>) is the latest submission to it, read with its methods:
 				<code>pending!()</code>, <code>input!()</code> (what was typed, as the endpoint reads it),
 				<code>field!(name)</code>, <code>result!()</code> and <code>error!()</code>, with
-				<code>clear!()</code> and <code>retry!()</code> for a handler. While a component that asks for it is on
-				the page, the runtime sends the form with <code>fetch</code>, and the page stays.
+				<code>clear!()</code> and <code>retry!()</code> for a handler. The runtime sends every form that posts
+				to one of the app's endpoints with <code>fetch</code>, and the page stays, whether anything asks
+				for its submission or not: its result reads the page's data again, and a redirect is followed. A
+				refusal shows only where the page reads it, so read the submission of every form that can be
+				refused; one refused that nothing reads, the browser's console tells you about.
 			</p>
 			<Code title={"${Sources.components_form.file}, in part"} source={Sources.components_form.rocx} numbers={Bool.False} />
 			<p>

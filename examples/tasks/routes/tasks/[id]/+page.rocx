@@ -1,7 +1,8 @@
 import pf.Html
 import pf.Endpoint
-import pf.Router exposing [use_before_leave!]
-import pf.Solid exposing [create_signal!]
+import pf.Server
+import pf.Router exposing [navigate!, use_before_leave!, use_submission!]
+import pf.Solid exposing [create_effect!, create_signal!]
 import pf.Title
 import forms.LiveForm
 import forms.TextField
@@ -16,9 +17,11 @@ import ../../../Generated/Paths
 ## (`POST /tasks/:id`), whose endpoint reads the form with `TaskForm.editing` (packages/forms) and
 ## sends you back to the list, or refuses it (422) with each field's issues, which show here under
 ## their fields, with what was typed: without JavaScript the browser posts and comes back (a 303,
-## and a flash); with it, the runtime sends the form with fetch and the page stays. A task that
-## isn't there is the app's error page, a 404 (its endpoint refuses it, and `get!` fails the page).
-## Leaving it with changes not saved asks first (`Router.use_before_leave!`).
+## and a flash); with it, the runtime sends the form with fetch and the page stays. Deleting posts
+## to `/api/tasks/delete`, which sends a plain form to the list, and answers the runtime with the
+## list's id, which this page then goes to. A task that isn't there is the app's error page, a 404
+## (its endpoint refuses it, and `get!` fails the page). Leaving it with changes not saved asks
+## first (`Router.use_before_leave!`).
 meta = { title: "A task" }
 
 view! = |{ params, .. }| <Editor detail={Endpoint.get!(Api.get_tasks_id({ id: params.id }))} />
@@ -26,9 +29,10 @@ view! = |{ params, .. }| <Editor detail={Endpoint.get!(Api.get_tasks_id({ id: pa
 ## The form, filled in with the task as it is (`LiveForm.filled!`), checked as it is typed with the
 ## same `TaskForm.editing` the endpoint reads it with; after a refusal, what was typed and the
 ## endpoint's issues show instead. While what is typed isn't the task as it is, and isn't on its
-## way to be saved (whose answer sends you back to the list), leaving asks first: a link, Back or
-## Cancel is stopped (`use_before_leave!`) and the question shows, whose "Leave without saving"
-## goes after all (`retry!`); a reload, or another site, the browser asks about, in its own words.
+## way to be saved (whose answer sends you back to the list), nor deleted, leaving asks first: a
+## link, Back or Cancel is stopped (`use_before_leave!`) and the question shows, whose "Leave
+## without saving" goes after all (`retry!`); a reload, or another site, the browser asks about, in
+## its own words.
 Editor := [].{
 	view! : { detail : Tasks.Detail } => Html
 	view! = |{ detail }| {
@@ -36,8 +40,25 @@ Editor := [].{
 		ticked = if (task.done) [("done", "on")] else []
 		values = [("title", task.title), ("notes", task.notes), ("due", task.due), ("assignee", task.assignee)].concat(ticked)
 		live = LiveForm.filled!(TaskForm.editing, Api.post_tasks_id({ id: task.id }), values)
+		# The delete, which the runtime sends (D-095): its answer is the list's id, and once it is in
+		# for this task, the page goes there, asking nothing of changes to a task that is gone. Its
+		# refusal shows under its button.
+		removal = use_submission!(Api.post_api_tasks_delete({}))
+		gone! = ||
+			match removal.input!() {
+				Ok(sent) if sent.id == task.id => removal.result!()
+				_ => Err(NoResult)
+			}
+		create_effect!(
+			gone!,
+			|gone|
+				match gone {
+					Ok(list_id) => navigate!(Paths.lists_id({ id: list_id }))
+					Err(NoResult) => {}
+				},
+		)
 		(leaving!, set_leaving!) = create_signal!(Err(Staying))
-		unsaved! = || Editor.changed(live.fields!(), values) and !live.pending!()
+		unsaved! = || Editor.changed(live.fields!(), values) and !live.pending!() and gone!().is_err()
 		use_before_leave!(
 			|leave|
 				if unsaved!() {
@@ -107,8 +128,12 @@ Editor := [].{
 			</form>
 			<form class="delete" method="post" action={Endpoint.url_of(Api.post_api_tasks_delete({}))}>
 				<input type="hidden" name="id" value={task.id} />
-				<button type="submit">Delete this task</button>
+				<button type="submit" disabled?={removal.pending!()}>Delete this task</button>
 			</form>
+			{match removal.error!() {
+				Ok(problem) => <p class="problem" role="alert">That didn't delete: {Server.explain(problem)}</p>
+				Err(_) => <></>
+			}}
 		</article>
 	}
 

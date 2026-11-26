@@ -394,14 +394,14 @@ pub extern "C" fn roc_submission_retry(key: RocStr, id: u64) {
 
 // ---- Navigation (D-040) and the page's <head> (D-054): a phone shows one page ----
 //
-// No links, history or back gesture yet (spike/native-apps/README.md, Pages): the route table is
-// let go of, nothing is ever routing or leaving, and a navigation is logged, once, and ignored.
-// A <Meta>, <Link> or <Style> has no <head> to go in.
+// No links, history or back gesture yet (spike/native-apps/README.md, Pages): of the route table
+// only the endpoints that take a POST are kept (D-095), nothing is ever routing or leaving, and a
+// navigation is logged, once, and ignored. A <Meta>, <Link> or <Style> has no <head> to go in.
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_app(build: RocStr, _dev: bool, routes: RocStr) {
     taken(build);
-    taken(routes);
+    engine::app(&taken(routes));
 }
 
 #[unsafe(no_mangle)]

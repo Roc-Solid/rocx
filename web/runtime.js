@@ -1170,9 +1170,11 @@ export class Runtime {
 		/** Effects whose apply is due, after the flush. */
 		this.due = new Pending();
 		this.flushing = false;
-		/** The endpoints whose forms the runtime sends (`use_submission!`, `use_submissions!`), by URL,
-		 * and how many ask; the submissions to each (forms', actions'), a source computations read;
-		 * whether it listens for submits. */
+		/** The endpoints a component asks for the submissions of (`use_submission!`,
+		 * `use_submissions!`), by URL, and how many ask: their forms are sent too (with the route
+		 * table's endpoints', D-095), and their finished submissions outlast a navigation; the
+		 * submissions to each (forms', actions'), a source computations read; whether it listens for
+		 * submits. */
 		this.actions = new Map();
 		this.submissions = new Map();
 		this.submitting = null;
@@ -1569,6 +1571,8 @@ export class Runtime {
 				const routes = text(rp, rl);
 				if (this.app?.build === build && this.app.routes === routes && this.app.dev === (dev === 1)) return;
 				this.app = { ...Runtime.routeTable(routes), build, dev: dev === 1, routes };
+				// A form to one of its endpoints is sent with fetch, whoever asks for it (D-095).
+				if (this.app.posts.length) this.listenForSubmits();
 			},
 			// `Router.navigate!`, `navigate_with!`: once the handler is done, as its writes are.
 			js_navigate: (tp, tl, replace, scroll) => {
@@ -1855,13 +1859,15 @@ export class Runtime {
 	}
 
 	/**
-	 * A form submitted: sent with fetch if it posts to an endpoint a component reads the submission
-	 * of, on this site, and no handler prevented its submit. Its fields go as a form sends them:
-	 * URL-encoded, or, a form with files (`enctype="multipart/form-data"`), as the browser's
-	 * `FormData` (D-054); with `accept: application/json` and `x-rocx-submission: 1`, so the endpoint
-	 * answers its result, or its refusal, rather than sending the browser back with a flash. A form
-	 * whose URL is an endpoint's with fields in its query (`Endpoint.with_fields`) is that endpoint's,
-	 * those fields first in its input. Any other form is the browser's.
+	 * A form submitted: sent with fetch if it posts to one of the app's endpoints (the route table's,
+	 * D-095) or to one a component reads the submission of, on this site, into this tab, and no
+	 * handler prevented its submit. Its fields go as a form sends them: URL-encoded, or, a form with
+	 * files (`enctype="multipart/form-data"`), as the browser's `FormData` (D-054); with
+	 * `accept: application/json` and `x-rocx-submission: 1`, so the endpoint answers its result, or
+	 * its refusal, rather than sending the browser back with a flash. A form whose URL is an
+	 * endpoint's with fields in its query (`Endpoint.with_fields`) is that endpoint's, those fields
+	 * first in its input. Any other form is the browser's (another site's, a `target`ed one, a path no
+	 * endpoint has: a plugin's own route).
 	 */
 	submitted(event) {
 		if (event.defaultPrevented) return;
@@ -1872,9 +1878,11 @@ export class Runtime {
 		if (of("method", "formmethod").toLowerCase() !== "post") return;
 		const enctype = of("enctype", "formenctype").toLowerCase();
 		if (enctype === "text/plain") return;
+		// Into another tab or frame: fetch has nowhere to show the answer.
+		const target = of("target", "formtarget").toLowerCase();
+		if (target && target !== "_self") return;
 		const url = new URL(of("action", "formaction"), location.href);
-		if (url.origin !== location.origin) return;
-		const key = this.submittedKey(`${this.unbased(url.pathname)}${url.search}`);
+		const key = this.formKey(url);
 		if (key === null) return;
 		event.preventDefault();
 		const data = new FormData(form, submitter ?? undefined);
@@ -1884,6 +1892,18 @@ export class Runtime {
 		const input = [url.search.slice(1), own].filter(Boolean).join("&");
 		if (enctype === "multipart/form-data") this.submit(key, url.href, { body: data, input, json: false });
 		else this.submit(key, url.href, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(data).toString(), input, json: false });
+	}
+
+	/** What a form posting to `url` is kept under, its submissions' key: the endpoint a component
+	 * asks for (`submittedKey`); else, one of the app's endpoints that take a POST (D-095), by its
+	 * path (its URL's query is fields, `with_fields`'); null for none: another site's, a path outside
+	 * the site's base, or one no endpoint has. */
+	formKey(url) {
+		if (url.origin !== location.origin) return null;
+		const base = this.base.slice(0, -1);
+		if (base && url.pathname !== base && !url.pathname.startsWith(this.base)) return null;
+		const path = this.unbased(url.pathname);
+		return this.submittedKey(`${path}${url.search}`) ?? (this.postOf(path) ? path : null);
 	}
 
 	/** The endpoint a form's URL (its path without the site's base, and its query) is: one the
@@ -1995,14 +2015,27 @@ export class Runtime {
 				const said = await response.text();
 				this.notify("submitted", { url: key, input, id: entry.id, status: response.status, body: said, ms: performance.now() - asked });
 				if (response.status === 200) this.revalidate(() => done(200, said), Runtime.revalidating(response.headers.get("x-rocx-revalidate")));
-				else done(response.status, said);
+				else {
+					this.unread(method, key, response.status, said);
+					done(response.status, said);
+				}
 			},
 			(error) => {
 				const why = `${method} ${key}: ${error?.message ?? error}`;
 				this.notify("submitted", { url: key, input, id: entry.id, error: why, ms: performance.now() - asked });
+				this.unread(method, key, 0, error?.message ?? String(error));
 				done(0, why);
 			},
 		);
+	}
+
+	/** A submission refused, or with no answer, that no component asks for (D-095: a form to one of
+	 * the app's endpoints is sent whoever asks): nothing on the page shows it, so the console says so,
+	 * in every build, as it says a refusal of what a channel was told. */
+	unread(method, key, status, why) {
+		if (this.actions.has(key)) return;
+		const what = status === 0 ? `had no answer (${why})` : `was refused (${status}: ${why})`;
+		console.warn(`rocx: ${method} ${key} ${what}, and nothing on the page reads its submissions: use_submission! or use_submissions! shows it`);
 	}
 
 	/** The reads an answer names to read again (`x-rocx-revalidate`: a JSON list of URLs), or null
@@ -2230,8 +2263,32 @@ export class Runtime {
 	 * page's code. */
 	static routeTable(routes) {
 		const table = JSON.parse(routes);
-		const pages = (table.pages ?? []).map((page) => ({ ...page, parts: page.path.split("/").filter(Boolean).map((part) => (/^\[.+\]$/.test(part) ? null : part)) }));
-		return { pages, error: table.error ?? null };
+		const parts = (path) => path.split("/").filter(Boolean).map((part) => (/^\[.+\]$/.test(part) ? null : part));
+		const pages = (table.pages ?? []).map((page) => ({ ...page, parts: parts(page.path) }));
+		// The app's endpoints that take a POST (D-095), whose forms the runtime sends with fetch.
+		const posts = (table.posts ?? []).map((path) => ({ path, parts: parts(path) }));
+		return { pages, error: table.error ?? null, posts };
+	}
+
+	/** The segments of a path (without the base, no query), decoded; null for one that can't be. */
+	static segmentsOf(path) {
+		try {
+			return path.split("/").filter(Boolean).map(decodeURIComponent);
+		} catch {
+			return null;
+		}
+	}
+
+	/** Whether a route's parts (a fixed part, or null for a `[param]`, any one segment) match a path's segments. */
+	static matched(parts, segments) {
+		return parts.length === segments.length && parts.every((part, at) => part === null || part === segments[at]);
+	}
+
+	/** Whether one of the app's endpoints takes a POST at `path` (without the base, no query), as the
+	 * route table says (D-095); false with no table. */
+	postOf(path) {
+		const segments = Runtime.segmentsOf(path);
+		return segments !== null && (this.app?.posts ?? []).some((post) => Runtime.matched(post.parts, segments));
 	}
 
 	/** The app's page at `path` (without the base, no query), as `Root` matches it, segment by
@@ -2239,14 +2296,10 @@ export class Runtime {
 	 * by name, decoded; null where the app has no page (or no table). */
 	routeOf(path) {
 		if (!this.app) return null;
-		let segments;
-		try {
-			segments = path.split("/").filter(Boolean).map(decodeURIComponent);
-		} catch {
-			return null;
-		}
+		const segments = Runtime.segmentsOf(path);
+		if (segments === null) return null;
 		for (const page of this.app.pages) {
-			if (page.parts.length !== segments.length || !page.parts.every((part, at) => part === null || part === segments[at])) continue;
+			if (!Runtime.matched(page.parts, segments)) continue;
 			const params = {};
 			page.path
 				.split("/")

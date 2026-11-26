@@ -765,9 +765,9 @@ read or not, so a reload doesn't show it again. An app that writes its own progr
 
 ### Forms the runtime sends, actions and scripts
 
-With the browser runtime, a form whose page reads its submission is sent with `fetch`
-(`x-rocx-submission: 1`, `accept: application/json`). It gets the endpoint's result as JSON, or its
-refusal. An endpoint's own redirect comes back as 200 with `x-rocx-redirect` (fetch would follow a
+With the browser runtime, a form posting to one of the app's endpoints is sent with `fetch`
+(`x-rocx-submission: 1`, `accept: application/json`), whether its page reads its submission or not
+(D-095). It gets the endpoint's result as JSON, or its refusal. An endpoint's own redirect comes back as 200 with `x-rocx-redirect` (fetch would follow a
 303 before the runtime could read it), its cookies kept, and the runtime goes there.
 
 An action (`Router.use_action!`, D-030) is sent by the runtime as JSON with
@@ -776,9 +776,10 @@ requests, and an endpoint's own `Err(Answer(…))` (JSON with a cookie, as the d
 keeps a reader's week) is sent as it is. A script's post (JSON, or a form not from a page) gets the
 endpoint's answer as always.
 
-A handler that must answer each kind its own way asks `Endpoint.posted_by(request)`: `PlainForm`,
-`Runtime` (a form the runtime sent, or an action) or `Other` (a script). examples/tasks' delete
-does this.
+A handler that must answer each kind its own way asks `Endpoint.posted_by(request)`: `PlainForm`
+(a form posted with no JavaScript, or before the runtime is there), `Runtime` (a form the runtime
+sent, or an action) or `Other` (a script). examples/tasks' delete does this: a plain form is sent to
+the list, and the runtime gets the list's id, which the task's own page goes to.
 
 ## Settings: `Env`
 

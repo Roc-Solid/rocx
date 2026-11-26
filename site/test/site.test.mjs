@@ -506,6 +506,28 @@ test("middleware: the site's default around every answer; a route's own guards i
 	assert.match(left.cookie, /^member=; Path=\/; HttpOnly; SameSite=Lax; Max-Age=0/);
 });
 
+test("joining, in a browser (D-095): the form is sent with fetch; a name of spaces is refused under it, what was typed kept, with no load; a name sets the cookie and goes on to the members' page in place; Leave comes back", { skip }, async () => {
+	const tab = await open("/members/join");
+	await tab.eval("window.mark = 'kept'");
+	await tab.type(".join input", "   ");
+	await tab.click(".join button");
+	await tab.wait("document.querySelector('.problem')?.textContent.includes('a member has a name')", 5000);
+	assert.equal(await tab.eval("document.querySelector('.join input').value"), "   ", "what was typed, from the submission");
+	assert.equal(await tab.eval("window.mark"), "kept", "no load");
+	await tab.eval("document.querySelector('.join input').value = ''");
+	await tab.type(".join input", "Ada L");
+	await tab.click(".join button");
+	await tab.wait("location.pathname === '/members' && document.querySelector('h1')?.textContent === 'Welcome, Ada L'", 5000);
+	assert.equal(await tab.eval("window.mark"), "kept", "in place");
+	// Sent as its button would send it, without a pointer the page's transition may be in front of.
+	await tab.eval("document.querySelector('main form').requestSubmit()");
+	// The joining page, which a member would be sent on from: the cookie is gone.
+	await tab.wait("location.pathname === '/members/join' && document.querySelector('.join') !== null", 5000);
+	assert.equal(await tab.eval("window.mark"), "kept");
+	assert.deepEqual(tab.errors, []);
+	await tab.close();
+});
+
 test("middleware, in the server built with --opt=speed as the site ships: every step of each chain runs, and every guarded route refuses", { skip }, async () => {
 	// Under --opt=speed, the pinned compiler drops the last step of a chain of three or more effectful
 	// closures composed with `then` (test/compiler-bugs/middleware-skipped-opt-speed). The site's

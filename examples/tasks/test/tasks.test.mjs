@@ -466,3 +466,27 @@ test("in a browser: leaving a task's page with changes not saved asks first (use
 	assert.deepEqual(tab.console.filter((line) => line.type === "error"), []);
 	await tab.close();
 });
+
+test("in a browser: deleting from a task's page, the runtime sends the form (D-095), the task's page isn't read again, and the page goes on to the list, in place, asking nothing of a change typed", { skip }, async (t) => {
+	if (!browser) return t.skip(noBrowser);
+	const person = app.client();
+	const id = await newList(person, "Browser deletions");
+	const task = await addTask(person, id, { title: "Sweep the yard" });
+	await addTask(person, id, { title: "Rake the leaves" });
+	const tab = await browser.open(`${app.url}/tasks/${task}`);
+	// The error page (a 404 for the task's page read again) never shows on the way.
+	await tab.page.eval("window.mark = 'kept'; window.erred = false; new MutationObserver(() => { if (document.querySelector('section.error')) window.erred = true; }).observe(document.documentElement, { childList: true, subtree: true })");
+	// A change typed and not saved: a task that is gone asks nothing of it.
+	await (await tab.getByLabelText("Title")).fill("Sweep the porch");
+	await (await tab.getByRole("button", { name: "Delete this task" })).click();
+	await until(async () => new URL(await tab.page.eval("location.href")).pathname === `/lists/${id}`, { what: "on the list" });
+	assert.equal(await tab.page.eval("window.mark"), "kept", "in place: no load");
+	await tab.findByRole("link", { name: "Rake the leaves" });
+	assert.equal((await tab.dom()).queryByRole("link", { name: "Sweep the yard" }), null, "the task gone from the list");
+	assert.equal((await db.sql`select count(*) as n from tasks where id = ${Number(task)}`)[0].n, 0, "and from the database");
+	assert.equal(await tab.page.eval("window.erred"), false, "the task's page wasn't read again: no 404 on the way");
+	assert.equal((await tab.dom()).queryByRole("alertdialog"), null, "no question about the change typed");
+	assert.deepEqual(tab.errors, []);
+	assert.deepEqual(tab.console.filter((line) => line.type === "error" || line.type === "warning"), []);
+	await tab.close();
+});

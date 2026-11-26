@@ -55,12 +55,18 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms * SCALE));
 /** The build's id, as rocx build wrote it in Root: every document's bootstrap says it. */
 const BUILD = skip ? "" : /^\tbuild = "([0-9a-f]{8})"$/m.exec(readFileSync(join(here, "nav", "Generated", "Root.roc"), "utf8"))[1];
 
+/** Polls `check` until it holds, or fails after `ms`. */
+async function until(check, ms = 3000 * SCALE, what = String(check)) {
+	for (const end = Date.now() + ms; Date.now() < end; await sleep(20)) if (await check()) return;
+	throw new Error(`timed out waiting for ${what}`);
+}
+
 /** What the server says of a word (`GET /api/say/<word>`), as JSON. */
 const said = (word) => ({ status: 200, body: JSON.stringify(`Said: ${word}`) });
 
 /** The answers the server's reads got as it rendered the pages: `renderToString` answers each GET
  * from them, and records those a page asked for in its document. */
-const ANSWERS = ["home", "a", ...Array.from({ length: 10 }, (_, n) => String(n)), "books", "games", "color-none", "color-red", "color-blue"].map((word) => [`GET /api/say/${word}`, "", JSON.stringify(said(word))]);
+const ANSWERS = ["home", "a", "notes", ...Array.from({ length: 10 }, (_, n) => String(n)), "books", "games", "color-none", "color-red", "color-blue"].map((word) => [`GET /api/say/${word}`, "", JSON.stringify(said(word))]);
 
 /** A page's markup with its URLs under `base`, as the static build writes it (site/build.mjs's `underBase`). */
 const underBase = (html, base) => (base === "/" ? html : html.replace(/(\s(?:href|src|action)=")\/(?!\/)/g, `$1${base}`));
@@ -106,7 +112,10 @@ function liveServer() {
  * start.js, the runtime and the wasm at `${base}rocx/`; the reads it makes answered. Every request
  * is noted (`asked`: its path and query, and its `x-rocx-navigate`). `rules[path]` (the path without
  * the base) answers a page's request instead (`(request) => answer | null`), and `held[path]`, a
- * promise, holds its answer until it settles.
+ * promise, holds its answer until it settles. A POST to the notes' or an item's endpoint (D-095) is
+ * noted in `posted` (its path and query, its body, and its `x-rocx-submission`), and answered by
+ * its note: `away` with a redirect to A (`x-rocx-redirect`), `refuse` with a 409, any other with
+ * itself; one to `/nowhere`, a path no endpoint has, with a 303 to A, as a browser's post gets.
  */
 async function navSite({ base = "/" } = {}) {
 	const server = await Runtime.load(readFileSync(join(out, "nav-server.wasm")));
@@ -118,7 +127,7 @@ async function navSite({ base = "/" } = {}) {
 	cpSync(join(out, "nav.wasm"), join(files, "app.wasm"));
 	// The links stay where they are as the page scrolls, so a click on one doesn't scroll it.
 	writeFileSync(join(dir, base, "nav.css"), "nav { position: fixed; top: 0; right: 0; width: 12em; font-size: 8px } .tall { height: 3000px } .progress.on { height: 2px; background: blue }");
-	const site = { asked: [], rules: {}, held: {}, live: liveServer(), base, dir: join(dir, base) };
+	const site = { asked: [], posted: [], rules: {}, held: {}, live: liveServer(), base, dir: join(dir, base) };
 	site.render = (target) => {
 		const rendered = server.renderToString({ path: target, answers: ANSWERS }).html;
 		return { status: server.status, html: underBase(rendered, base) };
@@ -140,6 +149,14 @@ async function navSite({ base = "/" } = {}) {
 		if (at === "/api/wait") {
 			await sleep(150);
 			return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify("now") };
+		}
+		if (method === "POST" && (at === "/notes" || at.startsWith("/items/") || at === "/nowhere")) {
+			site.posted.push({ url: `${at}${new URL(url, "http://x").search}`, body, submission: request.headers["x-rocx-submission"] ?? null });
+			if (at === "/nowhere") return { status: 303, headers: { location: `${base}a` }, body: "" };
+			const note = new URLSearchParams(body).get("note");
+			if (note === "refuse") return { status: 409, headers: { "content-type": "text/plain" }, body: "no more notes" };
+			const headers = { "content-type": "application/json", ...(note === "away" ? { "x-rocx-redirect": "/a" } : {}) };
+			return { status: 200, headers, body: JSON.stringify(note) };
 		}
 		if (at.startsWith("/rocx/") || at.endsWith(".css")) return null;
 		await site.held[at];
@@ -921,6 +938,86 @@ test("<Navigate> sends the visitor elsewhere as the page renders: in the browser
 		assert.deepEqual(site.documents(), ["navigate /shop/books/2?color=blue"]);
 		assert.deepEqual(form.errors, []);
 		await form.close();
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("which forms the runtime sends (D-095): one posting to a path the route table lists an endpoint at (a [param] any one segment), kept by its path; one an asked endpoint's, fields after it; under the site's base only; no other", () => {
+	const runtime = Object.create(Runtime.prototype);
+	Object.assign(runtime, { app: Runtime.routeTable(JSON.stringify({ pages: [], error: null, posts: ["/notes", "/items/[id]", "/"] })), actions: new Map([["/asked", 1]]), base: "/" });
+	const saved = globalThis.location;
+	globalThis.location = new URL("http://site.test/notes");
+	try {
+		const key = (href) => runtime.formKey(new URL(href, location.href));
+		assert.equal(key("/notes"), "/notes");
+		assert.equal(key(""), "/notes", "no action: the page's own URL, an endpoint's here");
+		assert.equal(key("/items/3?star=yes"), "/items/3", "kept by its path: its query is fields (with_fields')");
+		assert.equal(key("/items/3/more"), null);
+		assert.equal(key("/"), "/");
+		assert.equal(key("/asked?id=7"), "/asked", "an endpoint a component asks for, with fields after its URL");
+		assert.equal(key("/nowhere"), null, "no endpoint there: the browser's");
+		assert.equal(key("http://elsewhere.test/notes"), null, "another site's");
+		assert.equal(key("/items/%E0%A4%A"), null, "a path that can't be decoded");
+		runtime.base = "/rocx/";
+		assert.equal(key("/rocx/notes"), "/notes", "under the site's base");
+		assert.equal(key("/rocx"), "/", "the base itself");
+		assert.equal(key("/notes"), null, "outside it");
+		runtime.app = null;
+		assert.equal(key("/rocx/notes"), null, "no route table (an app with no routes/): only what is asked for");
+		assert.deepEqual(Runtime.routeTable('{"pages":[],"error":null}').posts, [], "a table written before D-095: no endpoints");
+	} finally {
+		globalThis.location = saved;
+	}
+});
+
+test("a form to one of the app's endpoints is sent with fetch though no component reads its submissions (D-095): its result reads the page's reads again, its redirect is followed in place, a refusal is said in the console; a path with a param and fields in its query too; a form into a frame, and one to a path no endpoint has, are the browser's", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/notes");
+		const reads = () => site.asked.filter(({ url }) => url === "/api/say/notes").length;
+		// A result: sent by the runtime, the page stays, and what it read is read again.
+		let before = reads();
+		await tab.click(".fine button");
+		await until(() => site.posted.length === 1);
+		await until(() => reads() > before);
+		assert.deepEqual(site.posted[0], { url: "/notes", body: "note=fine", submission: "1" });
+		assert.equal(await kept(tab), true, "no load");
+		assert.equal(await tab.eval("location.pathname"), "/notes");
+		// A param in the endpoint's path, and fields in the form's URL (`with_fields`'s).
+		before = reads();
+		await tab.click(".item button");
+		await until(() => site.posted.length === 2);
+		await until(() => reads() > before);
+		assert.deepEqual(site.posted[1], { url: "/items/3?star=yes", body: "note=starred", submission: "1" });
+		assert.equal(await kept(tab), true);
+		// A refusal nothing reads: nothing on the page, and the console says so.
+		await tab.click(".refused button");
+		await until(() => site.posted.length === 3);
+		await until(() => tab.console.length > 0);
+		assert.deepEqual(tab.console.map(({ type, text }) => [type, text]), [["warning", "rocx: POST /notes was refused (409: no more notes), and nothing on the page reads its submissions: use_submission! or use_submissions! shows it"]]);
+		assert.equal(await kept(tab), true);
+		// Into a frame: the browser's, with no x-rocx-submission.
+		await tab.click(".framed button");
+		await until(() => site.posted.length === 4);
+		assert.deepEqual(site.posted[3], { url: "/notes", body: "note=framed", submission: null });
+		assert.equal(await kept(tab), true, "the page stays: the frame took the answer");
+		// A redirect of the endpoint's own: followed in place.
+		await tab.click(".away button");
+		await tab.wait("document.querySelector('.a h1') !== null", 5000);
+		assert.equal(await tab.eval("location.pathname"), "/a");
+		assert.equal(await kept(tab), true, "in place");
+		assert.equal(site.posted[4].submission, "1");
+		// A path no endpoint has: the browser posts it, and loads where it is sent.
+		const other = await open(site, "/notes");
+		await other.click(".elsewhere button");
+		await other.wait("location.pathname === '/a' && window.ready !== undefined", 5000);
+		assert.equal(await kept(other), false, "a load");
+		assert.deepEqual(site.posted.at(-1), { url: "/nowhere", body: "note=nowhere", submission: null });
+		assert.deepEqual(tab.errors, []);
+		assert.deepEqual(other.errors, []);
+		await other.close();
 		await tab.close();
 	} finally {
 		await site.close();

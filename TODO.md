@@ -260,8 +260,6 @@ When an item lands, delete its line here in the same commit.
   - packages/posthog: `sent!` drops a batch that is `TooLarge` without a log line.
   - packages/storage: directory and memory buckets keep multipart parts under `.uploads/`, and an
     app's key starting with `.uploads` isn't refused.
-  - site/routes/members/join: the form doesn't use `use_submission!`, so a refusal (a blank name)
-    shows nothing.
   - `--opt=speed`: is the three-step `Middleware.then` miscompile
     (`test/compiler-bugs/middleware-skipped-opt-speed`) still there? journal's and plate's chains
     have three steps.

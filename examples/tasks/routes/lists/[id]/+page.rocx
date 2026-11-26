@@ -32,8 +32,8 @@ Board := [].{
 	view! : { list : Str, sheet! : () => Tasks.Sheet, stale! : () => Bool, reload! : () => {}, filter : Tasks.Filter, path : Str } => Html
 	view! = |{ list, sheet!, stale!, reload!, filter, path }| {
 		# Every change this page sends, each to its endpoint: every form a row has posts to one of
-		# these, and the runtime sends it with fetch because the page reads its submissions here.
-		# Each is typed by its endpoint's contract (Generated/Api): what it sends, what it answers.
+		# these, which the runtime sends with fetch (D-095), and the page reads their submissions
+		# here. Each is typed by its endpoint's contract (Generated/Api): what it sends, what it answers.
 		adds = use_submissions!(Api.post_lists_id({ id: list }))
 		toggles = use_submissions!(Api.post_api_tasks_toggle({}))
 		moves = use_submissions!(Api.post_api_tasks_move({}))

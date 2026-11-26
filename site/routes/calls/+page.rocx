@@ -320,16 +320,18 @@ view! = |_|
 			/>
 			<ul>
 				<li>
-					<strong>With JavaScript</strong>, the runtime sends a form with <code>fetch</code> when it posts to
-					an endpoint whose submission a component on the page reads, and the page stays. While the answer is
-					on its way, <code>pending!()</code> is true. After a result it stays true until the page's reads have
+					<strong>With JavaScript</strong>, the runtime sends every form that posts to one of the app's
+					endpoints with <code>fetch</code>, and the page stays, whether a component reads its submission or
+					not (as SolidStart sends every form to an action). While the answer is on its way,
+					<code>pending!()</code> is true. After a result it stays true until the page's reads have
 					been read again (as Solid Router revalidates after an action), so the server's new data and the
 					result show at once. Then <code>result!()</code> is the endpoint's result, or <code>error!()</code>
 					its refusal (<code>{"Refused(409, \"…\")"}</code>) or why no answer came. <code>input!()</code> is
 					what was sent, as the endpoint reads it, and <code>field!(name)</code> one field as it was typed.
 					Only the latest submission counts; <code>clear!()</code>, in an event handler, forgets it. A
 					redirect from the endpoint (<code>{"Err(Answer(Server.redirect(…)))"}</code>, setting a cookie,
-					say) sends the browser there.
+					say) sends the browser there. A refusal shows only where the page reads the submission: one that
+					nothing reads shows nothing, and the browser's console says so.
 				</li>
 				<li>
 					<strong>Without JavaScript</strong> (before the runtime loads, or with JavaScript off), the form

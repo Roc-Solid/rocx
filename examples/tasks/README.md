@@ -94,7 +94,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 | A session started and ended by an endpoint (`Auth.sign_in!` for the person picked, `Auth.sign_out!`), then a redirect | [`routes/me/+server.roc`](routes/me/+server.roc) |
 | SQLite in the server's process, with migrations and a seed that is safe to run twice | [`main.roc`](main.roc), [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`migrations/0002_seed.sql`](migrations/0002_seed.sql) |
 | Queries: `Db.all!` into typed rows, `Db.one!` for the one row a query reads, `Db.run!`, a transaction, and `Db.Nullable` for optional columns | [`Store.roc`](Store.roc) (`Row`, `task_of`, `task!`, `move!`) |
-| One endpoint for a plain form and the runtime, answering each in its way: `Endpoint.posted_by` tells them apart (a redirect for a form, JSON for the runtime) | [`routes/api/tasks/delete/+server.roc`](routes/api/tasks/delete/+server.roc) |
+| One endpoint for a plain form and the runtime, answering each in its way: `Endpoint.posted_by` tells them apart (a redirect for a form; for the runtime, which sends every form to an endpoint, JSON and what to read again, `Router.revalidate!`). The task's page reads the answer and goes to the list | [`routes/api/tasks/delete/+server.roc`](routes/api/tasks/delete/+server.roc), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 
 ### Forms and changes
 
@@ -153,6 +153,8 @@ In Chromium (skipped when there is none), they cover:
 - a change the server refuses (a task deleted elsewhere, then ticked): undone, explained, and
   dismissed, which reads the list again;
 - a task's page that starts filled in, checks what is typed, and saves;
+- deleting from a task's page, which goes on to the list without a load, never reading the deleted
+  task's page again;
 - leaving a task's page with changes not saved, which asks first.
 
 Rows glide to their places when the list changes, so the browser tests wait for the page to stop

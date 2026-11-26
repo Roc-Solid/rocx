@@ -2207,9 +2207,11 @@ Routes := [].{
 	## in the order `Root` tries them, its path (`/lists/[id]`) and its levels, from the root layout to
 	## the page, each its code (§18: the module that renders it, an id the build chose) and the path
 	## its file covers (`/lists`: a layout's own params are its path's); a dev build's stories, each a
-	## page in the root layout; and the error page's code (`null` with none).
-	routes_json : Table, List(Placed) -> Str
-	routes_json = |table, stories| {
+	## page in the root layout; the error page's code (`null` with none); and the paths of the
+	## endpoints that take a POST (`/members/join`, `/lists/[id]`: each `+server.roc` with a `post!`),
+	## where the browser sends a form with `fetch` (D-095).
+	routes_json : Table, List(Source), List(Placed) -> Str
+	routes_json = |table, sources, stories| {
 		level = |code, path| "{\"code\":${Text.json_string(code)},\"path\":${Text.json_string(path)}}"
 		layout_path = |layout| "/${Str.join_with(layout.parts, "/")}"
 		root = table.layouts.keep_if(|layout| layout.parts.is_empty()).map(|layout| level(layout.module_name, "/"))
@@ -2221,7 +2223,8 @@ Routes := [].{
 				Some(entry) => Text.json_string(entry.module_name)
 				None => "null"
 			}
-		"{\"pages\":[${Str.join_with(storied.concat(pages), ",")}],\"error\":${error}}"
+		posts = table.servers.keep_if(|server| Routes.defs_of(sources, server.file).methods.contains("post!")).map(|server| Text.json_string(server.path))
+		"{\"pages\":[${Str.join_with(storied.concat(pages), ",")}],\"error\":${error},\"posts\":[${Str.join_with(posts, ",")}]}"
 	}
 
 	## What is wrong with the `meta`s an app's layouts are given (D-040): a layout is kept across
@@ -2513,7 +2516,7 @@ Routes := [].{
 					"\t## The app's pages, as the browser navigates by them (`Router.app!`): each page's path and its",
 					"\t## levels' code, from the root layout to the page.",
 					"\troutes : Str",
-					"\troutes = ${Text.roc_string(Routes.routes_json(table, stories))}",
+					"\troutes = ${Text.roc_string(Routes.routes_json(table, sources, stories))}",
 					"",
 					"\t## The error page for `status` (404: no page is here, or its data isn't; 500: the page failed),",
 					"\t## which the server answers with (`<HttpStatusCode>`), and why.",

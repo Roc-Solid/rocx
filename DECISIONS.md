@@ -664,6 +664,9 @@ cookie holds, and the first page that reads it takes it (`Server.flash_back!`, n
 is no size limit. `Html` never writes a `value` into an `<input type="password">`, and the page's
 note of the flash leaves out the fields it has as one, so a password typed is never sent back.
 
+**Later (2026-11-26):** with the runtime, a form to any of the app's endpoints is sent with `fetch`,
+whether a component asks for its submission or not (D-095); `use_submission!` reads it.
+
 ## D-019 A server function's redirect while a page renders
 
 **Context.** A layout calls a server function (who is signed in?), and the app's default middleware
@@ -2440,6 +2443,10 @@ the stylesheet as a cached file, a JSON payload, wasm splitting.
   `ready` and `finished`. Tests: web/test's View Transitions test does it (an error without the
   fix); site/test checks the names and that a click's transition animates them with the site's
   keyframes, and its navigation through every page runs with transitions on.
+
+**Later (2026-11-26):** §9.1's rule (a post form is the browser's unless a component asks for its
+endpoint's submission) is gone: the route table lists the app's endpoints that take a POST, and the
+runtime sends every form to one with `fetch` (D-095).
 
 **Reversible:** yes, until apps rely on kept layouts and `use_search_params!`.
 
@@ -5602,6 +5609,65 @@ are one signal's (a pair from two signals of one type reads one and writes the o
 function (`own_writes!`) on each host.
 
 **Reversible:** yes: nothing else uses it.
+
+## D-095 A form to an endpoint is always sent with `fetch`
+
+**Status.** Built (2026-11-26).
+
+**Context.** With the runtime, a `<form method="post" action={Endpoint.url_of(e)}>` went with
+`fetch` only while a component had called `use_submission!` or `use_submissions!` for that endpoint
+(D-018, D-040 §9.1); otherwise the browser posted it, the page loaded again, and the endpoint
+answered with a flash. Whether a form stayed on the page depended on a call somewhere else, which
+nothing checked: the docs site's joining page didn't make it, so a refusal (a name of spaces)
+reloaded the page and showed nothing, and examples/plate kept a registration it never read
+(`_adds`) only to have its forms sent. SolidStart sends every form to an action with `fetch` once
+JavaScript is there.
+
+**Options.**
+1. The runtime sends every form whose `action` is one of the app's endpoints with `fetch`, keeping
+   the plain post for no JavaScript. It needs to know them: the route table it has (D-040) lists
+   pages only.
+2. `rocx build` warns of a page with such a form and no `use_submission!` of its endpoint in reach.
+   Forms are in components, their `action` a value passed in (`live.url()`, a prop), the asking
+   component anywhere on the page: a guess at best, and the fallback stays.
+3. Both.
+
+**Decision.** 1, and no build warning.
+
+- rocx build writes the paths of the app's endpoints that take a POST into the route table
+  (`Root.routes`' `posts`: each `+server.roc` with a `post!`, `/lists/[id]` as pages are written).
+  Once `Router.app!` tells it, the runtime listens for `submit` and sends with `fetch` a form that
+  posts to one (or to an endpoint a component registered, as before), on this site under its base,
+  into this tab (no `target` but `_self`), not `text/plain`, not prevented by a handler. Any other
+  form is the browser's: another site's, a plugin's own route (packages/auth's `/auth/sign-out` is
+  in no route table), one posted before the runtime is there.
+- A submission nobody asks for is kept under its endpoint's path (its query is fields,
+  `with_fields`'), as any other: a component that comes later and asks reads it, and a navigation
+  forgets it once it is done. Its result reads the page's reads again (or those its answer names),
+  as SolidStart revalidates after any action; its redirect (`x-rocx-redirect`) is followed in place.
+- A refusal, or no answer, that no component asks for shows nothing on the page, as it showed
+  nothing after a plain post: the console says so, in every build (`unread`: the method, the
+  endpoint, the status and why, and that `use_submission!` shows it), as the runtime already does
+  for a refusal of what a channel was told. The phone's engine has the same (`engine::app` keeps
+  the table's `posts`; its log says so).
+- `Endpoint.posted_by` is `Runtime` for every such form the runtime sends, and `PlainForm` for one
+  posted without it (no JavaScript, or before it is there).
+  examples/tasks' delete answers the runtime with the list's id, which the task's own page (which
+  didn't ask before, and so posted) now reads and goes to; the endpoint names what a delete changes
+  (`Router.revalidate!`: the list and the team's counts), so that page isn't read again first (a
+  404). The docs site's joining page reads its submission and shows the refusal; plate's `_adds` is
+  gone.
+
+**Why.** A form behaves one way with JavaScript, whatever else the page calls, as Solid Router's
+do; the flash stays what it was for, no JavaScript. A build warning would be a guess about where a
+form's endpoint is asked for, and it would still leave the page reloading; the console line is
+exact, and comes when the refusal does.
+
+**Costs.** An endpoint that answered a plain form and the runtime differently now gives every
+JavaScript form the runtime's answer: a page that used to post and land where the endpoint sent it
+reads the answer instead (tasks' delete). The route table is longer by the endpoints' paths.
+
+**Reversible:** yes: drop `posts` from the table, and forms are sent only for those asked for again.
 
 ## D-096 `Db.one!`: the one row a statement reads
 

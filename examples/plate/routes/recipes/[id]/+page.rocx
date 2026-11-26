@@ -39,9 +39,8 @@ Kitchen := [].{
 	view! = |{ id, kitchen!, search, stale! }| {
 		{ query!, set_query! } = search
 		recipe! = || kitchen!().recipe
-		# Every form on this page posts to one of these endpoints; the runtime sends each with fetch
-		# because the page reads its submissions, and reads the recipe again once it's in.
-		_adds = use_submissions!(Api.post_recipes_id_ingredients({ id: id }))
+		# Every form on this page posts to an endpoint, which the runtime sends with fetch (D-095),
+		# reading the recipe again once it's in. The removes show at once, from their submissions.
 		removes = use_submissions!(Api.post_api_ingredients_delete({}))
 		ingredients! = create_memo!(
 			|| {

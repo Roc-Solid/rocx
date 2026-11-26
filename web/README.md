@@ -652,12 +652,25 @@ base off the page's path. So the browser sees `/rocx/syntax` as the server sees 
 
 ### Forms and submissions
 
-`use_submission!(endpoint)` (or `use_submissions!`) registers the endpoint's URL with the runtime,
-by its path without the site's base, for as long as its component is there. The runtime listens
-for `submit` on the page, once. It sends a form with `fetch` when the form:
+The route table rocx build writes (`Router.app!`, D-040) lists the paths of the app's endpoints
+that take a POST (`posts`: each `+server.roc` with a `post!`, `/lists/[id]` matching any one
+segment). `use_submission!(endpoint)` (or `use_submissions!`) registers the endpoint's URL with the
+runtime too, by its path without the site's base, for as long as its component is there. Once the
+app is told (or something registers), the runtime listens for `submit` on the page, once. It sends
+a form with `fetch` when the form (D-095):
 
-- posts (`method="post"`) to a registered URL on this site, and isn't `text/plain`;
-- wasn't prevented by a handler.
+- posts (`method="post"`) to one of the app's endpoints, or to a registered URL, on this site
+  under its base, and isn't `text/plain`;
+- goes into this tab (no `target`, or `_self`);
+- wasn't prevented by a handler (an `on:submit` handler prevents it).
+
+So whether a form goes with `fetch` doesn't depend on whether a component reads its submissions.
+One nobody asks for is kept under its endpoint's path (its query is fields, `with_fields`'). Its
+result reads the page's reads again, and its redirect is followed, as any submission's are. A
+refusal, or no answer, that no component asks for shows nothing on the page, so the console says
+so (`unread`), in every build. Any other form is the browser's: another site's, a path no endpoint
+has (a plugin's own route, such as packages/auth's `/auth/sign-out`), or one posted before the
+runtime is there.
 
 It sends the fields URL-encoded, with `accept: application/json` and `x-rocx-submission: 1`. A form
 with files (`enctype="multipart/form-data"`, D-054) goes as the browser's `FormData`; its input is
@@ -1418,7 +1431,8 @@ area:
 `test/nav` is an app of routes: a layout with links of every kind; home; A with a `<Title>`, a
 timer, an effect and a channel; an item; a guarded page; and, for phase 2, a shop (a layout below
 the root keyed by its own `cat`, a page per item reading the query), a layout that reads the
-location in its body, and a page that renders `<Navigate>`. Its server half renders each document
+location in its body, and a page that renders `<Navigate>`; and notes, a page of forms whose
+submissions nothing reads, to its own endpoint and an item's (D-095). Its server half renders each document
 with `renderToString`, and a scripted server serves them (slowly, redirected, refused or crashed
 when told to). In Chromium, strictly, the tests check:
 
@@ -1461,6 +1475,11 @@ when told to). In Chromium, strictly, the tests check:
   queries, and a plain link to a query, all in place, no document fetched and only the read whose
   URL changed asked again; the layout that read the location once made anew and named (`remade`),
   and a query change under it fetching the document.
+- **Forms to the app's endpoints** (D-095): which form URLs the route table makes an endpoint's (in
+  Node); in Chromium, forms nothing asks about sent with `fetch` (`x-rocx-submission`), the page
+  kept: a result reading the page's read again, a path with a param and fields in its query, a
+  refusal said in the console, a redirect followed in place; a form into a frame and one to a path
+  no endpoint has left to the browser.
 
 The docs site's own tests (`site/test/`) run the site on the native server and compare each page
 with the browser runtime's render of it, byte for byte outside its `<NoHydration>`s.

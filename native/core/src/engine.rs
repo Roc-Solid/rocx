@@ -428,6 +428,9 @@ pub struct Engine {
     calling: Vec<(String, String)>,
     place: String,
     actions: HashMap<String, u32>,
+    /// The paths of the app's endpoints that take a POST (the route table's, D-095), whose forms
+    /// are sent whoever asks for their submissions.
+    posts: Vec<String>,
     submissions: HashMap<String, Submissions>,
     revalidations: HashMap<u64, Revalidation>,
     /// The transition a handler's optimistic writes opened, open until the flush is over (a
@@ -507,6 +510,7 @@ pub fn init(origin: String, path: String) {
             calling: Vec::new(),
             place: String::new(),
             actions: HashMap::default(),
+            posts: Vec::new(),
             submissions: HashMap::default(),
             revalidations: HashMap::default(),
             transition: None,
@@ -2662,10 +2666,14 @@ pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), St
                         let keys = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("x-rocx-revalidate")).and_then(|(_, value)| json::parse(value).and_then(Value::into_strings));
                         revalidate(Some((key, entry)), keys, status, body);
                     } else {
+                        unread(&key, status, &body);
                         submission_done(&key, entry, status, body);
                     }
                 }
-                Err(why) => submission_done(&key, entry, 0, why),
+                Err(why) => {
+                    unread(&key, 0, &why);
+                    submission_done(&key, entry, 0, why)
+                }
             }
         }
         _ => {
@@ -2688,6 +2696,16 @@ pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), St
 }
 
 // ---- Submissions ----
+
+/// A submission refused, or with no answer, that no component asks for (D-095): nothing on the page
+/// shows it, so the log says so, as the browser's console does.
+fn unread(key: &str, status: u16, why: &str) {
+    if with(|engine| engine.actions.contains_key(key)) {
+        return;
+    }
+    let what = if status == 0 { format!("had no answer ({why})") } else { format!("was refused ({status}: {why})") };
+    log(Level::Warn, &format!("rocx: a submission to {key} {what}, and nothing on the page reads it: use_submission! or use_submissions! shows it"));
+}
 
 fn submission_json(entry: &Submission, listed: bool) -> String {
     // serde_json's order: its keys sorted.
@@ -2756,13 +2774,35 @@ fn send_action(method: &str, url: &str, body: &str, input: &str) {
     send_submission(url, method, headers, body, input, true);
 }
 
-/// A form submitted: sent if it posts to an endpoint a component reads the submission of
-/// (`submitted`), its named fields URL-encoded.
+/// `Router.app!`'s route table (D-040). A phone shows one page, so only the paths of the app's
+/// endpoints that take a POST are kept (D-095).
+pub fn app(routes: &str) {
+    let posts = json::parse(routes).and_then(|table| table.get("posts").cloned()).and_then(Value::into_strings).unwrap_or_default();
+    with(|engine| engine.posts = posts);
+}
+
+/// Whether one of the app's endpoints that take a POST is at an action's path (its query and hash
+/// left out; a path from the root, as `Endpoint.url_of` writes one), each `[param]` of its path any
+/// one segment.
+fn posted_to(posts: &[String], action: &str) -> bool {
+    let path = action.split(['?', '#']).next().unwrap_or("");
+    if !path.starts_with('/') {
+        return false;
+    }
+    let segments: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+    posts.iter().any(|post| {
+        let parts: Vec<&str> = post.split('/').filter(|part| !part.is_empty()).collect();
+        parts.len() == segments.len() && parts.iter().zip(&segments).all(|(part, segment)| (part.starts_with('[') && part.ends_with(']')) || part == segment)
+    })
+}
+
+/// A form submitted: sent if it posts to one of the app's endpoints (D-095) or to one a component
+/// reads the submission of (`submitted`), its named fields URL-encoded.
 fn submitted(form: NodeId) {
     let found = with(|engine| {
         let method = engine.dom.attr(form, "method").unwrap_or("").to_ascii_lowercase();
         let action = engine.dom.attr(form, "action").unwrap_or("").to_string();
-        if method != "post" || !engine.actions.contains_key(&action) {
+        if method != "post" || !(engine.actions.contains_key(&action) || posted_to(&engine.posts, &action)) {
             return None;
         }
         let mut fields = Vec::new();
@@ -3516,4 +3556,18 @@ pub fn read_at(place: String) -> String {
 
 pub fn warn(key: &str, message: &str) {
     with(|engine| engine.warn_once(key, message));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_form_is_an_endpoints_by_its_path() {
+        let posts = vec!["/members/join".to_string(), "/lists/[id]".to_string(), "/".to_string()];
+        for (action, sent) in [("/members/join", true), ("/members/join?then=%2F", true), ("/lists/7", true), ("/lists/7/tasks", false), ("/lists", false), ("/", true), ("/sign-out", false), ("", false), ("lists/7", false)] {
+            assert_eq!(posted_to(&posts, action), sent, "{action:?}");
+        }
+        assert!(!posted_to(&[], "/members/join"), "no route table: no endpoint");
+    }
 }

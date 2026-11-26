@@ -113,10 +113,13 @@ Router := [].{
 	}
 
 	## The latest submission of a form to `endpoint` (Solid Router's `useSubmission(action)`): its
-	## `pending!()`, `input!()` (`field!(name)`), `result!()` and `error!()`. While the component that
-	## asks is there, the runtime sends a `method="post"` form whose `action` is the endpoint's URL
-	## (`Endpoint.url_of`) with `fetch`, and the page stays; without the runtime, the form posts,
-	## and the endpoint sends the browser back to the page with a flash, which the submission is.
+	## `pending!()`, `input!()` (`field!(name)`), `result!()` and `error!()`. The runtime sends a
+	## `method="post"` form whose `action` is one of the app's endpoints (`Endpoint.url_of`) with
+	## `fetch`, and the page stays, whether a component asks for its submission or not (D-095): this
+	## is how the page shows how it went. (An endpoint the route table doesn't have, in an app with no
+	## `routes/`, is sent so while the component that asks is there.) Without the runtime, the form
+	## posts, and the endpoint sends the browser back to the page with a flash, which the submission
+	## is.
 	##
 	##     join = Api.post_members_join({})
 	##     submission = use_submission!(join)
@@ -129,8 +132,8 @@ Router := [].{
 	}
 
 	## Every submission to `endpoint`, each its own (Solid Router's `useSubmissions(action)`): its
-	## forms' (sent with `fetch` while the component that asks is there, as `use_submission!`'s are)
-	## and its actions' (`use_action!`). See `Submissions`.
+	## forms' (sent with `fetch`, as `use_submission!` says) and its actions' (`use_action!`). See
+	## `Submissions`.
 	##
 	##     moves = use_submissions!(Api.post_planner_move({}))
 	##     <p class:saving={moves.pending!()}>…</p>

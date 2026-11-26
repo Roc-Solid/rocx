@@ -7,8 +7,8 @@ import ../Generated/Paths
 ## A meal on a day of the diary: what was eaten, each with its amount and energy and a button that
 ## takes it off, the meal's energy together, and the way to add to it. Each remove button is a
 ## plain form that posts to `/api/entries/delete`, so the diary works without JavaScript; with it,
-## the runtime sends it with `fetch` (the diary reads that endpoint's submissions), and the entry
-## goes at once.
+## the runtime sends it with `fetch` (D-095), and the entry goes at once (the diary reads that
+## endpoint's submissions).
 MealPart := [].{
 	view! : { meal : Plate.Meal, entries! : () => List(Plate.Entry), day : Str, remove : Str } => Html
 	view! = |{ meal, entries!, day, remove }| {
