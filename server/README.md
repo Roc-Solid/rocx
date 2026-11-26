@@ -258,7 +258,7 @@ translated.
 
 | Program says | Where | Notes |
 | --- | --- | --- |
-| `Postgres` (the default) | `--database-url`, or `DATABASE_URL` | Without a URL the app has no database, and every statement says so. |
+| `Postgres` (the default) | `--database-url`, or `DATABASE_URL` | Without a URL the app has no database, and every statement says so; but if the app or a plugin has tables (migrations), the server doesn't start without one, outside `--dev` and `--debug` (where a line on the log says so). |
 | `Sqlite(path)` | A file at `path`, relative to where the server starts | Made, with its directory, when missing: the app runs with nothing set. `--database-url sqlite:<path>` puts it elsewhere. |
 | `Turso(path)` | The same, on Turso's engine | `turso:<path>` runs a SQLite app on Turso; `sqlite:<path>` runs a Turso app on SQLite. |
 

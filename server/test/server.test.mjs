@@ -236,7 +236,7 @@ const PRETTY = /^\d\d:\d\d:\d\d (DEBUG|INFO |WARN |ERROR) \S/;
 /** What the platform may say as a server starts, whatever a test does: a migration applied, jobs a
  * stop cut short queued again, a look at S3 (`STORAGE_URL`). */
 // A plugin's own lines (what each added; a check, logged in the background with its name) too.
-const STARTING = /^\S+\s+(rocx server: migrated |rocx jobs:|rocx storage:|rocx plugins:)|\scheck=(fixture\.look|email\.smtp)/;
+const STARTING = /^\S+\s+(rocx server: migrated |rocx server: no database|rocx jobs:|rocx storage:|rocx plugins:)|\scheck=(fixture\.look|email\.smtp)/;
 
 /** Waits for a stopped server's stderr to end: everything it wrote, read. */
 const ended = (of) => new Promise((resolve) => (of.child.stderr.readableEnded ? resolve() : of.child.stderr.once("end", resolve)));
@@ -1568,22 +1568,42 @@ test("the dev mailbox: under --dev, each email kept is a page (headers, text, it
 	}
 
 	// With neither --dev nor --debug, the app answers those paths; with --debug alone, only the JSON.
-	// (Without either, the email plugin wants an SMTP server: one that isn't there will do here.)
-	const plain = await start([], app, { SMTP_URL: "smtp://127.0.0.1:9" }, { debug: false });
-	try {
-		for (const path of ["/__rocx/mail", "/__rocx/mail.json", `/__rocx/mail/1`]) {
-			const answer = await plain.get(path);
-			assert.equal(answer.status, 404, path);
-			assert.equal(await answer.text(), `No page at ${path}.`);
+	// (Without either, the email plugin wants an SMTP server: one that isn't there will do here; and
+	// the app, which has tables, a database: without DATABASE_URL it doesn't start, so not here.)
+	if (database) {
+		const plain = await start([], app, { SMTP_URL: "smtp://127.0.0.1:9" }, { debug: false });
+		try {
+			for (const path of ["/__rocx/mail", "/__rocx/mail.json", `/__rocx/mail/1`]) {
+				const answer = await plain.get(path);
+				assert.equal(answer.status, 404, path);
+				assert.equal(await answer.text(), `No page at ${path}.`);
+			}
+		} finally {
+			await plain.stop();
 		}
-	} finally {
-		await plain.stop();
 	}
 	const debug = await start([]);
 	try {
 		const answer = await debug.get("/__rocx/mail", { headers: { accept: "text/html" } });
 		assert.equal(answer.headers.get("content-type"), "application/json");
 		assert.equal((await debug.get("/__rocx/mail/1")).status, 404);
+	} finally {
+		await debug.stop();
+	}
+});
+
+test("an app with tables and no database (`database: Postgres`, no DATABASE_URL): with neither --dev nor --debug it doesn't start, saying what has tables; under --debug a line on the log says so, and it starts", { skip }, async () => {
+	const refused = await start([], app, { DATABASE_URL: "", SMTP_URL: "smtp://127.0.0.1:9" }, { debug: false }).then(
+		async (started) => {
+			await started.stop();
+			assert.fail("an app with tables started without a database");
+		},
+		(error) => error.message,
+	);
+	assert.match(refused, /no database: the app, (\w+, )*jobs(, \w+)* have tables \(migrations\), and the program's `database: Postgres` has no --database-url \(DATABASE_URL\): set it where the server runs, or say `database: Sqlite\(path\)` in the program/);
+	const debug = await start([], app, { DATABASE_URL: "" });
+	try {
+		assert.match(debug.logged(), /rocx server: no database, so these tables aren't made, and what reads them fails/);
 	} finally {
 		await debug.stop();
 	}
@@ -1597,7 +1617,8 @@ test("email: with no SMTP_URL, a server with neither --dev nor --debug doesn't s
 		},
 		(error) => error.message,
 	);
-	assert.match(refused, /email: SMTP_URL isn't set, so email can't be sent: set it where the server runs/);
+	// (Without DATABASE_URL, the app, which has tables, is refused first, for that.)
+	assert.match(refused, database ? /email: SMTP_URL isn't set, so email can't be sent: set it where the server runs/ : /no database: the app/);
 	const dev = await start(["--dev"], app, {}, { debug: false });
 	try {
 		assert.equal(await dev.text(`/mail?to=ada@example.com&run=${run}dev`, { method: "POST", body: "Hi" }), "sent");

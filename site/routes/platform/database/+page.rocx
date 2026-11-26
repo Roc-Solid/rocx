@@ -242,8 +242,11 @@ view! = |_|
 					repository, <code>just db</code> runs a Postgres in Docker and prints its URL.
 				</li>
 				<li>
-					<strong>No database?</strong> A Postgres app started without a URL still runs; each query answers
-					that there is no database, and <code>Db.connected!</code> says so up front.
+					<strong>No database?</strong> A Postgres app without tables started without a URL still runs; each
+					query answers that there is no database, and <code>Db.connected!</code> says so up front. One whose
+					app or plugins have tables (migrations: the jobs plugin's, auth's) doesn't start without it, saying
+					which have them, rather than start and fail at every query; under <code>--dev</code> or
+					<code>--debug</code> it starts, and a line on the log says so.
 				</li>
 				<li>
 					<strong>SQLite's file</strong> is in WAL mode, with its <code>-wal</code> and <code>-shm</code>

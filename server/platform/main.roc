@@ -26,7 +26,8 @@
 ##   `{ send!, sleep! }`. `send!` writes to the response and says whether the client is still
 ##   there, `sleep!` waits that many milliseconds (and wakes early if the client goes).
 ## - `database`: the app's database (D-045). `Postgres`, at `--database-url` (`DATABASE_URL`), and
-##   none without it; or `Sqlite(path)`, a file in the server's process at `path` (from where the
+##   none without it (but a server whose app or plugins have tables doesn't start without it,
+##   outside `--dev` and `--debug`: `no_database!`); or `Sqlite(path)`, a file in the server's process at `path` (from where the
 ##   server starts; made, with its directory, when missing), or at `--database-url`
 ##   (`sqlite:<path>`) when it is given; or `Turso(path)`, the same with Turso's engine (D-046:
 ##   SQLite written again in Rust, its SQL SQLite's). The URL picks between SQLite and Turso
@@ -361,7 +362,7 @@ init_for_host! = |{}| {
 	)
 	database_opened!(program.database)?
 	# The plugins, checked all at once: any problem stops the server, with every one.
-	problems = Plugins.problems(program.plugins, program.routes).concat(Plugins.unmet!(program.plugins)).concat(methods_twice(program.actors))
+	problems = Plugins.problems(program.plugins, program.routes).concat(Plugins.unmet!(program.plugins)).concat(methods_twice(program.actors)).concat(no_database!({}))
 	if !problems.is_empty() {
 		return Err(Str.join_with(problems, "\n"))
 	}
@@ -381,6 +382,25 @@ init_for_host! = |{}| {
 		Migrations.apply!(Migrations.own(flavor_of(program.database)).concat(theirs).concat(program.migrations))
 	} else {
 		Ok({})
+	}
+}
+
+## Whether the server has no database while something has tables (the app's migrations, a
+## plugin's): `Postgres` (the default) with no `--database-url` (`DATABASE_URL`), a deploy that forgot
+## it. Outside `--dev` and `--debug` that stops the server, saying what has tables (else it would
+## start, its tables never made, and fail at each query: the jobs plugin's workers would quietly
+## stop); under them, a line on the log says so and it starts, as a test or a page without the
+## database may. Nothing with tables, or a check of the app's SQL (`--describe-sql`): nothing.
+no_database! : {} => List(Str)
+no_database! = |{}| {
+	wanting = (if (program.migrations.is_empty()) [] else ["the app"]).concat(program.plugins.keep_if(|plugin| !plugin.migrations.is_empty()).map(|plugin| plugin.name))
+	if Setting.database!({}) or wanting.is_empty() or !Host.setting!("describe_sql").is_empty() {
+		[]
+	} else if Env.dev!({}) or Env.debug!({}) {
+		Log.warn!("rocx server: no database, so these tables aren't made, and what reads them fails", { tables: Str.join_with(wanting, ", ") })
+		[]
+	} else {
+		["no database: ${Str.join_with(wanting, ", ")} ${if (wanting.len() == 1) "has" else "have"} tables (migrations), and the program's `database: Postgres` has no --database-url (DATABASE_URL): set it where the server runs, or say `database: Sqlite(path)` in the program"]
 	}
 }
 
@@ -446,7 +466,7 @@ applies = |on, flavor|
 	}
 
 ## The app's database, opened where its program and `--database-url` say (D-045, D-046):
-## `Postgres` at the URL, and none without one; `Sqlite(path)` or `Turso(path)` at the URL when it
+## `Postgres` at the URL, and none without one (see `no_database!`); `Sqlite(path)` or `Turso(path)` at the URL when it
 ## is a `sqlite:` or a `turso:` one (either engine: the SQL is SQLite's), or else at `path`. A URL
 ## of the other flavor stops the server, saying which the app wants; but a check of the app's SQL
 ## (`--describe-sql`, D-058), which opens a scratch database of the app's kind, leaves a Postgres

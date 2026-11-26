@@ -2640,6 +2640,11 @@ both, the jobs page. 3: `Time`'s zones; Plate and the other examples on SQLite. 
 
 **Reversible:** yes. A Postgres app changes in nothing; packages trade `pg_notify` for `Db.notify!`.
 
+**Later (2026-11-26):** a `Postgres` app started without a URL still has no database, but one whose
+app or plugins have tables (migrations) doesn't start without it, outside `--dev` and `--debug`,
+saying which have them; under them a line on the log says so (`rocx server: no database`). An audit
+found that a deploy that forgot `DATABASE_URL` started silently, its tables never made, its jobs
+plugin's workers stopped, and every query failing. As D-079 made email refuse rather than lose mail.
 
 ## D-046 Turso: SQLite's SQL on Turso's engine, a third backend
 
