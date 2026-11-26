@@ -13,6 +13,9 @@ memory, never in Postgres). "Today's glue", at the end, is how it ran before. **
 (2026-11-23, D-055):** W1 (`on:pointermove.point`, `create_pointer!`, `<LiveCursors on_move!>`), W2
 (`Time.now_millis!`, earlier), W3 (`<Document on:visibilitychange.visible={here.visible!} />`) and R1
 (`Wire.Meta(d)`'s `data`), and open questions 2 and 3, answered at the end. Open: C8, question 1.
+**Later (2026-11-26):** the status is closed (`Stack.Status`: `Online`, `Away`, `Busy`,
+`Offline`), and the page changes its member's `data` (`Update(d)`, `join!`'s `update!`, bounded by
+`PresenceServer.max_data`), so question 2's free field is the page's to say, not only the check's.
 
 The channels asks are first, collected under one heading so they can be forwarded as a group.
 
@@ -392,6 +395,8 @@ why `Room` has `save`/`load` to a plain record; that part is fine.)
 2. **Metadata** (answered, D-055): both. The fixed fields the components read (name, picture,
    colour, status) stay, and a free one, `data : d`, is the app's own type, carried typed through the
    room and its channel now that R1 works (`Wire.Meta(d)`; `{}` for none), rather than JSON in a `Str`.
+   Later (2026-11-26): the status is a closed set (`Stack.Status`), and the page says `data` too
+   (`Update(d)`), so an app's state (the card a person has open) is never a status word.
 3. **Hidden tabs** (answered, D-055): the app's choice, made one line:
    `<Document on:visibilitychange.visible={here.visible!} />`. Solid's way is primitives that each do
    one thing, composed by the app (solid-primitives' `createPageVisibility` is its own primitive, used

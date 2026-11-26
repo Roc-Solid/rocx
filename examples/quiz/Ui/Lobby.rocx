@@ -23,12 +23,12 @@ Lobby := [].{
 			</ul>
 		</div>
 
-	## Players as avatars: here, or dropped (a status of the app's own, which it styles).
+	## Players as avatars: here, or dropped (`Offline`: greyed).
 	faces : List(Game.Face) -> List(Stack.Face)
 	faces = |players|
 		players.map_with_index(
 			|player, at| {
-				status = if (player.here) "" else "dropped"
+				status = if (player.here) Online else Offline
 				{ key: player.id, name: player.name, image: "", color: Lobby.color(at), status }
 			},
 		)
@@ -57,11 +57,6 @@ Lobby := [].{
 		.count {
 			color: var(--ink-soft);
 			font-weight: 700;
-		}
-
-		.lobby :global(.avatar.status-dropped) {
-			filter: grayscale(1);
-			opacity: 0.5;
 		}
 
 		.names {
@@ -108,4 +103,4 @@ Lobby := [].{
 
 expect Lobby.label([]) == "0 players here"
 expect Lobby.label([{ id: "p1", name: "Ada", score: 0, here: Bool.True, answered: Bool.False }, { id: "p2", name: "Bo", score: 0, here: Bool.False, answered: Bool.False }]) == "1 player here, 1 dropped"
-expect Lobby.faces([{ id: "p2", name: "Bo", score: 0, here: Bool.False, answered: Bool.False }]) == [{ key: "p2", name: "Bo", image: "", color: "#c2410c", status: "dropped" }]
+expect Lobby.faces([{ id: "p2", name: "Bo", score: 0, here: Bool.False, answered: Bool.False }]) == [{ key: "p2", name: "Bo", image: "", color: "#c2410c", status: Offline }]

@@ -6,6 +6,7 @@ import presence.LiveCursors
 import presence.TypingIndicator
 import presence.Presence
 import presence.Room
+import presence.Stack
 import presence.Wire
 import Random
 
@@ -155,7 +156,6 @@ PresenceDemo := [].{
 		.presence-demo {
 			--avatar-ring: var(--bg-raised);
 			--avatar-more: var(--rule-strong);
-			--avatar-status: var(--good);
 			--avatar-away: var(--warn);
 			--avatar-busy: var(--bad);
 			--typing-color: var(--text-muted);
@@ -235,17 +235,17 @@ off = Off
 ## Alan, also here from the start, then the others.
 cast : List(Room.Here(Wire.Meta({})))
 cast = [
-	member("you", "You", "#2e8fa3", ""),
-	member("ada", "Ada Lovelace", "", ""),
-	member("alan", "Alan Turing", "", "away"),
-	member("grace", "Grace Hopper", "", ""),
-	member("edsger", "Edsger Dijkstra", "", "busy"),
-	member("barbara", "Barbara Liskov", "", ""),
-	member("donald", "Donald Knuth", "", ""),
+	member("you", "You", "#2e8fa3", Online),
+	member("ada", "Ada Lovelace", "", Online),
+	member("alan", "Alan Turing", "", Away),
+	member("grace", "Grace Hopper", "", Online),
+	member("edsger", "Edsger Dijkstra", "", Busy),
+	member("barbara", "Barbara Liskov", "", Online),
+	member("donald", "Donald Knuth", "", Online),
 ]
 
-member : Str, Str, Str, Str -> Room.Here(Wire.Meta({}))
-member = |key, name, color, status| { key, meta: { name, image: "", color, status, data: {} }, since: 0 }
+member : Str, Str, Str, Stack.Status -> Room.Here(Wire.Meta({}))
+member = |key, name, color, status| { key, meta: { ..Wire.meta(name, {}), color, status }, since: 0 }
 
 keys : PresenceDemo.Step -> List(Str)
 keys = |step| step.members.map(|here| here.key)

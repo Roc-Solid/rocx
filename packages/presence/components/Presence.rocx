@@ -6,6 +6,7 @@ import pf.Time
 import presence.Cursors
 import presence.Mirror
 import presence.Room
+import presence.Stack
 import presence.Throttle
 import presence.Typing
 import presence.Typist
@@ -28,33 +29,50 @@ Presence := [].{
 	## The room on `channel` (a route's `channel!` with `PresenceServer`'s hooks), joined for as long
 	## as the component is: subscribed to, so this tab is in the room, as the member the channel's
 	## check says, until the component goes; and told this tab is still here every `Room.beat_every`.
-	## Who is here (`members!`, `synced!`), this tab's key and tab (`me!`), who is typing (`typing!`,
-	## keys) and others' cursors (`cursors!`), as `create_room!` has them. `status!(word)` says this
-	## tab's status (a word the app picks: `away`, a card it has open; `""` for none) from a handler or
-	## an effect's apply; `typed!()` and `done!()` say it is typing (`create_typist!`); `moved!` and
-	## `away!` say where its cursor is, at most 20 times a second (`create_pointer!`: `<LiveCursors
-	## on_move!={here.moved!} on_leave!={here.away!}>`). `visible!(shown)` says whether its page shows:
-	## while it is hidden the tab is `away` (and its cursor gone), and the status the app said comes
-	## back when it shows again: `<Document on:visibilitychange.visible={here.visible!} />`.
+	## Who is here (`members!`, `synced!`; `others!`, everyone but this tab's member), this tab's key
+	## and tab (`me!`), who is typing (`typing!`, keys) and others' cursors (`cursors!`), as
+	## `create_room!` has them. From a handler or an effect's apply: `status!(status)` says this tab's
+	## status (`Online` until it says another); `update!(data)` says its member's `data`, the app's
+	## own (the card it has open), said again at a beat when the room has another (it swept this tab
+	## out, or another tab of the member's said its own); `typed!()` and `done!()` say it is typing
+	## (`create_typist!`); `moved!` and `away!` say where its cursor is, at most 20 times a second
+	## (`create_pointer!`: `<LiveCursors on_move!={here.moved!} on_leave!={here.away!}>`).
+	## `visible!(shown)` says whether its page shows: while it is hidden the tab is `Away` (and its
+	## cursor gone), and the status the app said comes back when it shows again:
+	## `<Document on:visibilitychange.visible={here.visible!} />`.
 	##
 	##     here = Presence.join!(Api.channel_rooms_room({ room: room }))
-	##     <AvatarStack faces!={(here.members!)().map(Wire.face)} />
-	join! : Endpoint(c, {}, Channel(Wire.Member(d), Wire.Event(Wire.Meta(d)), Wire.Said)) => { members! : () => List(Room.Here(Wire.Meta(d))), synced! : () => Bool, me! : () => { key : Str, tab : Str }, typing! : () => List(Str), cursors! : () => List(Cursors.Shown), status! : Str => {}, typed! : () => {}, done! : () => {}, moved! : Html.Point => {}, away! : () => {}, visible! : Bool => {} }
-		where [d.is_eq : d, d -> Bool, d.Json.Parseable([InvalidJson(Str)])]
+	##     <AvatarStack faces!={(here.others!)().map(Wire.face)} />
+	join! : Endpoint(c, {}, Channel(Wire.Member(d), Wire.Event(Wire.Meta(d)), Wire.Said(d))) => { members! : () => List(Room.Here(Wire.Meta(d))), others! : () => List(Room.Here(Wire.Meta(d))), synced! : () => Bool, me! : () => { key : Str, tab : Str }, typing! : () => List(Str), cursors! : () => List(Cursors.Shown), status! : Stack.Status => {}, update! : d => {}, typed! : () => {}, done! : () => {}, moved! : Html.Point => {}, away! : () => {}, visible! : Bool => {} }
+		where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]
 	join! = |channel| {
 		# A missed number: the server sends who is here again (its on_open!'s, after a resync).
 		room = Presence.create_room!(|| Endpoint.resync!(channel))
 		heard! = room.heard!
 		lost! = room.lost!
-		(status!, set_status!) = create_signal!("")
+		(status!, set_status!) = create_signal!(Online)
 		(hidden!, set_hidden!) = create_signal!(Bool.False)
+		# The member's `data` as this tab said it last, if it said it.
+		(data!, set_data!) = create_signal!(Err(NotSaid))
 		said! = |said| {
-			out : Wire.Said
+			out : Wire.Said(d)
 			out = said
 			Endpoint.say!(channel, out)
 		}
-		# What the room hears of this tab's status: `away` while its page is hidden.
-		shown! = |word| if (hidden!()) "away" else word
+		# What the room hears of this tab's status: `Away` while its page is hidden.
+		shown! = |status| if (hidden!()) Away else status
+		# The data this tab said, when the room has other data for its member, or doesn't have them.
+		stale! = || {
+			key = (room.me!)().key
+			match data!() {
+				Ok(data) =>
+					match (room.members!)().find_first(|member| member.key == key) {
+						Ok(member) if member.meta.data == data => Err(Same)
+						_ => Ok(data)
+					}
+				Err(NotSaid) => Err(Same)
+			}
+		}
 		create_effect!(
 			|| {},
 			|{}|
@@ -70,9 +88,16 @@ Presence := [].{
 						},
 				),
 		)
+		beat! = || {
+			said!(Here({ status: shown!(status!()) }))
+			match stale!() {
+				Ok(data) => said!(Update(data))
+				Err(Same) => {}
+			}
+		}
 		on_settled!(
 			|| {
-				_ = set_interval!(Room.beat_every(Room.defaults), || said!(Here({ status: shown!(status!()) })))
+				_ = set_interval!(Room.beat_every(Room.defaults), beat!)
 				{}
 			},
 		)
@@ -87,13 +112,21 @@ Presence := [].{
 		)
 		{
 			members!: room.members!,
+			others!: || {
+				key = (room.me!)().key
+				(room.members!)().drop_if(|member| member.key == key)
+			},
 			synced!: room.synced!,
 			me!: room.me!,
 			typing!: room.typing!,
 			cursors!: room.cursors!,
-			status!: |word| {
-				set_status!(word)
-				said!(Here({ status: shown!(word) }))
+			status!: |status| {
+				set_status!(status)
+				said!(Here({ status: shown!(status) }))
+			},
+			update!: |data| {
+				set_data!(Ok(data))
+				said!(Update(data))
 			},
 			typed!: typist.typed!,
 			done!: typist.done!,
@@ -101,7 +134,7 @@ Presence := [].{
 			away!: pointer.away!,
 			visible!: |visible| {
 				set_hidden!(!visible)
-				said!(Here({ status: if (visible) status!() else "away" }))
+				said!(Here({ status: if (visible) status!() else Away }))
 				if (visible) {} else (pointer.away!)()
 			},
 		}

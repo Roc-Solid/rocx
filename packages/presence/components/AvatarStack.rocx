@@ -4,9 +4,10 @@ import pf.Transition
 import presence.Stack
 
 ## Who is here, as a row of overlapping avatars: a picture, or initials on a colour of their own,
-## and a dot for a status (`away`, `busy`: a class the app may style). Past `max`, the last place
-## says how many more (`+3`). One who comes grows in, one who goes fades out. A screen reader hears
-## who is here (`Stack.label`), or `label` when one is given.
+## and their status (`Stack.Status`, a class each: `status-away`): `Online` as it is, `Away` dimmed
+## with an orange dot, `Busy` with a red one, `Offline` greyed. Past `max`, the last place says how
+## many more (`+3`). One who comes grows in, one who goes fades out. A screen reader hears who is
+## here (`Stack.label`), or `label` when one is given, and each face's status after its name.
 ##
 ## A "who's viewing this page" stack is one fed by a presence stream for the page's path.
 AvatarStack := [].{
@@ -22,9 +23,9 @@ AvatarStack := [].{
 		<div class="avatar-stack" role="group" aria-label={if (label.is_empty()) Stack.label(faces!()) else label}>
 			{...split!().shown.map(|face|
 				<span key={face.key}
-					class={"avatar status-${if (face.status.is_empty()) "none" else face.status}"}
+					class={"avatar status-${Stack.status_word(face.status)}"}
 					role="img"
-					aria-label={if (face.status.is_empty()) face.name else "${face.name} (${face.status})"}
+					aria-label={Stack.said(face)}
 					title={face.name}
 					style:--avatar-color={Stack.color_of(face)}
 					transition={Transition.scale(0.5).plus(Transition.fade)}
@@ -41,14 +42,18 @@ AvatarStack := [].{
 	}
 
 	<story name="Three here">
-		<AvatarStack faces!={|| [sample("ada", "Ada Lovelace", ""), sample("alan", "Alan Turing", "away"), sample("grace", "Grace Hopper", "")]} />
+		<AvatarStack faces!={|| [sample("ada", "Ada Lovelace", Online), sample("alan", "Alan Turing", Away), sample("grace", "Grace Hopper", Online)]} />
 	</story>
 
 	<story name="More than fit">
 		<AvatarStack
-			faces!={|| [sample("ada", "Ada Lovelace", ""), sample("alan", "Alan Turing", ""), sample("grace", "Grace Hopper", "busy"), sample("edsger", "Edsger Dijkstra", ""), sample("barbara", "Barbara Liskov", ""), sample("donald", "Donald Knuth", "away"), sample("frances", "Frances Allen", "")]}
+			faces!={|| [sample("ada", "Ada Lovelace", Online), sample("alan", "Alan Turing", Online), sample("grace", "Grace Hopper", Busy), sample("edsger", "Edsger Dijkstra", Online), sample("barbara", "Barbara Liskov", Online), sample("donald", "Donald Knuth", Away), sample("frances", "Frances Allen", Online)]}
 			max={4}
 		/>
+	</story>
+
+	<story name="One dropped">
+		<AvatarStack faces!={|| [sample("ada", "Ada Lovelace", Online), sample("alan", "Alan Turing", Offline), sample("grace", "Grace Hopper", Online)]} />
 	</story>
 
 	<style>
@@ -92,7 +97,14 @@ AvatarStack := [].{
 			opacity: 0.55;
 		}
 
-		.avatar:not(.status-none):not(.more)::after {
+		.avatar.status-offline {
+			filter: grayscale(1);
+			opacity: var(--avatar-offline, 0.5);
+		}
+
+		/* A dot for away and busy: the stack is who is here, so being here needs none. */
+		.avatar.status-away::after,
+		.avatar.status-busy::after {
 			content: "";
 			position: absolute;
 			right: -1px;
@@ -100,16 +112,11 @@ AvatarStack := [].{
 			width: 30%;
 			height: 30%;
 			border-radius: 50%;
-			background: var(--avatar-status, #2f9e44);
+			background: var(--avatar-away, #f08c00);
 			box-shadow: 0 0 0 2px var(--avatar-ring, Canvas);
 		}
 
-		/* As specific as the dot's rule above, and after it: so away and busy get their colours. */
-		.avatar.status-away:not(.more)::after {
-			background: var(--avatar-away, #f08c00);
-		}
-
-		.avatar.status-busy:not(.more)::after {
+		.avatar.status-busy::after {
 			background: var(--avatar-busy, #e03131);
 		}
 
@@ -124,5 +131,5 @@ AvatarStack := [].{
 more_names : List(Stack.Face), U64 -> Str
 more_names = |faces, shown| Str.join_with(faces.drop_first(shown).map(|face| face.name), ", ")
 
-sample : Str, Str, Str -> Stack.Face
+sample : Str, Str, Stack.Status -> Stack.Face
 sample = |key, name, status| { key, name, image: "", color: "", status }

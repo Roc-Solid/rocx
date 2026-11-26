@@ -1,12 +1,33 @@
 ## An avatar stack's arithmetic: who is shown and how many more (`split`), a face's initials when it
 ## has no picture (`initials`), a colour of its own when the app gives none (`color`: the same key,
-## the same colour, on every page), and what a screen reader hears (`names`).
+## the same colour, on every page), a status as a word (`status_word`), and what a screen reader hears
+## (`names`, `label`).
 Stack := [].{
 
+	## A face's status: here (`Online`, no dot), away from the screen (`Away`: a hidden tab, an orange
+	## dot and the face dimmed), not to be disturbed (`Busy`: a red dot), or not here (`Offline`: the
+	## face greyed, for a stack of those who belong somewhere, one who dropped among them).
+	Status : [Online, Away, Busy, Offline]
+
 	## A face in the stack: whose (`key`), their name, their picture's URL (or `""`: their initials),
-	## their colour (or `""`: one from their key), and their status (`""`, or a word the app styles:
-	## `away`, `busy`).
-	Face : { key : Str, name : Str, image : Str, color : Str, status : Str }
+	## their colour (or `""`: one from their key), and their status.
+	Face : { key : Str, name : Str, image : Str, color : Str, status : Stack.Status }
+
+	## A status as a word, in lower case: its class (`status-away`) and what a screen reader hears
+	## after a name (`Bo (away)`).
+	status_word : Stack.Status -> Str
+	status_word = |status|
+		match status {
+			Online => "online"
+			Away => "away"
+			Busy => "busy"
+			Offline => "offline"
+		}
+
+	## What a screen reader hears for a face: its name, and its status unless it is `Online`
+	## (`"Bo (away)"`).
+	said : Stack.Face -> Str
+	said = |face| if (face.status == Online) face.name else "${face.name} (${Stack.status_word(face.status)})"
 
 	## Who to show, and how many more: all of `faces` when `max` or fewer, or else the first
 	## `max - 1` and `+N` for the rest (the `+N` takes the last place).
@@ -99,7 +120,7 @@ hash : Str -> U32
 hash = |text| text.to_utf8().fold(2166136261, |at, byte| at.bitwise_xor(byte.to_u32()).times_wrap(16777619))
 
 face : Str, Str -> Stack.Face
-face = |key, name| { key, name, image: "", color: "", status: "" }
+face = |key, name| { key, name, image: "", color: "", status: Online }
 
 expect Stack.split([face("a", "Ann"), face("b", "Bo")], 4) == { shown: [face("a", "Ann"), face("b", "Bo")], more: 0 }
 expect Stack.split([face("a", "Ann"), face("b", "Bo"), face("c", "Cy"), face("d", "Di")], 4).more == 0
@@ -126,6 +147,10 @@ expect Stack.names(["Ann", "Bo", "Cy"], 3) == "Ann, Bo and Cy"
 expect Stack.names(["Ann", "Bo", "Cy", "Di"], 3) == "Ann, Bo and 2 others"
 expect Stack.names(["Ann", "Bo", "Cy"], 1) == "Ann and 2 others"
 expect Stack.names(["Ann", "Bo"], 1) == "Ann and 1 other"
+
+expect Stack.status_word(Away) == "away" and Stack.status_word(Offline) == "offline"
+expect Stack.said(face("a", "Ann")) == "Ann"
+expect Stack.said({ ..face("b", "Bo"), status: Busy }) == "Bo (busy)"
 
 expect Stack.label([]) == "No one is here"
 expect Stack.label([face("a", "Ann")]) == "Ann is here"

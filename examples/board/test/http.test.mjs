@@ -228,6 +228,54 @@ describe("Board over HTTP", { skip: noDatabase }, () => {
 		nowhere.close();
 	});
 
+	test("presence: the card a page has open is its typed data, its status one of four, and what isn't is refused", async () => {
+		const [ada, bo] = [await as(app, db, "Ada"), await as(app, db, "Bo")];
+		const room = "/b/launch/presence";
+		// What Ada's page says on the room's channel, as `Endpoint.say!` sends it: 204, or 200 and why not.
+		const say = async (message) => {
+			const answer = await ada.request("/rocx/live/send?tab=ada-presence", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([{ channel: room, message }]) });
+			return answer.status === 204 ? 204 : answer.json().refused[0].status;
+		};
+		// Each message a stream hears: the room's events (`Wire.Event`).
+		async function* messages(live) {
+			for (;;) {
+				const heard = await live.next();
+				if (heard.event === "message") yield JSON.parse(heard.data.split("\n")[1]);
+			}
+		}
+		const bos = await bo.events(`/rocx/live?tab=bo-presence&c=${room}`);
+		const toBo = messages(bos);
+		const adas = await ada.events(`/rocx/live?tab=ada-presence&c=${room}`);
+		let key = "";
+		for await (const message of messages(adas)) {
+			if (message.Welcome) key = message.Welcome.key;
+			if (message.Presence) break;
+		}
+		// What Bo's page hears next of Ada: her metadata, as she comes or it changes.
+		// (`toBo.next()`, not `for await`, which would end the generator as it returns.)
+		const next = async () => {
+			for (;;) {
+				const change = (await toBo.next()).value.Presence?.Delta?.change ?? {};
+				const here = change.Joined ?? change.Changed;
+				if (here?.key === key) return here.meta;
+			}
+		};
+		const joined = await next();
+		assert.deepEqual([joined.name, joined.status, joined.data], ["Ada", "Online", { card: "" }]);
+		// The card she opens is her data; her status stays hers, and a status keeps her data.
+		assert.equal(await say({ Update: { card: "12" } }), 204);
+		assert.deepEqual(await next(), { ...joined, data: { card: "12" } });
+		assert.equal(await say({ Here: { status: "Busy" } }), 204);
+		assert.deepEqual(await next(), { ...joined, status: "Busy", data: { card: "12" } });
+		// A status that isn't one of the four isn't read, and data past a kibibyte of JSON isn't kept.
+		assert.equal(await say({ Here: { status: "card-12" } }), 400);
+		assert.equal(await say({ Update: { card: "x".repeat(1100) } }), 413);
+		assert.equal(await say({ Update: { card: "" } }), 204);
+		assert.deepEqual(await next(), { ...joined, status: "Busy" });
+		bos.close();
+		adas.close();
+	});
+
 	test("labels, the checklist, archiving and deleting, each said once however often it is sent", async () => {
 		const cyd = await as(app, db, "Cyd");
 		const card = seeded.cards["Rehearse the countdown"];

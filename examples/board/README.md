@@ -80,7 +80,7 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 | Cards gliding to their new place, between columns too (`transition:move`, with the card's id as the tile's `key`) | `Ui/CardTile.rocx` |
 | Lists that change, as rows kept by their `key` (a `.map` in a list hole, each row's root with `key={…}`) | the columns in `routes/b/[board]/+page.rocx`, the cards in `Ui/ColumnView.rocx`, the labels in `Ui/CardTile.rocx`, the checklist and people in `Ui/CardPanel.rocx`, the archive in `Ui/Archive.rocx` |
 | Live updates: the board's channel, published on after every change; each page reads the board again when it hears one | `routes/b/[board]/+server.roc` (`channel!`), `News.roc` (`News.tell!`), the page's `heard!` |
-| Presence: who is on the board, which card each person has open, and who is away (their tab hidden) | `routes/b/[board]/presence/+server.roc` (packages/presence's hooks), the page's `here` (`Presence.join!`, `<Document on:visibilitychange.visible>`), `Ui/Shared.roc` |
+| Presence: who is on the board, which card each person has open (the room's typed `data`, `Board.Viewing`, which the page says with `here.update!`), and who is away (their tab hidden) | `routes/b/[board]/presence/+server.roc` (packages/presence's hooks), the page's `here` (`Presence.join!`, `<Document on:visibilitychange.visible>`), `Ui/Shared.roc` |
 | An edit lease on a card, kept in `Kv` with a time to live | `Lease.roc`, `routes/b/[board]/cards/[card]/lease/+server.roc` and `lease/release/`, `Ui/CardPanel.rocx` (`take!`) |
 | A card's changes shown before the server has them, as moves are | `Ui/CardPanel.rocx` (`card!`), `Board.saved`, `Board.labelled`, `Board.ticked` |
 | Timers and lifecycle in a component: renew every 10 s (`set_interval!`), focus the title once it shows (`on_settled!`, `Browser.focus!`), let the lease go when closed (`on_cleanup!`) | `Ui/CardPanel.rocx` (`Editor`) |
@@ -199,8 +199,10 @@ node --test 'examples/board/test/*.test.mjs'       # a SQLite file each; the bro
   joining as someone else ending the session before), the seeded board (running the seed again adds
   nothing), moves and their ranks, ten moves into one gap at once, refused moves, the edit lease
   (taken, refused to someone else, renewed, released, running out, and a late take after a release
-  taking nothing), the channel (members hear each change, a visitor is refused), labels, the
-  checklist, archiving and deleting, the forms without JavaScript, and the rate limit.
+  taking nothing), the channel (members hear each change, a visitor is refused), presence (the card
+  a page has open is its typed data, kept as its status changes; a status that isn't one of the
+  four, or data past a kibibyte, refused), labels, the checklist, archiving and deleting, the forms
+  without JavaScript, and the rate limit.
 - `test/browser.test.mjs` puts two people in two browsers on one board: Ada in headless Gecko (Zen
   or Firefox) when there is one, Bo in Chromium. It checks that each sees the other; that a card Ada
   drags moves at once on her page and glides on Bo's; that Bo sees which card Ada has open and that
@@ -247,6 +249,9 @@ in the platform or in rocx since, and the app uses the fix:
 - Packages bring their own server code: the routes import `guard.Guard` and
   `presence.PresenceServer`, with nothing copied into the app.
 - Presence runs on a channel, so a page holds one stream for the board's news and its presence room.
+- A page says its presence's typed `data` (`here.update!`), so the card a person has open is
+  `Board.Viewing`, and their status stays `Online` or `Away`: it was a status word (`card-12`) once,
+  which the tiles had to hide.
 - Key handlers can require modifier keys (`on:keydown.Alt+ArrowUp`).
 - Client-side navigation: a card's link opens it in place, and Back closes it.
 - Focus can be moved from Roc (`Browser.focus!`).

@@ -58,6 +58,10 @@ Board := [].{
 	## A card put in `column`, just before the card `before` (`""`: at the column's end).
 	Move : { card : Str, column : Str, before : Str }
 
+	## What each person's presence on a board carries (packages/presence's `data`): the card their
+	## page has open (`""`: none), which every tile shows. Their page says it (`update!`).
+	Viewing : { card : Str }
+
 	## What an open card's form sends: its title, description, assignee (a person's id, or `""`) and
 	## due date (`2026-11-30`, or `""`).
 	Fields : { title : Str, description : Str, assignee : Str, due : Str }
@@ -278,11 +282,6 @@ Board := [].{
 			}
 			Err(_) => ""
 		}
-
-	## What a page's presence says about the card it has open: `card-12`, or `""` for none. Others'
-	## pages show who has which card open from it.
-	status_of : Str -> Str
-	status_of = |card| if (card.is_empty()) "" else "card-${card}"
 
 	## Whether a card is late: past its due date (`""`: none), and not in the board's last column,
 	## where finished work goes.

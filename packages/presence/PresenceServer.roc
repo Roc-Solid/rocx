@@ -21,7 +21,9 @@ import Wire
 ## host tells a tab's hooks in order, an old subscription's end before a new one's start.
 ## A page says it is here every `Room.beat_every`, with its status (`Here`), so a tab whose page
 ## vanished without a word (a laptop shut, a network gone) is swept out 75 s after its last word,
-## however long its connection lingers. Typing and cursors are said, and passed on, never kept.
+## however long its connection lingers. A page may change its member's `data` (`Update`), up to
+## `max_data` bytes of JSON; the name, picture and colour stay the check's. Typing and cursors are
+## said, and passed on, never kept.
 ##
 ## The room is kept in the server's memory (`Kv`, under `presence:<the channel's URL>`), as a
 ## `Room`: each change reads it, sweeps it, changes it and swaps it back (`Kv.swap!`), so two tabs
@@ -30,28 +32,32 @@ import Wire
 ## A room nobody beats in for a quarter of an hour is forgotten; one made again numbers on from the
 ## time, so a page's copy sees the gap and asks again. The members' metadata is `Wire.Meta(d)`, the
 ## app's own `data` in it of any type JSON carries both ways and that compares (`{}` for none).
+##
+## The page's say over `data` is the app's to take away: a room whose `data` only the server may
+## set (a role, a team) refuses `Update` in its own `receive!` and hands the rest on:
+##
+##     receive! = |heard|
+##         match heard.said {
+##             Update(_) => Err(Forbidden)
+##             _ => PresenceServer.receive!(heard)
+##         }
 PresenceServer := [].{
 
 	## A room's channel: who its members are, what they hear, and what they say.
-	RoomChannel(c, d) : Endpoint(c, {}, Channel(Wire.Member(d), Wire.Event(Wire.Meta(d)), Wire.Said))
+	RoomChannel(c, d) : Endpoint(c, {}, Channel(Wire.Member(d), Wire.Event(Wire.Meta(d)), Wire.Said(d)))
+
+	## The most a page's `data` may be, as JSON: a kibibyte. Each change of it goes to everyone in the
+	## room, and the room holds it for each member.
+	max_data : U64
+	max_data = 1024
 
 	## A tab subscribed (or asked for a resync): it is in the room, with the member's metadata (the
-	## status the member had, if they were here already), and it is sent its key and tab, then who is
-	## here.
+	## status and `data` the member had, if they were here already), and it is sent its key and tab,
+	## then who is here.
 	on_open! : { who : Wire.Member(d), tab : Str, channel : PresenceServer.RoomChannel(c, d), .. } => List(Wire.Event(Wire.Meta(d)))
 		where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]
 	on_open! = |{ who, tab, channel, .. }| {
-		room = changed!(
-			channel,
-			|before, now| {
-				status =
-					match before.members().find_first(|member| member.key == who.key) {
-						Ok(member) => member.meta.status
-						Err(_) => who.meta.status
-					}
-				before.join({ key: who.key, tab, meta: { ..who.meta, status }, now })
-			},
-		)
+		room = changed!(channel, |before, now| before.join({ key: who.key, tab, meta: own(before, who), now }))
 		[Welcome({ key: who.key, tab }), Presence(Mirror.snapshot(room))]
 	}
 
@@ -71,23 +77,49 @@ PresenceServer := [].{
 		{}
 	}
 
-	## What a page said: its tab is here, with its status (and back, if the room had swept it out);
-	## its member is typing, or stopped; its cursor moved (latest wins); its pointer left.
-	receive! : { who : Wire.Member(d), tab : Str, said : Wire.Said, channel : PresenceServer.RoomChannel(c, d), .. } => Try({}, Endpoint.Refusal)
+	## What a page said: its tab is here, with its status; its member's `data` is new (refused, 413,
+	## past `max_data` bytes of JSON); either way its tab is here (and back, if the room had swept it
+	## out). Its member is typing, or stopped; its cursor moved (latest wins); its pointer left.
+	receive! : { who : Wire.Member(d), tab : Str, said : Wire.Said(d), channel : PresenceServer.RoomChannel(c, d), .. } => Try({}, Endpoint.Refusal)
 		where [d.is_eq : d, d -> Bool, d.Json.Encodable([]), d.Json.Parseable([InvalidJson(Str)])]
-	receive! = |{ who, tab, said, channel, .. }| {
+	receive! = |{ who, tab, said, channel, .. }|
 		match said {
 			Here({ status }) => {
-				_ = changed!(channel, |before, now| before.join({ key: who.key, tab, meta: { ..who.meta, status }, now }))
-				{}
+				_ = changed!(channel, |before, now| before.join({ key: who.key, tab, meta: { ..own(before, who), status }, now }))
+				Ok({})
 			}
-			Typing(typing) => Endpoint.publish!(channel, Typing({ key: who.key, typing }))
-			Moved({ x, y }) => Endpoint.publish_latest!(channel, who.key, Moved({ key: who.key, x, y }))
-			Away => Endpoint.publish!(channel, Away(who.key))
+			Update(data) => {
+				size = Json.to_str(data).count_utf8_bytes()
+				if size > PresenceServer.max_data {
+					Err(Status(413, "presence: data of ${size.to_str()} bytes, over ${PresenceServer.max_data.to_str()}"))
+				} else {
+					_ = changed!(channel, |before, now| before.join({ key: who.key, tab, meta: { ..own(before, who), data }, now }))
+					Ok({})
+				}
+			}
+			Typing(typing) => {
+				Endpoint.publish!(channel, Typing({ key: who.key, typing }))
+				Ok({})
+			}
+			Moved({ x, y }) => {
+				Endpoint.publish_latest!(channel, who.key, Moved({ key: who.key, x, y }))
+				Ok({})
+			}
+			Away => {
+				Endpoint.publish!(channel, Away(who.key))
+				Ok({})
+			}
 		}
-		Ok({})
-	}
 }
+
+## `who`'s metadata as the channel's check gives it (their name, picture and colour), with the status
+## and `data` the room has for them if they are here (said by a page), else the check's.
+own : Room(Wire.Meta(d)), Wire.Member(d) -> Wire.Meta(d)
+own = |room, who|
+	match room.members().find_first(|member| member.key == who.key) {
+		Ok(member) => { ..who.meta, status: member.meta.status, data: member.meta.data }
+		Err(_) => who.meta
+	}
 
 ## How many times a change reads the room again when another changed it first.
 tries : U64

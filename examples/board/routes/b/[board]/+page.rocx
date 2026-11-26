@@ -9,6 +9,7 @@ import pf.Router exposing [use_action!, use_search_params!, use_submissions!]
 import pf.Router
 import presence.AvatarStack
 import presence.Presence
+import presence.Wire
 import ../../../Board
 import ../../../Generated/Api
 import ../../../Ui/AddColumn
@@ -72,10 +73,10 @@ view! = |{ params }| {
 	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_b_board({ board: board }), heard!))
 
 	# Who is here (packages/presence): the board's room, on its channel (one stream with the board's
-	# own), and the card this tab has open as its status, said whenever that changes; `away` while
+	# own), and the card this tab has open as its `data`, said whenever that changes; `Away` while
 	# the tab is hidden (`<Document on:visibilitychange.visible>`, below: D-055).
 	here = Presence.join!(Api.channel_b_board_presence({ board: board }))
-	create_effect!(|| open!(), |card| (here.status!)(Board.status_of(card)))
+	create_effect!(|| open!(), |card| (here.update!)({ card: card }))
 
 	shared = {
 		board: board,
@@ -87,7 +88,7 @@ view! = |{ params }| {
 		move!,
 		open!,
 		set_open!,
-		here!: here.members!,
+		others!: here.others!,
 		adding!: || adds.pending_inputs!(),
 		add!,
 	}
@@ -100,7 +101,7 @@ view! = |{ params }| {
 				<h1>{board!().name}</h1>
 				<div class="people">
 					<span class="live" class:on={live!()} role="status">{if (live!()) "Live" else "Connecting…"}</span>
-					<AvatarStack faces!={Shared.others((here.members!)(), board!().me.id)} max={5} />
+					<AvatarStack faces!={(here.others!)().map(Wire.face)} max={5} />
 					<a class="me" href={"/join?then=/b/${board}"} title="Not you? Pick another name">
 						{Avatar.view({ person: board!().me, label: "" })}
 						<span class="name"><span class="hidden">{"You are "}</span>{board!().me.name}</span>

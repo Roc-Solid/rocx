@@ -16,15 +16,15 @@ CardTile := [].{
 
 	view! : { card! : () => Board.Card, shared : Shared.State } => Html
 	view! = |{ card!, shared }| {
-		{ board!, dragging!, set_dragging!, over!, set_over!, here!, .. } = shared
+		{ board!, dragging!, set_dragging!, over!, set_over!, others!, .. } = shared
 		# The drag's end, whether dropped or called off (Escape). A drop that moves this tile to
 		# another column removes it before its dragend: the column's drop handler clears these too.
 		ended! = || {
 			set_dragging!("")
 			set_over!(Shared.nowhere)
 		}
-		# Who else has this card open, by their presence.
-		viewers! = || Shared.viewers(here!(), card!().id, board!().me.id).map(|each| { ..Wire.face(each), status: "" })
+		# Who else has this card open, by their presence: away (dimmed, a dot) while their tab is hidden.
+		viewers! = || Shared.viewers(others!(), card!().id).map(Wire.face)
 		# A drag over this tile would put the card just above it.
 		entered! = || set_over!({ column: card!().column, before: card!().id })
 		<li

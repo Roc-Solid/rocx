@@ -270,7 +270,7 @@ Rooms := [].{
 	tab_joined : Rooms.State, Str, Str, U64 -> Rooms.State
 	tab_joined = |state, visitor, tab, now|
 		match state.game.players.find_first(|player| player.visitor == visitor) {
-			Ok(player) => Rooms.present(state, Room.load(state.presence).join({ key: player.id, tab, meta: { name: player.name, image: "", color: "", status: "", data: {} }, now }))
+			Ok(player) => Rooms.present(state, Room.load(state.presence).join({ key: player.id, tab, meta: Wire.meta(player.name, {}), now }))
 			Err(_) => state
 		}
 

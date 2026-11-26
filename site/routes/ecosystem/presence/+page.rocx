@@ -101,23 +101,29 @@ view! = |_|
 			<p>
 				The page joins the room with <code>Presence.join!</code>, given the channel. It subscribes, tells the
 				room every 15 seconds that this tab is still here, and returns the accessors the components read
-				(<code>members!</code>, <code>typing!</code>, <code>cursors!</code>) and the functions that tell the room
-				about this tab (<code>status!</code>, <code>typed!</code>, <code>moved!</code>…). Everything the page
+				(<code>members!</code>, <code>others!</code>, <code>typing!</code>, <code>cursors!</code>) and the functions
+				that tell the room about this tab (<code>status!</code>, <code>update!</code>, <code>typed!</code>,
+				<code>moved!</code>…). Everything the page
 				says goes over the tab's one live stream, alongside its other channels; presence needs no endpoint of
 				its own.
 			</p>
 			<Code title={"${Sources.presence_join.file}, in part"} source={Sources.presence_join.rocx} />
 			<p>
-				A status is any word the app picks: <code>away</code>, <code>busy</code>, or, on the board, the card
-				a person has open. Set it from a handler or an effect with <code>{"(here.status!)(word)"}</code>. To
-				show a hidden tab as away, add one line:
-				<code>{"<Document on:visibilitychange.visible={here.visible!} />"}</code>. While the tab is hidden it is
-				<code>away</code> and its cursor is gone; when it shows again, its status comes back.
+				A status is one of four: <code>Online</code> (the start), <code>Away</code>, <code>Busy</code> and
+				<code>Offline</code>, so a typo is a compile error and the avatar stack knows how to show each. Set it
+				from a handler or an effect with <code>{"(here.status!)(Busy)"}</code>. To show a hidden tab as away,
+				add one line: <code>{"<Document on:visibilitychange.visible={here.visible!} />"}</code>. While the tab is
+				hidden it is <code>Away</code> and its cursor is gone; when it shows again, its status comes back.
 			</p>
 			<p>
 				Who a member is, <code>Wire.Meta(d)</code>, is what the components show (a name, a picture, a colour, a
-				status) plus <code>data</code>, the app's own: a team, a role, a seat, of any type JSON can carry and
-				that can be compared with <code>==</code>. Use <code>{"{}"}</code> for none.
+				status) plus <code>data</code>, the app's own, of any type JSON can carry and that can be compared with
+				<code>==</code> (<code>{"{}"}</code> for none). The channel's check gives the first; the page changes it
+				with <code>{"(here.update!)(data)"}</code>, up to a kibibyte of JSON. On the board, it is the card a
+				person has open (<code>{"{ card : Str }"}</code>), which each tile shows. The name, picture and colour
+				stay the server's. A room whose <code>data</code> only the server may set refuses <code>Update</code>
+				in its own <code>receive!</code>. <code>{"Wire.meta(name, data)"}</code> makes a member's metadata with
+				the rest left to the components.
 			</p>
 
 			<Heading id="stack">{"<AvatarStack>"}</Heading>
@@ -143,9 +149,11 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				A face with a status gets a class, such as <code>status-away</code>, and a dot: orange for
-				<code>away</code> (its face dimmed too), red for <code>busy</code>, green for any other word. A face
-				with no status has no dot. The <code>+N</code>'s tooltip names the people it stands for.
+				Each face gets its status as a class, such as <code>status-away</code>. <code>Online</code> shows as it
+				is: the stack is who is here, so being here needs no mark. <code>Away</code> dims the face and adds an
+				orange dot, <code>Busy</code> adds a red dot, and <code>Offline</code> greys the face (examples/quiz
+				shows a player who dropped so). A screen reader hears the status after the name: "Alan Turing (away)".
+				The <code>+N</code>'s tooltip names the people it stands for.
 			</p>
 
 			<Heading id="typing">{"<TypingIndicator>"}</Heading>
@@ -255,7 +263,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Store</th><th>Gives</th></tr></thead>
 					<tbody>
-						<tr><td><code>{"Presence.join!(channel)"}</code></td><td>the room on a route's channel, joined for as long as the component is on the page: everything <code>create_room!</code> gives, fed by the channel, plus what this tab says: <code>status!(word)</code>, <code>typed!()</code> and <code>done!()</code>, <code>moved!(point)</code> and <code>away!()</code>, and <code>visible!(shown)</code>. It tells the room this tab is here every 15 seconds</td></tr>
+						<tr><td><code>{"Presence.join!(channel)"}</code></td><td>the room on a route's channel, joined for as long as the component is on the page: everything <code>create_room!</code> gives, fed by the channel, and <code>others!</code> (everyone but you), plus what this tab says: <code>status!(status)</code>, <code>update!(data)</code>, <code>typed!()</code> and <code>done!()</code>, <code>moved!(point)</code> and <code>away!()</code>, and <code>visible!(shown)</code>. It tells the room this tab is here every 15 seconds, and says its <code>data</code> again then if the room has other data for it</td></tr>
 						<tr><td><code>{"Presence.create_room!(on_gap!)"}</code></td><td>all the parts at once, fed a room's events with <code>heard!(event)</code>: <code>members!</code>, <code>synced!</code>, <code>me!</code> (this tab's key and id), <code>typing!</code> (others' keys), <code>cursors!</code> (others'), and <code>lost!</code> for when the stream drops. Someone who leaves stops typing, and their cursor goes</td></tr>
 						<tr><td><code>{"Presence.create_presence!(on_gap!)"}</code></td><td>who is here: <code>members!</code>, <code>synced!</code>, <code>receive!(message)</code>, <code>lost!</code>. <code>on_gap!</code> runs when a change was missed</td></tr>
 						<tr><td><code>{"Presence.create_typing!(ttl)"}</code></td><td>who is typing: <code>who!</code>, <code>started!(key)</code>, <code>stopped!(key)</code>. A ping lasts <code>ttl</code> milliseconds</td></tr>
@@ -298,8 +306,8 @@ view! = |_|
 						<tr><td><code>Cursors</code></td><td><code>place</code> (a pointer's pixels as fractions of the area), <code>moved</code>, <code>gone</code>, <code>shown</code>, <code>sweep</code>, <code>coalesce</code> (a burst, one move per member), <code>percent</code></td></tr>
 						<tr><td><code>Typing</code></td><td>who is typing: <code>started</code>, <code>stopped</code>, <code>who</code>, <code>deadline</code>, <code>sentence</code></td></tr>
 						<tr><td><code>Typist</code></td><td>your own typing: <code>typed(now)</code> says when to ping, <code>done</code> when to say it stopped</td></tr>
-						<tr><td><code>Stack</code></td><td><code>split</code> (who fits, and the <code>+N</code>), <code>initials</code> (<code>"Ada Lovelace"</code> is <code>"AL"</code>), <code>color</code> (the same key always gets the same colour), <code>names</code>, <code>label</code></td></tr>
-						<tr><td><code>Wire</code></td><td>what a room's channel carries: to a page, an <code>Event</code> (<code>Welcome</code>, <code>Presence</code>, <code>Typing</code>, <code>Moved</code>, <code>Away</code>); from one, a <code>Said</code> (<code>Here</code> with its status, <code>Typing</code>, <code>Moved</code>, <code>Away</code>); who is in it, a <code>Member</code> (a key and a <code>Meta</code>: name, image, color, status, data); and <code>face</code>, <code>names</code> and <code>pointers</code> to feed the components</td></tr>
+						<tr><td><code>Stack</code></td><td><code>split</code> (who fits, and the <code>+N</code>), <code>initials</code> (<code>"Ada Lovelace"</code> is <code>"AL"</code>), <code>color</code> (the same key always gets the same colour), <code>names</code>, <code>label</code>; a face's <code>Status</code> and its <code>status_word</code></td></tr>
+						<tr><td><code>Wire</code></td><td>what a room's channel carries: to a page, an <code>Event</code> (<code>Welcome</code>, <code>Presence</code>, <code>Typing</code>, <code>Moved</code>, <code>Away</code>); from one, a <code>Said</code> (<code>Here</code> with its status, <code>Update</code> with its data, <code>Typing</code>, <code>Moved</code>, <code>Away</code>); who is in it, a <code>Member</code> (a key and a <code>Meta</code>: name, image, color, status, data); <code>meta(name, data)</code>; and <code>face</code>, <code>names</code> and <code>pointers</code> to feed the components</td></tr>
 						<tr><td><code>PresenceServer</code></td><td>the server's side: a room channel's hooks, <code>on_open!</code>, <code>on_close!</code> and <code>receive!</code>, with the room kept in <code>Kv</code></td></tr>
 					</tbody>
 				</table>
@@ -310,7 +318,8 @@ view! = |_|
 				The components take their sizes and colours from CSS custom properties. For the avatar stack:
 				<code>--avatar-size</code> (2rem), <code>--avatar-overlap</code>, <code>--avatar-ring</code> (the ring
 				between faces; set it to the page's background), <code>--avatar-font</code>, <code>--avatar-more</code>,
-				<code>--avatar-status</code>, <code>--avatar-away</code> and <code>--avatar-busy</code>. For the typing
+				<code>--avatar-away</code>, <code>--avatar-busy</code> and <code>--avatar-offline</code> (an offline face's
+				opacity, 0.5). For the typing
 				line: <code>--typing-color</code> and <code>--typing-size</code>. For cursors:
 				<code>--cursor-glide</code> (0.12s; the demo's is 1.4s) and <code>--cursor-font</code>. Under
 				<code>prefers-reduced-motion</code>, the dots stop bobbing and the cursors jump instead of gliding.
@@ -327,7 +336,7 @@ view! = |_|
 					their tab is hidden, and see a third who closes their browser leave;
 				</li>
 				<li>your own cursor, sent as you move (<code>on_move!</code>), and a hidden tab shown as away (<code>here.visible!</code>);</li>
-				<li>the app's own metadata, typed: <code>Wire.Meta(d)</code>'s <code>data</code> goes through the room and its channel as it is.</li>
+				<li>the app's own metadata, typed: <code>Wire.Meta(d)</code>'s <code>data</code> goes through the room and its channel as it is, and the page changes it (<code>here.update!</code>).</li>
 			</ul>
 			<p>
 				Not yet: the live stream itself as the heartbeat (today the page sends one every 15 seconds), and a room
@@ -364,16 +373,16 @@ view! = |_|
 ## The avatar stack's sample: seven here, four places.
 faces : List(Stack.Face)
 faces = [
-	face("ada", "Ada Lovelace", ""),
-	face("alan", "Alan Turing", "away"),
-	face("grace", "Grace Hopper", ""),
-	face("edsger", "Edsger Dijkstra", "busy"),
-	face("barbara", "Barbara Liskov", ""),
-	face("donald", "Donald Knuth", ""),
-	face("frances", "Frances Allen", ""),
+	face("ada", "Ada Lovelace", Online),
+	face("alan", "Alan Turing", Away),
+	face("grace", "Grace Hopper", Online),
+	face("edsger", "Edsger Dijkstra", Busy),
+	face("barbara", "Barbara Liskov", Online),
+	face("donald", "Donald Knuth", Online),
+	face("frances", "Frances Allen", Online),
 ]
 
-face : Str, Str, Str -> Stack.Face
+face : Str, Str, Stack.Status -> Stack.Face
 face = |key, name, status| { key, name, image: "", color: "", status }
 
 ## The cursors' sample: one moving, one still a while.
@@ -387,7 +396,6 @@ cursors = [
 	.sample {
 		--avatar-ring: var(--bg);
 		--avatar-more: var(--rule-strong);
-		--avatar-status: var(--good);
 		--avatar-away: var(--warn);
 		--avatar-busy: var(--bad);
 		--typing-color: var(--text-muted);

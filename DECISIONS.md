@@ -3487,6 +3487,13 @@ and clip. Html gains seven attributes (`OnPoint`, `OnData`, `OnFiles`, `DragData
 source listens to `pointerdown` and a non-passive `touchmove` (the browser waits for the page on each
 touchmove that starts there). **Reversible:** yes; mouse drags are as D-029 made them either way.
 
+**Later (2026-11-26):** presence's status is closed, `Stack.Status` (`Online`, `Away`, `Busy`,
+`Offline`), the same type in `Wire.Meta(d)` and an avatar's face, so `visible!`'s away is `Away`
+and an avatar's class one of four. The page says its member's `data` too (`Wire.Said(d)`'s
+`Update(d)`, `join!`'s `update!`; the server takes up to 1024 bytes of JSON and keeps the check's
+name, picture and colour), and examples/board's open card moved there from the status
+(`Board.Viewing`). `join!` also gives `others!`, and `Wire.meta(name, data)` makes the metadata.
+
 ## D-056 The server's limits: a body limit, the platform's log events, Http's connections and proxies
 
 **Context.** TODO.md's "the server's other limits" listed, from `server/README.md`'s "Not yet":

@@ -19,7 +19,7 @@ import presence.Wire
 
 here = Presence.join!(Api.channel_rooms_room({ room: room }))
 
-<AvatarStack faces!={(here.members!)().map(Wire.face)} max={4} />
+<AvatarStack faces!={(here.others!)().map(Wire.face)} max={4} />
 <TypingIndicator names!={Wire.names((here.members!)(), (here.typing!)())} />
 ```
 
@@ -55,8 +55,8 @@ import pf.Channel
 import presence.PresenceServer
 import presence.Wire
 
-channel! : { request : Server.Request, params : { room : Str }, context : { member : Str } } => Try(Channel(Wire.Member({}), Wire.Event(Wire.Meta({})), Wire.Said), Endpoint.Refusal)
-channel! = |{ context, .. }| Ok(Channel.allow({ key: context.member, meta: { name: context.member, image: "", color: "", status: "", data: {} } }))
+channel! : { request : Server.Request, params : { room : Str }, context : { member : Str } } => Try(Channel(Wire.Member({}), Wire.Event(Wire.Meta({})), Wire.Said({})), Endpoint.Refusal)
+channel! = |{ context, .. }| Ok(Channel.allow({ key: context.member, meta: Wire.meta(context.member, {}) }))
 
 on_open! = PresenceServer.on_open!
 
@@ -95,34 +95,57 @@ it, from the middleware's context, never from the page. The page's tab id is its
 (the same across reconnects and reloads), and the room tells the page its own key and tab first
 (`Welcome`), then who is here.
 
-**A status** (`away`, `busy`, the card a page has open) is a word the page says, from a handler or
-an effect's `apply`:
-`create_effect!(|| open!(), |card| (here.status!)(Board.status_of(card)))` (examples/board).
+**A status** is one of four (`Stack.Status`): `Online`, as a member joins; `Away`; `Busy`; and
+`Offline`. The page says it, from a handler or an effect's `apply`: `(here.status!)(Busy)`. Being
+closed, it is checked where it is written, and the avatar stack shows each its own way.
 
-**A hidden tab** is `away` once the page says whether it shows, in one line:
-`<Document on:visibilitychange.visible={here.visible!} />`. While it is hidden its beats say `away`
+**A hidden tab** is `Away` once the page says whether it shows, in one line:
+`<Document on:visibilitychange.visible={here.visible!} />`. While it is hidden its beats say `Away`
 and its cursor goes; the status it had comes back as it shows again. That line is the app's to
 write, not the store's doing: what a hidden tab means is the app's choice (`away`, `idle`, or
 nothing, for a page on a wall screen). This follows Solid's way of composing small primitives
 (solid-primitives' `createPageVisibility` beside the store, not inside it).
 
-**The app's own metadata** goes in `data` (`Wire.Meta(d)`): a team, a role, a seat, typed, carried
-through the room and its channel as it is. `d` is any type JSON can carry both ways and that can be
-compared with `==`; `{}` for none. The hooks and the stores are generic in it; the components read
-the rest of `Meta`.
+**The app's own metadata** goes in `data` (`Wire.Meta(d)`): the card a person has open, a seat, a
+cursor's label, typed, carried through the room and its channel as it is. `d` is any type JSON can
+carry both ways and that can be compared with `==`; `{}` for none. The hooks and the stores are
+generic in it; the components read the rest of `Meta`. `Wire.meta(name, data)` makes the metadata
+with the rest left to the components (no picture, a colour from the key, `Online`); a field of its
+own is a record update: `{ ..Wire.meta(name, { card: "" }), color: person.color }`.
+
+The channel's check gives the first `data`; the page changes it, from a handler or an effect's
+`apply`, with `update!` (examples/board):
+
+```roc
+create_effect!(|| open!(), |card| (here.update!)({ card: card }))
+```
+
+The server takes it up to `PresenceServer.max_data` (1024 bytes of JSON), and refuses more (413).
+The name, picture and colour stay the check's. A member's `data` is the page's to say, so what only
+the server may set (a role, a team) goes elsewhere, or the route refuses `Update` in its own
+`receive!` and hands the rest on:
+
+```roc
+receive! = |heard|
+    match heard.said {
+        Update(_) => Err(Forbidden)
+        _ => PresenceServer.receive!(heard)
+    }
+```
 
 ## How a room holds together
 
 - **Joining.** A tab joins as its subscription opens (`on_open!`): it is sent its key and tab, then
-  a snapshot of who is here. A member who was here already keeps the status they had.
+  a snapshot of who is here. A member who was here already keeps the status and `data` they had.
 - **Leaving.** A tab leaves when its subscription ends (`on_close!`). If the page dropped the
   room's subscription while the tab stays (`Dropped`: it went to another room), it leaves at once.
   If the tab's stream went (`Gone`), it leaves after a 5-second grace, so a page that reloads or
   reconnects doesn't flicker out and in. The host tells a tab's hooks in order: an old
   subscription's end before a new one's start.
-- **Heartbeats.** A page says it is here every 15 s (`Here`, with its status). A tab whose page
-  vanished without a word is swept out 75 s after its last word, however long its connection
-  lingers. A browser may hold a hidden tab's timers back to once a minute; 75 s is that minute and a
+- **Heartbeats.** A page says it is here every 15 s (`Here`, with its status), and its `data` again
+  if the room has other data for its member (the room swept it out, or another of the member's tabs
+  said its own: the latest tab's is the member's). A tab whose page vanished without a word is swept
+  out 75 s after its last word, however long its connection lingers. A browser may hold a hidden tab's timers back to once a minute; 75 s is that minute and a
   beat to spare.
 - **Changes.** Each change reads the room from `Kv` (under `presence:<the channel's URL>`), sweeps
   it, changes it and swaps it back (`Kv.swap!`), reading it again if another change got there first,
@@ -143,9 +166,12 @@ the rest of `Meta`.
 | `max : U64 ?? 5` | how many places, the `+N` included |
 | `label : Str ?? ""` | what a screen reader hears for the stack (when empty: `"Ann, Bo and 2 others are here"`) |
 
-A face with a status gets a class (`status-away`) and a dot: orange for `away` (the face dimmed
-too), red for `busy`, green for any other word. No status, no dot. The `+N`'s tooltip names the
-people it stands for. A face that comes grows in; one that goes fades out.
+Each face gets its status as a class (`status-online`, `status-away`, `status-busy`,
+`status-offline`). `Online` shows as it is: the stack is who is here, so being here needs no mark.
+`Away` dims the face and adds an orange dot, `Busy` a red dot, and `Offline` greys the face (a
+player who dropped, in examples/quiz). A screen reader hears the status after the name
+(`"Bo (away)"`, `Stack.said`). The `+N`'s tooltip names the people it stands for. A face that comes
+grows in; one that goes fades out.
 
 ### `<TypingIndicator>`
 
@@ -178,7 +204,7 @@ Called in a component, as `create_signal!` is (`components/Presence.rocx`):
 
 | Store | Gives |
 |---|---|
-| `join!(channel)` | the room on a route's channel, joined while the component is there: everything `create_room!` gives, fed by the channel, plus what this tab says: `status!(word)`, `typed!()` and `done!()` (a typist, pinging every 3 s at most), `moved!(point)` and `away!()` (a pointer, 20 times a second at most), `visible!(shown)` (`away` while hidden). It says it is here every 15 s |
+| `join!(channel)` | the room on a route's channel, joined while the component is there: everything `create_room!` gives, fed by the channel, and `others!` (who is here but this tab's member), plus what this tab says: `status!(status)`, `update!(data)` (its member's `data`), `typed!()` and `done!()` (a typist, pinging every 3 s at most), `moved!(point)` and `away!()` (a pointer, 20 times a second at most), `visible!(shown)` (`Away` while hidden). It says it is here every 15 s, and its `data` again then if the room has other data for its member |
 | `create_room!(on_gap!)` | all the parts at once, fed by `heard!(event)`: `members!`, `synced!`, `me!` (`{ key, tab }`), `typing!` (keys, your own left out), `cursors!` (others'), `lost!`. Someone who leaves stops typing and loses their cursor. `on_gap!` runs when a change was missed |
 | `create_presence!(on_gap!)` | `members!`, `synced!`, `receive!(message)`, `lost!` (who was here stays on show until the next snapshot) |
 | `create_typing!(ttl)` | `who!`, `started!(key)`, `stopped!(key)`; a ping lasts `ttl` ms |
@@ -213,15 +239,15 @@ for one. `roc test packages/presence/main.roc` runs their `expect`s.
 | `Cursors` | Others' cursors: `place` (a pointer's pixels as fractions of the area, 0 to 1, to thousandths), `moved`, `gone`, `shown` (idle after a while), `sweep` (forgotten after longer), `next_idle`, `count`, `coalesce` (a burst, one move per member), `percent` |
 | `Typing` | Who is typing: `new(ttl)`, `started` (a ping, which lasts `ttl`), `stopped`, `who`, `sweep`, `deadline`; `sentence`: `"Ann and Bo are typing…"` |
 | `Typist` | A page's own side: `new(every)`, `typed(now)` says when to ping (at once, then at most every `every`), `done` when to say it stopped, `rest` after a quiet spell, `is_pinging` |
-| `Stack` | An avatar stack's arithmetic: `split` (who fits, and `+N`), `initials` (`"Ada Lovelace"` is `"AL"`), `color` (the same key, the same colour, from a palette white text reads on), `color_of` (a face's own colour, or its key's), `names`, `label` |
-| `Wire` | What a room's channel carries. To a page, `Event`: `Welcome` (the page's key and tab), `Presence(Snapshot \| Delta)`, `Typing`, `Moved`, `Away`. From one, `Said`: `Here({ status })` (its beat, and its status), `Typing(Bool)`, `Moved({ x, y })`, `Away`. Who is in it, `Member(d)`: a key, and `Meta(d)` (name, image, color, status, and the app's `data`). `face`, `names`, `name` and `pointers` feed the components |
-| `PresenceServer` | The server's side (server platform only): `on_open!`, `on_close!` and `receive!`, a room channel's hooks, and `RoomChannel(c, d)`, the channel's type |
+| `Stack` | An avatar stack's arithmetic: `split` (who fits, and `+N`), `initials` (`"Ada Lovelace"` is `"AL"`), `color` (the same key, the same colour, from a palette white text reads on), `color_of` (a face's own colour, or its key's), `names`, `label`. A face's `Status` (`Online`, `Away`, `Busy`, `Offline`), `status_word` (its class's word, `away`), `said` (`"Bo (away)"`) |
+| `Wire` | What a room's channel carries. To a page, `Event`: `Welcome` (the page's key and tab), `Presence(Snapshot \| Delta)`, `Typing`, `Moved`, `Away`. From one, `Said(d)`: `Here({ status })` (its beat, and its status), `Update(d)` (its member's `data`), `Typing(Bool)`, `Moved({ x, y })`, `Away`. Who is in it, `Member(d)`: a key, and `Meta(d)` (name, image, color, status, and the app's `data`); `meta(name, data)` makes one. `face`, `names`, `name` and `pointers` feed the components |
+| `PresenceServer` | The server's side (server platform only): `on_open!`, `on_close!` and `receive!`, a room channel's hooks; `RoomChannel(c, d)`, the channel's type; `max_data`, the most a page's `data` may be (1024 bytes of JSON) |
 
 ## Styling
 
 `--avatar-size` (2rem), `--avatar-overlap`, `--avatar-ring` (the ring between faces: set it to the
-page's background), `--avatar-font`, `--avatar-more`, `--avatar-status`, `--avatar-away`,
-`--avatar-busy`; `--typing-color`, `--typing-size`; `--cursor-glide` (0.12s), `--cursor-font`.
+page's background), `--avatar-font`, `--avatar-more`, `--avatar-away`, `--avatar-busy`,
+`--avatar-offline` (an offline face's opacity, 0.5); `--typing-color`, `--typing-size`; `--cursor-glide` (0.12s), `--cursor-font`.
 Under `prefers-reduced-motion` the dots stop bobbing and the cursors jump instead of gliding.
 
 ## Status
@@ -233,10 +259,11 @@ Works today:
   type-checked;
 - the room on a channel (`PresenceServer`): in examples/board, two people in their own browsers
   each see the other (on the tab's one stream, beside the board's own channel), see which card each
-  has open (the status), see one away while their tab is hidden, and see a third who closes their
-  browser leave once the grace is up;
-- your own cursor (`on_move!`), `away` while a tab is hidden (`visible!`), and the app's own
-  metadata (`Wire.Meta(d)`'s `data`). The docs' demo sends your pointer as a room does.
+  has open (the page's `data`, `update!`), see one away while their tab is hidden, and see a third
+  who closes their browser leave once the grace is up;
+- your own cursor (`on_move!`), `Away` while a tab is hidden (`visible!`), a status of four
+  (`Stack.Status`), and the app's own metadata (`Wire.Meta(d)`'s `data`), which the page changes
+  (`update!`). The docs' demo sends your pointer as a room does.
 
 Not yet (PROPOSALS.md has the options): the live stream itself as the heartbeat, instead of a beat
 every 15 s (C8), and a room named by the page's path, for a "who's viewing this page" stack without

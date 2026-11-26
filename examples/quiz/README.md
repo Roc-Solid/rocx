@@ -86,7 +86,7 @@ Then open http://localhost:18150.
 | Scoring as a pure, tested function; places with ties | `Score.roc` |
 | A channel per room: the room's view published after each turn that changes it; a check for each subscriber (`channel!`); the room as it is now on each connect (`on_open!`); what pages say (`receive!`: Start, Next, Again, a pick); a tab that goes (`on_close!`) | `routes/rooms/[code]/+server.roc`, `Rooms.turned!` |
 | Following a room from a page: subscribe from an effect, keep the newest view, say things on the channel (`Endpoint.subscribe!`, `Endpoint.say!`) | `Feed.rocx` |
-| Presence (packages/presence): who is in the room, kept in the actor's state as presence's `Room` (join, leave after a grace period, sweep), and `<AvatarStack>` with a status of the app's own (`dropped`) | `Rooms.roc` (`tab_joined`, `present`), `Ui/Lobby.rocx` |
+| Presence (packages/presence): who is in the room, kept in the actor's state as presence's `Room` (join, leave after a grace period, sweep), and `<AvatarStack>`, a player who dropped greyed (`Offline`) | `Rooms.roc` (`tab_joined`, `present`), `Ui/Lobby.rocx` |
 | A countdown kept honest: each view sets a deadline by the phone's clock (`Time.now_millis!`); `set_interval!` shows what is left and stops itself at zero with its `clear!`; the effect's next run stops the old interval | `Ui/Countdown.rocx` |
 | `set_timeout!` to time a reveal: the leaderboard's points landing, the bars rising | `Ui/Board.rocx`, `Ui/Tally.rocx` |
 | Sounds through a plugin: `Audio.play!` (packages/audio, `AudioPlayer.plugin({})` in `main.roc`), with sounds made by a script (a mallet and a reed, synthesized) | `sounds.mjs` → `static/sounds/`, `Sound.roc`; played from effects and timers in the two room pages |

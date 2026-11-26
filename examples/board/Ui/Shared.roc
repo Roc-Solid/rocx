@@ -1,5 +1,4 @@
 import presence.Room
-import presence.Stack
 import presence.Wire
 import ../Board
 
@@ -28,18 +27,13 @@ Shared := [].{
 		move! : Board.Move => {},
 		open! : () => Str,
 		set_open! : Str => {},
-		here! : () => List(Room.Here(Wire.Meta({}))),
+		others! : () => List(Room.Here(Wire.Meta(Board.Viewing))),
 		adding! : () => List(Shared.Adding),
 		add! : Shared.Adding => {},
 	}
 
-	## Who else is on the board, as the header's avatar stack shows them (you are beside it): `away`
-	## while their tab is hidden (D-055); the card one has open is the tiles' to show.
-	others : List(Room.Here(Wire.Meta({}))), Str -> List(Stack.Face)
-	others = |here, me| here.keep_if(|each| each.key != me).map(|each| { ..Wire.face(each), status: if (each.meta.status == "away") "away" else "" })
-
-	## Who else has card `card` open, from their presence (`Board.status_of`): the faces its tile
-	## shows.
-	viewers : List(Room.Here(Wire.Meta({}))), Str, Str -> List(Room.Here(Wire.Meta({})))
-	viewers = |here, card, me| here.keep_if(|each| each.meta.status == Board.status_of(card) and each.key != me)
+	## Who else has card `card` open, from their presence (`Board.Viewing`): the faces its tile
+	## shows, among `others` (everyone on the board but you).
+	viewers : List(Room.Here(Wire.Meta(Board.Viewing))), Str -> List(Room.Here(Wire.Meta(Board.Viewing)))
+	viewers = |others, card| others.keep_if(|each| each.meta.data.card == card)
 }
