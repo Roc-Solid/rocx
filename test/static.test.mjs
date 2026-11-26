@@ -26,9 +26,11 @@ const skip = (!hasRoc && "no roc (run `just setup`, or set ROC)") || (!hasRust()
 
 const app = join(root, "test", "static", "app");
 
-/** `rocx build` with `args`, from the repo: its exit code, stdout and stderr. */
+/** `rocx build` with `args`, from the repo: its exit code, stdout and stderr. The app is a SQLite one
+ * (it names no database, D-105), so a Postgres DATABASE_URL in the environment isn't passed on. */
 function rocx(...args) {
-	const ran = spawnSync(rocxBinary(), ["build", ...args], { cwd: root, env: { ...process.env, ROC: roc() }, encoding: "utf8" });
+	const { DATABASE_URL: _postgres, ...env } = process.env;
+	const ran = spawnSync(rocxBinary(), ["build", ...args], { cwd: root, env: { ...env, ROC: roc() }, encoding: "utf8" });
 	return { status: ran.status, out: ran.stdout, err: ran.stderr };
 }
 

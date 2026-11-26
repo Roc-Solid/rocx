@@ -19,6 +19,8 @@ import Demos/Count
 ## script plays the showcase's sounds.
 program = App.program({
 	init!: |started| Ok({ facts: started }),
+	# Postgres at DATABASE_URL when `rocx site dev` is given one (`--database-url`), and none without.
+	database: Postgres,
 	openapi: Page(Swagger),
 	plugins: [AudioPlayer.plugin({})],
 })

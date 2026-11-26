@@ -10,5 +10,7 @@ import Generated/App
 
 program = App.program({
 	init!: |started| Ok({ started: started }),
+	# The jobs' queue on Postgres, at DATABASE_URL.
+	database: Postgres,
 	plugins: [Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }), PostHog.plugin({ interval_ms: 200 })],
 })

@@ -740,8 +740,9 @@ program = App.program({
 - `cross_site`: `Refused` (the default) or `Allowed`: whether the platform refuses a change another
   site's page sends, before any middleware. (The middleware isn't here: it is
   `routes/+middleware.roc`, and each directory's.)
-- `database`: `Postgres` (the default, at `--database-url` or `DATABASE_URL`), `Sqlite(path)` (a
-  file in the server's process), or `Turso(path)` (the same SQL on Turso's engine).
+- `database`: `Sqlite(path)` (a file in the server's process; `Sqlite("data/app.db")` by default),
+  `Postgres` (at `--database-url` or `DATABASE_URL`), or `Turso(path)` (the same SQL on Turso's
+  engine).
   `--database-url sqlite:<path>` or `turso:<path>` overrides the path or the engine (under `rocx
   dev`: a release's server has the program's engine alone, D-104).
 - `openapi`: whether to serve the endpoints' OpenAPI document (`Off` by default; see below).
@@ -1058,7 +1059,7 @@ format, plugins and routes.
 - `rocx build <dir> --release <out> --target arm64musl` builds one static Linux executable (and what
   it serves), from a Mac too, with the database engine the app's program names alone and no debug
   info; `rocx build <dir> --image <file.tar>` puts it in a container image with nothing else in it,
-  written by rocx (no Dockerfile, no Docker to build it): a hello world's is 4.4 MB to send.
+  written by rocx (no Dockerfile, no Docker to build it): a hello world's is 3.7 MB to send.
 
 `server/README.md` has every module's API, and the docs' [platform pages](https://roc-solid.github.io/platform)
 and [reference](https://roc-solid.github.io/platform/reference) cover each part.

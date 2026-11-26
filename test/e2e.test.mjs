@@ -12,7 +12,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApp, buildHost, buildWebHost, hasRust, roc as findRoc, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
 import { findChrome, launch } from "../web/test/browser.mjs";
-import { testDatabase } from "../packages/testing/postgres.mjs";
 import { Runtime } from "../web/runtime.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -504,7 +503,7 @@ function contractApp() {
 	// An actor and a job, each publishing on it through Api.
 	put("Room.roc", 'import pf.Actor\nimport pf.Endpoint\nimport Generated/Api\n\nRoom := [].{\n\tname = |{}| "room"\n\tinitial = |_| 0\n\n\tbump : Actor.Method(Room, _, Str, U64, {}, U64)\n\tbump = Actor.method("bump", |{ state, .. }| {\n\t\tEndpoint.publish!(Api.channel_news({}), { from: "actor", n: state + 1 })\n\t\t{ state: state + 1, reply: state + 1 }\n\t})\n}\n');
 	put("Jobs.roc", 'import jobs.Job\nimport pf.Endpoint\nimport Generated/Api\n\nJobs := [].{\n\tshout : Job.Kind(_, { n : U64 })\n\tshout = Job.define("shout", |_context, { n }| {\n\t\tEndpoint.publish!(Api.channel_news({}), { from: "job", n })\n\t\tOk({})\n\t})\n}\n');
-	// A route that publishes itself, asks the actor, and queues the job (`?job=yes`: with a database).
+	// A route that publishes itself, asks the actor, and queues the job (`?job=yes`).
 	put("routes/publish/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport pf.Actor\nimport jobs.Job\nimport ../../Generated/Api\nimport ../../Room\nimport ../../Jobs\n\n## Publishes on the news, from here, from the actor, and from a job.\npost! : { request : Server.Request, params : {}, context : {}, body : { n : U64 } } => Try(Str, Endpoint.Refusal)\npost! = |{ request, body, .. }| {\n\tEndpoint.publish!(Api.channel_news({}), { from: "route", n: body.n })\n\t_ = Room.bump.ask!("lobby", {})\n\tqueued = if (request.query.contains("job=yes")) Job.enqueue!(Jobs.shout, { n: body.n }, { when: Now }) else Ok({})\n\tmatch queued {\n\t\tOk({}) => Ok("published")\n\t\tErr(JobErr(why)) => Err(Status(503, why))\n\t}\n}\n');
 	// A page that reads an endpoint, and sends one: typed by the contract in both copies.
 	put("routes/hello/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport ../../News\n\n## The latest news.\nget! : { request : Server.Request, params : {}, context : {} } => Try(News.Said, Endpoint.Refusal)\nget! = |_| Ok({ from: "hello", n: 7 })\n');
@@ -517,7 +516,9 @@ function contractApp() {
 
 test("the contract (D-037): a route, an actor and a job each import Generated/Api and publish on a channel; a subscriber hears each", { skip: (!hasRoc && "no Roc (run `just setup`, or set ROC)") || (!hasRust() && "no Rust (run `just setup`)") }, async () => {
 	const dir = contractApp();
-	const db = process.env.DATABASE_URL ? await testDatabase() : null;
+	// Its database is SQLite's, App.program's default (D-105): a file of its own, named on the command
+	// line (which a DATABASE_URL in the environment doesn't override).
+	const database = `sqlite:${join(dir, "data", "app.db")}`;
 	let server;
 	const gone = new AbortController();
 	try {
@@ -528,8 +529,7 @@ test("the contract (D-037): a route, an actor and a job each import Generated/Ap
 		assert.match(api, /\tchannel_news : \{\} -> Endpoint\(context, \{\}, Channel\(Str, News\.Said, \[\]\)\)\n/);
 		buildHost();
 		buildApp(join(dir, "main.roc"), join(dir, "build", "server"));
-		// Without a database, only --debug starts an app with tables (the jobs plugin's).
-		server = await start(join(dir, "build", "server"), db ? ["--database-url", db.url] : ["--debug"]);
+		server = await start(join(dir, "build", "server"), ["--database-url", database]);
 		// A tab's stream of its channels, as the runtime opens it: `resync`, then each message.
 		const response = await fetch(`${server.url}/rocx/live?tab=t1&c=${encodeURIComponent("/news")}`, { headers: { accept: "text/event-stream" }, signal: gone.signal });
 		assert.equal(response.status, 200);
@@ -561,16 +561,13 @@ test("the contract (D-037): a route, an actor and a job each import Generated/Ap
 		assert.deepEqual([answered.status, await answered.text()], [200, '"published"']);
 		assert.deepEqual(await next(), { event: "message", url: "/news", said: { from: "route", n: 1 } }, "the route's");
 		assert.deepEqual(await next(), { event: "message", url: "/news", said: { from: "actor", n: 1 } }, "the actor's, in its turn");
-		if (db) {
-			assert.equal((await publish(2, true)).status, 200);
-			const heard = [await next(), await next(), await next()];
-			assert.deepEqual(heard.slice(0, 2), [{ event: "message", url: "/news", said: { from: "route", n: 2 } }, { event: "message", url: "/news", said: { from: "actor", n: 2 } }]);
-			assert.deepEqual(heard[2], { event: "message", url: "/news", said: { from: "job", n: 2 } }, "the job's, as a worker ran it");
-		}
+		assert.equal((await publish(2, true)).status, 200);
+		const heard = [await next(), await next(), await next()];
+		assert.deepEqual(heard.slice(0, 2), [{ event: "message", url: "/news", said: { from: "route", n: 2 } }, { event: "message", url: "/news", said: { from: "actor", n: 2 } }]);
+		assert.deepEqual(heard[2], { event: "message", url: "/news", said: { from: "job", n: 2 } }, "the job's, as a worker ran it");
 	} finally {
 		gone.abort();
 		await server?.stop();
-		await db?.drop();
 		rmSync(dir, { recursive: true, force: true });
 	}
 });

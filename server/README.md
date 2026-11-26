@@ -188,7 +188,7 @@ writes this record. `rocx build` writes `Generated/App`, and the app's `main.roc
 ```roc
 program = App.program({
     init!: |_started| Ok({}),
-    database: Sqlite("data/plate.db"),          # optional: Postgres by default
+    database: Sqlite("data/plate.db"),          # optional: Sqlite("data/app.db") by default
     cross_site: Refused,                        # optional: Refused by default
     openapi: Page(Swagger),                     # optional: Off by default
     plugins: [Email.plugin({})],                # optional: none by default
@@ -285,8 +285,8 @@ translated.
 
 | Program says | Where | Notes |
 | --- | --- | --- |
-| `Postgres` (the default) | `--database-url`, or `DATABASE_URL` | Without a URL the app has no database, and every statement says so; but if the app or a plugin has tables (migrations), the server doesn't start without one, outside `--dev` and `--debug` (where a line on the log says so). |
-| `Sqlite(path)` | A file at `path`, relative to where the server starts | Made, with its directory, when missing: the app runs with nothing set. `--database-url sqlite:<path>` puts it elsewhere. |
+| `Sqlite(path)` (the default: `Sqlite("data/app.db")`, D-105) | A file at `path`, relative to where the server starts | Made, with its directory, when missing: the app runs with nothing set. `--database-url sqlite:<path>` puts it elsewhere. |
+| `Postgres` | `--database-url`, or `DATABASE_URL` | Without a URL the app has no database, and every statement says so; but if the app or a plugin has tables (migrations), the server doesn't start without one, outside `--dev` and `--debug` (where a line on the log says so). |
 | `Turso(path)` | The same, on Turso's engine | `turso:<path>` runs a SQLite app on Turso; `sqlite:<path>` runs a Turso app on SQLite. |
 
 A URL of the wrong kind (a `postgres://` URL for a SQLite app, say) stops the server at start,

@@ -8,7 +8,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildForTests, startServer, until } from "../../../testing/index.mjs";
+import { buildForTests, startServer, testSqlite, until } from "../../../testing/index.mjs";
 import { KEY, standIn } from "./stand-in.mjs";
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,16 +16,20 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), "..");
 let built;
 let api;
 let app;
+// The example names no database, so it is a SQLite one (D-105): a file of the tests' own, which a
+// DATABASE_URL in the environment doesn't override.
+const db = testSqlite({ prefix: "rocx-ai-" });
 
 before(async () => {
 	built = await buildForTests(dir, { opt: process.env.ROCX_TEST_OPT ?? "dev" });
 	api = await standIn();
-	app = await startServer(built.server, { statics: built.statics, env: { ANTHROPIC_API_KEY: KEY, ANTHROPIC_BASE_URL: api.url, ANTHROPIC_MODEL: "" } });
+	app = await startServer(built.server, { database: db.url, statics: built.statics, env: { ANTHROPIC_API_KEY: KEY, ANTHROPIC_BASE_URL: api.url, ANTHROPIC_MODEL: "" } });
 });
 
 after(async () => {
 	await app?.stop();
 	await api?.close();
+	await db.drop();
 });
 
 /** Says `text` in `chat`, and reads the answer's events until it is done: each event's data. */

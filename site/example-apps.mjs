@@ -73,11 +73,12 @@ function sourceFiles(dir) {
 }
 
 /** The database an app's program names (`database: Sqlite("data/x.db")` in the record main.roc
- * passes to App.program): SQLite; Postgres, the default, for an app with migrations or `database:
- * Postgres`; or none. */
+ * passes to App.program): Postgres or Turso when it says so; SQLite, the default (D-105), when it
+ * says so or has migrations; or none. */
 export function database(dir, main) {
-	if (/database:\s*Sqlite\(/.test(main)) return "SQLite";
-	if (/database:\s*Postgres\b/.test(main) || existsSync(join(dir, "migrations"))) return "Postgres";
+	if (/database:\s*Postgres\b/.test(main)) return "Postgres";
+	if (/database:\s*Turso\(/.test(main)) return "Turso";
+	if (/database:\s*Sqlite\(/.test(main) || existsSync(join(dir, "migrations"))) return "SQLite";
 	return "";
 }
 

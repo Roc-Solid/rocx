@@ -13,6 +13,8 @@ import Jobs
 
 program = App.program({
 	init!: |started| Ok({ started: started }),
+	# Its jobs on Postgres, the test's database (DATABASE_URL).
+	database: Postgres,
 	# The jobs plugin (packages/jobs): the kinds of job the app's modules define, and a schedule; and
 	# the jobs page (packages/admin), for members only.
 	plugins: [

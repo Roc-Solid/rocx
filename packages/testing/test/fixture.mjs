@@ -23,6 +23,8 @@ import Generated/App
 
 program = App.program({
 	init!: |started| Ok({ started: started }),
+	# The test's Postgres (DATABASE_URL), for the jobs' queue.
+	database: Postgres,
 	# A failed job waits 5 s for its next attempt: longer than a test settles the queue for.
 	plugins: [Job.plugin({ jobs: App.jobs, retry_ms: 5000 }), Email.plugin({})],
 })

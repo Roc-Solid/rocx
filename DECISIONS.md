@@ -6283,8 +6283,9 @@ distroless 59, .NET's chiseled ASP.NET 50.
   given `--database-url turso:…` says it was built without Turso. (Trying a SQLite app on Turso is
   for `rocx dev`, or `rocx check --sql --engine turso`.)
 - **`rocx build --release` and `--image` build the host with the engine the app's program names**,
-  read from its main.roc (`Hosts.engines_of`): SQLite alone for `database: Sqlite(…)`, Turso for
-  `Turso(…)`, Postgres for `Postgres` or for an `App.program({ … })` that names none (its default).
+  read from its main.roc (`Hosts.engines_of`): SQLite alone for `database: Sqlite(…)` or for an
+  `App.program({ … })` that names none (its default since D-105; Postgres before), Turso for
+  `Turso(…)`, Postgres for `Postgres`.
   A program that names it some other way (a value, a call), names two, or is given its record from
   another module (`App.program(config)`) gets every engine. Each set is
   built in a cargo target directory of its own (`server/host/target/engines-<name>`), beside the full
@@ -6322,3 +6323,33 @@ engine's host compiles the host's crates again, in its own target directory (a m
 
 **Reversible:** yes: `release_platform!` gives the platform's own main.roc for every engine, and
 the features stay on by default.
+
+## D-105 An app's database is SQLite's `data/app.db` unless its program names one
+
+**Status.** Built (2026-11-26), the user's call, after D-104 showed a hello world carrying Postgres
+because `App.program`'s default was `Postgres`.
+
+**Context.** `database` defaulted to `Postgres` (D-045), at `--database-url`, with no database without
+one. But every example with a database names `Sqlite(…)`, `rocx new` asks with SQLite first, and the
+image's `/app/data` (D-099) is for a SQLite file. An app that named nothing got the engine that needs a
+server of its own, and since D-104 its release carried Postgres's client for it.
+
+**Decision.**
+
+- `App.program`'s `database` is `Sqlite("data/app.db")` unless the program names one: a file beside
+  where the server starts, made with its directory when missing (`?? Sqlite("data/app.db")` in the
+  `Generated/App` rocx build writes). `Postgres` and `Turso(path)` are named, as before.
+- So an app that names none opens that file as it starts, and the platform's tables (jobs, actors)
+  are made in it; `data/` is ignored where the repository's apps run. It is a SQLite app: a
+  `postgres://` `DATABASE_URL` stops it at start, as for any SQLite app (D-045).
+- `Hosts.engines_of` reads an `App.program({ … })` that names none as SQLite: its release's host has
+  SQLite alone (D-104). A hello world's image is 3.7 MB to send (4.4 with Postgres).
+- The apps in the repository that ran on the old default with a Postgres name it now: the e2e app,
+  packages/testing's fixture and the posthog example (their tests' jobs are on `DATABASE_URL`), and the
+  docs site (`rocx site dev` passes `DATABASE_URL` on, and it has no database without one).
+
+**Costs.** An app with no database at all has a SQLite file anyway. An app that relied on the default
+for Postgres says `database: Postgres` now: given a `postgres://` URL, it stops at start, saying
+what to write; given none, it runs on the file.
+
+**Reversible:** yes: the default back in `Generated/App`, and the four lines go.

@@ -25,11 +25,12 @@
 ##   (server-sent events, `Events`): a loop the host runs as a call of its own, to its end, with
 ##   `{ send!, sleep! }`. `send!` writes to the response and says whether the client is still
 ##   there, `sleep!` waits that many milliseconds (and wakes early if the client goes).
-## - `database`: the app's database (D-045). `Postgres`, at `--database-url` (`DATABASE_URL`), and
-##   none without it (but a server whose app or plugins have tables doesn't start without it,
-##   outside `--dev` and `--debug`: `no_database!`); or `Sqlite(path)`, a file in the server's process at `path` (from where the
+## - `database`: the app's database (D-045). `Sqlite(path)`, a file in the server's process at `path` (from where the
 ##   server starts; made, with its directory, when missing), or at `--database-url`
-##   (`sqlite:<path>`) when it is given; or `Turso(path)`, the same with Turso's engine (D-046:
+##   (`sqlite:<path>`) when it is given: `Sqlite("data/app.db")` when the program names none (D-105);
+##   or `Postgres`, at `--database-url` (`DATABASE_URL`), and
+##   none without it (but a server whose app or plugins have tables doesn't start without it,
+##   outside `--dev` and `--debug`: `no_database!`); or `Turso(path)`, the same with Turso's engine (D-046:
 ##   SQLite written again in Rust, its SQL SQLite's). The URL picks between SQLite and Turso
 ##   (`turso:<path>` runs a SQLite app on Turso); one of the other flavor stops the server at start.
 ##   The app's SQL is its database's: nothing is translated.
@@ -388,7 +389,7 @@ init_for_host! = |{}| {
 }
 
 ## Whether the server has no database while something has tables (the app's migrations, a
-## plugin's): `Postgres` (the default) with no `--database-url` (`DATABASE_URL`), a deploy that forgot
+## plugin's): `Postgres` with no `--database-url` (`DATABASE_URL`), a deploy that forgot
 ## it. Outside `--dev` and `--debug` that stops the server, saying what has tables (else it would
 ## start, its tables never made, and fail at each query: the jobs plugin's workers would quietly
 ## stop); under them, a line on the log says so and it starts, as a test or a page without the

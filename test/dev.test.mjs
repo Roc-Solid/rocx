@@ -60,7 +60,10 @@ test("rocx dev: writes main.roc, gives the server the .env where it runs, serves
 	// In a process group of its own, as a terminal runs it, so Ctrl-C (SIGINT to the group) reaches
 	// bin/rocx, the Node beneath it and the server at once.
 	// Run where the app is, as Getting started does: the .env there, not this checkout's.
-	const dev = spawn(rocxBinary(), ["dev", dir, "--port", String(port)], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], detached: true });
+	// The app rocx dev writes a main.roc for names no database: a SQLite one (D-105), which a Postgres
+	// DATABASE_URL in the environment would stop.
+	const { DATABASE_URL: _postgres, ...env } = process.env;
+	const dev = spawn(rocxBinary(), ["dev", dir, "--port", String(port)], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
 	let said = "";
 	dev.stdout.on("data", (chunk) => (said += chunk));
 	dev.stderr.on("data", (chunk) => (said += chunk));

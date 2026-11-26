@@ -162,7 +162,7 @@ view! = |_|
 						TLS (Caddy, say). <code>--target</code> builds for another machine: <code>arm64mac</code>,
 						<code>x64mac</code>, or <code>arm64musl</code> and <code>x64musl</code>, static Linux executables
 						for a container. The server's host has the database engine the app's program names alone
-						(<code>database</code>; Postgres when it names none), and a Linux one has no debug info. The
+						(<code>database</code>; SQLite when it names none), and a Linux one has no debug info. The
 						build is made beside <code>out</code> and replaces it only once it is complete;
 						<code>out</code> must be empty, or an earlier build (it has a <code>server</code>).
 					</p>

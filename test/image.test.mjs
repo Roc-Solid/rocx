@@ -5,9 +5,10 @@
 // descriptor says; the configuration runs the server as 65532 in /app on PORT 8080, its layer's
 // diff_id the SHA-256 of the layer unzipped; the layer holds the server (0755), the files it
 // serves, /app/data owned by 65532, /etc/passwd naming that user, and /tmp (1777). The app names no
-// database, so it is a Postgres one (App.program's default), and its server's host has Postgres and
-// SQLite, but none of Turso's code (D-104), and no debug info. Where Docker answers, `docker load`
-// takes the file and the image serves the app's page.
+// database, so it is a SQLite one (App.program's default, D-105), and its server's host has SQLite
+// alone, none of Turso's or Postgres's code (D-104), and no debug info. Where Docker answers,
+// `docker load` takes the file and the image serves the app's page (its database a file in
+// /app/data).
 //
 // Needs the toolchain (`just setup`) and Rust's musl target for this machine (`just setup` adds it).
 import { test, before, after } from "node:test";
@@ -143,9 +144,8 @@ test("rocx build --image: an OCI image of the app's release, with no Dockerfile,
 	const names = sections(Buffer.from(server.bytes));
 	assert.ok(names.includes(".text") && names.includes(".symtab"), `its code, and its symbols for a backtrace: ${names}`);
 	assert.deepEqual(names.filter((name) => name.startsWith(".debug")), [], "no debug info");
-	assert.ok(!server.bytes.includes("turso_core"), "no Turso in the host of an app that doesn't name it");
-	assert.ok(server.bytes.includes("tokio_postgres"), "Postgres, the database of an app that names none");
-	assert.ok(server.bytes.includes("rusqlite"), "SQLite's in every host");
+	for (const engine of ["turso_core", "tokio_postgres"]) assert.ok(!server.bytes.includes(engine), `no ${engine} in the host of a SQLite app`);
+	assert.ok(server.bytes.includes("rusqlite"), "SQLite, the database of an app that names none");
 	assert.deepEqual([files.get("app/data/").type, files.get("app/data/").uid, files.get("app/data/").owner], ["5", 65532, "nonroot"]);
 	assert.deepEqual([files.get("tmp/").type, files.get("tmp/").mode], ["5", 0o1777]);
 	assert.match(files.get("etc/passwd").bytes.toString(), /^nonroot:x:65532:65532:/m);

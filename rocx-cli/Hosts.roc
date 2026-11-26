@@ -254,10 +254,10 @@ Hosts := [].{
 	all_engines = ["postgres", "turso"]
 
 	## The engines a release of the app whose main.roc is `text` needs (D-104): none for
-	## `database: Sqlite(…)` (SQLite is in every host), Turso's for `database: Turso(…)`, Postgres's for
-	## `database: Postgres` or an `App.program({ … })` that names none (its default); all of them when
-	## the program names its database some other way (a value, a call), names two, or is given its
-	## record from elsewhere (`App.program(config)`). Comment lines don't count.
+	## `database: Sqlite(…)` or an `App.program({ … })` that names none (its default, D-105; SQLite is
+	## in every host), Turso's for `database: Turso(…)`, Postgres's for `database: Postgres`; all of
+	## them when the program names its database some other way (a value, a call), names two, or is
+	## given its record from elsewhere (`App.program(config)`). Comment lines don't count.
 	engines_of : Str -> List(Str)
 	engines_of = |text| {
 		var $named = []
@@ -286,7 +286,7 @@ Hosts := [].{
 			}
 		}
 		match $named.first() {
-			Err(_) => if (text.contains("App.program({")) ["postgres"] else Hosts.all_engines
+			Err(_) => if (text.contains("App.program({")) [] else Hosts.all_engines
 			Ok(first) => if ($named.all(|each| each == first)) first else Hosts.all_engines
 		}
 	}
@@ -608,7 +608,7 @@ expect Hosts.engines_of("app [program] { pf: platform \"x\" }\n\nprogram = App.p
 expect Hosts.engines_of("program = App.program({\n\tdatabase: Turso(\"data/app.db\"),\n})\n") == ["turso"]
 expect Hosts.engines_of("program = App.program({\n\tdatabase: Postgres,\n})\n") == ["postgres"]
 expect Hosts.engines_of("program = App.program({ init!: |_| Ok({}), database: Postgres })\n") == ["postgres"]
-expect Hosts.engines_of("## App.program also takes `plugins`, `openapi`, `database` and `cross_site`.\nprogram = App.program({ init!: |_| Ok({}) })\n") == ["postgres"]
+expect Hosts.engines_of("## App.program also takes `plugins`, `openapi`, `database` and `cross_site`.\nprogram = App.program({ init!: |_| Ok({}) })\n") == []
 expect Hosts.engines_of("# database: Turso(\"x\") on a comment's line\nprogram = App.program({ database: Sqlite(\"a.db\") })\n") == []
 expect Hosts.engines_of("program = App.program({ database: chosen, sql_database: Turso(\"x\") })\n") == Hosts.all_engines
 expect Hosts.engines_of("a = { database: Sqlite(\"a\") }\nb = { database: Turso(\"b\") }\n") == Hosts.all_engines
