@@ -230,7 +230,7 @@ export async function ready(frameworks, binary, loads = 5) {
 	for (const framework of frameworks) {
 		const times = [];
 		for (let i = 0; i < loads; i++) {
-			await fetch(`http://localhost:${port}/enableCompression`);
+			await asked(`http://localhost:${port}/enableCompression`);
 			const browser = await launch(binary);
 			try {
 				const page = await browser.page();
@@ -248,6 +248,19 @@ export async function ready(frameworks, binary, loads = 5) {
 		console.error(`ready: ${framework} ${out[framework]} ms`);
 	}
 	return out;
+}
+
+/** A request to the benchmark's server, asked again (up to three times) when it fails: after the
+ * rounds, a connection kept alive that the server has closed fails once (EPIPE), and the next works. */
+async function asked(url) {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await fetch(url);
+		} catch (error) {
+			if (attempt >= 3) throw error;
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		}
+	}
 }
 
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
