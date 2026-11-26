@@ -25,7 +25,7 @@
 //      site/example-apps.json (which site/example-apps.mjs measures), for the examples page, and
 //      site/Generated/DbBench.roc: SQLite against Turso, from site/sqlite-vs-turso.json (which
 //      site/sqlite-vs-turso.mjs measures), for examples/sqlite-vs-turso's page
-//   3. the browser's wasm: the same pages, on the web platform (its Zig host), built from the
+//   3. the browser's wasm: the same pages, on the web platform (its Rust host), built from the
 //      browser's copy (site/build/client/main.roc) into site/build/client/static/rocx/app.wasm,
 //      beside the start.js and runtime.js rocx build put there: a page loads all three from /rocx/
 //   4. the server: site/main.roc, every page and endpoint, natively, on the server

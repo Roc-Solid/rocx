@@ -1,4 +1,4 @@
-# The checks a change lands with (README, "Quick start"), on GitHub's Linux runners on arm64
+# The checks a change lands with (README, "Working on this repository"), on GitHub's Linux runners on arm64
 # (ubuntu-24.04-arm), with the Roc fork's compiler prebuilt for them (`just setup` downloads it).
 # Five jobs, side by side: `just check` (then `just check-times`: how long checking takes, against
 # the last green master run); `just site`; `just test` as two (`test-rocx` and `test-web`, with

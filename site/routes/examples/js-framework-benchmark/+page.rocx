@@ -45,7 +45,7 @@ view! = |_|
 			is the other way round: the page answers a click once the runtime and the wasm have come and
 			hydrated it, and on the benchmark's server, which compresses each file as it sends it, slowly,
 			that is the last of them. What a page downloads is most of that: the runtime ships only what the
-			page uses (D-087), 128 KB of its 180, but with the wasm it is still more than Joy's, Leptos's or
+			page uses (D-087), 128 KB of its 180 in the run shown, but with the wasm it is still more than Joy's, Leptos's or
 			React's, and many times Solid's, which is JavaScript alone.
 		</p>
 		<p>
