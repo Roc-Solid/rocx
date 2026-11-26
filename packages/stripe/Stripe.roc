@@ -135,7 +135,8 @@ Stripe := [].{
 	api_version = "2025-03-31.basil"
 
 	## The Stripe plugin: the webhook (`POST <webhook_at>`, behind the app's middleware), the tables
-	## (`stripe/0001_stripe`, the same on SQLite and Postgres), and a look at the keys once the
+	## (`stripe/0001_stripe` and `stripe/0002_refunds`, the same on SQLite and Postgres), and a look
+	## at the keys once the
 	## server has started (`stripe.keys`: test or live mode). It needs a database, and
 	## `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set; `STRIPE_API_URL` points it at another
 	## API than Stripe's (a test's stand-in).

@@ -20,7 +20,8 @@ Metric := [].{
 	## An attribute: a measurement's label (`http.route`, `/posts/[id]`).
 	Attribute : { key : Str, value : Str }
 
-	## A measurement, as the actor that adds them up is sent it: its instrument, flattened (whether
+	## A measurement, as the plugin's loop that adds them up is handed it (through `Kv`): its
+	## instrument, flattened (whether
 	## it is a histogram, with its bounds, or a gauge; a counter is neither), its attributes and its
 	## value.
 	Measurement : { name : Str, description : Str, unit : Str, histogram : Bool, gauge : Bool, bounds : List(Dec), attributes : List(Attribute), value : Dec }

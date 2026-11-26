@@ -109,7 +109,7 @@ Html :: [
 	html_of = |compute| HtmlOf(compute)
 
 	## What a hole (`{x}`, D-070) shows of its value, by its type: text (escaped), a number's digits
-	## (`{count}`), or markup as it is. rocx writes `Html.hole(x)` for a hole that reads nothing
+	## (`{count}`), or markup as it is. rocx writes `Html.shown(x)` for a hole that reads nothing
 	## that changes, and `Html.hole_of(|| Html.hole(x))` for one that does; the compiler picks what to do from
 	## `x`'s type, through Roc's encoding: `Str.encode(Hole)` is `Hole.encode_str`, a number's is
 	## its `encode_*`, and `Html.encode` is the markup itself. A value of another type (a record, a

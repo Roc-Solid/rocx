@@ -79,6 +79,14 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **Found by the docs audit of 2026-11-26, to check:**
+  - The tools page's "the same tools, twice" example types an AI tool list `Tool({})`, but McpHttp
+    serves only an `Mcp.Server(McpHttp.Caller(c))`: such a list may not be servable over MCP without
+    HTTP code of the app's own (packages/ai's example's notes claim the same). Tools generic in their
+    context, or an adapter that changes a tool's context, would make the claim true.
+  - A checked body sent as JSON (D-093) may not read back through a `Form.choice` field whose
+    option's text differs from its tag (`"lunch"` read as `Lunch`): worth a test in examples/plate.
+
 - **MCP tools skip a checked body's rules (D-093).** packages/mcp's `McpHttp.endpoint` runs a
   handler with `Endpoint.run!`, its arg read from the model's JSON by its type, so `post_body`'s
   rules don't run there: read the arguments through the endpoint's rules (`Endpoint.form_of` on the
