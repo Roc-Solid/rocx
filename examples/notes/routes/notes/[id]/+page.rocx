@@ -6,27 +6,39 @@ import pf.Router exposing [use_submission!]
 import ../../../Note
 import ../../../Pages
 import ../../../Generated/Api
+import ../../../Middlewares
 import ../../../Ui/Prose
 import ../../../Ui/Topbar
 
 ## A note: its Markdown as it reads, its tags, and what can be done with it. The buttons are forms
-## posting to `/notes/<id>`; with JavaScript the page stays, and reads the note again after each.
+## posting to `/api/notes/<id>`; with JavaScript the page stays, and reads the note again after
+## each.
 meta = { title: "Note · Notes" }
+
+middleware = Middlewares.signed_in
 
 ## A note that isn't there, or isn't yours (its endpoint refuses both alike, so nobody learns which
 ## ids are someone else's), is the app's error page, a 404 (`get!` fails the page).
-view! = |{ params }| <Shown id={params.id} first={Endpoint.get!(Api.get_notes_id({ id: params.id }))} />
+view! = |{ params }| <Shown id={params.id} first={opened!(params.id)} />
 
-## The note, once it is found: what the page shows of it, read again (`opened!`) where a button
+## What the page shows: the note (`GET /api/notes/<id>`, the JSON API's) and who is reading it
+## (`GET /api/me`), for the bar.
+opened! : Str => Pages.Opened
+opened! = |id| {
+	me = Endpoint.get!(Api.get_api_me({}))
+	{ email: me.email, note: Endpoint.get!(Api.get_api_notes_id({ id: id })) }
+}
+
+## The note, once it is found: what the page shows of it, read again (`note!`) where a button
 ## changes it.
 Shown := [].{
 	view! : { id : Str, first : Pages.Opened } => Html
 	view! = |{ id, first }| {
-		read = Api.get_notes_id({ id: id })
-		opened! : {} => Pages.Opened
-		opened! = |{}| Endpoint.get!(read)
-		acting = use_submission!(Api.post_notes_id({ id: id }))
-		action = Endpoint.url_of(Api.post_notes_id({ id: id }))
+		read = Api.get_api_notes_id({ id: id })
+		note! : {} => Note.Full
+		note! = |{}| Endpoint.get!(read)
+		acting = use_submission!(Api.post_api_notes_id({ id: id }))
+		action = Endpoint.url_of(Api.post_api_notes_id({ id: id }))
 		<div>
 			<Title>{"${first.note.title} · Notes"}</Title>
 			{Topbar.view({ email: first.email, query: "" })}
@@ -38,25 +50,25 @@ Shown := [].{
 						<p class="meta">
 							<span>Edited <time datetime={first.note.updated}>{Note.day(first.note.updated)}</time></span>
 							<span>Written <time datetime={first.note.created}>{Note.day(first.note.created)}</time></span>
-							{if (opened!({}).note.pinned) <span class="badge pin">Pinned</span>}
-							{if (opened!({}).note.archived) <span class="badge">Archived</span>}
+							{if (note!({}).pinned) <span class="badge pin">Pinned</span>}
+							{if (note!({}).archived) <span class="badge">Archived</span>}
 						</p>
 						<ul class="tags" aria-label="Tags">
 							{...first.note.tags.map(|tag| <li key={tag}><a href={"/?tag=${Server.encode_segment(tag)}"}>{"#${tag}"}</a></li>)}
 						</ul>
 						<div class="actions">
 							<a class="button primary" href={"/notes/${id}/edit"}>Edit</a>
-							{if !opened!({}).note.archived {
+							{if !note!({}).archived {
 								<form method="post" action={action}>
-									<input type="hidden" name="action" value={if (opened!({}).note.pinned) "unpin" else "pin"} />
-									<button type="submit" disabled?={acting.pending!()}>{if (opened!({}).note.pinned) "Unpin" else "Pin"}</button>
+									<input type="hidden" name="action" value={if (note!({}).pinned) "unpin" else "pin"} />
+									<button type="submit" disabled?={acting.pending!()}>{if (note!({}).pinned) "Unpin" else "Pin"}</button>
 								</form>
 							}}
 							<form method="post" action={action}>
-								<input type="hidden" name="action" value={if (opened!({}).note.archived) "restore" else "archive"} />
-								<button type="submit" disabled?={acting.pending!()}>{if (opened!({}).note.archived) "Restore" else "Archive"}</button>
+								<input type="hidden" name="action" value={if (note!({}).archived) "restore" else "archive"} />
+								<button type="submit" disabled?={acting.pending!()}>{if (note!({}).archived) "Restore" else "Archive"}</button>
 							</form>
-							{if opened!({}).note.archived {
+							{if note!({}).archived {
 								<form method="post" action={action}>
 									<input type="hidden" name="action" value="delete" />
 									<button type="submit" class="danger" disabled?={acting.pending!()}>Delete for good</button>

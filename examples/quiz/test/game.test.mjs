@@ -23,10 +23,10 @@ after(async () => {
 async function player(app, code, name) {
 	const client = app.client();
 	await client.get("/");
-	const joined = await client.post("/join", { code, name });
+	const joined = await client.post("/api/join", { code, name });
 	assert.equal(joined.status, 303, `${name} joins: ${joined.text}`);
 	assert.equal(joined.location, `/play/${code}`);
-	const seat = await client.read(`/rooms/${code}`);
+	const seat = await client.read(`/api/rooms/${code}`);
 	const stream = await follow(client, code, `${name}-tab`);
 	return { name, client, id: seat.who.Player, tab: `${name}-tab`, stream };
 }
@@ -166,7 +166,7 @@ test("presence: a player whose phone goes is shown as dropped, and is back when 
 		],
 	);
 	// Her page, opened again, finds her a player still; her tab follows the room again, and she is back.
-	assert.deepEqual((await eve.client.read(`/rooms/${code}`)).who, { Player: eve.id });
+	assert.deepEqual((await eve.client.read(`/api/rooms/${code}`)).who, { Player: eve.id });
 	const back = await follow(eve.client, code, "Eve-tab-2");
 	await screen.next((view) => view.players.every((each) => each.here));
 	for (const each of [screen, back, fay.stream]) each.close();
@@ -182,15 +182,15 @@ test("joining: the forms' issues at their fields, a plain post's flash, a room's
 	await someone.get("/");
 	// As the runtime sends a form: 422 and the issues, as JSON, at their fields.
 	const issues = async (answer) => JSON.parse(answer.text).map((issue) => [issue.field, issue.message]);
-	assert.deepEqual(await issues(await someone.submit("/join", { code: "nope", name: "" })), [
+	assert.deepEqual(await issues(await someone.submit("/api/join", { code: "nope", name: "" })), [
 		["code", "A code is four letters, like BKRT."],
 		["name", "Fill this in"],
 	]);
-	assert.deepEqual(await issues(await someone.submit("/join", { code: code.toLowerCase(), name: "gus" })), [["name", "Someone in that room has this name already."]]);
-	assert.deepEqual(await issues(await someone.submit("/join", { code: "ZZZZ", name: "Hal" })), [["code", "There's no room with that code."]]);
+	assert.deepEqual(await issues(await someone.submit("/api/join", { code: code.toLowerCase(), name: "gus" })), [["name", "Someone in that room has this name already."]]);
+	assert.deepEqual(await issues(await someone.submit("/api/join", { code: "ZZZZ", name: "Hal" })), [["code", "There's no room with that code."]]);
 	// The form checks its body whatever it comes as (D-093): JSON is read by the same rules, and the
 	// issues come back as JSON, saying so.
-	const scripted = await someone.json("/join", { code: "nope", name: "" });
+	const scripted = await someone.json("/api/join", { code: "nope", name: "" });
 	assert.equal(scripted.status, 422);
 	assert.equal(scripted.headers.get("content-type"), "application/json");
 	assert.deepEqual(await issues(scripted), [
@@ -199,7 +199,7 @@ test("joining: the forms' issues at their fields, a plain post's flash, a room's
 	]);
 
 	// Without the runtime, the form posts, and comes back to the front page with a flash.
-	const posted = await someone.post("/join", { code: "ZZZZ", name: "Hal" });
+	const posted = await someone.post("/api/join", { code: "ZZZZ", name: "Hal" });
 	assert.equal(posted.status, 303);
 	assert.equal(new URL(posted.location, app.url).pathname, "/");
 	assert.equal(someone.flash.status, 422);
@@ -209,16 +209,16 @@ test("joining: the forms' issues at their fields, a plain post's flash, a room's
 	// A room's own page asks a newcomer only for a name.
 	const page = await someone.get(`/play/${code}`);
 	page.dom.getByRole("heading", { name: `Join room ${code}` });
-	const named = await someone.post(`/play/${code}`, { name: "Hal" });
+	const named = await someone.post(`/api/play/${code}`, { name: "Hal" });
 	assert.equal(named.status, 303);
 	assert.equal(named.location, `/play/${code}`);
-	assert.match((await someone.read(`/rooms/${code}`)).who.Player, /^p\d+$/);
+	assert.match((await someone.read(`/api/rooms/${code}`)).who.Player, /^p\d+$/);
 
 	// A code with no room: the pages say so; its channel refuses (404).
 	(await someone.get("/play/ZZZZ")).dom.getByRole("heading", { name: "There's no room ZZZZ" });
 	(await someone.get("/host/ZZZZ")).dom.getByRole("heading", { name: "There's no room ZZZZ" });
-	assert.equal(stage((await someone.read("/rooms/ZZZZ")).view), "Vacant");
-	const events = await someone.events(`/rocx/live?tab=x&c=${encodeURIComponent("/rooms/ZZZZ")}`);
+	assert.equal(stage((await someone.read("/api/rooms/ZZZZ")).view), "Vacant");
+	const events = await someone.events(`/rocx/live?tab=x&c=${encodeURIComponent("/api/rooms/ZZZZ")}`);
 	const [hello, refusal] = await events.take(2);
 	assert.equal(hello.event, "hello", "the stream's id first (D-057)");
 	assert.equal(refusal.event, "refused");
@@ -231,7 +231,7 @@ test("the editor: what it refuses, field by field; a new set, first on the host'
 	const { app } = run;
 	const writer = app.client();
 	(await writer.get("/sets/new")).dom.getByLabelText("Questions");
-	const refused = await writer.submit("/sets", { title: "", blurb: "", questions: "Which?\n- a\n- b" });
+	const refused = await writer.submit("/api/sets", { title: "", blurb: "", questions: "Which?\n- a\n- b" });
 	assert.equal(refused.status, 422);
 	assert.deepEqual(
 		JSON.parse(refused.text).map((issue) => [issue.field, issue.message]),
@@ -242,16 +242,16 @@ test("the editor: what it refuses, field by field; a new set, first on the host'
 	);
 
 	const questions = "Which of these is a citrus fruit?\n- Apple\n* Lime\n- Fig\n\nHow many strings has a violin?\n* Four\n- Six";
-	const saved = await writer.post("/sets", { title: "Snack Time", blurb: "Fruit and fiddles.", questions });
+	const saved = await writer.post("/api/sets", { title: "Snack Time", blurb: "Fruit and fiddles.", questions });
 	assert.equal(saved.status, 303);
 	assert.match(saved.location, /^\/host\?made=\d+$/);
-	const sets = await writer.read("/host");
+	const sets = await writer.read("/api/host");
 	assert.equal(sets[0].title, "Snack Time");
 	assert.equal(sets[0].questions, 2);
 	(await saved.follow()).dom.getByRole("button", { name: "Open a room for Snack Time" });
 
 	const code = await openRoom(writer, "Snack Time");
-	const seat = await writer.read(`/rooms/${code}`);
+	const seat = await writer.read(`/api/rooms/${code}`);
 	assert.equal(seat.who, "Host");
 	assert.equal(seat.view.title, "Snack Time");
 	assert.equal(seat.view.total, 2);

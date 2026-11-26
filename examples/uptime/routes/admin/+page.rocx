@@ -6,6 +6,7 @@ import pf.Solid exposing [create_effect!, create_memo!, refresh!]
 import pf.Router exposing [use_submission!]
 import ../../Report
 import ../../Generated/Api
+import ../../Middlewares
 import ../../Ui/AdminRow
 import ../../Ui/IncidentCard
 import ../../Ui/UpdateForm
@@ -13,12 +14,14 @@ import ../../Ui/UpdateForm
 ## The admin's page, behind the sign-in: every monitor with "Check now" and "Pause", each open
 ## incident with a form for its next update, the flaky demo's switch, and the way to the rest:
 ## packages/admin's tables (adding and editing monitors), the jobs page, and the dev mailbox.
-## Its data is `GET /admin` as JSON, read again after each of its forms and whenever the live
+## Its data is `GET /api/admin` as JSON, read again after each of its forms and whenever the live
 ## channel says something changed.
 meta = { title: "Admin · Status" }
 
+middleware = Middlewares.admin
+
 view! = |_| {
-	read = Api.get_admin({})
+	read = Api.get_api_admin({})
 	admin! : () => Report.Admin
 	admin! = create_memo!(|| Endpoint.get!(read))
 	heard! : Channel.Event(Report.News) => {}
@@ -27,8 +30,8 @@ view! = |_| {
 			Resync | Message(_) => refresh!(admin!)
 			Refused(_, _) | Ended(_) => {}
 		}
-	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
-	demo = Api.post_admin_demo({})
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_api_live({}), heard!))
+	demo = Api.post_api_admin_demo({})
 	switched = use_submission!(demo)
 	<div class="admin">
 		<Title>Admin · Status</Title>

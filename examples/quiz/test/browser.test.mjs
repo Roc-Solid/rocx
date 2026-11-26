@@ -87,7 +87,7 @@ test("joining by code from the front page, and answering a question with a tap",
 	const answers = (await db.sql`select q.answer from quiz_questions q join quiz_sets s on s.id = q.set_id where s.slug = ${"words-and-wonders"} order by q.position`).map((row) => row.answer);
 	const bo = app.client();
 	await bo.get("/");
-	assert.equal((await bo.post("/join", { code, name: "Bo" })).status, 303);
+	assert.equal((await bo.post("/api/join", { code, name: "Bo" })).status, 303);
 	const boTab = await follow(bo, code, "bo-tab");
 	// Each phase once: a view that only says someone came or answered is the same phase.
 	const phase = (view) => `${stage(view)} ${view.stage.Asking?.index ?? view.stage.Revealing?.index ?? ""}`;

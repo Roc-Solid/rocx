@@ -75,7 +75,7 @@ export async function started({ questionMs = 4000, revealMs = 300, flags = [] } 
  * passing over the others; `close()` hangs up, as a tab that closes does.
  */
 export async function follow(client, code, tab) {
-	const events = await client.events(`/rocx/live?tab=${tab}&c=${encodeURIComponent(`/rooms/${code}`)}`);
+	const events = await client.events(`/rocx/live?tab=${tab}&c=${encodeURIComponent(`/api/rooms/${code}`)}`);
 	return {
 		tab,
 		async next(match = () => true, { ms = 15000 } = {}) {
@@ -97,7 +97,7 @@ export async function follow(client, code, tab) {
 
 /** Says `message` on room `code`'s channel from `tab`, as a page's `Endpoint.say!` does: the answer. */
 export function say(client, code, tab, message) {
-	return client.request(`/rocx/live/send?tab=${tab}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([{ channel: `/rooms/${code}`, message }]) });
+	return client.request(`/rocx/live/send?tab=${tab}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([{ channel: `/api/rooms/${code}`, message }]) });
 }
 
 /** The stage a view is at: "Lobby", "Asking", "Revealing", "Finished" or "Vacant". */
@@ -105,11 +105,11 @@ export const stage = (view) => (typeof view.stage === "string" ? view.stage : Ob
 
 /** A host's new room for the set called `title`: its code. */
 export async function openRoom(host, title) {
-	const sets = await host.read("/host");
+	const sets = await host.read("/api/host");
 	const set = sets.find((each) => each.title === title);
 	if (!set) throw new Error(`no set called ${title}: ${JSON.stringify(sets.map((each) => each.title))}`);
 	await host.get("/host");
-	const opened = await host.post("/rooms", { set: String(set.id) });
-	if (opened.status !== 303) throw new Error(`POST /rooms: ${opened.status} ${opened.text}`);
+	const opened = await host.post("/api/rooms", { set: String(set.id) });
+	if (opened.status !== 303) throw new Error(`POST /api/rooms: ${opened.status} ${opened.text}`);
 	return opened.location.split("/").pop();
 }

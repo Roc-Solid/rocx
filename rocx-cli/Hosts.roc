@@ -25,6 +25,17 @@ Hosts := [].{
 		if (path.is_empty()) Fs.cwd!() else Fs.dirname(Fs.dirname(Fs.real!(path)))
 	}
 
+	## The server's `--env-file .env` under `rocx dev` (D-098), for its server and its check: the
+	## `.env` in the folder it runs in, when there is one and the flags the server is given (`flags`,
+	## what follows `--`) name no file of their own. The server reads none unless one is named, so
+	## only development asks for it; a test's server, CI's and production's never read one.
+	env_file! : List(Str) => List(Str)
+	env_file! = |flags| Hosts.env_file(flags, Fs.is_file!(".env"))
+
+	## `env_file!`'s flags, `here` saying whether there is a `.env`.
+	env_file : List(Str), Bool -> List(Str)
+	env_file = |flags, here| if (here and !flags.any(|flag| flag == "--env-file" or flag.starts_with("--env-file="))) ["--env-file", ".env"] else []
+
 	## The root an app at `dir` is built with: its `.rocx` (a link to an installed version, or to a
 	## clone), when it has one; else `rocx`, the home of the rocx running (so an app inside the repo,
 	## whose headers reach the platform by `../`, needs none). Not resolved: its paths go through the
@@ -195,6 +206,10 @@ Hosts := [].{
 					.env("AR_${under}", "${zig} ar")
 					.env("CRATE_CC_NO_DEFAULTS", "1")
 					.env("CFLAGS_${under}", "-O2 -fPIC -fno-sanitize=all")
+					# A musl host is linked into what is deployed (`--release`, `--image`), never run
+					# under `rocx dev`: no debug info (the symbols stay, for a backtrace's names), as a
+					# release's hosts are stripped (release/hosts.sh). It was 140 MB of a 180 MB server.
+					.env("CARGO_PROFILE_RELEASE_DEBUG", "0")
 			_ = Hosts.run!(Hosts.rust_env!(Cmd.new("rustup").args(["target", "add", triple]), rocx, musl), "rustup target add ${triple}")?
 		}
 		dir = Fs.join([rocx, "server", "platform", "targets", target])
@@ -422,3 +437,8 @@ Hosts := [].{
 		Bool.True
 	}
 }
+
+expect Hosts.env_file([], Bool.True) == ["--env-file", ".env"]
+expect Hosts.env_file(["--debug"], Bool.False) == []
+expect Hosts.env_file(["--env-file", "staging.env"], Bool.True) == []
+expect Hosts.env_file(["--env-file=staging.env"], Bool.True) == []

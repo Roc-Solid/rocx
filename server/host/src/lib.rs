@@ -112,9 +112,9 @@ pub extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
     let args: Vec<String> = (1..argc.max(1) as usize)
         .map(|index| unsafe { CStr::from_ptr(*argv.add(index)) }.to_string_lossy().into_owned())
         .collect();
-    // `.env` (or `--env-file`'s) into the environment first, while this is the only thread, so the
-    // log's settings (`TZ`, `ROCX_LOG`), the server's (`PORT`, `DATABASE_URL`) and the app's all
-    // see it (D-088).
+    // `--env-file`'s file into the environment first, while this is the only thread, so the log's
+    // settings (`TZ`, `ROCX_LOG`), the server's (`PORT`, `DATABASE_URL`) and the app's all see it
+    // (D-088; only when named, D-098).
     let loaded = dotenv::load(dotenv::named(&args).as_deref());
     logging::start();
     let code = match loaded {

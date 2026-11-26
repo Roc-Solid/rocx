@@ -126,6 +126,8 @@ test("every .rocx file here: formatting it keeps its code, and formatting it aga
 	const rocxFiles = (dir) =>
 		readdirSync(dir).flatMap((entry) => {
 			const path = join(dir, entry);
+			// Not into a name starting with a dot, as rocx's own walks don't: an app's `.rocx` links to rocx.
+			if (entry.startsWith(".")) return [];
 			if (statSync(path).isDirectory()) return /^(build|dist|Generated|node_modules|run-.*)$/.test(entry) ? [] : rocxFiles(path);
 			return path.endsWith(".rocx") ? [path] : [];
 		});

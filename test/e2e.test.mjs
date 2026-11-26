@@ -311,6 +311,10 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.equal((await get("/__rocx/stories/Counter/nothing")).status, 404);
 		const answered = await fetch(`${server.url}/members`, { headers: { accept: "application/json", cookie: "member=Grace" } });
 		assert.deepEqual([answered.status, await answered.text()], [200, '"Welcome, Grace"'], "the same endpoint, over HTTP, for JSON");
+		// A page and an endpoint at one path answer by Accept, and say so, so a cache keeps them apart.
+		assert.equal(answered.headers.get("vary"), "Accept");
+		assert.equal((await fetch(`${server.url}/members`, { headers: { accept: "text/html", cookie: "member=Grace" } })).headers.get("vary"), "Accept");
+		assert.equal((await fetch(`${server.url}/nowhere-at-all`)).headers.get("vary"), "Accept", "the 404 is chosen by Accept too");
 		assert.equal((await fetch(`${server.url}/members`, { headers: { accept: "application/json" } })).status, 401);
 
 		// A <NoHydration>'s children, and the import only they used, are the server's alone.

@@ -13,7 +13,7 @@ meta = { title: "Unsubscribe · Status" }
 
 view! = |_| {
 	token = Words.query_value(Router.location!({}).query, "token")
-	unsubscribe = Api.post_unsubscribe({})
+	unsubscribe = Api.post_api_unsubscribe({})
 	submission = use_submission!(unsubscribe)
 	<section class="unsubscribe">
 		<Title>Unsubscribe · Status</Title>

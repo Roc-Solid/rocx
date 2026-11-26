@@ -4,14 +4,17 @@ import pf.Router
 import pf.Server
 import auth.SignInError
 import ../../../Generated/Api
+import ../../../Middlewares
 
 ## Where Stripe's Checkout comes back to once it is paid (`?session_id=`): what was bought, and
-## where it is. Signed in only: the page runs behind its `+server.roc`'s middleware.
+## where it is. Signed in only (`Middlewares.signed_in`).
 meta = { title: "Thank you" }
+
+middleware = Middlewares.signed_in
 
 ## What the checkout bought, as Stripe says now; a problem when it isn't the signed-in user's.
 bought! : Str => Try({ what : Str, subscription : Bool, paid : Bool }, Server.Problem)
-bought! = |id| Endpoint.read!(Api.get_billing_done({}).with_query("session_id=${Server.encode_segment(id)}"))
+bought! = |id| Endpoint.read!(Api.get_api_billing_done({}).with_query("session_id=${Server.encode_segment(id)}"))
 
 ## What the page says of a checkout.
 said : { what : Str, subscription : Bool, paid : Bool } -> Str

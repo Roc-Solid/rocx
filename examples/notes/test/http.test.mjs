@@ -51,7 +51,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const before = (await app.mail()).length;
 
 		// Without JavaScript: the form posts, and comes back to the page, which says where the link went.
-		const asked = await visitor.post("/sign-in", { email: "  Cyd@Example.com ", then: "/settings" });
+		const asked = await visitor.post("/api/sign-in", { email: "  Cyd@Example.com ", then: "/settings" });
 		assert.equal(asked.status, 303);
 		assert.deepEqual([visitor.flash.status, JSON.parse(visitor.flash.body)], [200, { sent: "cyd@example.com" }]);
 		(await asked.follow()).dom.getByRole("heading", { name: "Check your inbox" });
@@ -71,11 +71,11 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		assert.equal(used.location, "/settings");
 		const cookie = used.headers.get("set-cookie");
 		for (const part of [`${sessionCookie}=`, "Max-Age=2592000", "HttpOnly", "SameSite=Lax"]) assert.ok(cookie.includes(part), cookie);
-		const settings = await visitor.read("/settings");
+		const settings = await visitor.read("/api/settings");
 		assert.equal(settings.email, "cyd@example.com");
 
 		// Someone new starts with a note of welcome.
-		const home = await visitor.read("/");
+		const home = await visitor.read("/api");
 		assert.deepEqual(home.notes.map((note) => note.title), ["Welcome to Notes"]);
 
 		// The database keeps no token itself: the session's row has its hash, and the link, used, is gone.
@@ -90,7 +90,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const before = (await app.mail()).length;
 		const first = app.client();
 		await first.get("/sign-in");
-		await first.post("/sign-in", { email: "dee@example.com", then: "/" });
+		await first.post("/api/sign-in", { email: "dee@example.com", then: "/" });
 		const link = await mailedLink(app, "dee@example.com", before);
 		const token = tokenOf(link);
 		assert.equal((await first.post("/auth/link", { token })).status, 303);
@@ -100,7 +100,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		page.dom.getByRole("heading", { name: "This link has expired" });
 		// The page's endpoint says so (410), and the plugin sends the button's post back to the
 		// sign-in page, which says why.
-		assert.equal((await again.json(`/sign-in/link?token=${token}`, undefined, "GET")).status, 410);
+		assert.equal((await again.json(`/api/sign-in/link?token=${token}`, undefined, "GET")).status, 410);
 		const reused = await again.post("/auth/link", { token });
 		assert.equal(reused.status, 303);
 		assert.equal(reused.location, linkRefused);
@@ -118,9 +118,9 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const before = (await app.mail()).length;
 		const late = app.client();
 		await late.get("/sign-in");
-		await late.post("/sign-in", { email: "eve@example.com", then: "/" });
+		await late.post("/api/sign-in", { email: "eve@example.com", then: "/" });
 		const link = await mailedLink(app, "eve@example.com", before);
-		assert.equal((await late.read(`/sign-in/link${link.slice(link.indexOf("?"))}`)).email, "eve@example.com");
+		assert.equal((await late.read(`/api/sign-in/link${link.slice(link.indexOf("?"))}`)).email, "eve@example.com");
 		// Its time up: aged in the database, rather than waited out (a link lasts 15 minutes).
 		await db.query("update auth_links set expires_at = 0 where id = ?", [kept(tokenOf(link))]);
 		(await late.get(link)).dom.getByRole("heading", { name: "This link has expired" });
@@ -152,7 +152,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const before = (await app.mail()).length;
 		const visitor = app.client();
 		await visitor.get("/sign-in");
-		await visitor.post("/sign-in", { email: "not an address", then: "/" });
+		await visitor.post("/api/sign-in", { email: "not an address", then: "/" });
 		assert.deepEqual([visitor.flash.status, visitor.flash.body], [400, "That doesn't look like an email address."]);
 		assert.equal((await app.mail()).length, before);
 	});
@@ -162,7 +162,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const there = await signIn(app, "fay@example.com");
 		assert.equal((await here.get("/")).status, 200);
 
-		const out = await here.post("/sign-out", {});
+		const out = await here.post("/api/sign-out", {});
 		assert.equal(out.status, 303);
 		assert.equal(out.location, "/sign-in");
 		assert.equal(here.cookies.has(sessionCookie), false);
@@ -170,19 +170,19 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 
 		const elsewhere = await signIn(app, "fay@example.com");
 		await elsewhere.get("/settings");
-		assert.equal((await elsewhere.post("/settings/everywhere", {})).status, 303);
+		assert.equal((await elsewhere.post("/api/settings/everywhere", {})).status, 303);
 		assert.equal((await there.get("/")).status, 303, "every browser is signed out");
 		assert.equal((await (await signIn(app, "fay@example.com")).get("/")).status, 200, "signing in again works");
 	});
 
 	test("the seed: Ada's notes, pinned first, and running it again adds nothing", async () => {
-		const home = await ada.read("/");
+		const home = await ada.read("/api");
 		assert.equal(home.email, "ada@example.com");
 		assert.deepEqual(home.notes.slice(0, 2).map((note) => [note.title, note.pinned]), [["Trip to the coast", true], ["Launch week plan", true]]);
 		assert.equal(home.notes.length, 7);
 		assert.deepEqual(home.tags.slice(0, 2), [{ name: "rocket", count: 2 }, { name: "work", count: 2 }]);
-		assert.deepEqual((await ada.read("/?archived=true")).notes.map((note) => note.title), ["Old flat: things to sort"]);
-		assert.deepEqual((await ada.read("/?tag=rocket")).notes.map((note) => note.title), ["Launch week plan", "Countdown script"]);
+		assert.deepEqual((await ada.read("/api?archived=true")).notes.map((note) => note.title), ["Old flat: things to sort"]);
+		assert.deepEqual((await ada.read("/api?tag=rocket")).notes.map((note) => note.title), ["Launch week plan", "Countdown script"]);
 
 		// The seed is several statements: node:sqlite's exec runs them all (db.query prepares one).
 		const { DatabaseSync } = await import("node:sqlite");
@@ -195,49 +195,49 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 
 	test("a note through the pages' forms, without JavaScript: written, refused, edited, pinned, archived, deleted", async () => {
 		await ada.get("/new");
-		const refused = await ada.post("/new", { title: "  ", body: "x", tags: "" });
+		const refused = await ada.post("/api/new", { title: "  ", body: "x", tags: "" });
 		assert.equal(refused.status, 303);
 		assert.deepEqual([ada.flash.status, ada.flash.body], [400, "A note needs a title."]);
-		await ada.post("/new", { title: "Tags", body: "", tags: "two words!" });
+		await ada.post("/api/new", { title: "Tags", body: "", tags: "two words!" });
 		assert.equal(ada.flash.status, 400);
 
-		const made = await ada.post("/new", { title: "Garden plan", body: "Plant **tulips** in October.", tags: "Home, garden #spring" });
+		const made = await ada.post("/api/new", { title: "Garden plan", body: "Plant **tulips** in October.", tags: "Home, garden #spring" });
 		assert.equal(made.status, 303);
 		const id = made.location.split("/").pop();
 		assert.equal(made.location, `/notes/${id}`);
 		const page = await made.follow();
 		page.dom.getByRole("heading", { name: "Garden plan", level: 1 });
 		assert.equal(page.dom.getByText("tulips").tag, "strong");
-		let note = (await ada.read(`/notes/${id}`)).note;
+		let note = await ada.read(`/api/notes/${id}`);
 		assert.deepEqual([note.body, note.tags, note.pinned, note.archived], ["Plant **tulips** in October.", ["home", "garden", "spring"], false, false]);
 
 		const editor = await ada.get(`/notes/${id}/edit`);
 		assert.equal(editor.dom.getByLabelText("Tags").attr("value"), "home, garden, spring");
-		const saved = await ada.post(`/notes/${id}/edit`, { title: "Garden plan", body: "Plant tulips in October.\n\n- [ ] Buy bulbs", tags: "home" });
+		const saved = await ada.post(`/api/notes/${id}/edit`, { title: "Garden plan", body: "Plant tulips in October.\n\n- [ ] Buy bulbs", tags: "home" });
 		assert.equal(saved.location, `/notes/${id}`);
-		note = (await ada.read(`/notes/${id}`)).note;
+		note = await ada.read(`/api/notes/${id}`);
 		assert.deepEqual([note.body, note.tags], ["Plant tulips in October.\n\n- [ ] Buy bulbs", ["home"]]);
 
 		// The note's buttons: each comes back to its page.
 		await ada.get(`/notes/${id}`);
-		assert.equal((await ada.post(`/notes/${id}`, { action: "pin" })).status, 303);
+		assert.equal((await ada.post(`/api/notes/${id}`, { action: "pin" })).status, 303);
 		assert.equal(ada.flash.status, 200);
-		assert.equal((await ada.read("/")).notes[0].title, "Garden plan");
-		const deleteFirst = await ada.post(`/notes/${id}`, { action: "delete" });
+		assert.equal((await ada.read("/api")).notes[0].title, "Garden plan");
+		const deleteFirst = await ada.post(`/api/notes/${id}`, { action: "delete" });
 		assert.equal(deleteFirst.status, 303);
 		assert.deepEqual([ada.flash.status, ada.flash.body], [409, "Archive a note before deleting it."]);
-		await ada.post(`/notes/${id}`, { action: "archive" });
-		note = (await ada.read(`/notes/${id}`)).note;
+		await ada.post(`/api/notes/${id}`, { action: "archive" });
+		note = await ada.read(`/api/notes/${id}`);
 		assert.deepEqual([note.archived, note.pinned], [true, false], "an archived note isn't pinned");
-		assert.ok(!(await ada.read("/")).notes.some((each) => each.id === id));
-		assert.ok((await ada.read("/?archived=true")).notes.some((each) => each.id === id));
+		assert.ok(!(await ada.read("/api")).notes.some((each) => each.id === id));
+		assert.ok((await ada.read("/api?archived=true")).notes.some((each) => each.id === id));
 
 		// With the runtime, a button's form gets the note back, and the page stays.
-		const restored = await ada.submit(`/notes/${id}`, { action: "restore" });
+		const restored = await ada.submit(`/api/notes/${id}`, { action: "restore" });
 		assert.equal(restored.status, 200);
 		assert.equal(restored.json().archived, false);
-		await ada.submit(`/notes/${id}`, { action: "archive" });
-		const gone = await ada.post(`/notes/${id}`, { action: "delete" });
+		await ada.submit(`/api/notes/${id}`, { action: "archive" });
+		const gone = await ada.post(`/api/notes/${id}`, { action: "delete" });
 		assert.equal(gone.location, "/?archived=true");
 		assert.equal((await ada.get(`/notes/${id}`)).status, 404);
 	});
@@ -327,9 +327,9 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const everything = JSON.stringify(await db.sql`select * from tokens`);
 		assert.ok(!everything.includes(token.slice("acme_pat_".length, -4)), "no token is in the database");
 
-		let listed = (await ada.read("/settings")).tokens.find((each) => each.name === "Reader");
+		let listed = (await ada.read("/api/settings")).tokens.find((each) => each.name === "Reader");
 		assert.deepEqual([listed.read_only, listed.last_used, listed.hint], [true, "", token.slice(-4)]);
-		assert.ok(!JSON.stringify(await ada.read("/settings")).includes(token), "the list never has the token");
+		assert.ok(!JSON.stringify(await ada.read("/api/settings")).includes(token), "the list never has the token");
 
 		// Read-only: it reads, and every write is refused, saying why.
 		const reader = bearer(app, token);
@@ -340,27 +340,27 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		assert.equal((await reader.json(`/api/notes/${ids["Shed ideas"]}/append`, { text: "x" })).status, 403);
 		assert.equal((await reader.json(`/api/notes/${ids["Shed ideas"]}`, undefined, "DELETE")).status, 403);
 
-		listed = (await ada.read("/settings")).tokens.find((each) => each.name === "Reader");
+		listed = (await ada.read("/api/settings")).tokens.find((each) => each.name === "Reader");
 		assert.match(listed.last_used, /^\d{4}-\d{2}-\d{2}T/);
 		const page = await ada.get("/settings");
 		page.dom.getByRole("button", { name: "Revoke Reader" });
 
 		// Without JavaScript, a new token comes back to the page in its flash, and is shown there once.
-		const shown = await ada.post("/settings", { name: "Laptop", write: "on" });
+		const shown = await ada.post("/api/settings", { name: "Laptop", write: "on" });
 		assert.equal(shown.status, 303);
 		const fresh = JSON.parse(ada.flash.body).token;
 		const landed = await shown.follow();
 		assert.equal(landed.dom.getByLabelText("Your new token").attr("value"), fresh);
 		assert.ok(!(await ada.get("/settings")).text.includes(fresh), "once only: the next page hasn't it");
-		await ada.post("/settings", { name: " " });
+		await ada.post("/api/settings", { name: " " });
 		assert.deepEqual([ada.flash.status, ada.flash.body], [400, "Give the token a name, to know it by later."]);
 
 		// Revoked: gone, and refused from then on.
 		await ada.get("/settings");
-		const id = (await ada.read("/settings")).tokens.find((each) => each.name === "Reader").id;
-		assert.equal((await ada.post("/settings/revoke", { id })).status, 303);
+		const id = (await ada.read("/api/settings")).tokens.find((each) => each.name === "Reader").id;
+		assert.equal((await ada.post("/api/settings/revoke", { id })).status, 303);
 		assert.equal((await reader.json("/api/notes", undefined, "GET")).status, 401);
-		assert.ok(!(await ada.read("/settings")).tokens.some((each) => each.name === "Reader"));
+		assert.ok(!(await ada.read("/api/settings")).tokens.some((each) => each.name === "Reader"));
 	});
 
 	test("one person never reaches another's notes: not on a page, not in the API, not with a token", async () => {
@@ -374,18 +374,18 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 			missing.dom.getByRole("heading", { name: "There's no page here" });
 			missing.dom.getByText("The note may have been deleted, or the address is wrong.");
 		}
-		assert.equal((await ada.json(`/notes/${theirs}`, undefined, "GET")).status, 404);
+		assert.equal((await ada.json(`/api/notes/${theirs}`, undefined, "GET")).status, 404);
 		await ada.get("/");
-		await ada.post(`/notes/${theirs}`, { action: "archive" });
+		await ada.post(`/api/notes/${theirs}`, { action: "archive" });
 		assert.equal(ada.flash.status, 404);
-		await ada.post(`/notes/${theirs}/edit`, { title: "Mine now", body: "", tags: "" });
+		await ada.post(`/api/notes/${theirs}/edit`, { title: "Mine now", body: "", tags: "" });
 		assert.equal(ada.flash.status, 404);
-		assert.ok(!(await ada.read("/")).notes.some((note) => note.id === theirs));
+		assert.ok(!(await ada.read("/api")).notes.some((note) => note.id === theirs));
 
 		// Search: Ada's own note mentions the telemetry dashboard; Bo's isn't found.
 		const found = (await ada.json("/api/search", { query: "telemetry" })).json();
 		assert.deepEqual(found.map((note) => note.title), ["One-to-one with Bo"]);
-		assert.ok(!(await ada.read("/")).tags.some((tag) => tag.name === "climbing"));
+		assert.ok(!(await ada.read("/api")).tags.some((tag) => tag.name === "climbing"));
 
 		// The API, with Ada's token.
 		const api = bearer(app, await makeToken(ada, "Isolation"));
@@ -403,7 +403,7 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 		const bosToken = await makeToken(bo, "Bo's");
 		const [{ id: bosTokenId }] = await db.sql`select cast(id as text) as id from tokens where hash = ${sha256(bosToken)}`;
 		await ada.get("/settings");
-		await ada.post("/settings/revoke", { id: bosTokenId });
+		await ada.post("/api/settings/revoke", { id: bosTokenId });
 		assert.equal(ada.flash.status, 404);
 		assert.equal((await bearer(app, bosToken).read("/api/me")).email, "bo@example.com");
 
@@ -429,20 +429,20 @@ describe("Notes over HTTP", { skip: noDatabase }, () => {
 	test("sign-in mail is limited for each address: five, then a refusal (a plain form's on its page)", async () => {
 		const visitor = app.client();
 		await visitor.get("/sign-in");
-		for (let sent = 0; sent < 5; sent++) assert.equal((await visitor.submit("/sign-in", { email: "gus@example.com", then: "/" })).status, 200);
-		const limited = await visitor.submit("/sign-in", { email: "GUS@example.com", then: "/" });
+		for (let sent = 0; sent < 5; sent++) assert.equal((await visitor.submit("/api/sign-in", { email: "gus@example.com", then: "/" })).status, 200);
+		const limited = await visitor.submit("/api/sign-in", { email: "GUS@example.com", then: "/" });
 		assert.equal(limited.status, 429);
 		assert.match(limited.headers.get("retry-after"), /^\d+$/);
 		// Without JavaScript the form goes back to its page, as any refusal does: the 429 and when to
 		// try again under the form, the address typed still in it.
 		await visitor.get("/sign-in");
-		const posted = await visitor.post("/sign-in", { email: "gus@example.com", then: "/" });
+		const posted = await visitor.post("/api/sign-in", { email: "gus@example.com", then: "/" });
 		assert.equal(posted.status, 303);
 		assert.equal(visitor.flash.status, 429);
 		const back = await posted.follow();
 		assert.match(back.dom.getByRole("alert").text, /^Too many requests: try again in \d+ s\.$/);
 		assert.equal(back.dom.getByLabelText("Email address").attr("value"), "gus@example.com");
-		assert.equal((await visitor.submit("/sign-in", { email: "hal@example.com", then: "/" })).status, 200, "another address isn't counted with it");
+		assert.equal((await visitor.submit("/api/sign-in", { email: "hal@example.com", then: "/" })).status, 200, "another address isn't counted with it");
 		const sent = (await app.mail()).filter((message) => message.to === "gus@example.com");
 		assert.equal(sent.length, 5);
 	});

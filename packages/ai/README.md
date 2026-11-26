@@ -37,9 +37,9 @@ never the API itself.
    ```
 
 2. Give the server an API key (console.anthropic.com): `ANTHROPIC_API_KEY`, in the environment or
-   in a `.env` where the server starts, which it reads as it starts (D-088). Outside `--dev` the
-   server doesn't start without one; under `--dev` (as `rocx dev` starts it) it starts, and each call
-   answers `NoKey`.
+   in the file `--env-file` names (`rocx dev` names the `.env` where it runs; D-088, D-098).
+   Outside `--dev` the server doesn't start without one; under `--dev` (as `rocx dev` starts it) it
+   starts, and each call answers `NoKey`.
 
 3. The model is `claude-opus-5-5`, and `claude-haiku-5-5` under `--dev`, where answers should
    come fast and cost little. `ANTHROPIC_MODEL`, or the plugin's `model`, names another for both;
@@ -327,7 +327,7 @@ a request, the API runs it again on the model it names for that kind of refusal,
 ## Trying it against the API
 
 `example/test/ai.test.mjs` never asks the API. To try the example against it, put your key in a
-`.env` where you start it (the server reads it as it starts, D-088; `.env` is gitignored):
+`.env` where you run `rocx dev`, which gives it to the server (D-098; `.env` is gitignored):
 
 ```sh
 echo 'ANTHROPIC_API_KEY=sk-ant-…' >> .env

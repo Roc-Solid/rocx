@@ -64,15 +64,15 @@ Archived := [].{
 	view! = |{ card!, board }| {
 		# Its card's: a row per card id, so the id read once is meant.
 		at = { board: board, card: untrack!(|| card!().id) }
-		restore! = use_action!(Api.post_b_board_cards_card_archive(at))
-		delete! = use_action!(Api.post_b_board_cards_card_delete(at))
+		restore! = use_action!(Api.post_api_b_board_cards_card_archive(at))
+		delete! = use_action!(Api.post_api_b_board_cards_card_delete(at))
 		<li class="archived">
 			<span class="title">{card!().title}</span>
-			<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_archive(at))} on:submit={|| restore!({ archived: "false" })}>
+			<form method="post" action={Endpoint.url_of(Api.post_api_b_board_cards_card_archive(at))} on:submit={|| restore!({ archived: "false" })}>
 				<input type="hidden" name="archived" value="false" />
 				<button type="submit" aria-label={"Bring back “${card!().title}”"}>Bring back</button>
 			</form>
-			<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_delete(at))} on:submit={|| delete!({})}>
+			<form method="post" action={Endpoint.url_of(Api.post_api_b_board_cards_card_delete(at))} on:submit={|| delete!({})}>
 				<button type="submit" class="danger" aria-label={"Delete “${card!().title}” for good"}>Delete</button>
 			</form>
 		</li>

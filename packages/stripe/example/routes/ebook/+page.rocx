@@ -1,14 +1,17 @@
 import pf.Html
 import pf.Endpoint
 import ../../Generated/Api
+import ../../Middlewares
 
-## The e-book: for those who bought it, as its `+server.roc`'s middleware (`Middlewares.readers`)
-## says. Anyone else goes to the pricing page.
+## The e-book: for those who bought it, as its middleware (`Middlewares.readers`) says. Anyone
+## else goes to the pricing page.
 meta = { title: "The e-book" }
 
-## The book (`GET /ebook`).
+middleware = Middlewares.readers
+
+## The book (`GET /api/ebook`).
 book! : {} => { title : Str, chapters : List(Str) }
-book! = |{}| Endpoint.get!(Api.get_ebook({}))
+book! = |{}| Endpoint.get!(Api.get_api_ebook({}))
 
 view! = |_| {
 	book = book!({})

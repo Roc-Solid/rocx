@@ -5,11 +5,13 @@
 ## builds from the program's migrations: a SQLite or Turso file it removes after, or a Postgres
 ## database it makes on the server `--database-url` (DATABASE_URL) names and drops after, unless
 ## `--sql-database URL` (ROCX_SQL_DATABASE) names one it may migrate. What follows `--` goes to the
-## server as it is. Then rocx writes a check app beside a copy of the app (build/sql/check): a
-## `DbCheck.Rows(T, Tags)` for each `Db.all!` or `Db.one!` whose row type it read, its string the
-## statement's columns, which packages/dbcheck checks when `roc check` compiles it. Exits 1 when the engine
-## refuses a statement, a call's parameters don't match it, or a row doesn't fit its columns, and
-## when the check app doesn't compile (so no row would be checked), saying why.
+## server as it is: `-- --env-file .env` for the settings there, as the server reads no file it
+## isn't given (D-098; `rocx dev` gives its check the one it gives its server). Then rocx writes a
+## check app beside a copy of the app (build/sql/check): a `DbCheck.Rows(T, Tags)` for each
+## `Db.all!` or `Db.one!` whose row type it read, its string the statement's columns, which
+## packages/dbcheck checks when `roc check` compiles it. Exits 1 when the engine refuses a
+## statement, a call's parameters don't match it, or a row doesn't fit its columns, and when the
+## check app doesn't compile (so no row would be checked), saying why.
 ##
 ## `rocx dev` runs it after each build with `--server` (the server it built, none built here) and
 ## `--quiet` (nothing said when there is nothing to check).

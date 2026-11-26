@@ -1,24 +1,27 @@
 import pf.Html
 import pf.Endpoint
+import ../../Middlewares
 import ../../Generated/Api
 import ../../Generated/Paths
 import ../../Ui/Note
 import ../../Ui/Button
 import ../../Ui/PageHero
 
-## Members only: `Middlewares.member`, which `+server.roc` names, runs before this page too (a page
-## that names no middleware runs behind its `+server.roc`'s), and hands on who the member is.
+## Members only: `Middlewares.member` runs before this page, as before its endpoint
+## (`routes/api/members/+server.roc`, which names it too), and hands on who the member is.
+middleware = Middlewares.member
+
 meta = {
 	title: "Members",
 	description: "A page behind middleware: only members see it.",
 	toc: [],
 }
 
-## Who the member is: this path's own endpoint (`GET /members`, for JSON), behind the same
+## Who the member is: the page's endpoint (`GET /api/members`, for JSON), behind the same
 ## middleware, which read the cookie and handed on the name. The server answers it as it renders
 ## the page, and the page carries the answer.
 member! : {} => Str
-member! = |{}| Endpoint.get!(Api.get_members({})).member
+member! = |{}| Endpoint.get!(Api.get_api_members({})).member
 
 view! = |_| {
 	member = member!({})
@@ -28,12 +31,12 @@ view! = |_| {
 			title={"Welcome, ${member}"}
 		>
 			Only members see this page. Before it rendered, <code>Middlewares.member</code> read your
-			<code>member</code> cookie; without one, it would have sent you to join. The page then read its own
-			endpoint, <code>GET {Paths.members}</code>, which runs behind the same middleware and answered
-			with the name it handed on. A script that asks that endpoint for JSON gets the same answer, or a
-			401 without the cookie.
+			<code>member</code> cookie; without one, it would have sent you to join. The page then read its
+			endpoint, <code>GET {Endpoint.url_of(Api.get_api_members({}))}</code>, which runs behind the same
+			middleware, named in its own file, and answered with the name it handed on. A script that asks that endpoint for JSON gets
+			the same answer, or a 401 without the cookie.
 		</PageHero>
-		<form method="post" action={Endpoint.url_of(Api.post_members_leave({}))}>
+		<form method="post" action={Endpoint.url_of(Api.post_api_members_leave({}))}>
 			<Button submit>Leave</Button>
 		</form>
 		<Note>

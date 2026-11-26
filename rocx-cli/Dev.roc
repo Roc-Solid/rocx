@@ -259,6 +259,9 @@ Dev := [].{
 			Off => {}
 		}
 		lan_host = if ($lan) ["--host", "0.0.0.0"] else []
+		# The `.env` here, if there is one, for the server and the check's (D-098): the server reads
+		# none it isn't given.
+		server_flags = $passed.concat(Hosts.env_file!($passed))
 		Dev.run!({
 			label: "rocx dev",
 			base: dir,
@@ -266,13 +269,13 @@ Dev := [].{
 			skip: ["build", "dist", "Generated", "node_modules", "static"],
 			edited!: |path| Dev.app_edit!(path),
 			build!: |{}| Dev.build_app!({ dir, shown, main, client, server, tools, phone }),
-			serve: Cmd.new(server).args(["--port", $port, "--dev"].concat(lan_host).concat(statics).concat($passed)),
+			serve: Cmd.new(server).args(["--port", $port, "--dev"].concat(lan_host).concat(statics).concat(server_flags)),
 			started!: |{}|
 				match phone {
 					On(found) => Dev.phone_publish!(found)
 					Off => {}
 				},
-			check: Run(Cmd.new(Fs.join([rocx, "bin", "rocx"])).args(["check", "--sql", dir, "--server", server, "--quiet", "--"].concat($passed))),
+			check: Run(Cmd.new(Fs.join([rocx, "bin", "rocx"])).args(["check", "--sql", dir, "--server", server, "--quiet", "--"].concat(server_flags))),
 		})
 	}
 

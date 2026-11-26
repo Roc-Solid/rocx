@@ -3,27 +3,31 @@ import pf.Endpoint
 import pf.Server
 import pf.Router exposing [use_submission!]
 import qr.QrCode
+import ../../Middlewares
 import ../../Generated/Api
 
 ## Your account: the address you sign in with, every browser you are signed in on (with a way to
 ## sign out of all of them), and two-factor sign-in: set up with an authenticator app's QR code,
-## turned on with its first code (the recovery codes shown once), turned off with a code. Only
-## signed-in people get here: `+server.roc`, which answers what the page reads and posts, names
-## `Middlewares.signed_in`, and a page that names no middleware runs behind its `+server.roc`'s. It
-## sends anyone else to sign in, and back here after. The two-factor forms post to `two-factor/`.
+## turned on with its first code (the recovery codes shown once), turned off with a code. What it
+## reads and posts is under `routes/api/account/`: the account at /api/account, and the two-factor
+## forms' posts at /api/account/two-factor.
 meta = { title: "Your account" }
 
-## The account, as `GET /account` says.
+## Only signed-in people get here, as only they get the page's data: anyone else goes to sign in,
+## and back here after.
+middleware = Middlewares.signed_in
+
+## The account, as `GET /api/account` says.
 account! : {} => { email : Str, sessions : List({ id : Str, current : Bool, started : Str }), two_factor : { state : Str, secret : Str, uri : Str, recovery_codes : U64 } }
-account! = |{}| Endpoint.get!(Api.get_account({}))
+account! = |{}| Endpoint.get!(Api.get_api_account({}))
 
 view! = |_| {
 	me = account!({})
 	# Read where it is shown, so it is read again after each of the two-factor forms.
 	two_factor! = || account!({}).two_factor
-	setting_up = use_submission!(Api.post_account_two_factor({}))
-	confirming = use_submission!(Api.post_account_two_factor_confirm({}))
-	stopping = use_submission!(Api.post_account_two_factor_off({}))
+	setting_up = use_submission!(Api.post_api_account_two_factor({}))
+	confirming = use_submission!(Api.post_api_account_two_factor_confirm({}))
+	stopping = use_submission!(Api.post_api_account_two_factor_off({}))
 	<>
 		<section class="who">
 			<h1>Your account</h1>
@@ -39,7 +43,7 @@ view! = |_| {
 					</li>
 				)}
 			</ul>
-			<form method="post" action={Endpoint.url_of(Api.post_account({}))}>
+			<form method="post" action={Endpoint.url_of(Api.post_api_account({}))}>
 				<button type="submit">Sign out everywhere</button>
 			</form>
 		</section>
@@ -57,7 +61,7 @@ view! = |_| {
 			}}
 			{match two_factor!().state {
 				"on" =>
-					<form method="post" action={Endpoint.url_of(Api.post_account_two_factor_off({}))}>
+					<form method="post" action={Endpoint.url_of(Api.post_api_account_two_factor_off({}))}>
 						<p>On: signing in asks for the code your authenticator app shows. You have {two_factor!().recovery_codes} recovery codes left.</p>
 						<label for="off-code">To turn it off, a code from your app or a recovery code</label>
 						<input id="off-code" name="code" required autocomplete="one-time-code" autocapitalize="off" spellcheck="false" />
@@ -68,7 +72,7 @@ view! = |_| {
 						}}
 					</form>
 				"pending" =>
-					<form method="post" action={Endpoint.url_of(Api.post_account_two_factor_confirm({}))}>
+					<form method="post" action={Endpoint.url_of(Api.post_api_account_two_factor_confirm({}))}>
 						<p>Scan this with your authenticator app, or type in the key below it. Then enter the code the app shows.</p>
 						<div class="qr">
 							<QrCode text={two_factor!().uri} label="A QR code for your authenticator app" />
@@ -83,7 +87,7 @@ view! = |_| {
 						}}
 					</form>
 				_ =>
-					<form method="post" action={Endpoint.url_of(Api.post_account_two_factor({}))}>
+					<form method="post" action={Endpoint.url_of(Api.post_api_account_two_factor({}))}>
 						<p>Off. Turned on, signing in asks for a code from an authenticator app on your phone too, so a stolen email account isn't enough to get in.</p>
 						<button type="submit" disabled?={setting_up.pending!()}>Set up</button>
 					</form>

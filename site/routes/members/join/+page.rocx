@@ -20,7 +20,7 @@ meta = {
 }
 
 view! = |_| {
-	join = Api.post_members_join({})
+	join = Api.post_api_members_join({})
 	submission = use_submission!(join)
 	<>
 		<NoHydration>
@@ -29,7 +29,7 @@ view! = |_| {
 				title="Join"
 			>
 				Members see a page you can't see yet. Pick a name: the form posts it to an endpoint,
-				<code>POST /members/join</code>, which sets a <code>member</code> cookie and sends you on to the
+				<code>POST /api/members/join</code>, which sets a <code>member</code> cookie and sends you on to the
 				members' page. It is a plain HTML form, so it works without JavaScript too.
 			</PageHero>
 		</NoHydration>

@@ -37,14 +37,14 @@ view! = |_|
 					read where the code that needs it is.
 				</li>
 				<li>
-					A <code>.env</code> file in the directory the server starts in is read into its environment as it
-					starts, before anything else: <code>ANTHROPIC_API_KEY=sk-ant-…</code> there is read by
-					<code>Env.var!</code>, and by every plugin, as if the shell had exported it. A variable the
-					environment already has keeps its value, so a deployment's own settings win.
-					<code>--env-file</code> (or <code>ROCX_ENV_FILE</code>) names another file; the tests' servers start with
-					<code>ROCX_ENV_FILE</code> empty, so a developer's <code>.env</code> never reaches them. Lines are <code>NAME=value</code> (or <code>export
-					NAME=value</code>), with <code>#</code> comments and quoted values; a line that isn't one stops the
-					server, saying which. The log names what it set, never a value. Keep the file out of git.
+					The file <code>--env-file</code> names is read into the server's environment as it starts, before
+					anything else: <code>ANTHROPIC_API_KEY=sk-ant-…</code> there is read by <code>Env.var!</code>, and
+					by every plugin, as if the shell had exported it. <code>rocx dev</code> names the <code>.env</code>
+					in the folder it runs in. Without the flag no file is read, so a test's server, CI's and
+					production's have only the environment they were given. A variable the environment already has
+					keeps its value. Lines are <code>NAME=value</code> (or <code>export NAME=value</code>), with
+					<code>#</code> comments and quoted values; a line that isn't one stops the server, saying which.
+					The log names what it set, never a value. Keep the file out of git.
 				</li>
 				<li>
 					<code>Env.public_url!({"{}"})</code> is where the app is, for a link in an email or another

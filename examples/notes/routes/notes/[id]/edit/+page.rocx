@@ -6,28 +6,38 @@ import pf.Router exposing [use_submission!]
 import ../../../../Note
 import ../../../../Pages
 import ../../../../Generated/Api
+import ../../../../Middlewares
 import ../../../../Ui/Editor
 import ../../../../Ui/Topbar
 
-## A note's editor: its fields filled from the note (`GET /notes/<id>`, the note page's endpoint),
-## in a form that posts to `/notes/<id>/edit`. What was typed survives a refusal: the fields are
+## A note's editor: its fields filled from the note (`GET /api/notes/<id>`, the JSON API's), in a
+## form that posts to `/api/notes/<id>/edit`. What was typed survives a refusal: the fields are
 ## filled from the submission then, rather than the note.
 meta = { title: "Edit · Notes" }
 
+middleware = Middlewares.signed_in
+
 ## A note that isn't there, or isn't yours, is the app's error page, a 404 (`get!` fails the page).
-view! = |{ params }| <Editing id={params.id} opened={Endpoint.get!(Api.get_notes_id({ id: params.id }))} />
+view! = |{ params }| <Editing id={params.id} opened={opened!(params.id)} />
+
+## The note, and who is editing it (`GET /api/me`), for the bar.
+opened! : Str => Pages.Opened
+opened! = |id| {
+	me = Endpoint.get!(Api.get_api_me({}))
+	{ email: me.email, note: Endpoint.get!(Api.get_api_notes_id({ id: id })) }
+}
 
 ## The editor, once the note is found.
 Editing := [].{
 	view! : { id : Str, opened : Pages.Opened } => Html
 	view! = |{ id, opened }| {
-		saving = use_submission!(Api.post_notes_id_edit({ id: id }))
+		saving = use_submission!(Api.post_api_notes_id_edit({ id: id }))
 		typed! = |name, saved| if (saving.error!().is_ok()) saving.field!(name) else saved
 		<div>
 			<Title>{"Editing ${opened.note.title} · Notes"}</Title>
 			{Topbar.view({ email: opened.email, query: "" })}
 			<main id="main" class="page">
-				<form method="post" action={Endpoint.url_of(Api.post_notes_id_edit({ id: id }))} class="sheet">
+				<form method="post" action={Endpoint.url_of(Api.post_api_notes_id_edit({ id: id }))} class="sheet">
 					<Editor title={typed!("title", opened.note.title)} body={typed!("body", opened.note.body)} tags={typed!("tags", Note.tags_text(opened.note.tags))} />
 					{match saving.error!() {
 						Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>

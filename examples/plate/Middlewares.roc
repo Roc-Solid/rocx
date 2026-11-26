@@ -16,8 +16,9 @@ Middlewares := [].{
 
 	## When `PLATE_PASSWORD` is set, packages/auth's `Auth.required` (`signed_in`): a browser asking
 	## for a page without a session is sent to sign in (`/sign-in?then=…`), and back after; anything
-	## else is refused (401). The sign-in page, the auth plugin's endpoints (signing out) and the
-	## runtime's files are for anyone. Without a password, everything is.
+	## else is refused (401). The sign-in page and its endpoint (`/api/sign-in`), the auth plugin's
+	## endpoints (signing out) and the runtime's files are for anyone. Without a password, everything
+	## is.
 	gate : Middleware({}, {})
 	gate = Middleware.make(
 		|request, context, next!|
@@ -34,7 +35,7 @@ Middlewares := [].{
 
 	## The paths anyone may ask for.
 	is_public : Str -> Bool
-	is_public = |path| path == "/sign-in" or path.starts_with("/auth/") or path.starts_with("/rocx/") or path.starts_with("/__")
+	is_public = |path| path == "/sign-in" or path == "/api/sign-in" or path.starts_with("/auth/") or path.starts_with("/rocx/") or path.starts_with("/__")
 
 	## Logs each answer: its method, path, status and time (`Log.info!`), and what it said when it
 	## failed (`Log.error!`): the plain message the client got; why the database failed is logged
@@ -56,6 +57,7 @@ Middlewares := [].{
 }
 
 expect Middlewares.is_public("/sign-in")
+expect Middlewares.is_public("/api/sign-in")
 expect Middlewares.is_public("/rocx/start.js")
 expect !Middlewares.is_public("/")
 expect !Middlewares.is_public("/sign-in-elsewhere")

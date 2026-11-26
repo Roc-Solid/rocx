@@ -1,15 +1,17 @@
 import pf.Html
 import pf.Endpoint
 import ../../Generated/Api
+import ../../Middlewares
 
 ## The account: the subscription and what it costs to change it (Stripe's Customer Portal, from a
-## button), the e-books bought, and signing out. Signed in only: the page runs behind its
-## `+server.roc`'s middleware.
+## button), the e-books bought, and signing out. Signed in only (`Middlewares.signed_in`).
 meta = { title: "Your account" }
 
-## The account, as `GET /account` says.
+middleware = Middlewares.signed_in
+
+## The account, as `GET /api/account` says.
 account! : {} => { email : Str, plan : Str, status : Str, until : Str, ending : Bool, customer : Bool, orders : List({ id : Str, what : Str, day : Str }) }
-account! = |{}| Endpoint.get!(Api.get_account({}))
+account! = |{}| Endpoint.get!(Api.get_api_account({}))
 
 ## What the page says of a subscription's period.
 period : Bool -> Str
@@ -27,7 +29,7 @@ view! = |_| {
 			<p><strong>{me.plan}</strong>, <span class="status">{me.status}</span>. {period(me.ending)} {me.until}.</p>
 		}}
 		{if me.customer {
-			<form method="post" action="/billing/portal">
+			<form method="post" action="/api/billing/portal">
 				<button type="submit">Manage billing</button>
 			</form>
 		}}

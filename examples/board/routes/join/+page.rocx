@@ -12,14 +12,14 @@ import ../../Ui/Avatar
 ## has loaded, and without it. `?then=` says where to go after.
 meta = { title: "Join · Board" }
 
-## Everyone who has joined (`GET /join`). Its type is said here: in the browser's copy of the app,
+## Everyone who has joined (`GET /api/join`). Its type is said here: in the browser's copy of the app,
 ## an endpoint has none.
 people! : {} => List(Board.Person)
-people! = |{}| Endpoint.get!(Api.get_join({}))
+people! = |{}| Endpoint.get!(Api.get_api_join({}))
 
 view! = |_| {
 	then = Board.after_join(then_in(Router.location!({}).query))
-	joining = use_submission!(Api.post_join({}))
+	joining = use_submission!(Api.post_api_join({}))
 	<main class="join">
 		<h1><span class="mark" aria-hidden="true">▲</span> Board</h1>
 		<p class="lead">Who are you? Pick a name and a colour: that's you on every board, for everyone else to see.</p>
@@ -29,7 +29,7 @@ view! = |_| {
 				<ul>
 					{...people!({}).map(|person|
 						<li key={person.id}>
-							<form method="post" action={Endpoint.url_of(Api.post_join({}))}>
+							<form method="post" action={Endpoint.url_of(Api.post_api_join({}))}>
 								<input type="hidden" name="name" value={person.name} />
 								<input type="hidden" name="color" value={person.color} />
 								<input type="hidden" name="then" value={then} />
@@ -43,7 +43,7 @@ view! = |_| {
 				</ul>
 			</section>
 		}}
-		<form class="new" method="post" action={Endpoint.url_of(Api.post_join({}))}>
+		<form class="new" method="post" action={Endpoint.url_of(Api.post_api_join({}))}>
 			<h2>Someone new</h2>
 			<input type="hidden" name="then" value={then} />
 			<label for="join-name">Your name</label>

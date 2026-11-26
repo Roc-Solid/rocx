@@ -1,10 +1,10 @@
-## What the status page shows, and its JSON says (`GET /` with `accept: application/json`): the
+## What the status page shows, and its JSON says (`GET /api`): the
 ## shapes, on no platform, so the server builds them (Status.roc) and the browser's components read
 ## them. Moments are ISO text in UTC (`Days.moment` shows them); uptimes are text already
 ## (`99.95%`, `—`), worked out by `Uptime.percent`.
 Report := [].{
 
-	## What the live channel says (`routes/live/+server.roc`, `News.tell!`): which monitor, and what
+	## What the live channel says (`routes/api/live/+server.roc`, `News.tell!`): which monitor, and what
 	## happened: `up` or `down` (a check), `opened` or `closed` (its incident), `paused`, `resumed`
 	## or `updated` (the admin). Here, not in News, which imports `Generated/Api`: Api imports the
 	## module this type is in, so it can't be one that imports Api (D-037).

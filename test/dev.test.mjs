@@ -3,7 +3,9 @@
 // Chromium), builds again and restarts on a save, says where a mistake is in the .rocx file and
 // keeps serving the build before, serves a build with warnings alone (saying them), says nothing of
 // its SQL (it has none: test/check-sql.test.mjs tests the check rocx dev runs), and stops its
-// server when it is stopped. Needs the toolchain (`just setup`) and Chromium (web/test/browser.mjs).
+// server when it is stopped. It runs in the app's folder, whose `.env` it gives the server (D-098:
+// the server reads none it isn't given). Needs the toolchain (`just setup`) and Chromium
+// (web/test/browser.mjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -48,15 +50,17 @@ async function until(check, seconds, what) {
 	}
 }
 
-test("rocx dev: writes main.roc, serves the page and the endpoint, rebuilds on a save, says where a mistake is, serves a build with warnings, and stops its server", { skip, timeout: 15 * 60 * 1000 }, async () => {
+test("rocx dev: writes main.roc, gives the server the .env where it runs, serves the page and the endpoint, rebuilds on a save, says where a mistake is, serves a build with warnings, and stops its server", { skip, timeout: 15 * 60 * 1000 }, async () => {
 	const dir = realpathSync(mkdtempSync(join(tmpdir(), "rocx-dev-")));
 	cpSync(join(root, "examples", "hello"), dir, { recursive: true, filter: (path) => !/\/(Generated|build)$/.test(path) });
 	rmSync(join(dir, "main.roc"));
+	writeFileSync(join(dir, ".env"), "ROCX_DEV_SETTING=from .env\n");
 	const port = await freePort();
 	const url = `http://127.0.0.1:${port}`;
 	// In a process group of its own, as a terminal runs it, so Ctrl-C (SIGINT to the group) reaches
 	// bin/rocx, the Node beneath it and the server at once.
-	const dev = spawn(rocxBinary(), ["dev", dir, "--port", String(port)], { stdio: ["ignore", "pipe", "pipe"], detached: true });
+	// Run where the app is, as Getting started does: the .env there, not this checkout's.
+	const dev = spawn(rocxBinary(), ["dev", dir, "--port", String(port)], { cwd: dir, stdio: ["ignore", "pipe", "pipe"], detached: true });
 	let said = "";
 	dev.stdout.on("data", (chunk) => (said += chunk));
 	dev.stderr.on("data", (chunk) => (said += chunk));
@@ -75,6 +79,7 @@ test("rocx dev: writes main.roc, serves the page and the endpoint, rebuilds on a
 		// The program it wrote, on the clone's server platform; the page, server-rendered; the endpoint.
 		const main = readFileSync(join(dir, "main.roc"), "utf8");
 		assert.match(said, /rocx dev: wrote .*main\.roc, the app's program/);
+		assert.match(said, /rocx server: settings read.*"file":"\.env".*"set":"ROCX_DEV_SETTING"/, "the .env where rocx dev runs, given to the server");
 		assert.match(main, /^app \[program\] \{ pf: platform "[^"]*server\/platform\/main\.roc" \}$/m);
 		assert.match(await page(), /<h1>Hello, Roc Solid<\/h1> <button>Clicked <!--x-->0<!--\/x--> times<\/button>/);
 		assert.match(await page(), /<script src="\/__reload\.js" data-rocx><\/script><\/body>/, "under --dev: the page reloads when the server is back");

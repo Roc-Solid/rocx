@@ -127,7 +127,7 @@ view! = |_|
 				</Feature>
 				<Feature title="Settings" href={Paths.platform_settings}>
 					<p>
-						Environment variables (and a <code>.env</code> file, read as the server starts), the app's
+						Environment variables (and a file of them, the <code>.env</code> <code>rocx dev</code> gives the server), the app's
 						public URL, and whether the server runs in development mode.
 					</p>
 				</Feature>

@@ -7,10 +7,10 @@ import Host
 Env := [].{
 
 	## The environment variable `name`, as the server was started with it; `NotFound` when it has
-	## none. A `.env` file in the directory the server starts in (or the file `--env-file`, or else
-	## `ROCX_ENV_FILE`, names; `ROCX_ENV_FILE=` for none, as the tests' servers start) is
-	## read into the environment first, so `ANTHROPIC_API_KEY=…` there is read here as if the shell
-	## had exported it; a variable the environment already has keeps its value (D-088).
+	## none. The file `--env-file` names (`rocx dev` names the `.env` where it runs) is read into the
+	## environment first, so `ANTHROPIC_API_KEY=…` there is read here as if the shell had exported
+	## it; a variable the environment already has keeps its value. Without the flag no file is read,
+	## a `.env` beside the server neither (D-088, D-098).
 	var! : Str => Try(Str, [NotFound])
 	var! = |name|
 		match Host.env_var!(name) {

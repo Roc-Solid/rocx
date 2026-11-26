@@ -28,7 +28,7 @@ meta = { title: "Host" }
 ## answer coming in), and the next one flies in as the last fades (`transition:in`, `transition:out`).
 view! = |{ params }| {
 	code = params.code
-	seat = Endpoint.get!(Api.get_rooms_code({ code: code }))
+	seat = Endpoint.get!(Api.get_api_rooms_code({ code: code }))
 	room = Feed.follow!(code, seat.view)
 	current! = room.view!
 	hosting = seat.who == Host

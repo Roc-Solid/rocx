@@ -4,13 +4,13 @@ import pf.Server
 import pf.Router exposing [use_submission!]
 import ../Generated/Api
 
-## The form that subscribes an address to alerts (`POST /subscribe`). With the runtime it is sent
+## The form that subscribes an address to alerts (`POST /api/subscribe`). With the runtime it is sent
 ## with `fetch` and says how it went in place; without JavaScript it posts, and the server sends the
 ## browser back here with a flash, which says the same (`use_submission!` reads either).
 SubscribeForm := [].{
 	view! : {} => Html
 	view! = |{}| {
-		subscribe = Api.post_subscribe({})
+		subscribe = Api.post_api_subscribe({})
 		submission = use_submission!(subscribe)
 		<form class="subscribe" method="post" action={Endpoint.url_of(subscribe)}>
 			<label for="subscribe-email">Get an email when an incident opens or closes</label>

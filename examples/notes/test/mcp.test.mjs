@@ -86,7 +86,7 @@ describe("Notes over MCP", { skip: noDatabase }, () => {
 		assert.deepEqual((await call(writer, "search_notes", { query: "rye" })).result.map((each) => [each.title, each.archived]), [["Ideas from the call", true]]);
 
 		// What a page shows is what the agent wrote.
-		assert.equal((await ada.read(`/notes/${made.id}`)).note.body, "- Try rye flour\n\n- Ask about the oven");
+		assert.equal((await ada.read(`/api/notes/${made.id}`)).body, "- Try rye flour\n\n- Ask about the oven");
 		const [row] = await db.sql`select n.title from notes n join people p on p.id = n.person_id where n.id = ${made.id} and p.email = 'ada@example.com'`;
 		assert.equal(row.title, "Ideas from the call");
 	});

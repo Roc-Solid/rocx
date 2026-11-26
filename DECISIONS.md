@@ -5374,7 +5374,9 @@ would need its tag never to be decided off.
 ## D-088 The server reads `.env` as it starts
 
 **Status.** Built (2026-11-26), the user's call: the platform loads `.env` itself, so reading a
-setting (`Env.var!`) works with a key kept in the file, for the app and for every plugin.
+setting (`Env.var!`) works with a key kept in the file, for the app and for every plugin. Changed by
+D-098 the same day: the server reads only the file `--env-file` names, `rocx dev` names the `.env`
+where it runs, and `ROCX_ENV_FILE` is gone.
 
 **Context.** A key kept in `.env` beside the checkout (`ANTHROPIC_API_KEY` for packages/ai) reached
 nothing: no part of rocx read the file, so the shell had to export it. A function that read the
@@ -5555,7 +5557,7 @@ set.
 
 ## D-092 A path's params have the types their handlers give them
 
-**Status.** Built (2026-11-26).
+**Status.** Built (2026-11-26). Extended by D-101: a page may say its own (`Params : { id : I64 }`).
 
 **Context.** A handler's `params` were a record of strings (`params : { id : Str }`), so an app
 whose ids are numbers parsed them by hand in every handler, and answered `NotFound` itself for an id
@@ -5928,3 +5930,194 @@ early path isn't answered without the flag). An app without keys in `.env` unsub
 browsers at each restart of `rocx dev`.
 
 **Reversible:** yes: the needs back, the dev pair and the path out; `P256.generate!` stands alone.
+
+## D-098 The server reads a settings file only when `--env-file` names it
+
+**Status.** Built (2026-11-26), the user's call; changes D-088.
+
+**Context.** Under D-088 the server read `.env` in the directory it started in, by itself, and a
+server that must not (a test's) was started with `ROCX_ENV_FILE=` set but empty. Safety was the
+harness's to remember, and forgetting it said nothing. An app's own test harness, which starts the
+app's built server with an environment of its own (`PATH` and the settings each test wants), had
+never heard of the variable: from the app's folder, its servers read the developer's `.env`, so its
+tests ran with the developer's real OAuth keys, and the one that checks that nothing is configured
+without keys failed. A `DATABASE_URL` there would have pointed its servers at the developer's
+database. And a line of that `.env` the parser refuses would have stopped every one of them (exit 2),
+a test's server failing for a file it was never meant to read. D-088 counted a `.env` left beside a
+production server among its costs.
+
+**Options.**
+1. Keep D-088, and have every harness turn the file off: what failed.
+2. Read `.env` only under `--dev`: a test's server is often started with `--dev` (its dev sign-in,
+   its mailbox), so it would read it still.
+3. A test mode that skips the file (as Next.js skips `.env.local` under `NODE_ENV=test`): the harness
+   still has to say it is one.
+4. **Read a file only when one is named**, and have the commands of development name it (Node's and
+   Deno's `--env-file`).
+
+**Decision.** 4.
+
+- The host reads the file `--env-file FILE` names (`--env-file=FILE` too), which must be there, and
+  no other: without the flag nothing is read, a `.env` where the server starts neither. Its lines,
+  the environment winning, the log's line and exit 2 for a bad line or a missing file are D-088's.
+- **No variable names it.** `ROCX_ENV_FILE` is gone: a variable reaches every process started under
+  it, so one exported in a developer's shell would reach the tests' servers again. A flag is given
+  to one server.
+- **`rocx dev` names `.env`** in the folder it runs in, when there is one and what follows `--`
+  names no file (`Hosts.env_file!`), for its server and for the SQL check it runs after each build
+  (D-058), so both see the same `DATABASE_URL`. It looks once, as it starts. `rocx check --sql` on
+  its own names none (CI and the tests run it from the repository's root, beside a developer's
+  `.env`); `-- --env-file .env` gives it one.
+- The harnesses lose their `ROCX_ENV_FILE=` (the Justfile's test recipes, server/build.mjs's
+  `start`, packages/testing's `startServer`): there is nothing to turn off. test/dev.test.mjs runs
+  `rocx dev` in the app's folder, with a `.env` there, and checks that the server read it.
+
+**Why.** The safe way is the default, and forgetting costs a missing key in development, which the
+log already says (`off: no ANTHROPIC_API_KEY`), never a test or a deployment reading a file nobody
+gave it. A server started by hand, by a test, by CI or in production has the environment it was
+given and nothing else, as twelve-factor's config is; the one command that is development's asks for
+the file, as `node --env-file` does.
+
+**Costs.** `./build/server` started by hand reads no `.env`: `--env-file .env` asks. A `.env` made
+while `rocx dev` runs is read once it starts again. The docs say where the file is read: README,
+server/README, Env's doc comment, the template's README, packages/ai's, and the site's settings,
+server, platform and AI pages.
+
+**Reversible:** yes: the host reads `.env` when none is named again.
+
+## D-099 `rocx build --image`: a container image without a Dockerfile
+
+**Status.** Built (2026-11-26), the user's idea ("something like what `dotnet` does, where it has
+commands to build docker images").
+
+**Context.** An app went into a container by a Dockerfile of the app's own: `rocx build --release
+--target arm64musl`, then a base image (distroless's static, for a non-root user), the executable
+and the static files copied onto it, and `docker build` to make it. The executable is static (musl)
+and carries its TLS roots (webpki-roots), so the base added nothing but a user, and every app
+wrote the same few lines. .NET's SDK (`dotnet publish /t:PublishContainer`), Go's ko and Java's
+Jib write an image themselves: an image is files in a tar and three small JSON documents.
+
+**Decision.**
+
+- `rocx build <dir> --image <file.tar> [--tag name:tag] [--target arm64musl|x64musl]` builds the
+  release (`Release.made!`, into the app's `build/image/release`) and writes the image itself:
+  no Dockerfile, no base image, no Docker to build it. The target is this machine's processor's
+  Linux unless named; the name is the directory's, `:latest`, unless `--tag` gives one.
+- **One layer**, owned by root but for `/app/data`: `/app/server` (0755), `/app/static/` (as
+  `--release` lays it out), `/app/data/` owned by 65532 (the working directory's `data/`, a SQLite
+  or Turso app's `data/app.db`, where a volume goes), `/etc/passwd` and `/etc/group` naming root and
+  `nonroot` (65532, as distroless's), and `/tmp` (1777). Every file's time is 0.
+- **Its configuration**: user `65532:65532`, working directory `/app`, entrypoint `/app/server
+  --host 0.0.0.0` (with `--static /app/static` when the app serves files), `PORT=8080`, port 8080
+  exposed. Arguments to `docker run` go after the entrypoint's (`--dev`); settings are environment
+  variables, as for any release.
+- **The file** is an OCI image layout in a tar (`oci-layout`, `index.json`, `blobs/sha256/…`), the
+  index naming the image as containerd and Docker read a name, with `docker save`'s
+  `manifest.json` beside it for a Docker that reads no layout: `docker load -i` takes it, as do
+  podman and skopeo (`oci-archive:`), which can push it to a registry. The layer is gzipped by the
+  system's `gzip -n` (no name, no time); the digests are Roc's builtin SHA-256. The tar is
+  rocx's own (`Image.tar`: ustar, a path over 100 bytes split into its prefix).
+- test/image.test.mjs builds a small app's image, reads the file back (each blob's digest and size,
+  the configuration, the layer's diff_id, the files' modes and owners) and, where Docker answers,
+  loads it and fetches the app's page from the container.
+- Found on the way: on a large app the compiler crashed (SIGSEGV in lambda-set solving) building the
+  browser's wasm with `--specialize=yes`, so `--release`, `--static` and `--image` failed where
+  `rocx dev` (which doesn't specialize) built. Their browser's build now tries specialized first and,
+  when the compiler crashes (not when it refuses the program), builds without (`--specialize=no`,
+  boxy, as the server is) and says so (`Static.browser_build!`). On that app the boxy wasm was
+  2.0 MB raw, smaller than its dev build's 2.2.
+- And: a clone built its musl hosts with the release profile's debug info (`debug = 1`, for
+  backtraces under `rocx dev`), which a musl host never runs under; it was 140 MB of that app's
+  180 MB server. A musl host is now built without (`CARGO_PROFILE_RELEASE_DEBUG=0`, in
+  `Hosts.server_host!` and server/build.mjs), its symbols kept for a backtrace's names, as a
+  release's hosts are stripped (release/hosts.sh). The Mac host `rocx dev` runs keeps its debug info.
+
+**Why.** The image an app needs is the same for every app, and rocx already knows what goes in it.
+Nothing to write, nothing to keep in step, and no Docker on the machine that builds it.
+
+**Not chosen yet.** Pushing to a registry (`--push`, the registry's API with a token): skopeo, or
+`docker load` then `docker push`, does it now. A base image of the app's choosing, labels, and more
+than one layer (the executable apart from the static files, so a change to one sends only it).
+
+**Reversible:** yes: the command goes, and a Dockerfile does what it did.
+
+## D-100 A path is a page or an endpoint: a page's endpoints under `api/`
+
+**Status.** Built (2026-11-26), the user's call: "the blessed path to be 'endpoint or page per
+path, not both'", with a page's endpoints mirrored under `api/`; docs only for now, a configurable
+lint later (TODO).
+
+**Context.** A `+server.roc` beside a `+page.rocx` answered at the page's URL: a browser's GET was
+the page, anything else the endpoint's, chosen by `Accept` (as SvelteKit's `+page.server.ts` and
+`+server.ts` share a path). Nothing said so in the answers, so a cache (a CDN with a rule for the
+path, the browser's own) could keep one and give it for the other: a page's JSON shown on a
+navigation, its HTML given to a `fetch`. And a page with no `middleware` line ran behind the one
+beside it (D-079), so moving or deleting the `+server.roc` unguarded the page with no change to it.
+A lever that put endpoints under a prefix by themselves was considered and dropped: a file's URL
+changing with what sits beside it is worse than the problem.
+
+**Decision.**
+
+- **The blessed layout**: a path is a page or an endpoint, never both. A page's endpoints (its data
+  and its forms' actions) are `routes/api/<the page's path>/+server.roc`: the page at `/lists/:id`
+  reads `GET /api/lists/:id` (`Api.get_api_lists_id`) and its forms post to `/api/lists/:id`. Each
+  file names its own middleware. Endpoints that stand on their own (a webhook, a callback, a feed,
+  `/.well-known`) stay where their URL must be.
+- **A pair still works**, and says so: every answer at a path where a page and an endpoint meet, and
+  the error page (chosen by `Accept` too, a page or text), carries `Vary: Accept`
+  (`Routes.by_accept`, written by rocx build).
+- **The examples, the packages' examples, the template and the docs site follow it**, and a page's
+  other endpoints went under `api/` with them (what its forms post to, a stream it listens to: the
+  template's two-factor and mail endpoints, board's cards and presence, quiz's rooms, the site's
+  members' leave and the lobby channel). Left where they are, as their URL is held elsewhere or by
+  convention: Stripe's webhook, packages/auth's `/auth/*`, the auth example's endpoints its README
+  names as scripts' (`/admin`, `/impersonate`…), uptime's `/health`, the URL its seeded monitor
+  checks, and packages/admin's mounted pages. test/e2e/app and web/test/nav keep their pairs, to test
+  that a pair still answers as it did, now with `Vary`.
+- A page's typed params (D-092) came from the handlers in its own directory, which the layout leaves
+  empty: a page says its own now (D-101), and uptime's `monitors/[id]` and `incidents/[id]` moved too.
+  notes' note page mirrored onto its public JSON API (`/api/notes/[id]`): its actions joined that
+  file, behind the API's middleware (the user: "fine"), and the page reads the API's note.
+- The docs (README, the template's README, the site's routing pages) teach the layout; nothing warns
+  of a pair yet.
+
+**Why.** One URL, one answer: nothing for a cache to mix up, and a page's guard is in the page.
+Under `api/` at the page's path, the endpoint is found from the page without a rule to learn.
+
+**Costs.** Two files a page with data where there was a folder with both; a page's form actions are
+written as the endpoint's URL (`/api/orgs?/create`, or `Endpoint.url_of(…)`) rather than `?/create`.
+Apps outside the repo that pair keep working.
+
+**Reversible:** yes: the files back beside their pages, and `Vary` stays harmless.
+
+## D-101 A page says its params' types: `Params : { id : I64 }`
+
+**Status.** Built (2026-11-26), the user's call ("redeclaring types is fine"; nothing implicit).
+
+**Context.** A path's param has the type the handlers in its directory give it (D-092), and the
+pages there are given it. Under D-100 a page's endpoints are under `api/`, another directory, so a
+page with endpoints there had no handler of its own directory to type its params: uptime's monitor
+and incident pages would read `id` as a `Str` again. Taking the types from the `api/` directory at
+the page's path was refused: a file's types coming from a directory it doesn't name is the coupling
+D-100 removed. A type in the directory's name (`[id=I64]`, as SvelteKit's matchers) would be one
+place for the page and its endpoint both, but `:` is no file name on Windows, a union of tags
+doesn't fit a name, and the handlers' annotations would remain a second way.
+
+**Decision.**
+
+- A page may say its params' types, as a type in the page: `Params : { id : I64 }`, at the start of
+  a line (over several lines while a brace is open). rocx reads it (`Routes.params_alias`) as it
+  reads a handler's annotation: one more use of the params of the page's directory, under D-092's
+  rules: the same types allowed (a number, `Bool`, `Str`, a union of tags written out), one type per
+  param wherever it is said (a page's `Params` and a handler in its directory must agree, rocx build
+  says where they don't), and the pages and layouts below are given it, as `Paths` and `Root` are.
+- Nothing is read across directories: a page with no `Params` (and no handler beside it) has `Str`
+  params, whatever an endpoint under `api/` says. The page and its endpoint each say the type.
+- The page may use the alias itself (`params : Params`), or not.
+
+**Why.** Each file says what it reads, as D-100 wants, in the language's own syntax.
+
+**Costs.** The type is written twice for a page and its endpoint (`Params` and the handler's
+`params : …`), and nothing checks that the two agree across directories.
+
+**Reversible:** yes: the alias is read, nothing else depends on it.

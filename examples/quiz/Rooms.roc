@@ -19,7 +19,7 @@ import Generated/Api
 ## looked at: if that changed, it cancels the timer the old phase had and sets one for the new
 ## phase's deadline (`me.after!`), which calls `close` or `advance` like any other caller. If the
 ## room changed, it publishes the room's view on the room's channel, which every host's screen and
-## player's phone follows (`Api.channel_rooms_code`: an actor may import the app's contract, which
+## player's phone follows (`Api.channel_api_rooms_code`: an actor may import the app's contract, which
 ## imports no route file, D-037).
 ##
 ## Who is in the room is packages/presence's `Room`: each tab that subscribes to the channel joins
@@ -202,7 +202,7 @@ Rooms := [].{
 		(handled, reply) = handle!(swept, now)
 		timed = Rooms.timed!(me, state.game, handled, now)
 		if timed.game.version != state.game.version {
-			Endpoint.publish!(Api.channel_rooms_code({ code: me.key() }), Game.view(timed.game, now))
+			Endpoint.publish!(Api.channel_api_rooms_code({ code: me.key() }), Game.view(timed.game, now))
 		}
 		{ state: timed, reply }
 	}

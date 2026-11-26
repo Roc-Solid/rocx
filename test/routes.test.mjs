@@ -144,9 +144,9 @@ test("routes: Routes answers a request: a page (Root's) for a browser's GET; an 
 	assert.match(routes, /else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}/);
 	// A page and endpoints at one path: a GET a browser sends is the page's, behind the +server's
 	// middleware, since the page names none (D-079).
-	assert.match(routes, /if \(method == "GET" and wants_html\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.get_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tMiddleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.put_blog_slug\(params\), passed, handed\)\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET", "PUT"\]\)/);
+	assert.match(routes, /if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.by_accept\(Middleware\.run!\(BlogSlugServer\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tRoutes\.by_accept\(Middleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.get_blog_slug\(params\), passed, handed\)\)\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tRoutes\.by_accept\(Middleware\.run!\(BlogSlugServer\.middleware, request, context, \|passed, handed\| Endpoint\.respond!\(Handlers\.put_blog_slug\(params\), passed, handed\)\)\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.by_accept\(Endpoint\.not_allowed\(request, \["GET", "PUT"\]\)\)/);
 	assert.match(routes, /if \(segments == \["feed"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Handlers\.get_feed\(params\), request, context\)/, "an endpoint with no page, and no middleware of its own");
-	assert.match(routes, /if \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)/);
+	assert.match(routes, /if \(wants_html\) \{\n\t\t\t\tRoutes\.by_accept\(Routes\.page\(404\)\)/, "the 404 is chosen by Accept: Vary says so");
 	assert.match(routes, /^import pf\.Server\nimport pf\.Endpoint\nimport pf\.Middleware\nimport Handlers\nimport Root\n/m, "the platform's modules; each endpoint with its handler (Handlers); no Html: no page is rendered here");
 	assert.doesNotMatch(routes, /^import Api$/m, "Api only for a channel's hooks");
 	assert.match(routes, /^import BlogSlugServer$/m, "an endpoint's module, for its middleware");
@@ -186,7 +186,7 @@ test("routes: events! answers a GET that asks for events; beside a page and get!
 	const routes = routesModule(table, { sources });
 	assert.match(
 		routes,
-		/if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "GET" and wants_events\) \{\n\t\t\t\tEndpoint\.stream!\(Handlers\.events_live\(params\), request, context\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tEndpoint\.respond!\(Handlers\.get_live\(params\), request, context\)\n\t\t\t\} else \{\n\t\t\t\tEndpoint\.not_allowed\(request, \["GET"\]\)/,
+		/if \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.by_accept\(Routes\.page\(200\)\)\n\t\t\t\} else if \(method == "GET" and wants_events\) \{\n\t\t\t\tRoutes\.by_accept\(Endpoint\.stream!\(Handlers\.events_live\(params\), request, context\)\)\n\t\t\t\} else if \(method == "GET"\) \{\n\t\t\t\tRoutes\.by_accept\(Endpoint\.respond!\(Handlers\.get_live\(params\), request, context\)\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.by_accept\(Endpoint\.not_allowed\(request, \["GET"\]\)\)/,
 	);
 	assert.match(routes, /if \(segments == \["ticks"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tEndpoint\.stream!\(Handlers\.events_ticks\(params\), request, context\)/, "alone, events! answers any GET");
 	assert.match(routes, /\t\twants_events = \(Server\.header\(request, "accept"\) \?\? ""\)\.contains\("text\/event-stream"\)/);
@@ -361,7 +361,7 @@ test("Routes: a component page's GET is Root's page, after its route file's midd
 	assert.match(routes, /\t\t\} else if \(segments == \["members"\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tMiddleware\.run!\(MembersPage\.middleware, request, context, \|_passed, _handed\| Routes\.page\(200\)\)\n/);
 	assert.match(routes, /\} else if \(segments == \[\]\) \{\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n/, "no params read: Root reads them");
 	assert.match(routes, /\} else if \(segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("blog"\)\) \{\n\t\t\tparams = \{ slug: segments\.get\(1\) \?\? "" \}\n\t\t\tif \(method == "GET"\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else if \(method == "PUT"\) \{\n\t\t\t\tEndpoint\.respond!\(Handlers\.put_blog_slug\(params\), request, context\)/, "a page and an endpoint at one path");
-	assert.match(routes, /\t\t\} else \{\n\t\t\tif \(wants_html\) \{\n\t\t\t\tRoutes\.page\(404\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.text\(404, "nothing at \$\{request\.path\}"\)\n\t\t\t\}\n\t\t\}/);
+	assert.match(routes, /\t\t\} else \{\n\t\t\tif \(wants_html\) \{\n\t\t\t\tRoutes\.by_accept\(Routes\.page\(404\)\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.by_accept\(Routes\.text\(404, "nothing at \$\{request\.path\}"\)\)\n\t\t\t\}\n\t\t\}/);
 	assert.match(routes, /\tpage : U16 -> Server\.Response\n\tpage = \|status\| \{ status: status, headers: \[\], body: Page\(Root\.view!\) \}/);
 	assert.doesNotMatch(routes, /Routes\.html|\thtml :|RootLayout|RootError/);
 });
@@ -396,11 +396,16 @@ test("routes: a page that names no middleware runs behind its +server's; its own
 		}),
 	);
 	const routes = routesModule(table, { sources });
-	const pageAt = (segments) => new RegExp(`if \\(segments == \\[${segments}\\]\\) \\{\\n(?:\\t\\t\\tparams = \\{\\}\\n)?\\t\\t\\tif \\(method == "GET"(?: and wants_html)?\\) \\{\\n\\t\\t\\t\\t(.+)\\n`);
-	assert.equal(pageAt('"account"').exec(routes)?.[1], "Middleware.run!(AccountServer.middleware, request, context, |_passed, _handed| Routes.page(200))", "its directory's +server.roc's");
-	assert.equal(pageAt('"admin"').exec(routes)?.[1], "Middleware.run!(AdminPage.middleware, request, context, |_passed, _handed| Routes.page(200))", "its own, over the +server.roc's");
-	assert.equal(pageAt('"account", "edit"').exec(routes)?.[1], "Routes.page(200)", "a parent directory's doesn't count");
-	assert.equal(pageAt('"open"').exec(routes)?.[1], "Routes.page(200)", "a +server.roc that names none");
+	const pageAt = (segments) => new RegExp(`if \\(segments == \\[${segments}\\]\\) \\{\\n(?:\\t\\t\\tparams = \\{\\}\\n)?\\t\\t\\tif \\(method == "GET"(?: and wants_html)?\\) \\{\\n\\t\\t\\t\\t(?:Routes\\.by_accept\\((.+)\\)|(.+))\\n`);
+	const pageAnswer = (segments) => {
+		const found = pageAt(segments).exec(routes);
+		return found?.[1] ?? found?.[2];
+	};
+	assert.match(routes, /if \(segments == \["account"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.by_accept\(/, "a page beside an endpoint answers with Vary: Accept");
+	assert.equal(pageAnswer('"account"'), "Middleware.run!(AccountServer.middleware, request, context, |_passed, _handed| Routes.page(200))", "its directory's +server.roc's");
+	assert.equal(pageAnswer('"admin"'), "Middleware.run!(AdminPage.middleware, request, context, |_passed, _handed| Routes.page(200))", "its own, over the +server.roc's");
+	assert.equal(pageAnswer('"account", "edit"'), "Routes.page(200)", "a parent directory's doesn't count");
+	assert.equal(pageAnswer('"open"'), "Routes.page(200)", "a +server.roc that names none");
 	assert.deepEqual(
 		routeList(table, sources).filter((row) => row.method === "GET").map((row) => `${row.path} ${row.file} ${row.middleware ?? "-"}`),
 		["/ routes/+page.rocx -", "/account routes/account/+page.rocx Middlewares.signed_in", "/account routes/account/+server.roc Middlewares.signed_in", "/account/edit routes/account/edit/+page.rocx -", "/admin routes/admin/+page.rocx Middlewares.admin", "/admin routes/admin/+server.roc Middlewares.signed_in", "/open routes/open/+page.rocx -"],
@@ -761,6 +766,14 @@ test("routes: a directory may name a file (sitemap.xml, feed.xml): a dot between
 	assert.throws(() => routeTable(["feed.xml/+server.roc", "feed-xml/+server.roc"]), /would both be/);
 });
 
+test("routes: a directory may start with an underscore, for a path another service names; its names drop it", () => {
+	const table = routeTable(["api/_site_verification/+server.roc"]);
+	const [route] = table.servers;
+	assert.deepEqual([route.path, route.name, route.module], ["/api/_site_verification", "api_site_verification", "ApiSiteVerificationServer"]);
+	for (const part of ["_", "__x", "_-x", "_X"]) assert.throws(() => routeTable([`${part}/+page.rocx`]), /a directory is a path's part in lower case/, part);
+	assert.throws(() => routeTable(["_verify/+server.roc", "verify/+server.roc"]), /would both be/);
+});
+
 test("routes: .well-known is routed, and no other directory starting with a dot; respond! answers every method nothing else at its path does", () => {
 	const dir = mkdtempSync(join(tmpdir(), "rocx-routes-"));
 	try {
@@ -794,7 +807,7 @@ test("routes: .well-known is routed, and no other directory starting with a dot;
 	);
 	assert.match(
 		routes,
-		/if \(segments == \["mounted"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else \{\n\t\t\t\tMountedServer\.respond!\(\{ request: request, params: params, context: context \}\)\n\t\t\t\}/,
+		/if \(segments == \["mounted"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.by_accept\(Routes\.page\(200\)\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.by_accept\(MountedServer\.respond!\(\{ request: request, params: params, context: context \}\)\)\n\t\t\t\}/,
 		"beside a page, a browser's GET is the page's, and anything else respond!'s",
 	);
 	assert.match(routes, /^import McpServer\nimport MountedServer$/m, "a file with respond! is imported; a page, only for its middleware");
@@ -811,7 +824,7 @@ test("routes: .well-known is routed, and no other directory starting with a dot;
 	]);
 	assert.match(
 		routesModule(live, { sources: liveSources }),
-		/if \(segments == \["live"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.page\(200\)\n\t\t\t\} else \{\n\t\t\t\tLiveServer\.respond!\(\{ request: request, params: params, context: context \}\)\n\t\t\t\}/,
+		/if \(segments == \["live"\]\) \{\n\t\t\tparams = \{\}\n\t\t\tif \(method == "GET" and wants_html\) \{\n\t\t\t\tRoutes\.by_accept\(Routes\.page\(200\)\)\n\t\t\t\} else \{\n\t\t\t\tRoutes\.by_accept\(LiveServer\.respond!\(\{ request: request, params: params, context: context \}\)\)\n\t\t\t\}/,
 	);
 });
 
@@ -1020,7 +1033,7 @@ test("typed path params (D-092): the types handlers give a path's params are Api
 	const routes = routesModule(table, { sources });
 	assert.match(routes, /^import pf\.Endpoint$/m);
 	assert.match(routes, /\t\t\tread : Try\(\{ id : I64 \}, Str\)\n\t\t\tread = Endpoint\.read_params\(\[\{ name: "id", value: segments\.get\(1\) \?\? "" \}\]\)\n\t\t\tmatch read \{\n\t\t\t\tOk\(params\) => \{/);
-	assert.match(routes, /\t\t\t\tErr\(_\) => if \(wants_html\) \{\n\t+Routes\.page\(404\)/, "a part that doesn't read: the 404 a path nothing has gets");
+	assert.match(routes, /\t\t\t\tErr\(_\) => if \(wants_html\) \{\n\t+Routes\.by_accept\(Routes\.page\(404\)\)/, "a part that doesn't read: the 404 a path nothing has gets");
 	assert.match(routes, /read : Try\(\{ id : I64, tag : \[Work, Home\] \}, Str\)/);
 	assert.match(routes, /Ok\(_params\) => \{\n\t+if \(method == "GET"\) \{\n\t+Routes\.page\(200\)/, "a page's path alone, its params read for the match");
 	assert.match(routes, /segments\.len\(\) == 2 and segments\.get\(0\) == Ok\("tags"\)\) \{\n\t\t\tparams = \{ tag: segments\.get\(1\) \?\? "" \}/, "a Str param read as before");
@@ -1042,6 +1055,39 @@ test("typed path params (D-092): the types handlers give a path's params are Api
 	assert.deepEqual(refused([["tags/[tag]/+server.roc", definitions(handler("get!", "{ tag : Tags.Tag }"))]]), [
 		"routes/tags/[tag]/+server.roc:2: get! gives the param tag the type Tags.Tag: a path's param is Str, a number (U64, I64, Dec…), Bool, or a union of tags written out ([Low, High]), which every module rocx writes can name (D-092)",
 	]);
+});
+
+test("a page's own Params (D-101): its path's params typed where its endpoints are under api/ (D-100), nothing read across; one type per param still", () => {
+	const files = ["monitors/[id]/+page.rocx", "monitors/[id]/history/+page.rocx", "api/monitors/[id]/+server.roc"];
+	const pageSource = "import pf.Html\n\nParams : { id : I64 }\n\nview! = |{ params }| <p>{params.id.to_str()}</p>\n";
+	const pageDefs = definitions(pageSource);
+	assert.deepEqual(pageDefs.params, { text: "{ id : I64 }", line: 3 }, "the record as written, and its line");
+	assert.equal(definitions("import pf.Html\n\nview! = |_| <p />\n").params, undefined, "none without one");
+	assert.deepEqual(definitions("import pf.Html\n\nParams : {\n\tid : I64,\n\tkind : [Up, Down],\n}\n\nview! = |_| <p />\n").params, { text: "{ id : I64, kind : [Up, Down], }", line: 3 }, "over several lines");
+	const plainPage = { view: "view!", meta: false, methods: [], middleware: null, docs: {} };
+	const handler = "get! : { request : Server.Request, params : { id : I64 }, context : c } => Try(Str, Endpoint.Refusal)\nget! = |_| Ok(\"up\")\n";
+	const sources = new Map([
+		["monitors/[id]/+page.rocx", pageDefs],
+		["monitors/[id]/history/+page.rocx", plainPage],
+		["api/monitors/[id]/+server.roc", definitions(handler)],
+	]);
+	const table = routeTable(files);
+	assert.deepEqual(contractProblems(table, sources), []);
+	const paths = pathsModule(table, { sources });
+	assert.match(paths, /\tmonitors_id : \{ id : I64 \} -> Str\n/, "the page's own type");
+	assert.match(paths, /\tmonitors_id_history : \{ id : I64 \} -> Str\n/, "and the pages below its directory");
+	assert.match(rootModule(table, { sources }), /PageMonitorsId\(\{ id : I64 \}\)/);
+	assert.match(apiModule(table, { sources }), /\tget_api_monitors_id : \{ id : I64 \} -> Endpoint/, "the endpoint's, from its handler, as before");
+	// Without its Params, the page's param is Str: rocx never reads a type from the api/ directory.
+	assert.match(pathsModule(table, { sources: new Map([...sources, ["monitors/[id]/+page.rocx", plainPage]]) }), /\tmonitors_id : \{ id : Str \} -> Str\n/);
+	// One type per param, as D-092's: a page's Params and a handler in its directory agree, and a
+	// type a path's part isn't read as is refused.
+	const paired = routeTable(["monitors/[id]/+page.rocx", "monitors/[id]/+server.roc"]);
+	assert.deepEqual(contractProblems(paired, new Map([["monitors/[id]/+page.rocx", definitions(pageSource.replace("I64", "Str"))], ["monitors/[id]/+server.roc", definitions(handler)]])), [
+		"routes/monitors/[id]/+page.rocx:3: Params gives the param id the type Str, and routes/monitors/[id]/+server.roc's get! gives it I64: a path's param has one type wherever it is read (D-092)",
+	]);
+	const odd = contractProblems(table, new Map([...sources, ["monitors/[id]/+page.rocx", definitions(pageSource.replace("I64", "Monitors.Id"))]]));
+	assert.match(odd[0], /^routes\/monitors\/\[id\]\/\+page\.rocx:3: Params gives the param id the type Monitors\.Id: a path's param is Str/);
 });
 
 test("checked bodies (D-093): a route file's <method>_body makes its contract Endpoint.checked by those rules, in both copies, which import their module; rocx build refuses rules it can't copy", () => {

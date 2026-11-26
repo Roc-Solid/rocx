@@ -27,7 +27,7 @@ meta = { title: "Play" }
 ## game that is over, says so.
 view! = |{ params }| {
 	code = params.code
-	seat = Endpoint.get!(Api.get_rooms_code({ code: code }))
+	seat = Endpoint.get!(Api.get_api_rooms_code({ code: code }))
 	<main class="phone">
 		<Title>{"Room ${code}"}</Title>
 		{
@@ -59,11 +59,11 @@ expect Playing.status(Err(None), Bool.True, Bool.False) == "Time's up."
 expect Playing.can_pick(Picked({ index: 2, choice: 0 }), 2) == Bool.False and Playing.can_pick(Picked({ index: 2, choice: 0 }), 3)
 
 ## Someone who hasn't joined: the room's name, and a name to play under. The form posts to
-## `POST /play/:code`, which goes on to this page, now as a player.
+## `POST /api/play/:code`, which goes on to this page, now as a player.
 Entering := [].{
 	view! : { code : Str, title : Str } => Html
 	view! = |{ code, title }| {
-		live = LiveForm.of!(Joining.named, Api.post_play_code({ code: code }))
+		live = LiveForm.of!(Joining.named, Api.post_api_play_code({ code: code }))
 		<section class="entering" aria-labelledby="entering-title">
 			<Logo size="2rem" spinning={Bool.True} />
 			<h1 id="entering-title">Join room <span class="code">{code}</span></h1>

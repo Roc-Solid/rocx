@@ -9,7 +9,7 @@ import Game
 ## read (`view!`), and what the page says on it (`say!`). Both the host's screen and a player's
 ## phone follow their room through this.
 ##
-## The page starts from the view the server rendered it with (`GET /rooms/:code`), then subscribes
+## The page starts from the view the server rendered it with (`GET /api/rooms/:code`), then subscribes
 ## from an effect: on each (re)connect the channel says `Resync`, and its `on_open!` sends the room
 ## as it is now, so a phone that slept catches up at once. Views carry a version, and a view older
 ## than the one shown (published while the stream was opening) is passed over; the first after a
@@ -25,7 +25,7 @@ Feed := [].{
 		(view!, set_view!) = create_signal!(first)
 		(live!, set_live!) = create_signal!(Bool.False)
 		(fresh!, set_fresh!) = create_signal!(Bool.False)
-		channel = Api.channel_rooms_code({ code: code })
+		channel = Api.channel_api_rooms_code({ code: code })
 		# What the channel carries, said here too (Generated/Api says it as well).
 		heard! : Channel.Event(Game.View) => {}
 		heard! = |event|

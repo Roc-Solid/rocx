@@ -54,7 +54,7 @@ view! = |_|
 		<NoHydration>
 			<p>
 				<code>rocx build</code> puts each channel in <code>Generated/Api</code> as a function of its params,
-				as it does for endpoints: <code>Api.channel_platform_live_lobby({"{}"})</code> here, or
+				as it does for endpoints: <code>Api.channel_api_platform_live_lobby({"{}"})</code> here, or
 				<code>Api.channel_org_org_news({"{ org }"})</code> for a channel at <code>/org/[org]/news</code>. It
 				is typed with the <code>Channel(who, message, said)</code> that <code>channel!</code>'s annotation
 				gives. <code>Generated/Api</code> imports no route file, so a job, an actor or any other server module

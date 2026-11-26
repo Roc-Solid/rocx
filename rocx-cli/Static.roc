@@ -251,9 +251,27 @@ Static := [].{
 			return Err(Failed("rocx build wrote no browser's copy (${client_main}): the app has no pages"))
 		}
 		Dev.web_host!(tools)?
-		Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=yes", "--output=${Fs.join([client, "static", "rocx", "app.wasm"])}", client_main], "the browser's build")?
+		Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]))?
 		Static.shake!(rocx, dir, client)
 	}
+
+	## The browser's wasm, optimized for size with its lambda sets specialized (smaller with brotli);
+	## when the compiler crashes specializing them (its own fault, not the app's: Roc's lambda-set
+	## solving still has crashes on some large apps), built without (boxy, as the server is), said so.
+	browser_build! : Dev.Tools, Str, Str => Try({}, [Failed(Str)])
+	browser_build! = |tools, client_main, wasm|
+		match Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=yes", "--output=${wasm}", client_main], "the browser's build") {
+			Ok({}) => Ok({})
+			Err(Failed(why)) if Static.compiler_crashed(why) => {
+				_ = Stderr.line!("rocx: the compiler crashed specializing the browser's program (a bug of Roc's, not the app's): building it without specializing")
+				Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=no", "--output=${wasm}", client_main], "the browser's build")
+			}
+			Err(failed) => Err(failed)
+		}
+
+	## Whether a build's output says the compiler crashed, rather than refusing the program.
+	compiler_crashed : Str -> Bool
+	compiler_crashed = |said| said.contains("in the Roc compiler") or said.contains("Segmentation fault") or said.contains("panicked")
 
 	## The runtime with only what the app's wasm reaches (`Shake`, D-087), minified, in place of the
 	## one `rocx build` wrote; that one, said why, if the runtime can't be read so.
@@ -723,3 +741,6 @@ expect Static.options(["site", "--static"], "/w").is_err()
 expect Static.options(["a", "b", "--static", "dist"], "/w").is_err()
 expect Static.options(["a", "--static", "dist", "--route", "x"], "/w").is_err()
 expect Static.options(["a", "--static", "dist", "--dev"], "/w").is_err()
+
+expect Static.compiler_crashed("Segmentation fault (SIGSEGV) in the Roc compiler.\nFault address: 0x74")
+expect !Static.compiler_crashed("── ✗ type mismatch ── routes/+page.rocx:3:5")

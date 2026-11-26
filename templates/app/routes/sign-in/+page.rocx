@@ -12,15 +12,15 @@ import ../../Generated/Api
 ## (packages/auth's `SignInError`); `?then=` is where to go after.
 meta = { title: "Sign in" }
 
-## What the page offers besides an address (`GET /sign-in`).
+## What the page offers besides an address (`GET /api/sign-in`).
 offered! : {} => { providers : List({ name : Str, label : Str, path : Str }), dev : Bool }
-offered! = |{}| Endpoint.get!(Api.get_sign_in({}))
+offered! = |{}| Endpoint.get!(Api.get_api_sign_in({}))
 
 view! = |_| {
 	query = Router.location!({}).query
 	then = SignInError.field(query, "then")
 	failed = SignInError.message(query)
-	sending = use_submission!(Api.post_sign_in_mail({}))
+	sending = use_submission!(Api.post_api_sign_in_mail({}))
 	offers = offered!({})
 	<section class="sign-in card">
 		{match sending.result!() {
@@ -30,7 +30,7 @@ view! = |_| {
 					<p>We sent a sign-in link to <strong>{sent.sent}</strong>. It works once, for the next 15 minutes.</p>
 				</div>
 			Err(_) =>
-				<form method="post" action={Endpoint.url_of(Api.post_sign_in_mail({}))}>
+				<form method="post" action={Endpoint.url_of(Api.post_api_sign_in_mail({}))}>
 					<h1>Sign in</h1>
 					{if !failed.is_empty() {
 						<p class="problem" role="alert">{failed}</p>

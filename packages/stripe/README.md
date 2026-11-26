@@ -96,7 +96,7 @@ Send it at least these events:
 ## The example
 
 `example/` sells two monthly plans (Basic, Pro) and an e-book: a pricing page whose buttons post to
-`/billing/checkout`, the page Checkout goes back to (`/billing/done`), an account page with the
+`/api/billing/checkout`, the page Checkout goes back to (`/billing/done`), an account page with the
 subscription, the orders and the portal's button, a page for subscribers (`/pro`) and the e-book for
 those who bought it (`/ebook`). `Billing.on_event!` writes an order when an e-book is paid. People
 sign in with packages/auth's dev sign-in, so it runs under `rocx dev` only. With your test mode's

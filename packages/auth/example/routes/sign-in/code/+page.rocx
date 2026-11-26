@@ -12,7 +12,7 @@ meta = { title: "Enter your code" }
 
 ## Whom the waiting sign-in is for, or why there is none (410).
 waiting! : {} => Try({ email : Str, tries_left : U64 }, Server.Problem)
-waiting! = |{}| Endpoint.read!(Api.get_sign_in_code({}))
+waiting! = |{}| Endpoint.read!(Api.get_api_sign_in_code({}))
 
 view! = |_| {
 	query = Router.location!({}).query

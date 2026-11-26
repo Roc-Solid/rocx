@@ -16,16 +16,16 @@ import ../../../Generated/Api
 import ../../../Generated/Paths
 
 ## A recipe: what a serving has, its ingredients, a search that adds more, and its name, servings
-## and notes. Its data is its own URL's (`GET /recipes/:id`), with the search's words (`?q=`): the
-## search box is a form that asks this page again, so it works without JavaScript; with it, typing
-## sets a signal that the memo reads, so the foods found follow the typing.
+## and notes. Its data is its endpoint's (`GET /api/recipes/:id`), with the search's words (`?q=`):
+## the search box is a form that asks this page again, so it works without JavaScript; with it,
+## typing sets a signal that the memo reads, so the foods found follow the typing.
 meta = { title: "A recipe" }
 
 view! = |{ params, .. }| {
 	location = Router.location!({})
 	(query!, set_query!) = create_signal!(Query.value(location.query, "q"))
 	kitchen! : () => Try(Plate.Kitchen, Server.Problem)
-	kitchen! = create_memo!(|| Endpoint.read!(Endpoint.with_query(Api.get_recipes_id({ id: params.id }), Query.of([("q", query!())]))))
+	kitchen! = create_memo!(|| Endpoint.read!(Endpoint.with_query(Api.get_api_recipes_id({ id: params.id }), Query.of([("q", query!())]))))
 	search = { query!, set_query! }
 	<>{match kitchen!() {
 		Ok(found) => <Kitchen id={params.id} kitchen!={found} search={search} stale!={is_pending!(kitchen!)} />
@@ -51,8 +51,8 @@ Kitchen := [].{
 		whole! = || Plate.sum(ingredients!().map(|each| each.nutrients))
 		serving! = || Plate.per_serving(whole!(), recipe!().servings)
 		weight! = || ingredients!().fold(0.0, |sum, each| sum + each.grams)
-		edit = LiveForm.filled!(PlateForm.recipe_edit, Api.post_recipes_id({ id: id }), [("name", recipe!().name), ("servings", recipe!().servings.to_str()), ("notes", recipe!().notes)])
-		add = Endpoint.url_of(Api.post_recipes_id_ingredients({ id: id }))
+		edit = LiveForm.filled!(PlateForm.recipe_edit, Api.post_api_recipes_id({ id: id }), [("name", recipe!().name), ("servings", recipe!().servings.to_str()), ("notes", recipe!().notes)])
+		add = Endpoint.url_of(Api.post_api_recipes_id_ingredients({ id: id }))
 		remove = Endpoint.url_of(Api.post_api_ingredients_delete({}))
 		<article class="kitchen" class:stale={stale!()}>
 			<Title>{recipe!().name} · Plate</Title>

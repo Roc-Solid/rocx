@@ -1,14 +1,17 @@
 import pf.Html
 import pf.Endpoint
 import ../../Generated/Api
+import ../../Middlewares
 
-## The pro pages: subscribers only, as its `+server.roc`'s middleware (`Middlewares.subscribers`)
-## says. Anyone else goes to the pricing page.
+## The pro pages: subscribers only, as its middleware (`Middlewares.subscribers`) says. Anyone
+## else goes to the pricing page.
 meta = { title: "Pro" }
 
-## Whose page it is (`GET /pro`).
+middleware = Middlewares.subscribers
+
+## Whose page it is (`GET /api/pro`).
 reader! : {} => { email : Str }
-reader! = |{}| Endpoint.get!(Api.get_pro({}))
+reader! = |{}| Endpoint.get!(Api.get_api_pro({}))
 
 view! = |_| {
 	reader = reader!({})

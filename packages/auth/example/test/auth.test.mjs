@@ -196,7 +196,7 @@ for (const database of databases) {
 		/** The token of a mailed link asked for `email`, going on to `then`. The link opens the app's page (`link_page`). */
 		async function mailedLink(client, email, then = "/") {
 			const before = (await server.mail()).length;
-			const asked = await client.json("/sign-in", { email, then });
+			const asked = await client.json("/api/sign-in", { email, then });
 			assert.equal(asked.status, 200, asked.text);
 			const message = await server.waitForMail({ to: email.trim() }, { after: before });
 			const url = new URL(links(message)[0]);
@@ -243,8 +243,8 @@ for (const database of databases) {
 			const client = server.client();
 			const token = await mailedLink(client, "  Ada@Example.COM ", "/private?tab=2");
 			// Looking (its page, a mail scanner) doesn't use it.
-			assert.deepEqual(await server.client().read(`/sign-in/link?token=${token}`), { email: "ada@example.com" });
-			assert.deepEqual(await server.client().read(`/sign-in/link?token=${token}`), { email: "ada@example.com" });
+			assert.deepEqual(await server.client().read(`/api/sign-in/link?token=${token}`), { email: "ada@example.com" });
+			assert.deepEqual(await server.client().read(`/api/sign-in/link?token=${token}`), { email: "ada@example.com" });
 			const opened = await used(client, token);
 			assert.equal(opened.status, 303);
 			assert.equal(opened.location, "/private?tab=2");
@@ -255,7 +255,7 @@ for (const database of databases) {
 			assert.deepEqual(me.identities, ["email:ada@example.com"]);
 			assert.deepEqual(await client.read("/private"), { user: me.user });
 			// Used: the link is gone, by its page and by /auth/link, posted or opened.
-			assert.equal((await server.client().request(`/sign-in/link?token=${token}`, { headers: { accept: "application/json" } })).status, 410);
+			assert.equal((await server.client().request(`/api/sign-in/link?token=${token}`, { headers: { accept: "application/json" } })).status, 410);
 			const again = await server.client().post("/auth/link", { token });
 			assert.equal(again.status, 303);
 			assert.equal(again.location, "/sign-in?error=link");
@@ -283,7 +283,7 @@ for (const database of databases) {
 			const token = await mailedLink(late, "grace@example.com", "/private");
 			await db.query("update auth_links set expires_at = 0");
 			assert.equal((await late.post("/auth/link", { token })).location, "/sign-in?error=link&then=%2Fprivate");
-			const bad = await server.client().json("/sign-in", { email: "not an address", then: "/" });
+			const bad = await server.client().json("/api/sign-in", { email: "not an address", then: "/" });
 			assert.equal(bad.status, 400);
 		});
 
@@ -432,7 +432,7 @@ for (const database of databases) {
 		});
 
 		test("a provider whose client id isn't set: its button isn't offered, and its endpoint says why", async () => {
-			const offered = await server.client().read("/sign-in");
+			const offered = await server.client().read("/api/sign-in");
 			assert.deepEqual(
 				offered.providers.map((each) => each.name),
 				["test", "hub"],
@@ -515,7 +515,7 @@ for (const database of databases) {
 			assert.equal(page.status, 303);
 			assert.equal(page.location, "/sign-in/code?then=%2Fsessions", "a page goes to the code page");
 			assert.equal((await client.request("/private", { headers: { accept: "application/json" } })).status, 401);
-			assert.deepEqual(await client.read("/sign-in/code"), { email: "tf-bo@example.com", tries_left: 5 });
+			assert.deepEqual(await client.read("/api/sign-in/code"), { email: "tf-bo@example.com", tries_left: 5 });
 			const shown = await client.get("/sign-in/code?then=%2Fprivate%3Ftab%3D2");
 			assert.equal(shown.status, 200);
 			assert.ok(shown.dom.getByRole("textbox", { name: "Code" }));
@@ -524,7 +524,7 @@ for (const database of databases) {
 			const wrong = await client.post("/auth/code", { code: wrongCode(secret), then: "/private?tab=2" });
 			assert.equal(wrong.status, 303);
 			assert.equal(wrong.location, "/sign-in/code?error=code&then=%2Fprivate%3Ftab%3D2");
-			assert.equal((await client.read("/sign-in/code")).tries_left, 4);
+			assert.equal((await client.read("/api/sign-in/code")).tries_left, 4);
 			// The code the first one was confirmed with is used: refused.
 			assert.equal((await client.post("/auth/code", { code: totp(secret, step), then: "/private?tab=2" })).location, "/sign-in/code?error=code&then=%2Fprivate%3Ftab%3D2");
 			// The next step's code (the window takes one either side), with an app's space in it.

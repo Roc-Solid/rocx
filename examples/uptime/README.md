@@ -83,8 +83,8 @@ Without `--dev` the server needs `SMTP_URL`, to send the alerts: it doesn't star
   `oncall@example.com`. Post an update from the admin, and it shows on the status page. Press "Mend
   it": the next check closes the incident, the page turns green, and the mailbox has "[Status]
   Resolved: Payments API is back".
-- **Every page is JSON too:** `curl -H 'accept: application/json' http://127.0.0.1:8080/` (also
-  `/monitors/2`, `/incidents/1`, and `/admin` with the admin's cookie).
+- **Every page's data is JSON too:** `curl -H 'accept: application/json' http://127.0.0.1:8080/api`
+  (also `/monitors/2`, `/incidents/1`, and `/api/admin` with the admin's cookie).
 - **Light and dark** follow the system, and the pages work from a phone's width up.
 
 The seed (`migrations/0002_seed.sql`) gives the app three monitors, ninety days of history, a past
@@ -113,14 +113,14 @@ Where to look in the code for each Roc Solid feature the app uses.
 | Storing a check in one transaction: the check, the streak of failures, the incident that `Incident.decide` opens or closes, its update, and the alert jobs it queues. All of it is stored, or none of it. | `Store.record!` |
 | The incident rules, tested with `expect`s: open when the streak reaches the threshold, close on the next pass, and after a manual close, don't open again until the monitor has passed and failed again. | `Incident.roc` |
 | The nightly roll-up: each past day's checks summed into `daily` (once, with `on conflict do nothing`), and checks older than a week deleted once their day is rolled up. | `Jobs.nightly`, `Store.roll_up!` |
-| Email alerts through packages/email: one job per subscriber. The email's HTML is a pure component turned into a string (`Html.to_str`). Its unsubscribe link opens a page with a button, so opening the link changes nothing. | `Alerts.roc`, `Ui/AlertMail.rocx`, `routes/unsubscribe/` |
+| Email alerts through packages/email: one job per subscriber. The email's HTML is a pure component turned into a string (`Html.to_str`). Its unsubscribe link opens a page with a button, so opening the link changes nothing. | `Alerts.roc`, `Ui/AlertMail.rocx`, `routes/unsubscribe/`, `routes/api/unsubscribe/` |
 | The jobs page from packages/admin, as a plugin behind the admin's sign-in (`JobsPage.plugin({ at, guard, back })`). | `main.roc` |
 
 ### The live status page
 
 | Feature | Where |
 |---|---|
-| A channel (live messages for open pages) at `/live`. Each check and each admin change publishes on it, from jobs and endpoints alike (`News.tell!`). | `routes/live/+server.roc`, `News.roc` |
+| A channel (live messages for open pages) at `/api/live`. Each check and each admin change publishes on it, from jobs and endpoints alike (`News.tell!`). | `routes/api/live/+server.roc`, `News.roc` |
 | A page that subscribes to the channel in an effect (`create_effect!` with `Endpoint.subscribe!`) and reads its data again when it hears something (`refresh!` on its memo). The page fades while the new data loads (`is_pending!`), and a hidden `aria-live` region tells screen readers what changed. | `routes/+page.rocx`, `routes/monitors/[id]/+page.rocx`, `routes/admin/+page.rocx` |
 | Lists whose rows are kept by key. A group maps its monitors to cards (`{...monitors.map(…)}`), each card's root keyed by `key={monitor.id}`, so a new reading keeps the cards and patches only what changed. A card takes its monitor as an accessor (`monitor!={monitor}`), so its numbers update in place and its sparkline glides to the new values. | `Ui/GroupSection.rocx`, `Ui/MonitorCard.rocx` |
 | Charts from packages/charts: `<Sparkline>` on each card; `<LineChart>` and `<Heatmap>` on a monitor's page. The 90-day strip is a pure component of its own, because its colours are thresholds, not a scale. | `Ui/MonitorCard.rocx`, `routes/monitors/[id]/+page.rocx`, `Ui/UptimeStrip.rocx` |
@@ -129,8 +129,8 @@ Where to look in the code for each Roc Solid feature the app uses.
 
 | Feature | Where |
 |---|---|
-| Each page's data comes from an endpoint at the page's own URL (`GET /` as JSON, and so on). The page reads it with `Endpoint.get!` while the server renders it, and the data travels in the page for hydration. The same JSON is the app's API. | `routes/**/+server.roc`, `Status.roc`, `Report.roc` |
-| A 404 for a monitor or incident that doesn't exist: the page's `<Errored>` shows `Ui/Missing.rocx`, which sets the status with `<HttpStatusCode>`. An id that isn't a number is no route at all, since the params are typed (`params : { id : I64 }`, D-092). | `routes/monitors/[id]/+page.rocx`, `routes/incidents/[id]/+page.rocx`, `routes/monitors/[id]/+server.roc`, `Ui/Missing.rocx` |
+| Each page's data comes from its endpoint, under `api/` at the page's path (`GET /api` for `/`, `GET /api/admin` for `/admin`): a path is a page or an endpoint, never both. The page reads it with `Endpoint.get!` while the server renders it, and the data travels in the page for hydration. The same JSON is the app's API. | `routes/api/**/+server.roc`, `Status.roc`, `Report.roc` |
+| A 404 for a monitor or incident that doesn't exist: the page's `<Errored>` shows `Ui/Missing.rocx`, which sets the status with `<HttpStatusCode>`. An id that isn't a number is no route at all, since the params are typed: the endpoint's annotation (`params : { id : I64 }`, D-092) and the page's own `Params : { id : I64 }` (D-101), as the page's endpoint is under `api/` | `routes/monitors/[id]/+page.rocx`, `routes/incidents/[id]/+page.rocx`, `routes/api/monitors/[id]/+server.roc`, `Ui/Missing.rocx` |
 | Forms that work without JavaScript and, with it, are sent in place by the runtime, each component reading its form's answer (`use_submission!`): subscribe, sign in, check now, pause, post an update, break the demo. | `Ui/SubscribeForm.rocx`, `Ui/AdminRow.rocx`, `Ui/UpdateForm.rocx`, `routes/admin/+page.rocx`, `routes/admin/sign-in/+page.rocx` |
 | Pure components (`view`): the state pill, the 90-day strip, the banner, the incident card, and the monitor card. Effectful components (`view!`): the forms (they make submissions), the group (its list of rows), and the 404 (it sets the status). | `Ui/` |
 | Pure components tested in `expect`s with packages/testing's `Dom`, and stories for the component catalog (`<story>`, shown at `/__rocx/stories` under `rocx dev`). | `Ui/Banner.rocx`, `Ui/IncidentCard.rocx`, `Ui/StatePill.rocx`, `Ui/UptimeStrip.rocx` |
@@ -140,7 +140,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 
 | Feature | Where |
 |---|---|
-| The admin's sign-in: a password from the environment, compared in constant time, then a session from packages/auth (`Auth.sign_in!`). The plugin is listed without `admit!`, so nobody signs in by a link or a provider. The session is a random token in the `uptime_admin` cookie (HttpOnly; `__Host-uptime_admin` and `Secure` when the public URL is HTTPS), kept as its hash in the database (`auth_sessions`) for 12 hours, and renewed while it is used. `Auth.required` sends a stranger to sign in (`?then=`) and back, and signing out is a form posting to the plugin's `/auth/sign-out`. Wrong passwords are limited to ten tries a minute (`Kv.increment!`). | `main.roc`, `Session.roc`, `Middlewares.admin`, `routes/admin/` |
+| The admin's sign-in: a password from the environment, compared in constant time, then a session from packages/auth (`Auth.sign_in!`). The plugin is listed without `admit!`, so nobody signs in by a link or a provider. The session is a random token in the `uptime_admin` cookie (HttpOnly; `__Host-uptime_admin` and `Secure` when the public URL is HTTPS), kept as its hash in the database (`auth_sessions`) for 12 hours, and renewed while it is used. `Auth.required` sends a stranger to sign in (`?then=`) and back, and signing out is a form posting to the plugin's `/auth/sign-out`. Wrong passwords are limited to ten tries a minute (`Kv.increment!`). | `main.roc`, `Session.roc`, `Middlewares.admin`, `routes/admin/`, `routes/api/admin/sign-in/` |
 | packages/admin for the tables, behind the admin's middleware, with labels. The tables' `check` constraints refuse values that make no sense (named, like `monitors_url_check`), and the admin's form shows why. | `routes/admin/db/+server.roc`, `migrations/0001_uptime.sql` |
 | packages/otel: every request timed by route (`Otel.middleware`), a histogram of check latency by monitor and outcome, and a gauge of each monitor's up or down state, sent by the package's plugin (`Otel.plugin`). | `Metrics.roc`, `Middlewares.roc`, `main.roc` |
 | SQLite in the server's process (`database: Sqlite("data/uptime.db")`). Moments are milliseconds given from Roc and read as ISO 8601 with `strftime`; days with `date`. See [Moving from Postgres to SQLite](#moving-from-postgres-to-sqlite) for what SQLite lacks. | `main.roc`, `Store.roc`, `migrations/` |
@@ -148,7 +148,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 
 ## Live updates: a channel, not `events!`
 
-The status page follows the live channel (`routes/live/+server.roc`) rather than an endpoint's
+The status page follows the live channel (`routes/api/live/+server.roc`) rather than an endpoint's
 `events!` stream (server-sent events). There are three reasons:
 
 - **The speaker is a job.** A check runs in a job, not in a request. `Endpoint.publish!` works from
@@ -188,7 +188,7 @@ node --test 'examples/uptime/test/*.test.mjs'
   including a whole up, down, down, down, down, up run (`Incident.roc`), judging an answer
   (`Checks.roc`), the calendar and how times read (`Days.roc`), the words around the numbers
   (`Words.roc`), the alert emails (`Alerts.roc`), what counts as an email address
-  (`routes/subscribe/+server.roc`), and the pure components (`StatePill`, `UptimeStrip`, `Banner`,
+  (`routes/api/subscribe/+server.roc`), and the pure components (`StatePill`, `UptimeStrip`, `Banner`,
   `IncidentCard`).
 - **`test/http.test.mjs`** (11 tests) starts the server on its own SQLite file, with a fake target
   (an HTTP server that answers 200 or 500, as a test says) that is also a fake OpenTelemetry
@@ -284,7 +284,7 @@ Fixed since, and visible in the code:
   memory, and never puts a password back into the form or the page. The sign-in refuses a wrong
   password with `Status(401, …)`, as any endpoint refuses.
 - `Generated/Api` is the app's contract and imports no route file, so a job can publish on the
-  channel, typed: `News.tell!` uses `Api.channel_live({})`. The message type lives in `Report.roc`,
+  channel, typed: `News.tell!` uses `Api.channel_api_live({})`. The message type lives in `Report.roc`,
   because `Api` imports the module that defines it, and that module can't import `Api` back.
 - `Db`'s and `Job`'s errors are open unions, so a transaction's body can use `?` on both (the sweep,
   `alert!`).

@@ -57,7 +57,7 @@ Plate := [].{
 		fat : Dec,
 	}
 
-	## A day of the diary (`GET /days/:day`): its entries, the days either side of it, today (in
+	## A day of the diary (`GET /api/days/:day`): its entries, the days either side of it, today (in
 	## the profile's time zone), and the target.
 	Day : { day : Str, today : Str, previous : Str, next : Str, entries : List(Plate.Entry), target : Plate.Nutrients }
 
@@ -80,11 +80,11 @@ Plate := [].{
 	## A weight, on a day.
 	Weight : { day : Str, kg : Dec }
 
-	## The add page (`GET /add`): what was searched for, where it goes (a day and a meal), and
+	## The add page (`GET /api/add`): what was searched for, where it goes (a day and a meal), and
 	## what was found; before a search, the foods logged lately.
 	Search : { query : Str, day : Str, today : Str, meal : Str, hits : List(Plate.Hit), recent : List(Plate.Hit) }
 
-	## A food's page (`GET /foods/:id`): the food, today, and the meal the time of day suggests.
+	## A food's page (`GET /api/foods/:id`): the food, today, and the meal the time of day suggests.
 	Pick : { food : Plate.Food, today : Str, meal : Str }
 
 	## What goes into a recipe: a food, how many grams, and what that has.
@@ -93,18 +93,18 @@ Plate := [].{
 	## A recipe: its ingredients, how many servings they make, and the food that logs a serving.
 	Recipe : { id : Str, food : Str, name : Str, servings : I64, notes : Str, ingredients : List(Plate.Ingredient) }
 
-	## A recipe's page (`GET /recipes/:id`): the recipe, and the foods a search for an ingredient
-	## found (`?q=`).
+	## A recipe's page (`GET /api/recipes/:id`): the recipe, and the foods a search for an
+	## ingredient found (`?q=`).
 	Kitchen : { recipe : Plate.Recipe, query : Str, hits : List(Plate.Hit) }
 
 	## A recipe in the list: what a serving has.
 	Card : { id : Str, food : Str, name : Str, servings : I64, kcal : Dec, ingredients : I64 }
 
-	## The goals page (`GET /goals`): the profile, this year (for its age), and whether the diary
-	## has a password (so it has a way to sign out).
+	## The goals page (`GET /api/goals`): the profile, this year (for its age), and whether the
+	## diary has a password (so it has a way to sign out).
 	Goals : { profile : Plate.Profile, year : I64, locked : Bool }
 
-	## The trends page (`GET /trends?days=30`): each of the last `range` days' totals, the
+	## The trends page (`GET /api/trends?days=30`): each of the last `range` days' totals, the
 	## targets, and the weights in that time.
 	Trends : { range : U64, today : Str, totals : List(Plate.Totals), target : Plate.Nutrients, weights : List(Plate.Weight) }
 

@@ -12,7 +12,7 @@ meta = { title: "Sign in" }
 
 view! = |_| {
 	location = Router.location!({})
-	live = LiveForm.of!(PlateForm.password, Api.post_sign_in({}))
+	live = LiveForm.of!(PlateForm.password, Api.post_api_sign_in({}))
 	<section class="sign-in card">
 		<h1>Plate</h1>
 		<p class="quiet">This diary has a password.</p>

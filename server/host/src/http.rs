@@ -83,7 +83,7 @@ pub const USAGE: &str = "usage: <app> [options]
   --port 8080 --host 127.0.0.1         where to listen (PORT)
   --static DIR, --file /PATH=FILE      files served as they are
   --context-file FILE                  what the app's init! is given, once, as it starts
-  --env-file FILE                      settings for the environment, read as it starts (ROCX_ENV_FILE; else .env here, if there is one; set but empty: none); the environment wins
+  --env-file FILE                      settings for the environment, read as it starts (none without it: a .env here isn't read unless named); the environment wins
   --database-url URL                   the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
   --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in the database)
   --kv-max-mb 64                       the key-value store's limit (KV_MAX_MB): the least recently used goes past it
@@ -225,7 +225,7 @@ pub async fn bind(config: &Config) -> Result<TcpListener, String> {
 /// to `grace`) for the requests and streams being answered.
 pub async fn serve(listener: TcpListener, config: Config, mut stop: watch::Receiver<bool>, grace: Duration) -> std::io::Result<()> {
     // The address in the message itself: what starts the server reads it there.
-    // What `.env` set, now that the log's format is the app's (D-088).
+    // What `--env-file`'s file set, now that the log's format is the app's (D-088).
     if let Some((file, set, kept)) = crate::dotenv::read() {
         logging::info("rocx server: settings read", &[("file", file.into()), ("set", set.into()), ("kept", kept.into())]);
     }

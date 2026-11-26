@@ -134,8 +134,8 @@ The boxes an answer doesn't use (the page, the stream) do nothing, and the host 
 
 ### How the server starts and stops
 
-1. `.env` (or `--env-file`'s, or `ROCX_ENV_FILE`'s) is read into the environment, in `main`,
-   while it is the only thread (`dotenv.rs`, D-088; Settings, below). A line that isn't a setting,
+1. The file `--env-file` names, if it names one, is read into the environment, in `main`, while
+   it is the only thread (`dotenv.rs`, D-088, D-098; Settings, below). A line that isn't a setting,
    or a named file that isn't there, stops the server (exit 2). Then the flags are read
    (`Config::parse`). An unknown flag, or one that is gone (`--migrations`, `--job-workers`,
    `--smtp-url`…), stops the server with a message saying where it went.
@@ -157,7 +157,7 @@ The boxes an answer doesn't use (the page, the stream) do nothing, and the host 
    An `Err` or a crash in any of them stops the server.
 6. The background loops start: the plugins' loops and checks (`roc_background_count`), each a call
    of its own. One that crashes starts again a second later.
-7. The host logs what `.env` set (`rocx server: settings read`, in the app's format now), then
+7. The host logs what the file set (`rocx server: settings read`, in the app's format now), then
    `rocx server: http://… (Roc, native)`, and answers requests.
 
 Stopping (SIGTERM, or ^C): the server logs `rocx server: stopping`, stops listening, and waits up
@@ -858,14 +858,16 @@ if (Env.dev!({})) dev_sign_in else Server.refused(404, "No page here.")     # st
 `Env.var!` reads the server's environment: the app's secrets and whatever differs between machines,
 read the same way in a request, a job or a schedule (twelve-factor; Phoenix's `runtime.exs`).
 
-**`.env`** (D-088): as it starts, before anything else (its own settings, the log's, the app's), the
-server reads `.env` in the directory it starts in, when there is one, into its environment, so a key
-kept there (`ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `SMTP_URL`, `DATABASE_URL`) is read as if the
-shell had exported it, by the app and by every plugin. A variable the environment already has keeps
-its value: the file is the default, the environment says otherwise. `--env-file FILE` names another
-file, read in its place (and which must be there), as does `ROCX_ENV_FILE` when no flag does; set but
-empty, no file is read: the tests' servers start so (`just test`, packages/testing's `startServer`),
-so a developer's `.env` never reaches them. The lines are dotenv's: `NAME=value`, `export
+**`--env-file`** (D-088, D-098): as it starts, before anything else (its own settings, the log's,
+the app's), the server reads the file `--env-file FILE` names (which must be there) into its
+environment, so a key kept there (`ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `SMTP_URL`,
+`DATABASE_URL`) is read as if the shell had exported it, by the app and by every plugin. A variable
+the environment already has keeps its value: the file is the default, the environment says
+otherwise. `rocx dev` names the `.env` in the folder it runs in, when there is one, for its server
+and its SQL check. Without the flag no file is read, a `.env` beside the server neither: a server
+started by a test, by CI or in production has the environment it was given and nothing else, with
+nothing for a harness to turn off. A flag, and no variable, names the file, as a variable would
+reach every server started under it. The lines are dotenv's: `NAME=value`, `export
 NAME=value`, `# comments`, a value in single quotes as it is, in double quotes with `\n`, `\t`, `\r`,
 `\"` and `\\`, either over several lines; no `${NAME}` expansion. A line that isn't a setting stops the
 server, saying which. The log names what was set and what the environment kept, never a value
@@ -1314,7 +1316,7 @@ can be searched:
 | Message | Level | Fields |
 | --- | --- | --- |
 | `rocx server: http://… (Roc, native)` | info | (the address is in the message) |
-| `rocx server: settings read` | info | `file`, `set`, `kept` (names, never values: `.env`, D-088) |
+| `rocx server: settings read` | info | `file`, `set`, `kept` (names, never values: `--env-file`'s, D-088) |
 | `rocx server: no database, so these tables aren't made, and what reads them fails` | warn | `tables` (under `--dev` or `--debug`) |
 | `rocx server: Roc crashed` | error | `method`, `target`, `error` |
 | `rocx server: migrated` | info | `migration` |
@@ -1607,7 +1609,7 @@ header (with the other platforms' glue).
 <app> --port 8080 --host 127.0.0.1        where to listen (PORT)
       --static DIR, --file /PATH=FILE     files served as they are
       --context-file FILE                 what the app's init! is given, once, as it starts
-      --env-file FILE                     settings for the environment, read as it starts (ROCX_ENV_FILE; else .env here, if there is one; set but empty: none); the environment wins
+      --env-file FILE                     settings for the environment, read as it starts (none without it: a .env here isn't read unless named); the environment wins
       --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)
       --kv-max-mb 64                      the key-value store's limit (KV_MAX_MB): the least recently used goes past it
@@ -1646,8 +1648,8 @@ This is the host's own `--help` (`USAGE` in `http.rs`). Some details:
   proxy. Without either, it is where the server listens (`http://127.0.0.1:8080`, or the port the
   system gave `--port 0`; an all-interfaces address becomes loopback). It is never taken from a
   request's `Host`, which whoever asks controls.
-- **Exit codes:** 2 for a flag the host can't read (or `--help`) and for a `.env` it can't read
-  (a line that isn't a setting, an `--env-file` that isn't there), 1 for a server that can't start
+- **Exit codes:** 2 for a flag the host can't read (or `--help`) and for an `--env-file` it can't
+  read (a line that isn't a setting, a file that isn't there), 1 for a server that can't start
   (a port in use, a migration that fails, a plugin problem, no database while the app or a plugin
   has tables, `init!`'s `Err`).
 
@@ -1655,7 +1657,7 @@ This is the host's own `--help` (`USAGE` in `http.rs`). Some details:
 
 `just test-server` runs this platform's tests, then packages/testing's, packages/posthog's, the
 guard, push, auth, stripe and ai examples' (each against an app it builds), and `rocx new`'s
-template's (`templates/test`), all with `ROCX_ENV_FILE=` so a `.env` here reaches none of them. Run
+template's (`templates/test`); a `.env` here reaches none of their servers, which aren't given one. Run
 one file with `node --test server/test/server.test.mjs`. They skip what they can't run:
 
 - without Roc or Rust (`just setup`), everything;
@@ -1758,10 +1760,11 @@ packages/admin, and transactions inside transactions (`nested-checks.mjs`: on Tu
 too, and a level that loses to another's write on Turso's MVCC).
 
 **`server/test/envfile.test.mjs`** builds `server/test/envfile`, an app that answers
-`GET /env/<NAME>`, and starts it in directories of its own (D-088): `.env` where it starts read
-into its environment, the environment's own value winning, `--env-file` and `ROCX_ENV_FILE` (set
-but empty: none read), the log's line naming what was set and kept in the app's format, a bad line
-or a missing named file stopping the server; and `dotenv.rs`'s own parser tests.
+`GET /env/<NAME>`, and starts it in directories of its own (D-088, D-098): `--env-file`'s file read
+into its environment, the environment's own value winning, no file without the flag (a `.env` where
+it starts neither, `ROCX_ENV_FILE` neither), the log's line naming what was set and kept in the
+app's format, a bad line or a missing named file stopping the server; and `dotenv.rs`'s own parser
+tests.
 
 **`server/test/host-entries.test.mjs`** builds nothing: it reads the host's sources and checks that
 every function Roc can call (the glue's runtime and hosted symbols, every exported function, the

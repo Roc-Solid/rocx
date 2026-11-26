@@ -36,10 +36,10 @@ meta = {
 	],
 }
 
-## The endpoints, as they answered: this path's own endpoint (`GET /calls`, for JSON), which the
+## The endpoints, as they answered: the page's endpoint (`GET /api/calls`, for JSON), which the
 ## server answers as it renders the page.
 asked! : {} => { asked : List({ method : Str, path : Str, body : Str, status : U16, answer : Str }), shouted : Str }
-asked! = |{}| Endpoint.get!(Api.get_calls({}))
+asked! = |{}| Endpoint.get!(Api.get_api_calls({}))
 
 view! = |_|
 	<>
@@ -122,12 +122,13 @@ view! = |_|
 				<code>Generated/Api.roc</code> carries those types to the component: reading the answer as anything
 				else doesn't compile.
 			</p>
-			<Callout kind="tip" title="Put a page's data at the page's own URL">
+			<Callout kind="tip" title="Put a page's data under api/, at the page's path">
 				<p>
-					<code>routes/members/+server.roc</code> answers <code>GET /members</code> for JSON, and the page at
-					<code>/members</code> reads it, behind the same middleware (both files below). When the page's
-					query matters, pass it on: <code>{"Endpoint.with_query(Api.get_board({}), Router.location!({}).query)"}</code> reads
-					<code>/?weeks=1</code> for the page at <code>/?weeks=1</code>, and the handler reads
+					<code>routes/api/members/+server.roc</code> answers <code>GET /api/members</code> for JSON, and the
+					page at <code>/members</code> reads it, each behind its own <code>Middlewares.member</code> (both
+					files below): a path is a page or an endpoint, never both. When the page's query matters, pass
+					it on: <code>{"Endpoint.with_query(Api.get_api({}), Router.location!({}).query)"}</code> reads
+					<code>/api?weeks=1</code> for the page at <code>/?weeks=1</code>, and the handler reads
 					<code>request.query</code>. A layout, which many pages share, reads an endpoint at a path of its
 					own: this site's footer reads <code>GET /api/facts</code>.
 				</p>
@@ -220,7 +221,7 @@ view! = |_|
 			</p>
 			<Code title={Sources.endpoint_shout.file} source={Sources.endpoint_shout.rocx} />
 			<Code title={Sources.endpoint_shout_word.file} source={Sources.endpoint_shout_word.rocx} />
-			<p>Over HTTP, anything may ask them. Here is what they answered when this page's own endpoint asked them as the page rendered:</p>
+			<p>Over HTTP, anything may ask them. Here is what they answered when this page's endpoint asked them as the page rendered:</p>
 			<TableWrap>
 				<table class="http">
 					<thead><tr><th>Request</th><th>Body</th><th>Status</th><th>Answer</th></tr></thead>
@@ -275,9 +276,11 @@ view! = |_|
 			</p>
 			<ul>
 				<li>
-					<strong>A page and endpoints at one path.</strong> A browser's GET (one that accepts HTML) gets the
-					page. Any other GET goes to <code>get!</code>, if the file has one, and every other method to its
-					handler. A method nothing answers is a 405 that lists the ones that are (<code>Allow</code>).
+					<strong>A path is a page or an endpoint.</strong> A page's endpoints live under
+					<code>routes/api/</code>, at the page's path. A directory that holds both still works: a browser's
+					GET (one that accepts HTML) gets the page, anything else the endpoints', each answer saying
+					<code>Vary: Accept</code>. A method nothing answers is a 405 that lists the ones that are
+					(<code>Allow</code>).
 				</li>
 				<li>
 					<strong>Behind middleware.</strong> This site's default middleware refuses, with a 403, a POST, PUT,
@@ -320,7 +323,7 @@ view! = |_|
 			</p>
 			<Code
 				title="A form that shows its refusal"
-				source={"import pf.Router exposing [use_submission!]\n\njoin = Api.post_members_join({})\nsubmission = use_submission!(join)\n<form method=\"post\" action={Endpoint.url_of(join)}>\n\t<input name=\"name\" value={submission.field!(\"name\")} />\n\t<button disabled?={submission.pending!()}>Join</button>\n\t{match submission.error!() {\n\t\tOk(problem) => <p class=\"problem\">{Server.explain(problem)}</p>\n\t\tErr(_) => <></>\n\t}}\n</form>"}
+				source={"import pf.Router exposing [use_submission!]\n\njoin = Api.post_api_members_join({})\nsubmission = use_submission!(join)\n<form method=\"post\" action={Endpoint.url_of(join)}>\n\t<input name=\"name\" value={submission.field!(\"name\")} />\n\t<button disabled?={submission.pending!()}>Join</button>\n\t{match submission.error!() {\n\t\tOk(problem) => <p class=\"problem\">{Server.explain(problem)}</p>\n\t\tErr(_) => <></>\n\t}}\n</form>"}
 				numbers={Bool.False}
 			/>
 			<ul>
@@ -502,8 +505,7 @@ view! = |_|
 				<li>
 					<p>
 						<strong>It routes them.</strong> <code>Generated/Routes.roc</code> gives each path's requests to
-						its page (a GET that accepts HTML) or to its endpoints, after the app's default middleware and the
-						route file's own (a page that names none runs behind its <code>+server.roc</code>'s), each
+						its page or to its endpoints, after the app's default middleware and the route file's own, each
 						endpoint with its handler from <code>Generated/Handlers.roc</code>. The GETs
 						the server makes as it renders go the same way.
 					</p>
@@ -525,8 +527,8 @@ view! = |_|
 			<p>
 				SolidStart has server functions (<code>"use server"</code>): code the browser calls at a URL the
 				framework picks. Roc Solid has none. A page's data is a <code>get!</code> in a route's
-				<code>+server.roc</code>, at a URL you chose: the page's own, or a path of its own for a layout or a
-				component many pages show. Its input is the path's params or the query, and what its middleware handed
+				<code>+server.roc</code>, at a URL you chose: under <code>api/</code> at the page's path, or a path of
+				its own for a layout or a component many pages show. Its input is the path's params or the query, and what its middleware handed
 				on is its <code>context</code>. A component reads it with <code>{"Endpoint.get!(Api.get_…(params))"}</code>.
 				So the server's render, hydration, later reads in the browser, other clients and the OpenAPI document
 				all meet one handler, behind one middleware. <code>rocx build</code> refuses <code>{"server!(…)"}</code>,

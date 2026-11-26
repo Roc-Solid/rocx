@@ -36,7 +36,7 @@ after(async () => {
 /** A list of the test's own, made with the front page's form, as a browser without JavaScript would: its id. */
 async function newList(person, name) {
 	await person.get("/");
-	const made = await person.post("/", { name });
+	const made = await person.post("/api", { name });
 	assert.equal(made.status, 303);
 	const id = /^\/lists\/(\d+)$/.exec(made.location)?.[1];
 	assert.ok(id, `a new list's page, not ${made.location}`);
@@ -46,7 +46,7 @@ async function newList(person, name) {
 /** A task added to the list `id` with its form, without JavaScript: its id, from the database. */
 async function addTask(person, id, fields) {
 	await person.get(`/lists/${id}`);
-	const added = await person.post(`/lists/${id}`, { due: "", assignee: "", ...fields });
+	const added = await person.post(`/api/lists/${id}`, { due: "", assignee: "", ...fields });
 	assert.equal(added.status, 303);
 	const [row] = await db.sql`select cast(id as text) as id from tasks where list_id = ${Number(id)} and title = ${fields.title}`;
 	return row.id;
@@ -88,7 +88,7 @@ test("a list shows its tasks in order, each due day and person, and the open cou
 	page.dom.getByText("Tomorrow");
 	page.dom.getByText(/^Overdue · /);
 	// Its data is its own URL's, as JSON.
-	const sheet = await app.client().read("/lists/1");
+	const sheet = await app.client().read("/api/lists/1");
 	assert.equal(sheet.name, "Website relaunch");
 	assert.deepEqual(
 		sheet.tasks.map((task) => task.title),
@@ -120,14 +120,14 @@ test("a list or a task that isn't there is a 404: the app's error page, as a pat
 		assert.equal(missing.dom.getByRole("link", { name: "Back to your lists" }).attr("href"), "/");
 	}
 	assert.equal((await person.get("/no/such/page")).status, 404);
-	assert.equal((await person.read("/lists/999").catch((error) => error.status)), 404);
+	assert.equal((await person.read("/api/lists/999").catch((error) => error.status)), 404);
 });
 
 test("adding a task without JavaScript: a plain form, a 303 back, and it is on the list", { skip }, async () => {
 	const person = app.client();
 	const id = await newList(person, "Groceries");
 	await person.get(`/lists/${id}`);
-	const added = await person.post(`/lists/${id}`, { title: "  Buy   milk ", due: "2030-01-15", assignee: "mila" });
+	const added = await person.post(`/api/lists/${id}`, { title: "  Buy   milk ", due: "2030-01-15", assignee: "mila" });
 	assert.equal(added.status, 303);
 	assert.equal(new URL(added.location, app.url).pathname, `/lists/${id}`);
 	const page = await added.follow();
@@ -149,7 +149,7 @@ test("a task the form refuses comes back with its issues in place, and what was 
 	const person = app.client();
 	const id = await newList(person, "Refusals");
 	await person.get(`/lists/${id}`);
-	const refused = await person.post(`/lists/${id}`, { title: "   ", due: "2026-02-30", assignee: "" });
+	const refused = await person.post(`/api/lists/${id}`, { title: "   ", due: "2026-02-30", assignee: "" });
 	assert.equal(refused.status, 303);
 	assert.equal(person.flash.status, 422);
 	const page = await refused.follow();
@@ -162,7 +162,7 @@ test("a task the form refuses comes back with its issues in place, and what was 
 	// And nothing was added.
 	assert.deepEqual(await db.sql`select id from tasks where list_id = ${Number(id)}`, []);
 	// Someone not on the team is refused by the endpoint, which knows the team.
-	const nobody = await person.submit(`/lists/${id}`, { title: "Hire someone", due: "", assignee: "zed" });
+	const nobody = await person.submit(`/api/lists/${id}`, { title: "Hire someone", due: "", assignee: "zed" });
 	assert.equal(nobody.status, 422);
 	assert.match(nobody.text, /Choose someone on the team/);
 	assert.equal(nobody.headers.get("content-type"), "application/json", "a form's issues are JSON, and say so (D-093)");
@@ -172,18 +172,18 @@ test("a task's body is checked by its form whatever it comes as (D-093): JSON is
 	const person = app.client();
 	const id = await newList(person, "From a script");
 	await person.get(`/lists/${id}`);
-	const added = await person.json(`/lists/${id}`, { title: "  Call   the  printer ", due: "2030-03-01" });
+	const added = await person.json(`/api/lists/${id}`, { title: "  Call   the  printer ", due: "2030-03-01" });
 	assert.equal(added.status, 200, added.text);
 	const [row] = await db.sql`select title, due, assignee from tasks where id = ${Number(added.json())}`;
 	assert.deepEqual(row, { title: "Call the printer", due: "2030-03-01", assignee: null }, "trimmed and collapsed by the form's rules, an assignee left out none");
-	const refused = await person.json(`/lists/${id}`, { title: " ", due: "2030-02-30", assignee: "mila" });
+	const refused = await person.json(`/api/lists/${id}`, { title: " ", due: "2030-02-30", assignee: "mila" });
 	assert.equal(refused.status, 422);
 	assert.equal(refused.headers.get("content-type"), "application/json");
 	assert.deepEqual(refused.json().map((issue) => [issue.field, issue.message]), [["title", "Fill this in"], ["due", "Enter a date, like 2026-01-31"]]);
 	// What a form can't say: a record inside a field is a 400, before the rules.
-	assert.equal((await person.json(`/lists/${id}`, { title: { text: "x" } })).status, 400);
+	assert.equal((await person.json(`/api/lists/${id}`, { title: { text: "x" } })).status, 400);
 	// The new list's name is checked so too.
-	const unnamed = await person.json("/", { name: "  " });
+	const unnamed = await person.json("/api", { name: "  " });
 	assert.equal(unnamed.status, 422);
 	assert.deepEqual(unnamed.json().map((issue) => [issue.field, issue.message]), [["name", "Fill this in"]]);
 });
@@ -253,7 +253,7 @@ test("a task's page edits everything about it, and shows a refusal's issues unde
 	assert.equal(page.dom.getByLabelText("Due").attr("value"), "2030-03-01");
 	assert.equal(page.dom.getByRole("option", { name: "Jun Park" }).attr("selected"), "");
 	// Refused: back to the page, with what was typed and why.
-	const refused = await person.post(`/tasks/${task}`, { title: "", notes: "Cake!", due: "2030-03-01", assignee: "jun" });
+	const refused = await person.post(`/api/tasks/${task}`, { title: "", notes: "Cake!", due: "2030-03-01", assignee: "jun" });
 	assert.equal(refused.status, 303);
 	const back = await refused.follow();
 	assert.equal(back.dom.getByLabelText("Title").attr("aria-invalid"), "true");
@@ -261,20 +261,20 @@ test("a task's page edits everything about it, and shows a refusal's issues unde
 	assert.equal(back.dom.getByLabelText("Notes").text, "Cake!");
 	back.dom.getByRole("alert");
 	// Saved: the optional fields left empty are null, the box ticked is done, and back to the list.
-	const saved = await person.post(`/tasks/${task}`, { title: "Plan the party", notes: "Cake!", due: "", assignee: "", done: "on" });
+	const saved = await person.post(`/api/tasks/${task}`, { title: "Plan the party", notes: "Cake!", due: "", assignee: "", done: "on" });
 	assert.equal(saved.status, 303);
 	assert.equal(saved.location, `/lists/${id}`);
 	const [row] = await db.sql`select notes, due, assignee, done from tasks where id = ${Number(task)}`;
 	assert.deepEqual(row, { notes: "Cake!", due: null, assignee: null, done: 1 });
 	// With the runtime, the redirect comes back for it to follow.
-	const runtime = await person.submit(`/tasks/${task}`, { title: "Plan the party", notes: "", due: "", assignee: "" });
+	const runtime = await person.submit(`/api/tasks/${task}`, { title: "Plan the party", notes: "", due: "", assignee: "" });
 	assert.equal(runtime.headers.get("x-rocx-redirect"), `/lists/${id}`);
 });
 
 test("who are you: a session, your name at the top, your tasks under Mine, and new tasks yours", { skip }, async () => {
 	const person = app.client();
 	await person.get("/me");
-	const chosen = await person.post("/me", { person: "avery" });
+	const chosen = await person.post("/api/me", { person: "avery" });
 	assert.equal(chosen.status, 303);
 	// The cookie holds a random token; who it is stays on the server, as the session's user
 	// (packages/auth keeps the token's SHA-256).
@@ -294,7 +294,7 @@ test("who are you: a session, your name at the top, your tasks under Mine, and n
 	(await forger.get("/")).dom.getByRole("heading", { level: 1, name: "Your team's lists" });
 	// Picking someone else ends the session you had: its token is nobody's now.
 	await person.get("/me");
-	await person.post("/me", { person: "jun" });
+	await person.post("/api/me", { person: "jun" });
 	assert.notEqual(person.cookies.get("tasks_session"), token);
 	(await person.get("/")).dom.getByRole("heading", { level: 1, name: "Hello, Jun" });
 	const stale = app.client();
@@ -302,12 +302,12 @@ test("who are you: a session, your name at the top, your tasks under Mine, and n
 	(await stale.get("/")).dom.getByRole("heading", { level: 1, name: "Your team's lists" });
 	// Someone not on the team is refused, and you stay who you were; "I'd rather not say" forgets you.
 	await person.get("/me");
-	const refused = await person.post("/me", { person: "zed" });
+	const refused = await person.post("/api/me", { person: "zed" });
 	assert.equal(person.flash.status, 400);
 	(await refused.follow()).dom.getByText("Pick someone on the team.");
 	(await person.get("/")).dom.getByRole("heading", { level: 1, name: "Hello, Jun" });
 	const kept = person.cookies.get("tasks_session");
-	await person.post("/me", { person: "" });
+	await person.post("/api/me", { person: "" });
 	assert.equal(person.cookies.get("tasks_session"), undefined);
 	assert.deepEqual(await db.sql`select user_id from auth_sessions where id = ${hashOf(kept)}`, []);
 });

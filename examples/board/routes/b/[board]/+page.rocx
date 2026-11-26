@@ -12,6 +12,7 @@ import presence.Presence
 import presence.Wire
 import ../../../Board
 import ../../../Generated/Api
+import ../../../Middlewares
 import ../../../Ui/AddColumn
 import ../../../Ui/Archive
 import ../../../Ui/Avatar
@@ -21,7 +22,7 @@ import ../../../Ui/Shared
 
 ## A board: its columns of cards, which everyone on it moves, and sees moved, as it happens.
 ##
-## - The board is the server's (`GET /b/<board>`, read as the page renders and carried in it), with
+## - The board is the server's (`GET /api/b/<board>`, read as the page renders and carried in it), with
 ##   the moves and new cards on their way applied (`use_submissions!`, D-030): a card dropped in
 ##   another column shows there at once, and stays there while the server takes it and the board is
 ##   read again.
@@ -34,13 +35,16 @@ import ../../../Ui/Shared
 ##   (`use_search_params!`). A shared link, or a page loaded without JavaScript, opens it as well.
 meta = { title: "Board" }
 
+## For members only, as the board's endpoints are.
+middleware = Middlewares.member
+
 view! = |{ params }| {
 	board = params.board
-	read = Api.get_b_board({ board: board })
-	moves = use_submissions!(Api.post_b_board_move({ board: board }))
-	move! = use_action!(Api.post_b_board_move({ board: board }))
-	adds = use_submissions!(Api.post_b_board_cards({ board: board }))
-	add! = use_action!(Api.post_b_board_cards({ board: board }))
+	read = Api.get_api_b_board({ board: board })
+	moves = use_submissions!(Api.post_api_b_board_move({ board: board }))
+	move! = use_action!(Api.post_api_b_board_move({ board: board }))
+	adds = use_submissions!(Api.post_api_b_board_cards({ board: board }))
+	add! = use_action!(Api.post_api_b_board_cards({ board: board }))
 	# The board as it shows: the server's, with the moves on their way applied.
 	board! = create_memo!(
 		|| {
@@ -70,12 +74,12 @@ view! = |{ params }| {
 			}
 			Refused(_, _) | Ended(_) => set_live!(Bool.False)
 		}
-	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_b_board({ board: board }), heard!))
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_api_b_board({ board: board }), heard!))
 
 	# Who is here (packages/presence): the board's room, on its channel (one stream with the board's
 	# own), and the card this tab has open as its `data`, said whenever that changes; `Away` while
 	# the tab is hidden (`<Document on:visibilitychange.visible>`, below: D-055).
-	here = Presence.join!(Api.channel_b_board_presence({ board: board }))
+	here = Presence.join!(Api.channel_api_b_board_presence({ board: board }))
 	create_effect!(|| open!(), |card| (here.update!)({ card: card }))
 
 	shared = {

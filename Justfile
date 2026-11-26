@@ -364,7 +364,7 @@ test: test-rocx test-web test-server
 # rocx's own, the site's (which imports the platform's modules, the pages and their components, the
 # highlighter) and every package's.
 test-rocx: server-host
-    ROCX_ENV_FILE= ROC={{ roc }} node --test 'test/*.test.mjs'
+    ROC={{ roc }} node --test 'test/*.test.mjs'
     {{ roc }} test rocx-cli/main.roc
     {{ rocx }} site prepare
     {{ roc }} test site/main.roc
@@ -375,7 +375,7 @@ test-rocx: server-host
 # hosts' shared memory (web/memory, D-091), on this machine.
 test-web: server-host
     if command -v cargo >/dev/null; then cargo test -q --manifest-path web/memory/Cargo.toml; else RUSTUP_HOME=$PWD/.tools/rust/rustup CARGO_HOME=$PWD/.tools/rust/cargo .tools/rust/cargo/bin/cargo test -q --manifest-path web/memory/Cargo.toml; fi
-    ROCX_ENV_FILE= ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
+    ROC={{ roc }} node --test --test-concurrency=1 'web/test/*.test.mjs' 'site/test/*.test.mjs'
 
 # `just test`'s third part: the server platform, and packages/testing's, packages/posthog's and
 # the guard, push, auth, stripe and ai examples' tests against an app each builds, and `rocx new`'s template's
@@ -383,9 +383,9 @@ test-web: server-host
 # browser's half too (the web platform's host first: `test-web`'s tests build it, but this part
 # may run alone, as CI runs it).
 test-server: server-host web-host
-    ROCX_ENV_FILE= ROC={{ roc }} node --test 'server/test/*.test.mjs'
-    ROCX_ENV_FILE= ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs' 'packages/guard/example/test/*.test.mjs' 'packages/push/example/test/*.test.mjs' 'packages/auth/example/test/*.test.mjs' 'packages/stripe/example/test/*.test.mjs' 'packages/ai/example/test/*.test.mjs'
-    ROCX_ENV_FILE= ROC={{ roc }} node --test 'templates/test/*.test.mjs'
+    ROC={{ roc }} node --test 'server/test/*.test.mjs'
+    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs' 'packages/posthog/test/*.test.mjs' 'packages/guard/example/test/*.test.mjs' 'packages/push/example/test/*.test.mjs' 'packages/auth/example/test/*.test.mjs' 'packages/stripe/example/test/*.test.mjs' 'packages/ai/example/test/*.test.mjs'
+    ROC={{ roc }} node --test 'templates/test/*.test.mjs'
 
 # Type-checks the site, both programs, with reports pointed into .rocx files, and lints its markup:
 # the server's, and the browser's, built from the copy of the site in which a route file has no
@@ -478,7 +478,7 @@ examples *names: server-host web-host
         if just examples-check "$name" \
             && ROC={{ roc }} {{ rocx }} check --sql "$dir" \
             && {{ rocx }} check -- {{ roc }} test "$dir/main.roc" \
-            && { ! compgen -G "$dir/test/*.test.mjs" >/dev/null || ROCX_ENV_FILE= ROC={{ roc }} node --test "$dir/test/*.test.mjs"; }; then
+            && { ! compgen -G "$dir/test/*.test.mjs" >/dev/null || ROC={{ roc }} node --test "$dir/test/*.test.mjs"; }; then
             echo "== $name: ok"
         else
             echo "== $name: FAILED" >&2

@@ -36,8 +36,9 @@ view! = |_|
 			>
 				An app's URLs come from the files under its <code>routes/</code> directory, as in SvelteKit. A
 				<code>+page.rocx</code> is a page at the path its directory names. The <code>+layout.rocx</code>
-				files above it wrap it, a <code>+server.roc</code> beside it answers HTTP requests at that path, and
-				<code>+error.rocx</code> is shown where nothing answers. rocx writes a typed path for every page and a
+				files above it wrap it, a <code>+server.roc</code> answers HTTP requests at its path (a page's own
+				under <code>routes/api/</code>, at the page's path), and <code>+error.rocx</code> is shown where
+				nothing answers. rocx writes a typed path for every page and a
 				typed function for every endpoint, so a link to a page that doesn't exist, or a call to an endpoint
 				that doesn't, fails to compile.
 			</PageHero>
@@ -63,7 +64,9 @@ view! = |_|
 			<p>
 				Each directory's name is one part of the path, in lower case (<code>blog</code>,
 				<code>getting-started</code>, <code>feed.xml</code>), or a param in brackets (<code>[slug]</code>).
-				<code>rocx build</code> refuses any other name, and says why.
+				It may start with an underscore, for a path another service names (<code>_verify</code>, named
+				<code>verify</code> in <code>Api</code> and <code>Paths</code>). <code>rocx build</code> refuses any
+				other name, and says why.
 			</p>
 
 			<Heading id="page">A page</Heading>
@@ -159,7 +162,9 @@ view! = |_|
 				and a part that doesn't read is no match, so <code>/api/count/five</code> is a 404, as a path nothing
 				answers is, and the handler never parses it. The type is the directory's: every handler under it
 				gives the param the same one (rocx build says where two differ), and the pages and layouts there
-				are given it too, as <code>Paths</code> and <code>Api</code> take it. This site's count of
+				are given it too, as <code>Paths</code> and <code>Api</code> take it. A page whose endpoints are under
+				<code>api/</code> says its own, as a type in the page, <code>{"Params : { id : I64 }"}</code>: rocx
+				never reads a page's types from another directory. This site's count of
 				<a href={"${Paths.calls}#events"}>events</a> is typed so:
 			</p>
 			<Code title={Sources.endpoint_count.file} source={Sources.endpoint_count.rocx} />
@@ -218,9 +223,12 @@ view! = |_|
 					<code>Server.Response</code> of its own: a page mounted from elsewhere, a JSON-RPC endpoint.
 				</li>
 				<li>
-					<strong>A page and endpoints at one path.</strong> A browser's GET (one that accepts HTML) gets the
-					page. Any other GET goes to <code>get!</code>, if the file has one, and every other method to its
-					handler. A method nothing answers is a 405 that lists the ones that are (<code>Allow</code>).
+					<strong>A path is a page or an endpoint.</strong> A page's endpoints, what it reads and what its
+					forms post to, live under <code>routes/api/</code>, at the page's path: the page at
+					<code>/members</code> reads <code>GET /api/members</code>. One URL gives one answer, which no cache
+					can mix up. A directory may still hold both: then a browser's GET (one that accepts HTML) gets the
+					page, anything else the endpoints', and every answer there says <code>Vary: Accept</code>. A method
+					nothing answers is a 405 that lists the ones that are (<code>Allow</code>).
 				</li>
 				<li>
 					<strong>Typed at both ends.</strong> Each handler must be annotated, and rocx copies the annotations
@@ -256,12 +264,10 @@ view! = |_|
 			<Code title={Sources.route_main.file} source={Sources.route_main.rocx} numbers={Bool.False} />
 			<p>
 				The second is a route file's own, <code>middleware = …</code>. It runs after the default, around
-				that file's page or its endpoints. A page that names none runs behind the one the
-				<code>+server.roc</code> beside it names, so one line guards both the page and the data it reads,
-				and a page can't render for someone its own data refuses. A page that names its own keeps it. Only
-				the page's own directory counts: a <code>+server.roc</code> further up guards nothing below it, and
-				<code>rocx build</code> refuses a <code>middleware</code> in a layout or the error page, since nothing
-				would run it. What a middleware hands on is the <code>context</code> the file's handlers are given
+				that file's page or its endpoints, and each file names its own: the page at <code>/members</code>
+				and its endpoint under <code>api/</code> each say <code>Middlewares.member</code>. A route file
+				further up guards nothing below it, and <code>rocx build</code> refuses a <code>middleware</code> in a
+				layout or the error page, since nothing would run it. What a middleware hands on is the <code>context</code> the file's handlers are given
 				(<code>{"get! = |{ context, .. }| …"}</code>). This site's middleware:
 			</p>
 			<Code title={Sources.site_middlewares.file} source={Sources.site_middlewares.rocx} />
@@ -270,12 +276,11 @@ view! = |_|
 				<Code title={Sources.members_server.file} source={Sources.members_server.rocx} numbers={Bool.False} />
 			</Versus>
 			<p>
-				The page names no middleware, so a request to <code>/members</code> goes through the app's default
-				middleware, then <code>Middlewares.member</code> (the <code>+server.roc</code>'s), then the page
-				(for a browser) or <code>get!</code> (for anything else). The answer goes back out through them, and picks up the default's headers on its way. The
-				page itself isn't given the context. It reads its own endpoint, <code>GET /members</code>, as it
-				renders, and the server answers that read behind the same middleware, so the handler gets the
-				member's name. <code>rocx routes</code> lists every route, the file that answers it, and the
+				A request to <code>/members</code> goes through the app's default middleware, then
+				<code>Middlewares.member</code>, then the page. The answer goes back out through them, and picks up
+				the default's headers on its way. The page itself isn't given the context. It reads its endpoint,
+				<code>GET /api/members</code>, as it renders, and the server answers that read behind the endpoint's
+				own <code>Middlewares.member</code>, so the handler gets the member's name. <code>rocx routes</code> lists every route, the file that answers it, and the
 				middleware it runs behind:
 			</p>
 			<Code title="A terminal" source={Sources.route_list.rocx} numbers={Bool.False} plain />
@@ -288,8 +293,8 @@ view! = |_|
 					wouldn't compile.
 				</li>
 				<li>
-					<strong>Each file names its own.</strong> A page's middleware doesn't guard the endpoints beside it,
-					or the pages below it, so <code>members/+server.roc</code> names <code>Middlewares.member</code> too.
+					<strong>Each file names its own.</strong> A page's middleware doesn't guard its endpoints or the
+					pages below it, so <code>api/members/+server.roc</code> names <code>Middlewares.member</code> too.
 					What guards a route is written in its file, and <code>rocx routes</code> shows them all together.
 				</li>
 				<li>
@@ -409,7 +414,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Module</th><th>What it holds</th></tr></thead>
 					<tbody>
-						<tr><td><code>ShowcasePage.roc</code>, <code>MembersServer.roc</code>…</td><td>each route file, as a module named after its path</td></tr>
+						<tr><td><code>ShowcasePage.roc</code>, <code>ApiMembersServer.roc</code>…</td><td>each route file, as a module named after its path</td></tr>
 						<tr><td><code>Paths.roc</code></td><td>a path for every page (<a href="#params">typed links</a>)</td></tr>
 						<tr><td><code>Api.roc</code></td><td>the app's contract: a function for each endpoint and channel, with its method, URL and types</td></tr>
 						<tr><td><code>Handlers.roc</code></td><td>the server's only: each endpoint bound to its handler</td></tr>
@@ -442,8 +447,7 @@ view! = |_|
 				<code>App.program</code> answers every request with it, behind the app's default middleware, and
 				the GETs the server makes while it renders a page go the same way. When a file names middleware, its
 				page and its endpoints are wrapped in <code>Middleware.run!</code>, and the handler is given what the
-				middleware passed on. The members page names none, so its page runs behind
-				<code>MembersServer.middleware</code>, its <code>+server.roc</code>'s:
+				middleware passed on. The members page and its endpoint each run behind their own:
 			</p>
 			<Code title={"${Sources.route_members.file}, in part"} source={Sources.route_members.rocx} numbers={Bool.False} />
 
@@ -596,7 +600,7 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>No static pages with params.</strong> This site's static copy writes the pages without
-					params (<code>Paths.all</code>) and without middleware of their own (named in the page, or in the
+					params (<code>Paths.all</code>) and without middleware of their own (named in the page, or in a
 					<code>+server.roc</code> beside it). A page with params would need a list of the values to write.
 				</li>
 				<li>

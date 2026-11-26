@@ -3,8 +3,8 @@ import pf.Endpoint
 import pf.Solid exposing [create_effect!, create_signal!]
 import ../Generated/Api
 
-## The lobby (`routes/platform/live/lobby/+server.roc`, a channel): join it, and every tab on this
-## page that has joined sees each wave as it is made. Open the page in a second tab to see it.
+## The lobby (`routes/api/platform/live/lobby/+server.roc`, a channel): join it, and every tab on
+## this page that has joined sees each wave as it is made. Open the page in a second tab to see it.
 Lobby := [].{
 
 	view! : {} => Html
@@ -38,7 +38,7 @@ Room := [].{
 	view! = |{ leave! }| {
 		(state!, set_state!) = create_signal!("Joining…")
 		(waves!, set_waves!) = create_signal!([])
-		lobby = Api.channel_platform_live_lobby({})
+		lobby = Api.channel_api_platform_live_lobby({})
 		create_effect!(
 			|| {},
 			|{}|

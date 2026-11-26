@@ -13,7 +13,7 @@ UpdateForm := [].{
 	view! = |{ incident }| {
 		# Its incident's: a row per incident id, so the id read once is meant.
 		id = untrack!(|| incident)
-		post = Api.post_admin_incidents_id({ id: id })
+		post = Api.post_api_admin_incidents_id({ id: id })
 		submission = use_submission!(post)
 		field = "update-${id.to_str()}"
 		<form class="update" method="post" action={Endpoint.url_of(post)}>

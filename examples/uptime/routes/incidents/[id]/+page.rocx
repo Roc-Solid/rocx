@@ -10,13 +10,16 @@ import ../../../Report
 import ../../../Ui/IncidentCard
 import ../../../Ui/Missing
 
+## The path's id, a number (D-101): this page's endpoint is under api/ (D-100), so the page says it.
+Params : { id : I64 }
+
 ## An incident's page, the one its alert emails link to: its timeline, which grows as the admin
 ## posts updates and closes when its monitor passes a check, read again when the live channel says
 ## its monitor changed.
 meta = { title: "Incident · Status" }
 
 view! = |{ params }| {
-	read = Api.get_incidents_id({ id: params.id })
+	read = Api.get_api_incidents_id({ id: params.id })
 	incident! : () => Report.Incident
 	incident! = create_memo!(|| Endpoint.get!(read))
 	heard! : Channel.Event(Report.News) => {}
@@ -26,7 +29,7 @@ view! = |{ params }| {
 			Message(news) => if (news.monitor == incident!().monitor) refresh!(incident!) else {}
 			Refused(_, _) | Ended(_) => {}
 		}
-	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_api_live({}), heard!))
 	<Errored fallback={|why, _| <Missing why={why} what="incident" />}>
 		<div class="incident-page">
 			<Title>{incident!().title} · Status</Title>

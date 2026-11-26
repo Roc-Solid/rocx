@@ -4,21 +4,24 @@ import pf.Server
 import pf.Router exposing [use_submission!]
 import ../../Pages
 import ../../Generated/Api
+import ../../Middlewares
 import ../../Ui/Editor
 import ../../Ui/Topbar
 
-## A new note: the editor, in a form that posts to `/new`, which saves it and goes on to it.
+## A new note: the editor, in a form that posts to `/api/new`, which saves it and goes on to it.
 meta = { title: "New note · Notes" }
 
+middleware = Middlewares.signed_in
+
 blank! : {} => Pages.Blank
-blank! = |{}| Endpoint.get!(Api.get_new({}))
+blank! = |{}| Endpoint.get!(Api.get_api_new({}))
 
 view! = |_| {
-	saving = use_submission!(Api.post_new({}))
+	saving = use_submission!(Api.post_api_new({}))
 	<div>
 		{Topbar.view({ email: blank!({}).email, query: "" })}
 		<main id="main" class="page">
-			<form method="post" action={Endpoint.url_of(Api.post_new({}))} class="sheet">
+			<form method="post" action={Endpoint.url_of(Api.post_api_new({}))} class="sheet">
 				<Editor title={saving.field!("title")} body={saving.field!("body")} tags={saving.field!("tags")} />
 				{match saving.error!() {
 					Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>

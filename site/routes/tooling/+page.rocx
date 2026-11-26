@@ -166,6 +166,19 @@ view! = |_|
 					</p>
 				</div>
 				<div class="command">
+					<p class="command-usage">rocx build {"<dir>"}<span>--image {"<file.tar>"}</span><span>--tag name:tag</span></p>
+					<p>
+						The release as a container image, which rocx writes itself: no Dockerfile, and no Docker to
+						build it. The server is a static Linux executable with its TLS roots inside, so the image has
+						no base, only one layer: <code>/app/server</code>, <code>/app/static</code>, a user to run as
+						(65532), <code>/tmp</code>, and <code>/app/data</code> for a volume (a SQLite app's
+						<code>data/app.db</code>). It runs in <code>/app</code> on <code>PORT</code> 8080. The file is an
+						OCI image in a tar: <code>docker load -i</code> takes it, as does podman. <code>--tag</code>
+						names it (the directory's name, <code>:latest</code>, by default); <code>--target</code> is
+						<code>arm64musl</code> or <code>x64musl</code>, this machine's processor by default.
+					</p>
+				</div>
+				<div class="command">
 					<p class="command-usage">rocx check {"[dir]"}</p>
 					<p>
 						Checks the app from its sources: it builds the app as <code>rocx dev</code> does, then

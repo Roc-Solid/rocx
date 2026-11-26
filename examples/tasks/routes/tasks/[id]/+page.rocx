@@ -24,7 +24,7 @@ import ../../../Generated/Paths
 ## first (`Router.use_before_leave!`).
 meta = { title: "A task" }
 
-view! = |{ params, .. }| <Editor detail={Endpoint.get!(Api.get_tasks_id({ id: params.id }))} />
+view! = |{ params, .. }| <Editor detail={Endpoint.get!(Api.get_api_tasks_id({ id: params.id }))} />
 
 ## The form, filled in with the task as it is (`LiveForm.filled!`), checked as it is typed with the
 ## same `TaskForm.editing` the endpoint reads it with; after a refusal, what was typed and the
@@ -39,7 +39,7 @@ Editor := [].{
 		{ task, list, people } = detail
 		ticked = if (task.done) [("done", "on")] else []
 		values = [("title", task.title), ("notes", task.notes), ("due", task.due), ("assignee", task.assignee)].concat(ticked)
-		live = LiveForm.filled!(TaskForm.editing, Api.post_tasks_id({ id: task.id }), values)
+		live = LiveForm.filled!(TaskForm.editing, Api.post_api_tasks_id({ id: task.id }), values)
 		# The delete, which the runtime sends (D-095): its answer is the list's id, and once it is in
 		# for this task, the page goes there, asking nothing of changes to a task that is gone. Its
 		# refusal shows under its button.

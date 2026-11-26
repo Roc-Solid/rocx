@@ -62,8 +62,8 @@ view! = |_|
 			<Code title={Sources.ai_example_main.file} source={Sources.ai_example_main.rocx} />
 			<p>
 				Then give the server an API key, from <a href="https://console.anthropic.com">console.anthropic.com</a>,
-				as <code>ANTHROPIC_API_KEY</code>, in the environment or in a <code>.env</code> where the server starts
-				(<a href={"${Paths.platform_settings}#env"}>it reads that file as it starts</a>). Outside
+				as <code>ANTHROPIC_API_KEY</code>, in the environment or in a <code>.env</code> where you run
+				<code>rocx dev</code> (<a href={"${Paths.platform_settings}#env"}>which gives the server that file</a>). Outside
 				<code>--dev</code> the server doesn't start without one. Under
 				<code>--dev</code> (as <code>rocx dev</code> starts it) it starts, and each call answers <code>NoKey</code>.
 			</p>
@@ -495,7 +495,7 @@ view! = |_|
 				Its tests (<code>example/test/ai.test.mjs</code>) run it against a stand-in for the API
 				(<code>example/test/stand-in.mjs</code>), and check what the app sent as well as what it made of the
 				answer. They never ask the API itself. To try the example against the API, put your key in a
-				<code>.env</code> where you start it, which the server reads as it starts:
+				<code>.env</code> where you run <code>rocx dev</code>, which gives it to the server:
 			</p>
 			<Code source={"echo 'ANTHROPIC_API_KEY=sk-ant-…' >> .env\nbin/rocx dev packages/ai/example --port 8095"} plain numbers={Bool.False} />
 			<p>

@@ -97,9 +97,9 @@ describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChr
 		await ada.findByRole("group", { name: "Bo is here" });
 		await bo.findByRole("group", { name: "Ada is here" });
 		for (const tab of [ada, bo]) {
-			assert.equal(await tab.page.eval("[...(window.__runtime.hub.stream?.urls ?? [])].sort().join('\\n') || null"), "/b/launch\n/b/launch/presence", "one stream (/rocx/live) for both channels");
+			assert.equal(await tab.page.eval("[...(window.__runtime.hub.stream?.urls ?? [])].sort().join('\\n') || null"), "/api/b/launch\n/api/b/launch/presence", "one stream (/rocx/live) for both channels");
 			assert.equal(await tab.page.eval("window.__runtime.hub.stats.connects"), 1, "opened once");
-			assert.ok(!(await tab.requested()).some((path) => path.startsWith("/b/launch/presence")), "presence asks nothing of its own");
+			assert.ok(!(await tab.requested()).some((path) => path.startsWith("/api/b/launch/presence")), "presence asks nothing of its own");
 		}
 	});
 
@@ -208,7 +208,7 @@ describe(`Board in two browsers (Ada's: ${engine})`, { skip: noDatabase || noChr
 			const late = await tab.page.eval("window.__letTakesGo()");
 			await tab.page.wait(`window.__answered.length === ${late}`, 5000);
 			assert.deepEqual(await tab.page.eval("window.__answered.splice(0)"), Array(late).fill(409), `${who}'s late renewals are refused`);
-			assert.deepEqual((await cyd.read("/b/launch")).leases, [], `no one holds a lease once ${who} has closed the card`);
+			assert.deepEqual((await cyd.read("/api/b/launch")).leases, [], `no one holds a lease once ${who} has closed the card`);
 			assert.equal(await other.page.eval(`${editing} === null`), true);
 			const [row] = await running.db.sql`select title from cards where id = ${card}`;
 			assert.equal(row.title, `${title}, again`, `${who}'s save is in`);

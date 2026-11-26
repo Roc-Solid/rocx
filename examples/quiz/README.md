@@ -81,10 +81,10 @@ Then open http://localhost:18150.
 |---|---|
 | One actor per room, keyed by the room's code. `Rooms` is the actor's kind (its `name` and `initial` state); its ten methods each have their own reply, and are asked or told by name (`Rooms.join.ask!`, `Rooms.beat.tell!`). It takes one turn at a time, so two answers at once, the clock running out and the host pressing Next never trip over each other | `Rooms.roc` |
 | An actor's own timers: closing each question and moving each reveal on (`me.after!`, `Actor.cancel!`) | `Rooms.timed!` |
-| A crash in a turn: the platform logs it and the room keeps its state; the asker gets `ActorErr(why)`, which the channel answers as a 409 and a read as a vacant room | `routes/rooms/[code]/+server.roc` (`receive!`), `Rooms.look!` |
+| A crash in a turn: the platform logs it and the room keeps its state; the asker gets `ActorErr(why)`, which the channel answers as a 409 and a read as a vacant room | `routes/api/rooms/[code]/+server.roc` (`receive!`), `Rooms.look!` |
 | The rules as pure functions, given the time: joining, starting, picking, closing, advancing, the views | `Game.roc` (41 `expect`s that play games on a clock they choose) |
 | Scoring as a pure, tested function; places with ties | `Score.roc` |
-| A channel per room: the room's view published after each turn that changes it; a check for each subscriber (`channel!`); the room as it is now on each connect (`on_open!`); what pages say (`receive!`: Start, Next, Again, a pick); a tab that goes (`on_close!`) | `routes/rooms/[code]/+server.roc`, `Rooms.turned!` |
+| A channel per room: the room's view published after each turn that changes it; a check for each subscriber (`channel!`); the room as it is now on each connect (`on_open!`); what pages say (`receive!`: Start, Next, Again, a pick); a tab that goes (`on_close!`) | `routes/api/rooms/[code]/+server.roc`, `Rooms.turned!` |
 | Following a room from a page: subscribe from an effect, keep the newest view, say things on the channel (`Endpoint.subscribe!`, `Endpoint.say!`) | `Feed.rocx` |
 | Presence (packages/presence): who is in the room, kept in the actor's state as presence's `Room` (join, leave after a grace period, sweep), and `<AvatarStack>`, a player who dropped greyed (`Offline`) | `Rooms.roc` (`tab_joined`, `present`), `Ui/Lobby.rocx` |
 | A countdown kept honest: each view sets a deadline by the phone's clock (`Time.now_millis!`); `set_interval!` shows what is left and stops itself at zero with its `clear!`; the effect's next run stops the old interval | `Ui/Countdown.rocx` |
@@ -93,7 +93,7 @@ Then open http://localhost:18150.
 | Transitions: each phase is its own `if` or `match` part that flies, scales or fades in and out (`transition:in`, `transition:out`); names that grow into the lobby (`transition`); podium steps that grow up in turn (`Transition.grow(Bottom).delay(…)`) | `routes/host/[code]/+page.rocx`, `routes/play/[code]/+page.rocx`, `Ui/Lobby.rocx`, `Ui/Podium.rocx` |
 | `transition:move`: the leaderboard's rows gliding to their new places | `Ui/Board.rocx` |
 | Charts (packages/charts): how the room answered, as a `<BarChart>` | `Ui/Tally.rocx` |
-| Forms (packages/forms): one schema for a page and its endpoint (`LiveForm`, `<TextField>`, `<IssueSummary>`); the endpoint names it as its body's rules (`post_body = Joining.form`, D-093), so what doesn't pass, as a form or as JSON, is refused with its issues before the handler runs; a custom parser in `try_map`, refusals shown at their fields, plain posts that come back with a flash | `Draft.roc` + `routes/sets/`, `Joining.roc` + `routes/+page.rocx` + `routes/join/+server.roc`, `routes/play/[code]/` |
+| Forms (packages/forms): one schema for a page and its endpoint (`LiveForm`, `<TextField>`, `<IssueSummary>`); the endpoint names it as its body's rules (`post_body = Joining.form`, D-093), so what doesn't pass, as a form or as JSON, is refused with its issues before the handler runs; a custom parser in `try_map`, refusals shown at their fields, plain posts that come back with a flash | `Draft.roc` + `routes/sets/new/` + `routes/api/sets/`, `Joining.roc` + `routes/+page.rocx` + `routes/api/join/+server.roc`, `routes/play/[code]/` + `routes/api/play/[code]/` |
 | SQLite in the server's process: migrations, seeds that can run twice, a transaction, a `json` column | `main.roc`, `migrations/`, `Sets.roc` |
 | Configuration from the environment: how long a question and a reveal last | `Rooms.timing!` (`QUIZ_QUESTION_MS`, `QUIZ_REVEAL_MS`) |
 | Middleware that refuses other sites' posts and hands every route the visitor (from a cookie) | `Visitor.roc` |
@@ -112,7 +112,7 @@ actor only decides when to apply them. Every method's turn goes through `Rooms.t
 2. The method does its work: the room after it, and the reply.
 3. If the phase changed, the timer the old phase had is cancelled and one is set for the new phase's
    deadline (`me.after!`). When it fires, it calls `close` or `advance` like any other caller.
-4. If the room changed, the room's view is published on its channel (`Api.channel_rooms_code`),
+4. If the room changed, the room's view is published on its channel (`Api.channel_api_rooms_code`),
    which every host's screen and every phone follows.
 
 Who is here lives in the actor's state too, as packages/presence's `Room`: each tab that subscribes
@@ -121,7 +121,7 @@ tabs fresh (`beat`). The app doesn't use presence's ready-made channel hooks (`P
 because who is here is part of the game: a question closes early once everyone still in the room
 has answered.
 
-On the page, `Feed.follow!` starts from the view the server rendered with (`GET /rooms/:code`), then
+On the page, `Feed.follow!` starts from the view the server rendered with (`GET /api/rooms/:code`), then
 subscribes from an effect. On each connect and reconnect, the channel's `on_open!` sends the room as
 it is now, so a phone that slept catches up at once. Views carry a version, and a view older than
 the one shown is ignored.
@@ -178,7 +178,7 @@ Pinwheel met several gaps while it was built. All are fixed in the platform or i
 app uses the fixes:
 
 - A module below the routes can publish on a route's channel: `Rooms` imports `Generated/Api` and
-  publishes on `Api.channel_rooms_code`, typed. `Generated/Api` is the app's contract and imports
+  publishes on `Api.channel_api_rooms_code`, typed. `Generated/Api` is the app's contract and imports
   no route file, so there is no import cycle (D-037 in DECISIONS.md).
 - The browser's copy of `Generated/Api` has the same types as the server's, so the pages don't
   write an endpoint's answer type by hand.

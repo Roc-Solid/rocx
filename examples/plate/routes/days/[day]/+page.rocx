@@ -14,7 +14,7 @@ import ../../../components/Diary
 meta = { title: "A day" }
 
 view! = |{ params, .. }| {
-	read = Api.get_days_day({ day: params.day })
+	read = Api.get_api_days_day({ day: params.day })
 	day! : () => Try(Plate.Day, Server.Problem)
 	day! = create_memo!(|| Endpoint.read!(read))
 	<>{match day!() {

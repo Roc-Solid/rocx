@@ -10,7 +10,7 @@ AddColumn := [].{
 
 	view! : { board : Str } => Html
 	view! = |{ board }| {
-		endpoint = Api.post_b_board_columns({ board: board })
+		endpoint = Api.post_api_b_board_columns({ board: board })
 		adds = use_submissions!(endpoint)
 		add! = use_action!(endpoint)
 		(draft!, set_draft!) = create_signal!("")

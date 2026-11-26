@@ -11,11 +11,11 @@ import ../../../Ui/Masthead
 meta = { title: "Make a set" }
 
 ## The editor: a new question set, its questions written as text (`Draft.roc` says how), checked
-## as it is typed with the same schema its endpoint (`POST /sets`) reads it with, and shown beside
+## as it is typed with the same schema its endpoint (`POST /api/sets`) reads it with, and shown beside
 ## it as the questions it makes. Saved, it is first on the host's page. Without JavaScript the form
 ## posts, and comes back with what was wrong.
 view! = |_| {
-	live = LiveForm.of!(Draft.form, Api.post_sets({}))
+	live = LiveForm.of!(Draft.form, Api.post_api_sets({}))
 	read! = || Draft.read(live.value!("questions"))
 	<>
 		<Masthead here={Paths.sets_new} />

@@ -20,7 +20,7 @@ view! = |_|
 			</li>
 			<li>
 				<h2>A page for signed-in people</h2>
-				<p><a href="/account">Your account</a> is <code>routes/account/</code>: the page in <code>+page.rocx</code>, and what it reads and posts in <code>+server.roc</code>, whose <code>middleware</code> lets only signed-in people through.</p>
+				<p><a href="/account">Your account</a> is the page <code>routes/account/+page.rocx</code>, and what it reads and posts is the endpoints under <code>routes/api/account/</code>. Each names a <code>middleware</code> that lets only signed-in people through.</p>
 			</li>
 			<li>
 				<h2>Your data</h2>

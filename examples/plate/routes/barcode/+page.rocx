@@ -16,7 +16,7 @@ view! = |_| {
 	location = Router.location!({})
 	day = Query.value(location.query, "day")
 	meal = Query.value(location.query, "meal")
-	live = LiveForm.of!(PlateForm.barcode, Api.post_barcode({}))
+	live = LiveForm.of!(PlateForm.barcode, Api.post_api_barcode({}))
 	<section class="barcode">
 		<header>
 			<a class="back" href={Links.add({ day, meal, query: "" })} aria-label="Back to the search">

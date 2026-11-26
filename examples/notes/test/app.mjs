@@ -76,7 +76,7 @@ export async function signIn(app, email) {
 	const person = app.client();
 	const before = (await app.mail()).length;
 	await person.get("/sign-in");
-	assert.equal((await person.post("/sign-in", { email, then: "/" })).status, 303);
+	assert.equal((await person.post("/api/sign-in", { email, then: "/" })).status, 303);
 	const link = await mailedLink(app, email, before);
 	assert.equal((await person.get(link)).status, 200);
 	const used = await person.post("/auth/link", { token: tokenOf(link) });
@@ -88,7 +88,7 @@ export async function signIn(app, email) {
 /** A personal access token `person` makes in Settings (`access`: `read` or `write`, the box "It may
  * write too" ticked or not): the token. */
 export async function makeToken(person, name, access = "write") {
-	const made = await person.submit("/settings", access === "write" ? { name, write: "on" } : { name });
+	const made = await person.submit("/api/settings", access === "write" ? { name, write: "on" } : { name });
 	assert.equal(made.status, 200, made.text);
 	return made.json().token;
 }

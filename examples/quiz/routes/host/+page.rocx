@@ -8,11 +8,11 @@ import ../../Ui/Masthead
 meta = { title: "Host a game" }
 
 ## The host's page: every question set, each with a button that opens a room for it (a plain form,
-## `POST /rooms`, which goes on to the room's screen). A set just made in the editor comes first,
+## `POST /api/rooms`, which goes on to the room's screen). A set just made in the editor comes first,
 ## marked (`?made=<id>`).
 view! = |_| {
 	sets : List({ id : I64, title : Str, blurb : Str, questions : I64 })
-	sets = Endpoint.get!(Api.get_host({}))
+	sets = Endpoint.get!(Api.get_api_host({}))
 	made = Router.location!({}).query.drop_prefix("made=")
 	<>
 		<Masthead here={Paths.host} />
@@ -27,7 +27,7 @@ view! = |_| {
 						<h2>{set.title}</h2>
 						<p class="blurb">{set.blurb}</p>
 						<p class="count">{if (set.questions == 1) "1 question" else "${set.questions.to_str()} questions"}</p>
-						<form method="post" action={Endpoint.url_of(Api.post_rooms({}))}>
+						<form method="post" action={Endpoint.url_of(Api.post_api_rooms({}))}>
 							<input type="hidden" name="set" value={set.id.to_str()} />
 							<button type="submit" aria-label={"Open a room for ${set.title}"}>Open a room</button>
 						</form>

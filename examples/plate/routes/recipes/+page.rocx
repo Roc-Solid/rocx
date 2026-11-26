@@ -14,9 +14,9 @@ import ../../Generated/Paths
 meta = { title: "Recipes" }
 
 view! = |_| {
-	read = Api.get_recipes({})
+	read = Api.get_api_recipes({})
 	recipes! = create_memo!(|| Endpoint.get!(read))
-	live = LiveForm.filled!(PlateForm.recipe, Api.post_recipes({}), [("servings", "2")])
+	live = LiveForm.filled!(PlateForm.recipe, Api.post_api_recipes({}), [("servings", "2")])
 	<section class="recipes">
 		<h1>Recipes</h1>
 		{if !recipes!().is_empty() {

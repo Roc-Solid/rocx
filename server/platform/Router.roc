@@ -121,7 +121,7 @@ Router := [].{
 	## posts, and the endpoint sends the browser back to the page with a flash, which the submission
 	## is.
 	##
-	##     join = Api.post_members_join({})
+	##     join = Api.post_api_members_join({})
 	##     submission = use_submission!(join)
 	##     <form method="post" action={Endpoint.url_of(join)}>…</form>
 	use_submission! : Endpoint(context, arg, result) => Submission(arg, result)

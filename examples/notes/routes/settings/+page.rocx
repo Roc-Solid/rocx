@@ -6,19 +6,22 @@ import ../../Note
 import ../../Pages
 import ../../Token
 import ../../Generated/Api
+import ../../Middlewares
 import ../../Ui/Topbar
 
 ## Settings: personal access tokens for AI clients and scripts (made, shown once, revoked), how to
 ## connect a client to the MCP server, and signing out everywhere. Every button is a plain form.
 meta = { title: "Settings · Notes" }
 
-## Your tokens and the MCP server's address (`GET /settings`).
+middleware = Middlewares.signed_in
+
+## Your tokens and the MCP server's address (`GET /api/settings`).
 settings! : {} => Pages.Settings
-settings! = |{}| Endpoint.get!(Api.get_settings({}))
+settings! = |{}| Endpoint.get!(Api.get_api_settings({}))
 
 view! = |_| {
-	making = use_submission!(Api.post_settings({}))
-	revoking = use_submission!(Api.post_settings_revoke({}))
+	making = use_submission!(Api.post_api_settings({}))
+	revoking = use_submission!(Api.post_api_settings_revoke({}))
 	first = settings!({})
 	<div>
 		{Topbar.view({ email: first.email, query: "" })}
@@ -57,7 +60,7 @@ view! = |_| {
 										<td>{Note.day(token.created)}</td>
 										<td>{if (token.last_used.is_empty()) "Never" else Note.day(token.last_used)}</td>
 										<td>
-											<form method="post" action={Endpoint.url_of(Api.post_settings_revoke({}))}>
+											<form method="post" action={Endpoint.url_of(Api.post_api_settings_revoke({}))}>
 												<input type="hidden" name="id" value={token.id} />
 												<button type="submit" class="danger" disabled?={revoking.pending!()} aria-label={"Revoke ${token.name}"}>Revoke</button>
 											</form>
@@ -75,7 +78,7 @@ view! = |_| {
 					Err(_) => <></>
 				}}
 
-				<form class="make" method="post" action={Endpoint.url_of(Api.post_settings({}))}>
+				<form class="make" method="post" action={Endpoint.url_of(Api.post_api_settings({}))}>
 					<h3>A new token</h3>
 					<label for="token-name">Name</label>
 					<input id="token-name" name="name" maxlength="60" required placeholder="Laptop: Claude Code" value={making.field!("name")} />
@@ -97,7 +100,7 @@ view! = |_| {
 			<section aria-labelledby="sessions-title">
 				<h2 id="sessions-title">Sessions</h2>
 				<p class="lead">Signed in on a computer that isn't yours? Sign out on every browser at once. Tokens stay until you revoke them.</p>
-				<form method="post" action={Endpoint.url_of(Api.post_settings_everywhere({}))}>
+				<form method="post" action={Endpoint.url_of(Api.post_api_settings_everywhere({}))}>
 					<button type="submit">Sign out everywhere</button>
 				</form>
 			</section>

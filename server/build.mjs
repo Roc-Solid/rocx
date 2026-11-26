@@ -230,6 +230,9 @@ function buildRustHost(hostDir, targetsDir, library, target) {
 		// defaults, the flags are these (Zig's own default would sanitize, needing a runtime).
 		env.CRATE_CC_NO_DEFAULTS = "1";
 		env[`CFLAGS_${triple.replaceAll("-", "_")}`] = "-O2 -fPIC -fno-sanitize=all";
+		// Deployed, never run under `rocx dev`: no debug info (the symbols stay), as rocx-cli's
+		// Hosts.server_host! builds it and a release's hosts are stripped.
+		env.CARGO_PROFILE_RELEASE_DEBUG = "0";
 		run("rustup", ["target", "add", triple], { env });
 	}
 	run("cargo", ["build", "--release", "--target", triple], { cwd: hostDir, env });
@@ -285,7 +288,7 @@ export function hostUnitTests(module, out, host = hostDir) {
 /** Starts a server built on the platform, with `flags`; resolves when it listens: its URL, what it
  * has logged, and how to stop it (SIGTERM; resolves to its exit code). */
 export async function start(executable, flags = []) {
-	const child = spawn(executable, ["--port", "0", ...flags], { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ROCX_ENV_FILE: "" } });
+	const child = spawn(executable, ["--port", "0", ...flags], { stdio: ["ignore", "ignore", "pipe"] });
 	let said = "";
 	const url = await new Promise((resolve, reject) => {
 		child.stderr.on("data", (chunk) => {
@@ -324,7 +327,9 @@ export function buildApp(app, output, { target = nativeTarget(), opt = "dev", sp
 	run(roc(), ["build", `--target=${target}`, `--opt=${opt}`, ...specializeFlags(opt, specialize), `--output=${output}`, app]);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Run as a script, by its path or through a link to it (an app's `.rocx`: `node .rocx/server/build.mjs`),
+// whose path isn't the module's own.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const args = process.argv.slice(2);
 	const option = (name, otherwise) => args.find((arg) => arg.startsWith(`--${name}=`))?.split("=")[1] ?? otherwise;
 	const [app, output] = args.filter((arg) => !arg.startsWith("--"));

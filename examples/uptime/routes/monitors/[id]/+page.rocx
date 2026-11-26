@@ -16,15 +16,18 @@ import ../../../Ui/Missing
 import ../../../Ui/StatePill
 import ../../../Ui/UptimeStrip
 
+## The path's id, a number (D-101): this page's endpoint is under api/ (D-100), so the page says it.
+Params : { id : I64 }
+
 ## A monitor's page: how it is checked, its uptime, its response time over the last day
 ## (`<LineChart>`), when its checks failed over the last week (`<Heatmap>`, by day and hour), its 90
-## days, its last checks and its incidents. Its data is `GET /monitors/<id>` as JSON, read again when
+## days, its last checks and its incidents. Its data is `GET /api/monitors/<id>` as JSON, read again when
 ## the live channel says this monitor was checked or changed.
 meta = { title: "Monitor · Status" }
 
 view! = |{ params }| {
 	id = params.id
-	read = Api.get_monitors_id({ id: id })
+	read = Api.get_api_monitors_id({ id: id })
 	detail! : () => Report.Detail
 	detail! = create_memo!(|| Endpoint.get!(read))
 	heard! : Channel.Event(Report.News) => {}
@@ -34,7 +37,7 @@ view! = |{ params }| {
 			Message(news) => if (news.monitor == id) refresh!(detail!) else {}
 			Refused(_, _) | Ended(_) => {}
 		}
-	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_api_live({}), heard!))
 	<Errored fallback={|why, _| <Missing why={why} what="monitor" />}>
 		<article class="detail">
 			<Title>{detail!().monitor.name} · Status</Title>

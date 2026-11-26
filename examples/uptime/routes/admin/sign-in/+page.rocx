@@ -15,7 +15,7 @@ meta = { title: "Sign in · Status" }
 
 view! = |_| {
 	then = Words.query_value(Router.location!({}).query, "then")
-	sign_in = Api.post_admin_sign_in({})
+	sign_in = Api.post_api_admin_sign_in({})
 	submission = use_submission!(sign_in)
 	<section class="sign-in">
 		<Title>Sign in · Status</Title>

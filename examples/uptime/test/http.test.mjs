@@ -28,7 +28,7 @@ after(async () => {
 
 /** The monitor called `name` on the status page's JSON, and the JSON. */
 async function monitorNamed(name) {
-	const overview = await app.client().read("/");
+	const overview = await app.client().read("/api");
 	const monitor = overview.groups.flatMap((group) => group.monitors).find((each) => each.name === name);
 	return { overview, monitor };
 }
@@ -67,10 +67,10 @@ test("the app's own monitors check /health and /demo/flaky, and the flaky one br
 	assert.ok(stored.some((row) => row.url === "/health" && row.up === 1 && row.status === 200), JSON.stringify(stored));
 
 	const person = await admin(app);
-	assert.equal((await person.json("/admin/demo", { broken: "yes" })).status, 200);
+	assert.equal((await person.json("/api/admin/demo", { broken: "yes" })).status, 200);
 	const broken = await app.client().request("/demo/flaky");
 	assert.equal(broken.status, 503);
-	assert.equal((await person.json("/admin/demo", { broken: "no" })).status, 200);
+	assert.equal((await person.json("/api/admin/demo", { broken: "no" })).status, 200);
 	// About one answer in 250 fails anyway, on purpose: one of three passes.
 	const answers = [];
 	for (let i = 0; i < 3; i++) answers.push((await app.client().request("/demo/flaky")).status);
@@ -86,7 +86,7 @@ test("a monitor's page and its JSON; a 404 for one that isn't there", async () =
 	page.dom.getByRole("img", { name: /^Average response time/ });
 	page.dom.getByRole("table");
 
-	const detail = await app.client().read(`/monitors/${id}`);
+	const detail = await app.client().read(`/api/monitors/${id}`);
 	assert.equal(detail.latency.length, 48);
 	assert.equal(detail.failures.length, 7);
 	assert.ok(detail.failures.every((row) => row.length === 24));
@@ -102,21 +102,21 @@ test("a monitor's page and its JSON; a 404 for one that isn't there", async () =
 	assert.equal((await app.client().get("/monitors/payments")).status, 404);
 	assert.equal((await app.client().request("/monitors/1.5", { headers: { accept: "application/json" } })).status, 404);
 	assert.equal((await app.client().request("/incidents/x", { headers: { accept: "application/json" } })).status, 404);
-	assert.equal((await app.client().submit("/admin/monitors/x/pause", {})).status, 404);
+	assert.equal((await app.client().submit("/api/admin/monitors/x/pause", {})).status, 404);
 });
 
 test("subscribing: a plain form, the runtime's, a wrong address, and the unsubscribe link", async () => {
 	const person = app.client();
 	await person.get("/");
-	const posted = await person.post("/subscribe", { email: "grace@example.com" });
+	const posted = await person.post("/api/subscribe", { email: "grace@example.com" });
 	assert.equal(posted.status, 303);
 	assert.equal(person.flash.status, 200);
 	const back = await posted.follow();
 	back.dom.getByText("Subscribed: grace@example.com hears about incidents as they open and close.");
 
-	const again = await person.submit("/subscribe", { email: "GRACE@example.com" });
+	const again = await person.submit("/api/subscribe", { email: "GRACE@example.com" });
 	assert.equal(again.status, 200);
-	const wrong = await person.submit("/subscribe", { email: "grace" });
+	const wrong = await person.submit("/api/subscribe", { email: "grace" });
 	assert.equal(wrong.status, 400);
 	assert.match(wrong.text, /doesn't look like an email address/);
 	const [{ count }] = await db.sql`select count(*) as count from subscribers where lower(email) = 'grace@example.com'`;
@@ -125,10 +125,10 @@ test("subscribing: a plain form, the runtime's, a wrong address, and the unsubsc
 	const [{ token }] = await db.sql`select token from subscribers where email = 'grace@example.com'`;
 	const page = await person.get(`/unsubscribe?token=${token}`);
 	page.dom.getByRole("button", { name: "Unsubscribe" });
-	const gone = await person.submit("/unsubscribe", { token });
+	const gone = await person.submit("/api/unsubscribe", { token });
 	assert.equal(gone.status, 200);
 	assert.equal(JSON.parse(gone.text), "grace@example.com");
-	assert.equal((await person.submit("/unsubscribe", { token })).status, 400);
+	assert.equal((await person.submit("/api/unsubscribe", { token })).status, 400);
 });
 
 test("the admin: sign-in required, a wrong password refused and never sent back, then the pages and the tables", async () => {
@@ -136,12 +136,12 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 	const sent = await stranger.get("/admin");
 	assert.equal(sent.status, 303);
 	assert.equal(sent.location, "/admin/sign-in?then=%2Fadmin");
-	assert.equal((await stranger.request("/admin", { headers: { accept: "application/json" } })).status, 401);
+	assert.equal((await stranger.request("/api/admin", { headers: { accept: "application/json" } })).status, 401);
 	assert.equal((await stranger.get("/admin/jobs")).status, 303);
 	assert.equal((await stranger.get("/admin/db")).status, 303);
 
 	await stranger.get("/admin/sign-in?then=%2Fadmin");
-	const wrong = await stranger.post("/admin/sign-in", { password: "hunter2", then: "/admin" });
+	const wrong = await stranger.post("/api/admin/sign-in", { password: "hunter2", then: "/admin" });
 	assert.equal(wrong.status, 303);
 	assert.equal(wrong.location, "/admin/sign-in?then=%2Fadmin", "back to the form");
 	assert.deepEqual([stranger.flash.status, stranger.flash.body], [401, "That isn't the admin password."]);
@@ -154,7 +154,7 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 	// Where a sign-in goes after is a path of this site, never another site.
 	const elsewhere = app.client();
 	await elsewhere.get("/admin/sign-in");
-	assert.equal((await elsewhere.post("/admin/sign-in", { password, then: "//example.com/" })).location, "/admin");
+	assert.equal((await elsewhere.post("/api/admin/sign-in", { password, then: "//example.com/" })).location, "/admin");
 
 	const person = await admin(app);
 	// The session is packages/auth's: a random token in the `uptime_admin` cookie (HttpOnly, 12 hours),
@@ -172,7 +172,7 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 	page.dom.getByRole("button", { name: "Break it" });
 	page.dom.getByRole("button", { name: "Sign out" });
 	assert.match(page.text, /<form[^>]* method="post" action="\/auth\/sign-out"><input[^>]* type="hidden" name="then" value="\/">/, "signing out posts to packages/auth");
-	const data = await person.read("/admin");
+	const data = await person.read("/api/admin");
 	assert.ok(data.monitors.some((monitor) => monitor.url === "/demo/flaky"));
 	const tables = await person.get("/admin/db?table=monitors");
 	assert.equal(tables.status, 200);
@@ -198,7 +198,7 @@ test("the admin: sign-in required, a wrong password refused and never sent back,
 });
 
 test("up, down three times, up: checks stored, an incident opened and closed, mailed, and the status page says so", async () => {
-	await app.client().json("/subscribe", { email: "ada@example.com" });
+	await app.client().json("/api/subscribe", { email: "ada@example.com" });
 	const id = await watch(db, target, { name: "Acme Widgets", path: "/widgets" });
 	const mailed = (await app.mail()).length;
 
@@ -260,39 +260,39 @@ test("an admin's update on an incident, and a resolved one that closes it and ma
 	target.status = 200;
 	const [{ id: incident }] = await db.sql`select id from incidents where monitor_id = ${id} and closed_at is null`;
 	const person = await admin(app);
-	const said = await person.submit(`/admin/incidents/${incident}`, { state: "identified", body: "The search index is rebuilding." });
+	const said = await person.submit(`/api/admin/incidents/${incident}`, { state: "identified", body: "The search index is rebuilding." });
 	assert.equal(said.status, 200, said.text);
-	const refused = await person.submit(`/admin/incidents/${incident}`, { state: "fixed", body: "?" });
+	const refused = await person.submit(`/api/admin/incidents/${incident}`, { state: "fixed", body: "?" });
 	assert.equal(refused.status, 400);
-	let read = await app.client().read(`/incidents/${incident}`);
+	let read = await app.client().read(`/api/incidents/${incident}`);
 	assert.deepEqual(read.updates.map((update) => [update.state, update.author]), [["identified", "Status team"], ["investigating", "Status"]]);
 
 	const mailed = (await app.mail()).length;
-	assert.equal((await person.submit(`/admin/incidents/${incident}`, { state: "resolved", body: "The index is back." })).status, 200);
-	read = await app.client().read(`/incidents/${incident}`);
+	assert.equal((await person.submit(`/api/admin/incidents/${incident}`, { state: "resolved", body: "The index is back." })).status, 200);
+	read = await app.client().read(`/api/incidents/${incident}`);
 	assert.equal(read.open, false);
 	await db.settleJobs();
 	await app.waitForMail({ to: "oncall@example.com", subject: "[Status] Resolved: Acme Search is back" }, { after: mailed });
-	assert.equal((await person.submit(`/admin/incidents/${incident}`, { state: "monitoring", body: "Again?" })).status, 409);
-	assert.equal((await app.client().submit(`/admin/incidents/${incident}`, { state: "monitoring", body: "Me too" })).status, 401);
+	assert.equal((await person.submit(`/api/admin/incidents/${incident}`, { state: "monitoring", body: "Again?" })).status, 409);
+	assert.equal((await app.client().submit(`/api/admin/incidents/${incident}`, { state: "monitoring", body: "Me too" })).status, 401);
 });
 
 test("the admin's Check now and Pause", async () => {
 	const id = await watch(db, target, { name: "Acme Docs", path: "/docs" });
 	const person = await admin(app);
 	target.status = 200;
-	assert.equal((await person.submit(`/admin/monitors/${id}/check`, {})).status, 200);
+	assert.equal((await person.submit(`/api/admin/monitors/${id}/check`, {})).status, 200);
 	await db.settleJobs();
 	const [{ count }] = await db.sql`select count(*) as count from checks where monitor_id = ${id}`;
 	assert.equal(count, 1);
 
-	assert.equal(JSON.parse((await person.submit(`/admin/monitors/${id}/pause`, {})).text), "Paused.");
+	assert.equal(JSON.parse((await person.submit(`/api/admin/monitors/${id}/pause`, {})).text), "Paused.");
 	assert.equal((await monitorNamed("Acme Docs")).monitor.state, "paused");
 	await check(db, id);
 	const [{ after }] = await db.sql`select count(*) as after from checks where monitor_id = ${id}`;
 	assert.equal(after, 1, "a paused monitor's check does nothing");
-	assert.equal(JSON.parse((await person.submit(`/admin/monitors/${id}/pause`, {})).text), "Running again.");
-	assert.equal((await app.client().submit(`/admin/monitors/${id}/pause`, {})).status, 401);
+	assert.equal(JSON.parse((await person.submit(`/api/admin/monitors/${id}/pause`, {})).text), "Running again.");
+	assert.equal((await app.client().submit(`/api/admin/monitors/${id}/pause`, {})).status, 401);
 });
 
 test("the nightly roll-up: past days into `daily`, checks older than a week deleted, today's kept", async () => {

@@ -15,7 +15,7 @@ import ../../components/HitRow
 ## link to the food's page, where its amount is chosen. Before a search, the foods logged lately.
 ##
 ## The search box is a form that asks this page again (`?q=…`), so it works without JavaScript;
-## with it, each letter typed sets a signal, and the memo that reads `GET /add` reads it again
+## with it, each letter typed sets a signal, and the memo that reads `GET /api/add` reads it again
 ## with the new words, so results follow the typing.
 meta = { title: "Add food" }
 
@@ -25,7 +25,7 @@ view! = |_| {
 	asked_meal = Query.value(location.query, "meal")
 	(query!, set_query!) = create_signal!(Query.value(location.query, "q"))
 	found! : () => Plate.Search
-	found! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_add({}), Query.of([("q", query!()), ("day", asked_day), ("meal", asked_meal)]))))
+	found! = create_memo!(|| Endpoint.get!(Endpoint.with_query(Api.get_api_add({}), Query.of([("q", query!()), ("day", asked_day), ("meal", asked_meal)]))))
 	meal! = || Plate.meal_of(found!().meal)
 	where! = || { day: found!().day, meal: found!().meal }
 	<section class="add">

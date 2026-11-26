@@ -48,14 +48,14 @@ export async function started({ env = {} } = {}) {
 }
 
 /**
- * A client who is someone: joined as them (`POST /join`, their name and the colour they have, so
+ * A client who is someone: joined as them (`POST /api/join`, their name and the colour they have, so
  * nothing about them changes), which starts their session (packages/auth) and sets its cookie,
  * `board_session`.
  */
 export async function as(app, db, name) {
 	const [person] = await db.sql`select color from people where name = ${name}`;
 	const client = app.client();
-	const joined = await client.post("/join", { name, color: person.color, then: "/" });
+	const joined = await client.post("/api/join", { name, color: person.color, then: "/" });
 	if (joined.status !== 303 || !client.cookies.has("board_session")) throw new Error(`${name} couldn't join: ${joined.status}`);
 	return client;
 }

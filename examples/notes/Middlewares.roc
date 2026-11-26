@@ -14,8 +14,10 @@ import Store
 ## the one for its own route (`middleware = Middlewares.signed_in`), which runs inside it. There are
 ## three ways in, each handing on who is asking (`Me`):
 ##
-## - `signed_in`, for pages: a session (packages/auth's), or a browser is sent to sign in;
-## - `api`, for the JSON API under /api: a personal access token, or the session;
+## - `signed_in`, for pages and their endpoints (under /api at the page's path, as `/api/new` for
+##   `/new`): a session (packages/auth's), or a browser is sent to sign in;
+## - `api`, for the JSON API (`/api/notes`, `/api/search`, `/api/me`): a personal access token, or
+##   the session;
 ## - `agent`, for MCP (Agents.roc mounts it at /mcp): a personal access token, nothing else.
 ##
 ## packages/mcp's `Bearer` reads a bearer token; packages/auth's `Auth` is sign-in.

@@ -18,7 +18,7 @@ Topbar := [].{
 			<nav class="actions" aria-label="Account">
 				<a class="button primary" href="/new"><span aria-hidden="true">＋</span> New note</a>
 				<a class="button quiet" href="/settings" title={"Signed in as ${email}"}>Settings</a>
-				<form method="post" action="/sign-out">
+				<form method="post" action="/api/sign-out">
 					<button type="submit" class="quiet">Sign out</button>
 				</form>
 			</nav>

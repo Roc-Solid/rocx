@@ -28,7 +28,7 @@ export function person(server) {
 /** The token of a link mailed to `email` (lower-case), going on to `then`, asked for by `client`. */
 export async function mailedLink(server, client, email, then = "/") {
 	const before = (await server.mail()).length;
-	const asked = await client.json("/sign-in/mail", { email, then });
+	const asked = await client.json("/api/sign-in/mail", { email, then });
 	assert.equal(asked.status, 200, asked.text);
 	const message = await server.waitForMail({ to: email }, { after: before });
 	const url = new URL(links(message)[0]);
@@ -69,7 +69,7 @@ export async function signedIn(server, email) {
  * there is none; the app must be built with its browser's half).
  */
 export function describeApp(app, { browser = false } = {}) {
-	test("signed out: the front page offers to sign in, and /account sends a page to sign in and refuses the rest", async () => {
+	test("signed out: the front page offers to sign in, /account sends a page to sign in, and /api/account refuses", async () => {
 		const { server } = app();
 		const client = person(server);
 		const home = await client.get("/");
@@ -85,7 +85,7 @@ export function describeApp(app, { browser = false } = {}) {
 		const page = await client.get("/account");
 		assert.equal(page.status, 303);
 		assert.equal(page.location, "/sign-in?then=%2Faccount");
-		const api = await client.request("/account", { headers: { accept: "application/json" } });
+		const api = await client.request("/api/account", { headers: { accept: "application/json" } });
 		assert.equal(api.status, 401);
 		assert.deepEqual(await client.read("/api/me"), { email: "" });
 	});
@@ -101,7 +101,7 @@ export function describeApp(app, { browser = false } = {}) {
 		assert.equal(form.dom.queryAllByRole("link", { name: /^Continue with / }).length, 0, "no provider is set up");
 		// The form, posted as a browser without JavaScript posts it: back to the page, which says where the link went.
 		const before = (await server.mail()).length;
-		const sent = await client.post("/sign-in/mail", { email: "  Ada@Example.com ", then: "/account" });
+		const sent = await client.post("/api/sign-in/mail", { email: "  Ada@Example.com ", then: "/account" });
 		assert.equal(sent.status, 303, sent.text);
 		const told = await sent.follow();
 		told.dom.getByRole("heading", { name: "Check your inbox" });
@@ -130,7 +130,7 @@ export function describeApp(app, { browser = false } = {}) {
 		assert.equal(sessions.text.includes("This browser"), true);
 		assert.equal(account.dom.getAllByRole("listitem").length, 1);
 		assert.deepEqual(
-			(await client.read("/account")).sessions.map((session) => [session.current, session.started]),
+			(await client.read("/api/account")).sessions.map((session) => [session.current, session.started]),
 			[[true, "today"]],
 		);
 		// The bar says who is signed in.
@@ -141,7 +141,7 @@ export function describeApp(app, { browser = false } = {}) {
 		// Used, the link is gone: its page says so.
 		const again = await person(server).get(`/sign-in/link?token=${token}`);
 		again.dom.getByRole("heading", { name: "This link has expired" });
-		assert.equal((await person(server).request(`/sign-in/link?token=${token}`, { headers: { accept: "application/json" } })).status, 410);
+		assert.equal((await person(server).request(`/api/sign-in/link?token=${token}`, { headers: { accept: "application/json" } })).status, 410);
 	});
 
 	test("signing out: the session ends, its cookie goes, and /account asks to sign in again", async () => {
@@ -162,11 +162,11 @@ export function describeApp(app, { browser = false } = {}) {
 		const { server } = app();
 		const first = await signedIn(server, "kim@example.com");
 		const second = await signedIn(server, "kim@example.com");
-		const listed = (await first.read("/account")).sessions;
+		const listed = (await first.read("/api/account")).sessions;
 		assert.equal(listed.length, 2);
 		assert.equal(listed.filter((session) => session.current).length, 1);
 		await first.get("/account");
-		const out = await first.post("/account", {});
+		const out = await first.post("/api/account", {});
 		assert.equal(out.status, 303, out.text);
 		assert.equal(out.location, "/sign-in");
 		assert.ok(!first.cookies.has("acme_session"));
@@ -191,28 +191,28 @@ export function describeApp(app, { browser = false } = {}) {
 		assert.equal(forged.location, "/sign-in?error=link");
 		const page = await forged.follow();
 		assert.match(page.dom.getByRole("alert").text, /link/i);
-		const bad = await client.json("/sign-in/mail", { email: "not an address", then: "/" });
+		const bad = await client.json("/api/sign-in/mail", { email: "not an address", then: "/" });
 		assert.equal(bad.status, 400);
 	});
 
 	test("the sign-in mail is limited: 5 an hour to an address, and 5 a minute from a client", async () => {
 		const { server } = app();
 		for (let i = 0; i < 5; i += 1) {
-			const asked = await person(server).json("/sign-in/mail", { email: "busy@example.com", then: "/" });
+			const asked = await person(server).json("/api/sign-in/mail", { email: "busy@example.com", then: "/" });
 			assert.equal(asked.status, 200, `mail ${i + 1}: ${asked.text}`);
 		}
-		const sixth = await person(server).json("/sign-in/mail", { email: "BUSY@example.com", then: "/" });
+		const sixth = await person(server).json("/api/sign-in/mail", { email: "BUSY@example.com", then: "/" });
 		assert.equal(sixth.status, 429, "a sixth to the address, from another client, in any case");
 		assert.ok(Number(sixth.headers.get("retry-after")) > 0);
 		const client = person(server);
 		for (let i = 0; i < 5; i += 1) {
-			const asked = await client.json("/sign-in/mail", { email: `many${i}@example.com`, then: "/" });
+			const asked = await client.json("/api/sign-in/mail", { email: `many${i}@example.com`, then: "/" });
 			assert.equal(asked.status, 200, `mail ${i + 1}: ${asked.text}`);
 		}
-		assert.equal((await client.json("/sign-in/mail", { email: "many5@example.com", then: "/" })).status, 429, "a sixth from the client");
+		assert.equal((await client.json("/api/sign-in/mail", { email: "many5@example.com", then: "/" })).status, 429, "a sixth from the client");
 		// A browser without JavaScript goes back to the form, which says when to try again.
 		await client.get("/sign-in");
-		const refused = await client.post("/sign-in/mail", { email: "many6@example.com", then: "/" });
+		const refused = await client.post("/api/sign-in/mail", { email: "many6@example.com", then: "/" });
 		assert.equal(refused.status, 303);
 		const page = await refused.follow();
 		assert.match(page.dom.getByRole("alert").text, /^Too many requests: try again in \d+ s\.$/);
@@ -223,17 +223,17 @@ export function describeApp(app, { browser = false } = {}) {
 		const client = await signedIn(server, "tf@example.com");
 		(await client.get("/account")).dom.getByRole("button", { name: "Set up" });
 		// The forms, posted as a browser without JavaScript posts them.
-		const setUp = await client.post("/account/two-factor", {});
+		const setUp = await client.post("/api/account/two-factor", {});
 		assert.equal(setUp.status, 303, setUp.text);
 		const pending = await setUp.follow();
 		pending.dom.getByRole("img", { name: "A QR code for your authenticator app" });
 		const key = pending.dom.getByText(/^([A-Z2-7]{4} ){7}[A-Z2-7]{4}$/).text;
 		const secret = base32(key);
 		const step = Math.floor(Date.now() / 30_000);
-		const wrong = await (await client.post("/account/two-factor/confirm", { code: totp(secret, step + 5) })).follow();
+		const wrong = await (await client.post("/api/account/two-factor/confirm", { code: totp(secret, step + 5) })).follow();
 		assert.match(wrong.dom.getByRole("alert").text, /isn't the code your app shows/);
 		assert.equal(wrong.dom.getByText(/^([A-Z2-7]{4} ){7}[A-Z2-7]{4}$/).text, key, "the same key, after a wrong code");
-		const on = await (await client.post("/account/two-factor/confirm", { code: totp(secret, step) })).follow();
+		const on = await (await client.post("/api/account/two-factor/confirm", { code: totp(secret, step) })).follow();
 		const codes = within(on.dom.getByRole("status"))
 			.getAllByRole("listitem")
 			.map((item) => item.text.trim());
@@ -256,7 +256,7 @@ export function describeApp(app, { browser = false } = {}) {
 		assert.equal(signed.location, "/account");
 		// Turned off with a recovery code: signing in asks no more.
 		await other.get("/account");
-		const off = await (await other.post("/account/two-factor/off", { code: codes[0] })).follow();
+		const off = await (await other.post("/api/account/two-factor/off", { code: codes[0] })).follow();
 		off.dom.getByRole("button", { name: "Set up" });
 		const later = person(server);
 		const straight = await later.post("/auth/link", { token: await mailedLink(server, later, "tf@example.com", "/account") });
@@ -266,7 +266,7 @@ export function describeApp(app, { browser = false } = {}) {
 	test("a post from another site's page is refused", async () => {
 		const { server } = app();
 		const elsewhere = server.client({ origin: "https://elsewhere.example", headers: { "x-forwarded-for": "198.18.255.1" } });
-		assert.equal((await elsewhere.json("/sign-in/mail", { email: "x@example.com", then: "/" })).status, 403);
+		assert.equal((await elsewhere.json("/api/sign-in/mail", { email: "x@example.com", then: "/" })).status, 403);
 		assert.equal((await elsewhere.post("/auth/sign-out", {})).status, 403);
 	});
 

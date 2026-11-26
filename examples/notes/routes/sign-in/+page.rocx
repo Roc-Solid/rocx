@@ -6,6 +6,7 @@ import pf.Router exposing [use_submission!]
 import auth.SignInError
 import ../../Query
 import ../../Generated/Api
+import ../../Middlewares
 import ../../Ui/Brand
 
 ## Signing in: an address, and a link mailed to it. No passwords. A plain form, so it works before
@@ -14,11 +15,15 @@ import ../../Ui/Brand
 ## why.
 meta = { title: "Sign in · Notes" }
 
+## Its endpoint's (`/api/sign-in`), which limits the links mailed to each address. It counts
+## posts only, so this page's GET passes by it.
+middleware = Middlewares.mail_limit
+
 view! = |_| {
 	query = Router.location!({}).query
 	then = Query.value(query, "then")
 	failed = SignInError.message(query)
-	sending = use_submission!(Api.post_sign_in({}))
+	sending = use_submission!(Api.post_api_sign_in({}))
 	<main id="main" class="sign-in">
 		<div class="card">
 			<p class="brand">{Brand.view({})}</p>
@@ -30,7 +35,7 @@ view! = |_| {
 						<p class="small">Running the app yourself? With <code>--dev</code> and no mail server, it lands in the dev mailbox: <a href="/__rocx/mail">/__rocx/mail</a>.</p>
 					</div>
 				Err(_) => 
-					<form method="post" action={Endpoint.url_of(Api.post_sign_in({}))}>
+					<form method="post" action={Endpoint.url_of(Api.post_api_sign_in({}))}>
 						<h1>Sign in</h1>
 						<p class="lead">Your notes, in Markdown, searchable, and yours alone. We'll email you a link: no password to remember.</p>
 						{if !failed.is_empty() {

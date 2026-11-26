@@ -19,7 +19,7 @@ import ../../../components/FilterTabs
 meta = { title: "A list" }
 
 view! = |{ params, .. }| {
-	page = Api.get_lists_id({ id: params.id })
+	page = Api.get_api_lists_id({ id: params.id })
 	sheet! : () => Tasks.Sheet
 	sheet! = create_memo!(|| Endpoint.get!(page))
 	location = Router.location!({})
@@ -34,7 +34,7 @@ Board := [].{
 		# Every change this page sends, each to its endpoint: every form a row has posts to one of
 		# these, which the runtime sends with fetch (D-095), and the page reads their submissions
 		# here. Each is typed by its endpoint's contract (Generated/Api): what it sends, what it answers.
-		adds = use_submissions!(Api.post_lists_id({ id: list }))
+		adds = use_submissions!(Api.post_api_lists_id({ id: list }))
 		toggles = use_submissions!(Api.post_api_tasks_toggle({}))
 		moves = use_submissions!(Api.post_api_tasks_move({}))
 		removes = use_submissions!(Api.post_api_tasks_delete({}))

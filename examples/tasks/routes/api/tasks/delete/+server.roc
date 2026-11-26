@@ -18,7 +18,7 @@ post! = |{ request, body, .. }| {
 	match Endpoint.posted_by(request) {
 		PlainForm => Err(Answer(Server.redirect(if (list.is_empty()) Paths.root else Paths.lists_id({ id: list }))))
 		Runtime | Other => {
-			Router.revalidate!([Endpoint.url_of(Api.get_lists_id({ id: list })), Endpoint.url_of(Api.get_api_team({}))])
+			Router.revalidate!([Endpoint.url_of(Api.get_api_lists_id({ id: list })), Endpoint.url_of(Api.get_api_team({}))])
 			Ok(list)
 		}
 	}

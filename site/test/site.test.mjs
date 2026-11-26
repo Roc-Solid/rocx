@@ -167,8 +167,7 @@ function linksInLinks(html) {
 
 test("every page renders, and hydrates strictly as the server left it, asking for nothing but app.wasm and what it loads", { skip }, async () => {
 	for (const route of ROUTES) {
-		// As a browser asks (accepting HTML): a path with a page and a get! (/calls, /members) answers
-		// anything else with its data, as JSON.
+		// As a browser asks (accepting HTML).
 		const response = await fetch(`${site.url}${route}`, { headers: { accept: "text/html" } });
 		assert.equal(response.status, 200, route);
 		const html = await response.text();
@@ -339,11 +338,11 @@ test("endpoint reads: what the demos read as the pages render is an endpoint's G
 	assert.equal(await json("/api/reader"), "Ada");
 	assert.deepEqual((await json("/api/planner")).map((plan) => `${plan.id}:${plan.day}`), ["standup:mon", "notes:mon", "review:tue", "dentist:wed", "demo:thu", "groceries:thu"], "the planner's week, with no cookie");
 	assert.match(await json("/api/facts"), /^client_brotli=/m, "the layout's data, at a path of its own: the facts the default middleware hands on");
-	const calls = await json("/calls");
-	assert.deepEqual(calls.asked.map(({ method, status }) => `${method} ${status}`), ["GET 200", "POST 200", "POST 400", "POST 400"], "the calls page's data, at its own URL");
+	const calls = await json("/api/calls");
+	assert.deepEqual(calls.asked.map(({ method, status }) => `${method} ${status}`), ["GET 200", "POST 200", "POST 400", "POST 400"], "the calls page's data, at its path under /api");
 	assert.equal(calls.shouted, "ROCX, 4 bytes");
-	assert.equal((await fetch(`${site.url}/members`, { headers: { accept: "application/json" } })).status, 401, "the members' data, behind the page's middleware");
-	assert.deepEqual(await json("/members", { cookie: "member=Ada%20L" }), { member: "Ada L" });
+	assert.equal((await fetch(`${site.url}/api/members`, { headers: { accept: "application/json" } })).status, 401, "the members' data, behind the page's middleware");
+	assert.deepEqual(await json("/api/members", { cookie: "member=Ada%20L" }), { member: "Ada L" });
 	const posted = await fetch(`${site.url}/api/echo/hi`, { method: "POST", body: "{}" });
 	assert.equal(posted.status, 405);
 	assert.equal(posted.headers.get("allow"), "GET");
@@ -447,14 +446,14 @@ test("endpoints: GET /openapi.json is their OpenAPI document, each schema its ty
 	assert.equal(response.headers.get("content-type"), "application/json");
 	const doc = await response.json();
 	assert.equal(doc.openapi, "3.2.0");
-	assert.deepEqual(Object.keys(doc.paths).sort(), ["/api/count/{to}", "/api/echo/{message}", "/api/facts", "/api/planner", "/api/planner/move", "/api/reader", "/api/shelf", "/api/shout", "/api/shout/{word}", "/calls", "/members", "/members/join", "/members/leave"]);
+	assert.deepEqual(Object.keys(doc.paths).sort(), ["/api/calls", "/api/count/{to}", "/api/echo/{message}", "/api/facts", "/api/members", "/api/members/join", "/api/members/leave", "/api/planner", "/api/planner/move", "/api/reader", "/api/shelf", "/api/shout", "/api/shout/{word}"]);
 	const answer = (operation) => operation.responses["200"].content["application/json"].schema;
 	const word = { type: "object", properties: { bytes: { type: "integer", minimum: 0 }, shouted: { type: "string" }, word: { type: "string" } }, required: ["bytes", "shouted", "word"] };
 	assert.deepEqual(answer(doc.paths["/api/shout/{word}"].get), word, "a handler with no annotation: its inferred type");
 	assert.deepEqual(doc.paths["/api/shout"].post.requestBody.content["application/json"].schema, { type: "string" });
-	assert.deepEqual(doc.paths["/members/join"].post.requestBody.content["application/json"].schema, { type: "object", properties: { name: { type: "string" } }, required: ["name"] });
+	assert.deepEqual(doc.paths["/api/members/join"].post.requestBody.content["application/json"].schema, { type: "object", properties: { name: { type: "string" } }, required: ["name"] });
 	// A body a form has is listed as a form's too (D-054): URL-encoded and multipart, the same schema.
-	const joined = doc.paths["/members/join"].post.requestBody.content;
+	const joined = doc.paths["/api/members/join"].post.requestBody.content;
 	assert.deepEqual(Object.keys(joined), ["application/json", "application/x-www-form-urlencoded", "multipart/form-data"]);
 	assert.deepEqual(joined["application/x-www-form-urlencoded"].schema, joined["application/json"].schema);
 	assert.deepEqual(Object.keys(doc.paths["/api/shout"].post.requestBody.content), ["application/json"], "a string isn't a form's body");
@@ -483,26 +482,26 @@ test("middleware: the site's default around every answer; a route's own guards i
 	const html = { accept: "text/html" };
 	// Not a member: a browser is sent to join, a script refused.
 	assert.deepEqual([(await ask("GET", "/members", { headers: html })).status, (await ask("GET", "/members", { headers: html })).location], [303, "/members/join"]);
-	const refused = await ask("GET", "/members", { headers: { accept: "application/json" } });
+	const refused = await ask("GET", "/api/members", { headers: { accept: "application/json" } });
 	assert.equal(refused.status, 401);
 	assert.match(refused.body, /members only/);
 	assert.equal(refused.sniff, "nosniff", "the default middleware's headers, on a refusal too");
 	assert.equal((await ask("GET", "/members/join", { headers: html })).status, 200);
 	// Joining: the form's POST sets the cookie and sends you on; a name that is only spaces is refused.
 	const form = { "content-type": "application/x-www-form-urlencoded", origin: site.url };
-	const joined = await ask("POST", "/members/join", { body: "name=Ada+L", headers: form });
+	const joined = await ask("POST", "/api/members/join", { body: "name=Ada+L", headers: form });
 	assert.deepEqual([joined.status, joined.location], [303, "/members"]);
 	assert.match(joined.cookie, /^member=Ada%20L; Path=\/; HttpOnly; SameSite=Lax/);
-	assert.equal((await ask("POST", "/members/join", { body: "name=+", headers: form })).status, 400);
-	assert.equal((await ask("POST", "/members/join", { body: "name=Eve", headers: { ...form, origin: "https://elsewhere.example" } })).status, 403, "the default middleware: another site's form");
+	assert.equal((await ask("POST", "/api/members/join", { body: "name=+", headers: form })).status, 400);
+	assert.equal((await ask("POST", "/api/members/join", { body: "name=Eve", headers: { ...form, origin: "https://elsewhere.example" } })).status, 403, "the default middleware: another site's form");
 	// A member: the page and the endpoint are given the name the middleware read.
 	const member = { cookie: "member=Ada%20L" };
 	const page = await ask("GET", "/members", { headers: { ...html, ...member } });
 	assert.equal(page.status, 200);
 	assert.match(page.body, /<h1[^>]*>Welcome, Ada L<\/h1>/);
-	assert.deepEqual(JSON.parse((await ask("GET", "/members", { headers: member })).body), { member: "Ada L" });
+	assert.deepEqual(JSON.parse((await ask("GET", "/api/members", { headers: member })).body), { member: "Ada L" });
 	assert.equal((await ask("GET", "/members/join", { headers: { ...html, ...member } })).location, "/members", "a member isn't sent to join");
-	const left = await ask("POST", "/members/leave", { headers: { ...form, ...member } });
+	const left = await ask("POST", "/api/members/leave", { headers: { ...form, ...member } });
 	assert.deepEqual([left.status, left.location], [303, "/members/join"]);
 	assert.match(left.cookie, /^member=; Path=\/; HttpOnly; SameSite=Lax; Max-Age=0/);
 });
@@ -546,10 +545,10 @@ test("middleware, in the server built with --opt=speed as the site ships: every 
 	assert.match(await facts.json(), /^client_brotli=/m);
 	assert.deepEqual(headersOf(facts), both);
 	// The members' page and its endpoint: behind the route's middleware too.
-	const refused = await fetch(`${site.url}/members`, { headers: { accept: "application/json" } });
-	assert.equal(refused.status, 401, "GET /members, without the cookie");
-	assert.deepEqual(headersOf(refused), both, "GET /members: the default's steps around the route's");
-	const member = await fetch(`${site.url}/members`, { headers: { accept: "application/json", cookie: "member=Ada%20L" } });
+	const refused = await fetch(`${site.url}/api/members`, { headers: { accept: "application/json" } });
+	assert.equal(refused.status, 401, "GET /api/members, without the cookie");
+	assert.deepEqual(headersOf(refused), both, "GET /api/members: the default's steps around the route's");
+	const member = await fetch(`${site.url}/api/members`, { headers: { accept: "application/json", cookie: "member=Ada%20L" } });
 	assert.equal(member.status, 200);
 	assert.deepEqual(await member.json(), { member: "Ada L" }, "the name the route's middleware handed on");
 	assert.deepEqual(headersOf(member), both);
@@ -599,9 +598,9 @@ test("channels: two tabs join the lobby, each greeted by its on_open!; a wave in
 	await one.click("[data-demo=lobby] .wave:nth-child(2)");
 	const tab = await one.eval("sessionStorage.getItem('rocx-tab').slice(0, 4)");
 	for (const page of [one, two]) await page.wait(`[...document.querySelectorAll('[data-demo=lobby] .waves li')].some((li) => li.textContent === '🎉 from ${tab}')`, 5000);
-	const refused = await fetch(`${site.url}/rocx/live/send?tab=t1`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([{ channel: "/platform/live/lobby", message: { Wave: "🦆" } }]) });
+	const refused = await fetch(`${site.url}/rocx/live/send?tab=t1`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify([{ channel: "/api/platform/live/lobby", message: { Wave: "🦆" } }]) });
 	assert.deepEqual(await refused.json(), { refused: [{ index: 0, status: 400, why: "wave 👋, 🎉 or 🙌" }] });
-	assert.equal((await fetch(`${site.url}/platform/live/lobby`)).status, 404, "a channel alone answers no HTTP");
+	assert.equal((await fetch(`${site.url}/api/platform/live/lobby`)).status, 404, "a channel alone answers no HTTP");
 	await two.click("[data-demo=lobby] .leave");
 	await two.wait("document.querySelector('[data-demo=lobby] .join') !== null");
 	assert.deepEqual([...one.errors, ...two.errors], []);

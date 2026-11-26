@@ -15,7 +15,7 @@ meta = { title: "A live quiz for a room full of phones" }
 ## (packages/forms' `LiveForm`, with the same rules its endpoint reads it with); without
 ## JavaScript it posts, and comes back with what was wrong.
 view! = |_| {
-	live = LiveForm.of!(Joining.form, Api.post_join({}))
+	live = LiveForm.of!(Joining.form, Api.post_api_join({}))
 	<>
 		<Masthead here={Paths.root} />
 		<main class="home">

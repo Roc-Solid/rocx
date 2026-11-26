@@ -114,7 +114,7 @@ export async function check(db, id) {
 export async function admin(app) {
 	const person = app.client();
 	await person.get("/admin/sign-in");
-	const signed = await person.post("/admin/sign-in", { password, then: "/admin" });
+	const signed = await person.post("/api/admin/sign-in", { password, then: "/admin" });
 	if (signed.status !== 303 || signed.location !== "/admin") throw new Error(`signing in: ${signed.status} ${signed.location}`);
 	return person;
 }

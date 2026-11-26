@@ -13,7 +13,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const tracked = execFileSync("git", ["ls-files", "-z", "*.roc", "*.rocx"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+// Those still on disk: a file moved or deleted but not yet staged is listed until it is.
+const tracked = execFileSync("git", ["ls-files", "-z", "*.roc", "*.rocx"], { cwd: root, encoding: "utf8" })
+	.split("\0")
+	.filter((path) => path && existsSync(join(root, path)));
 const digest = (path) => createHash("sha256").update(readFileSync(join(root, path))).digest("hex");
 /** A module small enough to be the same by chance (a one-line header) isn't a copy. */
 const big = (path) => readFileSync(join(root, path)).length >= 200;

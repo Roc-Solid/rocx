@@ -23,6 +23,7 @@ import Hosts
 import SiteDev
 import Static
 import Release
+import Image
 import Versions
 import New
 import qr.Qr
@@ -54,6 +55,7 @@ main! = |args| {
 		Ok("test") => Dev.test_app!(words.drop_first(1), home)
 		Ok("lint") if words.len() > 1 => exit_with(Commands.lint!(words.drop_first(1)))
 		Ok("routes") if words.len() == 2 => routes!(words.get(1) ?? ".")
+		Ok("build") if words.contains("--image") => Image.run!(words.drop_first(1), home)
 		Ok("build") if words.contains("--release") => Release.run!(words.drop_first(1), home)
 		Ok("build") if words.contains("--static") => Static.run!(words.drop_first(1), home)
 		Ok("build") => build!(words.drop_first(1), home)
@@ -70,7 +72,7 @@ main! = |args| {
 }
 
 usage! = |{}| {
-	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…] | rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx test [dir] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text> | rocx new <dir> [--db sqlite|postgres|turso] | rocx upgrade [<version>] | rocx --version")?
+	Stderr.line!("usage: rocx dev [dir] [--port 8080] [--android [--lan]] | rocx build <dir>… [--client <out>] [--dev] | rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…] | rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl] | rocx build <dir> --image <file.tar> [--tag name:tag] [--target arm64musl|x64musl] | rocx check [dir] | rocx check -- <command>… | rocx check --sql [dir] [--engine sqlite|turso] [--verbose] [-- server options…] | rocx test [dir] | rocx lint <dir>… | rocx routes <dir> | rocx fmt [--check] <path>… | rocx qr <text> | rocx new <dir> [--db sqlite|postgres|turso] | rocx upgrade [<version>] | rocx --version")?
 	Err(Exit(2))
 }
 

@@ -55,7 +55,7 @@ Game := [].{
 	## podium, after the `last`).
 	Revealing : { index : U64, prompt : Str, choices : List(Str), answer : U64, tallies : List(U64), gains : List({ id : Str, choice : U64, gained : U64 }), left_ms : U64, last : Bool }
 
-	## The room as everyone sees it: what its channel publishes (`routes/rooms/[code]/+server.roc`).
+	## The room as everyone sees it: what its channel publishes (`routes/api/rooms/[code]/+server.roc`).
 	View : { code : Str, title : Str, total : U64, version : U64, players : List(Game.Face), stage : [Vacant, Lobby, Asking(Game.Asking), Revealing(Game.Revealing), Finished] }
 
 	## The room as one visitor sees it: the view, who they are in it, and, for a player, what they

@@ -6,6 +6,7 @@ import pf.Title
 import ../Note
 import ../Pages
 import ../Generated/Api
+import ../Middlewares
 import ../Ui/NoteCard
 import ../Ui/Topbar
 
@@ -14,9 +15,11 @@ import ../Ui/Topbar
 ## is a link or a plain form, so it works the same without JavaScript.
 meta = { title: "Notes" }
 
-## The notebook, as `GET /` answers it for this page's query (`?q=`, `?tag=`, `?archived=true`).
+middleware = Middlewares.signed_in
+
+## The notebook, as `GET /api` answers it for this page's query (`?q=`, `?tag=`, `?archived=true`).
 home! : {} => Pages.Home
-home! = |{}| Endpoint.get!(Api.get_root({}).with_query(Router.location!({}).query))
+home! = |{}| Endpoint.get!(Api.get_api({}).with_query(Router.location!({}).query))
 
 view! = |_| {
 	home = home!({})

@@ -86,7 +86,7 @@ for (const database of databases) {
 
 		/** `client` off to Checkout for `price`: the session's id. */
 		async function checkout(client, price) {
-			const off = await client.post("/billing/checkout", { price });
+			const off = await client.post("/api/billing/checkout", { price });
 			assert.equal(off.status, 303, off.text);
 			assert.ok(off.location.startsWith("https://checkout.stripe.com/c/pay/cs_test_"), off.location);
 			return sessionOf(off.location);
@@ -100,7 +100,7 @@ for (const database of databases) {
 		}
 
 		/** The account page's data for `client`. */
-		const account = (client) => client.read("/account");
+		const account = (client) => client.read("/api/account");
 
 		/** How many rows `sql` counts (`select count(*) as n …`). */
 		const count = async (sql) => Number((await db.query(sql))[0].n);
@@ -159,8 +159,8 @@ for (const database of databases) {
 			);
 			// A price the page doesn't offer, and a signed-out request, go nowhere near Stripe.
 			const before = stripe.requests.length;
-			assert.equal((await client.json("/billing/checkout", { price: "price_anything" })).status, 400);
-			assert.equal((await server.client().json("/billing/checkout", { price: "price_pro" })).status, 401);
+			assert.equal((await client.json("/api/billing/checkout", { price: "price_anything" })).status, 400);
+			assert.equal((await server.client().json("/api/billing/checkout", { price: "price_pro" })).status, 401);
 			assert.equal(stripe.requests.length, before);
 		});
 
@@ -179,7 +179,7 @@ for (const database of databases) {
 			const deleted = await deliver(stripe.event("customer.deleted", stripe.deleteCustomer(second)));
 			assert.equal(deleted.status, 200, deleted.text);
 			assert.equal(await count(`select count(*) as n from stripe_customers where user_id = '${user}'`), 0);
-			const portal = await client.post("/billing/portal", {});
+			const portal = await client.post("/api/billing/portal", {});
 			assert.equal(portal.status, 303);
 			assert.equal(portal.location, "/");
 		});
@@ -223,7 +223,7 @@ for (const database of databases) {
 			}
 			const end = subscription.items.data[0].current_period_end * 1000;
 			assert.deepEqual(await account(client), { email: "eve@example.com", plan: "Pro", status: "active", until: new Date(end).toISOString().slice(0, 10), ending: false, customer: true, orders: [] });
-			assert.deepEqual(await client.read("/pro"), { email: "eve@example.com" });
+			assert.deepEqual(await client.read("/api/pro"), { email: "eve@example.com" });
 			assert.equal((await client.get("/pro")).status, 200);
 			const [row] = await db.query(`select status, user_id, items, version from stripe_subscriptions where id = '${subscription.id}'`);
 			assert.equal(row.user_id, user);
@@ -232,11 +232,11 @@ for (const database of databases) {
 			const [kept] = await db.query(`select status, payment_status, subscription_id from stripe_checkouts where id = '${id}'`);
 			assert.deepEqual({ ...kept }, { status: "complete", payment_status: "paid", subscription_id: subscription.id });
 			// Subscribed already: a plan's button goes to the account (and its portal), not to Checkout again.
-			assert.equal((await client.post("/billing/checkout", { price: "price_basic" })).location, "/account");
+			assert.equal((await client.post("/api/billing/checkout", { price: "price_basic" })).location, "/account");
 
 			// The portal: off to Stripe's, coming back to the account.
 			const from = stripe.requests.length;
-			const portal = await client.post("/billing/portal", {});
+			const portal = await client.post("/api/billing/portal", {});
 			assert.equal(portal.status, 303, portal.text);
 			assert.match(portal.location, /^https:\/\/billing\.stripe\.com\/p\/session\/test_/);
 			assert.deepEqual(stripe.since(from), ["POST /v1/billing_portal/sessions"]);
@@ -275,7 +275,7 @@ for (const database of databases) {
 			assert.equal((await client.get("/pro")).location, "/?subscribe=1");
 			assert.equal((await deliver(stripe.event("customer.subscription.updated", resumed, { created: t + 40 }))).status, 200);
 			assert.equal((await account(client)).status, "canceled", "an ended subscription stays ended");
-			assert.equal((await client.request("/pro", { headers: { accept: "application/json" } })).status, 303);
+			assert.equal((await client.request("/api/pro", { headers: { accept: "application/json" } })).status, 303);
 		});
 
 		test("the page Checkout comes back to settles the checkout before Stripe's events come; someone else's session is a 404", async () => {
@@ -289,15 +289,15 @@ for (const database of databases) {
 			assert.match(back.text, /You&#39;re subscribed to Basic\.|You're subscribed to Basic\./);
 			assert.deepEqual(stripe.since(from), [`GET /v1/checkout/sessions/${id}`]);
 			assert.deepEqual(stripe.requests[from].query.getAll("expand[]"), ["subscription"]);
-			assert.deepEqual(await client.read("/pro"), { email: "fay@example.com" }, "subscribed, as Stripe said");
+			assert.deepEqual(await client.read("/api/pro"), { email: "fay@example.com" }, "subscribed, as Stripe said");
 			assert.equal((await account(client)).plan, "Basic");
 			// The events, when they come, count as ever.
 			assert.equal((await deliver(stripe.event("customer.subscription.created", subscription))).status, 200);
 			assert.equal((await account(client)).status, "active");
 			// Another user's session id, or something that isn't one.
 			const { client: other } = await signedIn("gus@example.com");
-			assert.equal((await other.request(`/billing/done?session_id=${id}`, { headers: { accept: "application/json" } })).status, 404);
-			assert.equal((await other.request("/billing/done?session_id=..%2Fv1%2Fcustomers", { headers: { accept: "application/json" } })).status, 404);
+			assert.equal((await other.request(`/api/billing/done?session_id=${id}`, { headers: { accept: "application/json" } })).status, 404);
+			assert.equal((await other.request("/api/billing/done?session_id=..%2Fv1%2Fcustomers", { headers: { accept: "application/json" } })).status, 404);
 			assert.equal((await other.get("/pro")).location, "/?subscribe=1");
 		});
 
@@ -370,7 +370,7 @@ for (const database of databases) {
 				[{ session_id: id, what: "The e-book", amount: 900, currency: "usd" }],
 			);
 			assert.equal(await count(`select count(*) as n from stripe_events where id = '${completed.id}'`), 1);
-			assert.deepEqual(await client.read("/ebook"), { title: "A small book about Roc", chapters: ["Values", "Functions", "Records and tags", "Effects"] });
+			assert.deepEqual(await client.read("/api/ebook"), { title: "A small book about Roc", chapters: ["Values", "Functions", "Records and tags", "Effects"] });
 			const mine = await account(client);
 			assert.deepEqual([mine.plan, mine.orders.map((order) => order.what)], ["", ["The e-book"]]);
 			// Someone else hasn't bought it.

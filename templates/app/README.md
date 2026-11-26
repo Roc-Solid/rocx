@@ -34,29 +34,35 @@ and reloads the page when you save a file. Under `rocx dev`:
 | `routes/+error.rocx` | What a missing page (404) or a failed one (500) shows |
 | `routes/+page.rocx` | The front page |
 | `routes/api/me/+server.roc` | Who is signed in, for the bar at the top |
-| `routes/sign-in/` | The sign-in page, the endpoint that mails a link (`mail/`), the page a link opens (`link/`), and the page that asks for a two-factor code (`code/`) |
-| `routes/account/` | A page for signed-in people only: your address, where you're signed in, signing out everywhere, and two-factor sign-in (its forms post to `two-factor/`) |
+| `routes/sign-in/` | The sign-in page, the page a link opens (`link/`), and the page that asks for a two-factor code (`code/`) |
+| `routes/api/sign-in/` | Their endpoints: what the sign-in page offers besides an address, the link it mails (`mail/`), whom a link signs in (`link/`), and whom a sign-in waiting for its code is for (`code/`) |
+| `routes/account/` | A page for signed-in people only: your address, where you're signed in, signing out everywhere, and two-factor sign-in |
+| `routes/api/account/` | Its endpoints: what the page reads (the address, the sessions, two-factor sign-in's state), signing out everywhere, and two-factor sign-in's forms (`two-factor/`, `two-factor/confirm/`, `two-factor/off/`) |
 | `components/Nav.rocx` | The bar at the top: a component, with its stories and tests |
 | `.rocx-version` | The version of Roc Solid this app builds with (none when a clone of rocx made the app) |
 | `.rocx` | A link to that version (or to the clone), which `rocx` makes (not committed) |
 | `.env` | Settings for the server, if you make one ([Settings in `.env`](#settings-in-env); not committed) |
 
-In `routes/`, `+page.rocx` is a page, `+server.roc` its endpoints (what the page reads and what its
-forms post), and `+layout.rocx` wraps the pages below it. `rocx build` writes `Generated/` from them
-(the routes, `Api`, `Paths`): don't edit it, and don't commit it.
+In `routes/`, `+page.rocx` is a page, `+server.roc` an endpoint (what a page reads, what a form
+posts), and `+layout.rocx` wraps the pages below it. A path is a page or an endpoint, never both: a
+page's endpoints live under `routes/api/`, at the page's path, so what `/account` reads and posts is
+under `routes/api/account/`: the account at `/api/account`, two-factor sign-in's forms at
+`/api/account/two-factor`. `rocx build` writes `Generated/` from them (the routes, `Api`, `Paths`):
+don't edit it, and don't commit it.
 
 A file's `middleware = Middlewares.signed_in` lets only signed-in people through. A signed-out page
-visit goes to the sign-in page, and comes back after; anything else is refused (401). A page that
-names no middleware runs behind its `+server.roc`'s, so `routes/account/+server.roc`'s line guards
-the account page too. A layout's middleware would guard nothing, so `rocx build` refuses one.
+visit goes to the sign-in page, and comes back after; anything else is refused (401). Each page
+names its own middleware, as each endpoint does: `routes/account/+page.rocx` and
+`routes/api/account/+server.roc` both name `Middlewares.signed_in`, and a page that names none is
+open to anyone. A layout's middleware would guard nothing, so `rocx build` refuses one.
 
 ## Settings in `.env`
 
-The server reads a `.env` file in the folder it starts in, if there is one, as it starts: a setting
-a line (`SMTP_URL=smtps://…`, `APP_SECRET=…`), `#` for a comment. Under `rocx dev` that is the
-folder you run it from. A variable the environment already has keeps its value, so a server's own
-settings win over a file left beside it. `--env-file FILE` names another file. `.gitignore` keeps
-`.env` out of git: keep secrets there, never in the code.
+`rocx dev` gives the server the `.env` file in the folder you run it from, if there is one: a
+setting a line (`SMTP_URL=smtps://…`, `APP_SECRET=…`), `#` for a comment. A server started any other
+way reads a file only when `--env-file FILE` names it, so a test's server or a deployed one never
+picks up a `.env` left beside it. A variable the environment already has keeps its value.
+`.gitignore` keeps `.env` out of git: keep secrets there, never in the code.
 
 ## Mail
 
@@ -137,8 +143,8 @@ PUBLIC_URL=https://app.example.com SMTP_URL=smtps://… APP_SECRET=… ./server 
 ```
 
 `APP_SECRET` is the secret two-factor sign-in's key comes from (`openssl rand -hex 32`, once, and
-kept): without it the server doesn't start. The settings may be in a `.env` beside it instead
-([Settings in `.env`](#settings-in-env)).
+kept): without it the server doesn't start. The settings may be in a file instead, which
+`--env-file` names ([Settings in `.env`](#settings-in-env)).
 
 On SQLite or Turso the database is `data/app.db` beside where it starts: keep that folder between
 deploys, and back it up (or point `DATABASE_URL` at a file elsewhere).

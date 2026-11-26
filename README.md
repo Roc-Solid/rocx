@@ -504,17 +504,24 @@ Under an app's `routes/` directory, as in SvelteKit:
   failed.
 
 ```
-routes/+layout.rocx              view! = |{ meta, children, .. }| <html>…{...children}…</html>
-routes/+page.rocx                /
-routes/blog/[slug]/+page.rocx    /blog/:slug; its view is given params : { slug : Str } (or the type its handlers give it)
-routes/blog/[slug]/+server.roc   get! = |{ params, .. }| …, put! = |{ params, body, .. }| …
-routes/sitemap.xml/+server.roc   /sitemap.xml (a directory may name a file)
-routes/+error.rocx               where nothing is
+routes/+layout.rocx                  view! = |{ meta, children, .. }| <html>…{...children}…</html>
+routes/+page.rocx                    /
+routes/blog/[slug]/+page.rocx        /blog/:slug; its view is given params : { slug : Str } (or the type its handlers give it)
+routes/api/blog/[slug]/+server.roc   /api/blog/:slug, the page's endpoints: get! = |{ params, .. }| …, put! = …
+routes/sitemap.xml/+server.roc       /sitemap.xml (a directory may name a file)
+routes/+error.rocx                   where nothing is
 ```
+
+A path is a page or an endpoint, not both (D-100): a page's endpoints (its data, its forms'
+actions) live under `routes/api/`, at the page's path, so `/blog/:slug` is the page and
+`/api/blog/:slug` its data. A directory may still hold both, and then a browser's GET is the page and
+anything else the endpoint's, each answer saying `Vary: Accept` so a cache keeps them apart; the
+examples and the template keep them apart.
 
 A directory is a part of the path in lower case (`blog`, `getting-started`), with dots between
 letters or digits for a file's name (`sitemap.xml`, whose name in `Api` and `Paths` is
-`sitemap_xml`), or a param in brackets (`[slug]`).
+`sitemap_xml`), or a param in brackets (`[slug]`). It may start with an underscore, for a path
+another service names (`_verify`, whose name is `verify`).
 
 A route file that imports `pf.Html` is a component: a page is `view! = |{ params }| …`, a layout
 `view! = |{ meta, children, params }| …`, the error page `view! = |{ status, problem }| …`. Roc's
@@ -556,13 +563,15 @@ and checked by them before the handler runs, whose `body` is their record; what 
 A param is a string unless the annotation gives it another type: `params : { id : I64 }` (a number,
 `Bool`, or a union of tags written out). The path's part is read as that type before anything runs,
 and one that doesn't read is a 404, as a path nothing answers is. The pages and layouts under the
-param's directory are given the same type, and `Paths` and `Api` take it (D-092).
+param's directory are given the same type, and `Paths` and `Api` take it (D-092). A page whose
+endpoints are under `api/` (D-100) says its own, as a type in the page: `Params : { id : I64 }`
+(D-101). rocx never takes a page's types from the `api/` directory: each file says what it reads.
 
 **Middleware** (the platform's `Middleware`) runs around answers: the app's default middleware
 around every request, and a route file's own `middleware = …` around that file's page and
-endpoints. A page that names none runs behind the one the `+server.roc` beside it names, so one line
-guards a page and its data, and a page can't render for someone its data refuses (D-079); a page
-that names its own keeps it. Only the page's own directory counts: a parent's `+server.roc` doesn't
+endpoints. Name it in each: a page and its endpoint under `api/` are two files, each guarded by its
+own line. (A page that names none runs behind the one a `+server.roc` beside it names, D-079; a page
+that names its own keeps it.) Only the page's own directory counts: a parent's `+server.roc` doesn't
 guard the pages below it, and `rocx build` refuses a `middleware` in a layout or the error page,
 which nothing would run. A middleware may answer by itself (a redirect to sign in) or pass the
 request on, with a **context** for the handlers (who is signed in). A handler reads it as `context`.
@@ -758,9 +767,10 @@ instead. `Endpoint.with_query(endpoint, query)` adds a query string, which the h
 `request.query`. What the route's middleware handed on is the handler's `context`
 (`get! = |{ params, context, .. }| Ok(…)`).
 
-- A page's own data is best served at the page's own URL: `routes/members/+server.roc` answers
-  `GET /members` for JSON, behind the same middleware as the page there. A layout, which many pages
-  share, reads an endpoint at a path of its own (the docs site's footer reads `GET /api/facts`).
+- A page's own data is its endpoint under `api/`, at the page's path: `routes/api/members/+server.roc`
+  answers `GET /api/members`, which the page at `/members` reads, each behind its own middleware line
+  (D-100). A layout, which many pages share, reads an endpoint of its own (the docs site's footer
+  reads `GET /api/facts`).
 - A handler runs only on the server, so it may use what only the server has (`Db`, `Job`). The
   browser's copy of `Api` is the same contract, so a type a route's annotation names must compile
   in the browser too: `rocx build` refuses one from a module that imports `pf.Db`, naming the route,
@@ -903,6 +913,11 @@ rocx build <dir> --release <out>  # the app built to deploy: <out>/server (optim
                          # that speaks TLS
   --target arm64musl     # for another machine (arm64mac, x64mac, arm64musl, x64musl: a musl one is
                          # a static Linux executable); this one's by default
+rocx build <dir> --image <file.tar>  # the release as a container image, which rocx writes itself
+                         # (no Dockerfile, no Docker): one layer, /app/server and /app/static, run as
+                         # 65532 in /app on PORT 8080, /app/data for a volume; docker load -i it
+  --tag name:tag         # the image's name (the directory's, :latest, by default)
+  --target x64musl       # arm64musl or x64musl; this machine's processor by default
 rocx check [dir]         # the app (here, or in dir) checked from its sources: rocx build as rocx dev
                          # runs it, then the compiler on the server's program and the browser's, each
                          # problem at its .rocx line; exit 1 on an error, 2 on warnings alone
@@ -963,7 +978,7 @@ options, each also read from the environment variable in parentheses:
 --static DIR                   # files served as they are (also --file /PATH=FILE)
 --database-url URL             # postgres://…, or sqlite:<path> / turso:<path> (DATABASE_URL)
 --context-file FILE            # the text init! is given
---env-file FILE                # settings read into the environment as it starts (ROCX_ENV_FILE)
+--env-file FILE                # settings read into the environment as it starts (none without it)
 --public-url URL               # where the app is, for links it sends (PUBLIC_URL)
 --max-body 16MiB               # the largest request body (MAX_BODY)
 --kv-max-mb 64                 # the key-value store's limit (KV_MAX_MB)
@@ -973,12 +988,13 @@ options, each also read from the environment variable in parentheses:
 
 `--help` lists the rest (`--roc-threads`, `--actor-idle-ms`, `--live-beat-ms`).
 
-As it starts, the server reads `.env` in the directory it starts in, when there is one (or the
-file `--env-file` names, which must be there; `ROCX_ENV_FILE=` set but empty reads none), so a key
-kept there (`SMTP_URL=…`, `ANTHROPIC_API_KEY=…`) reaches `Env.var!`, the app's plugins and the
-server's own settings. A variable the environment already has keeps its value. A line that isn't a
-setting stops the server, saying which; the log names what it set, never a value. Keep `.env` out
-of git (`rocx new`'s `.gitignore` does).
+As it starts, the server reads the file `--env-file` names (which must be there), so a key kept
+there (`SMTP_URL=…`, `ANTHROPIC_API_KEY=…`) reaches `Env.var!`, the app's plugins and the server's
+own settings. `rocx dev` names the `.env` in the folder it runs in, when there is one; a server
+started any other way (a test's, CI's, production's) reads no file unless it is named, so a `.env`
+left beside it never decides its settings. A variable the environment already has keeps its value.
+A line that isn't a setting stops the server, saying which; the log names what it set, never a
+value. Keep `.env` out of git (`rocx new`'s `.gitignore` does).
 
 ### In an editor
 
@@ -1026,7 +1042,8 @@ format, plugins and routes.
   [roc-pg](https://github.com/niclas-ahden/roc-pg), a Postgres client whose queries are checked at
   build time, runs on the platform's `Tcp`.
 - `rocx build <dir> --release <out> --target arm64musl` builds one static Linux executable (and what
-  it serves), from a Mac too.
+  it serves), from a Mac too; `rocx build <dir> --image <file.tar>` puts it in a container image
+  with nothing else in it, written by rocx (no Dockerfile, no Docker to build it).
 
 `server/README.md` has every module's API, and the docs' [platform pages](https://roc-solid.github.io/platform)
 and [reference](https://roc-solid.github.io/platform/reference) cover each part.

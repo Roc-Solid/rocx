@@ -123,18 +123,18 @@ Editor := [].{
 		at = { board: board, card: id }
 		# Each change, sent without waiting, and every one of them on its way, each typed by its
 		# endpoint's contract (Generated/Api).
-		saves = use_submissions!(Api.post_b_board_cards_card(at))
-		save! = use_action!(Api.post_b_board_cards_card(at))
-		labels = use_submissions!(Api.post_b_board_cards_card_labels(at))
-		set_label! = use_action!(Api.post_b_board_cards_card_labels(at))
-		ticks = use_submissions!(Api.post_b_board_cards_card_checklist_tick(at))
-		tick! = use_action!(Api.post_b_board_cards_card_checklist_tick(at))
-		additions = use_submissions!(Api.post_b_board_cards_card_checklist(at))
-		add_item! = use_action!(Api.post_b_board_cards_card_checklist(at))
-		delete_item! = use_action!(Api.post_b_board_cards_card_checklist_delete(at))
-		archive! = use_action!(Api.post_b_board_cards_card_archive(at))
-		release! = use_action!(Api.post_b_board_cards_card_lease_release(at))
-		lease = Api.post_b_board_cards_card_lease(at)
+		saves = use_submissions!(Api.post_api_b_board_cards_card(at))
+		save! = use_action!(Api.post_api_b_board_cards_card(at))
+		labels = use_submissions!(Api.post_api_b_board_cards_card_labels(at))
+		set_label! = use_action!(Api.post_api_b_board_cards_card_labels(at))
+		ticks = use_submissions!(Api.post_api_b_board_cards_card_checklist_tick(at))
+		tick! = use_action!(Api.post_api_b_board_cards_card_checklist_tick(at))
+		additions = use_submissions!(Api.post_api_b_board_cards_card_checklist(at))
+		add_item! = use_action!(Api.post_api_b_board_cards_card_checklist(at))
+		delete_item! = use_action!(Api.post_api_b_board_cards_card_checklist_delete(at))
+		archive! = use_action!(Api.post_api_b_board_cards_card_archive(at))
+		release! = use_action!(Api.post_api_b_board_cards_card_lease_release(at))
+		lease = Api.post_api_b_board_cards_card_lease(at)
 
 		# The card as it shows: the server's, with the changes on their way applied.
 		card! = || {
@@ -254,7 +254,7 @@ Editor := [].{
 
 			<fieldset class="body" disabled?={locked!()}>
 				<legend class="hidden">The card's details</legend>
-				<form class="fields" method="post" action={Endpoint.url_of(Api.post_b_board_cards_card(at))} on:submit={save_fields!}>
+				<form class="fields" method="post" action={Endpoint.url_of(Api.post_api_b_board_cards_card(at))} on:submit={save_fields!}>
 					<label for="card-title">Title</label>
 					<input id="card-title" name="title" required maxlength="200" value={fields!().title} on:input.value={|text| set_title!(Ok(text))} />
 					<label for="card-description">Description</label>
@@ -283,7 +283,7 @@ Editor := [].{
 					<ul>
 						{...Board.labels.map(|label|
 							<li key={label.key}>
-								<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_labels(at))} on:submit={|| set_label!({ label: label.key, on: if (card!().labels.contains(label.key)) "false" else "true" })}>
+								<form method="post" action={Endpoint.url_of(Api.post_api_b_board_cards_card_labels(at))} on:submit={|| set_label!({ label: label.key, on: if (card!().labels.contains(label.key)) "false" else "true" })}>
 									<input type="hidden" name="label" value={label.key} />
 									<input type="hidden" name="on" value={if (card!().labels.contains(label.key)) "false" else "true"} />
 									<button type="submit" class="label-toggle" data-label={label.key} aria-pressed={if (card!().labels.contains(label.key)) "true" else "false"}>{label.name}</button>
@@ -299,7 +299,7 @@ Editor := [].{
 					<ul>
 						{...card!().checklist.map(|item|
 							<li key={item.id} class:done={item.done}>
-								<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist_tick(at))} on:submit={|| tick!({ item: item.id, done: if (item.done) "false" else "true" })}>
+								<form method="post" action={Endpoint.url_of(Api.post_api_b_board_cards_card_checklist_tick(at))} on:submit={|| tick!({ item: item.id, done: if (item.done) "false" else "true" })}>
 									<input type="hidden" name="item" value={item.id} />
 									<input type="hidden" name="done" value={if (item.done) "false" else "true"} />
 									<button type="submit" class="tick" role="checkbox" aria-checked={if (item.done) "true" else "false"}>
@@ -307,7 +307,7 @@ Editor := [].{
 										<span class="text">{item.text}</span>
 									</button>
 								</form>
-								<form method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist_delete(at))} on:submit={|| delete_item!({ item: item.id })}>
+								<form method="post" action={Endpoint.url_of(Api.post_api_b_board_cards_card_checklist_delete(at))} on:submit={|| delete_item!({ item: item.id })}>
 									<input type="hidden" name="item" value={item.id} />
 									<button type="submit" class="remove" aria-label={"Remove “${item.text}”"}>✕</button>
 								</form>
@@ -317,14 +317,14 @@ Editor := [].{
 							<li key={each.text} class="adding" aria-busy="true"><span class="text">{each.text}</span></li>
 						)}
 					</ul>
-					<form class="add-line" method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_checklist(at))} on:submit={add_line!}>
+					<form class="add-line" method="post" action={Endpoint.url_of(Api.post_api_b_board_cards_card_checklist(at))} on:submit={add_line!}>
 						<label class="hidden" for="new-line">New checklist line</label>
 						<input id="new-line" name="text" placeholder="Add a line…" maxlength="200" autocomplete="off" value={item_draft!()} on:input.value={set_item_draft!} />
 						<button type="submit">Add</button>
 					</form>
 				</section>
 
-				<form class="archive" method="post" action={Endpoint.url_of(Api.post_b_board_cards_card_archive(at))} on:submit={archived!}>
+				<form class="archive" method="post" action={Endpoint.url_of(Api.post_api_b_board_cards_card_archive(at))} on:submit={archived!}>
 					<input type="hidden" name="archived" value="true" />
 					<button type="submit" class="quiet">Archive this card</button>
 				</form>
@@ -333,7 +333,7 @@ Editor := [].{
 			<section class="place" aria-labelledby="place-title">
 				<h3 id="place-title">Move</h3>
 				<p class="hint">Or drag it on the board.</p>
-				<form class="to-column" method="post" action={Endpoint.url_of(Api.post_b_board_move({ board: board }))} on:submit={moved!}>
+				<form class="to-column" method="post" action={Endpoint.url_of(Api.post_api_b_board_move({ board: board }))} on:submit={moved!}>
 					<input type="hidden" name="card" value={id} />
 					<input type="hidden" name="before" value="" />
 					<label for="card-column">To the end of</label>
@@ -345,11 +345,11 @@ Editor := [].{
 					</div>
 				</form>
 				<div class="nudge">
-					<form method="post" action={Endpoint.url_of(Api.post_b_board_move({ board: board }))} on:submit={|| nudge!(Up)}>
+					<form method="post" action={Endpoint.url_of(Api.post_api_b_board_move({ board: board }))} on:submit={|| nudge!(Up)}>
 						{Editor.nudge_fields(Board.nudged(board!().cards, id, Up))}
 						<button type="submit" disabled?={Board.nudged(board!().cards, id, Up).is_err()}>↑ Up</button>
 					</form>
-					<form method="post" action={Endpoint.url_of(Api.post_b_board_move({ board: board }))} on:submit={|| nudge!(Down)}>
+					<form method="post" action={Endpoint.url_of(Api.post_api_b_board_move({ board: board }))} on:submit={|| nudge!(Down)}>
 						{Editor.nudge_fields(Board.nudged(board!().cards, id, Down))}
 						<button type="submit" disabled?={Board.nudged(board!().cards, id, Down).is_err()}>↓ Down</button>
 					</form>

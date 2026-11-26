@@ -38,7 +38,7 @@ export async function startServer(executable, { database, dev = false, debug = t
 		...statics.flatMap((dir) => ["--static", dir]),
 		...flags,
 	];
-	const child = spawn(executable, args, { cwd, stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ROCX_LOG: "json", ROCX_ENV_FILE: "", ...env } });
+	const child = spawn(executable, args, { cwd, stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ROCX_LOG: "json", ...env } });
 	let said = "";
 	const url = await new Promise((resolve, reject) => {
 		child.stderr.on("data", (chunk) => {

@@ -16,7 +16,7 @@ import ../../Generated/Paths
 meta = { title: "Goals" }
 
 view! = |_| {
-	read = Api.get_goals({})
+	read = Api.get_api_goals({})
 	goals! = create_memo!(|| Endpoint.get!(read))
 	<Profile goals!={goals!()} />
 }
@@ -28,7 +28,7 @@ Profile := [].{
 		profile = goals!().profile
 		live = LiveForm.filled!(
 			PlateForm.profile,
-			Api.post_goals({}),
+			Api.post_api_goals({}),
 			[
 				("sex", profile.sex),
 				("birth_year", profile.birth_year.to_str()),

@@ -5,7 +5,7 @@ import Game
 
 ## The join forms: a room's code and the name to play under, on the front page; and the name
 ## alone, on a room's own page, whose path has the code. The pages check them as they are typed,
-## and their endpoints (`routes/join/+server.roc`, `routes/play/[code]/+server.roc`) read what
+## and their endpoints (`routes/api/join/+server.roc`, `routes/api/play/[code]/+server.roc`) read what
 ## was posted with the same rules.
 Joining := [].{
 

@@ -6,7 +6,7 @@ import ../Ui/Meal
 
 ## The page: the chat that keeps notes, and the meal read into a record.
 view! = |_| {
-	started = Endpoint.get!(Api.get_root({}))
+	started = Endpoint.get!(Api.get_api({}))
 	notes = Endpoint.get!(Api.get_api_notes({}))
 	<main>
 		<h1>Notes assistant</h1>

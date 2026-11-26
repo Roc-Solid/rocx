@@ -184,6 +184,9 @@ When an item lands, delete its line here in the same commit.
 
 ## Tooling and distribution
 
+- **A lint for a page and an endpoint at one path (D-100)**, configurable: `rocx lint` warns of a
+  folder with both `+page.rocx` and `+server.roc`, pointing at `routes/api/<the page's path>/`,
+  off or an error as an app's settings say. D-100 is docs only for now.
 - **The first release (D-078), waiting on the user:** a `LICENSE` at the repository's root (its
   text is the user's call: the repository states none, and `just release-pack` refuses a real
   release without the file); the x86_64 Linux fork compiler published and pinned (`just roc-fork-linux

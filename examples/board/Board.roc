@@ -2,7 +2,7 @@ import Rank
 
 ## A board as a page shows it, and the rules both halves share: the order cards show in, and
 ## where a move puts one. The server reads a board from its database (`Store`) and answers it at
-## `GET /b/<board>`; the page reads it there, and applies the moves still on their way to it
+## `GET /api/b/<board>`; the page reads it there, and applies the moves still on their way to it
 ## (`moved`), so a dragged card shows where it was dropped before the server has it.
 ##
 ## Ids are strings here (SQLite's integers, as text): they are keys on the page and in JSON.
@@ -38,7 +38,7 @@ Board := [].{
 	## A board in the front page's list: how many cards it shows.
 	Summary : { slug : Str, name : Str, cards : I64 }
 
-	## A whole board, as `GET /b/<board>` answers it: who is asking (`me`), and the server's date
+	## A whole board, as `GET /api/b/<board>` answers it: who is asking (`me`), and the server's date
 	## (`today`), which says which cards are overdue: the browser and the server agree on it.
 	Data : {
 		slug : Str,

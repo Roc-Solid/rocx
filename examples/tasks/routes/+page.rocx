@@ -16,7 +16,7 @@ meta = { title: "Your lists" }
 view! = |_| {
 	team = Api.get_api_team({})
 	team! = create_memo!(|| Endpoint.get!(team))
-	live = LiveForm.of!(TaskForm.new_list, Api.post_root({}))
+	live = LiveForm.of!(TaskForm.new_list, Api.post_api({}))
 	me! = || Tasks.name_of(team!().people, team!().me)
 	<>
 		<section class="hello">

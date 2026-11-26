@@ -15,8 +15,8 @@ import ../Ui/SubscribeForm
 ## uptime, response time and 90 days), the incidents of the last two weeks, and the form to
 ## subscribe to alerts.
 ##
-## Its data is `GET /` as JSON (`routes/+server.roc`), read as the server renders the page and
-## carried in it. It stays live through the live channel (`routes/live/+server.roc`, D-020): every
+## Its data is `GET /api` as JSON (`routes/api/+server.roc`), read as the server renders the page and
+## carried in it. It stays live through the live channel (`routes/api/live/+server.roc`, D-020): every
 ## check and every change the admin makes is published there (`News.tell!`), and the page reads its
 ## data again when it hears one, so a monitor going down shows on every open page within a
 ## second, without a reload. Rows are kept by id, so only what changed is patched, and the
@@ -24,7 +24,7 @@ import ../Ui/SubscribeForm
 meta = { title: "Status" }
 
 view! = |_| {
-	read = Api.get_root({})
+	read = Api.get_api({})
 	overview! : () => Report.Overview
 	overview! = create_memo!(|| Endpoint.get!(read))
 	(live!, set_live!) = create_signal!(Bool.False)
@@ -43,7 +43,7 @@ view! = |_| {
 			}
 			Refused(_, _) | Ended(_) => set_live!(Bool.False)
 		}
-	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_live({}), heard!))
+	create_effect!(|| {}, |{}| Endpoint.subscribe!(Api.channel_api_live({}), heard!))
 	<div class="status" class:stale={is_pending!(overview!)}>
 		{<Banner banner={overview!().banner} />}
 		<p class="live">

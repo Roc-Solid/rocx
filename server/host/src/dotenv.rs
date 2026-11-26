@@ -1,10 +1,10 @@
-//! The settings in a `.env` file, put in the process's environment as the server starts (D-088), so
+//! The settings in a file, put in the process's environment as the server starts (D-088, D-098), so
 //! `Env.var!` reads them, and with it every plugin that reads its keys at start (`ANTHROPIC_API_KEY`,
-//! `STRIPE_SECRET_KEY`, `SMTP_URL`), as do the server's own (`DATABASE_URL`, `PORT`). The file is
-//! `.env` in the directory the server starts in, when there is one, or the one `--env-file` names
-//! (which must be there), or else `ROCX_ENV_FILE` (set but empty: none, as the tests' servers have
-//! it, so a developer's `.env` doesn't reach them). A variable the environment has already keeps its
-//! value: the file is the default, the environment says otherwise.
+//! `STRIPE_SECRET_KEY`, `SMTP_URL`), as do the server's own (`DATABASE_URL`, `PORT`). Only the file
+//! `--env-file` names is read, and it must be there: a `.env` beside the server is read when asked
+//! for (`rocx dev` asks for the one where it runs), never by itself, so a server started by a test,
+//! by CI or in production has only the environment it was given. A variable the environment has
+//! already keeps its value: the file is the default, the environment says otherwise.
 //!
 //! The file's lines, as dotenv writes them: `NAME=value`, `export NAME=value`, blank lines and
 //! `# comments`. A value is as written, its spaces around trimmed, a ` #` and what follows it a
@@ -39,7 +39,7 @@ pub fn read() -> Option<(String, String, String)> {
 
 /// What reading the file came to, for the log.
 pub enum Loaded {
-    /// No `.env`, and none named.
+    /// No file named.
     Nothing,
     /// The file, the names it set, and the names the environment already had.
     Read { file: PathBuf, set: Vec<String>, kept: Vec<String> },
@@ -47,8 +47,8 @@ pub enum Loaded {
     Failed { file: PathBuf, why: String },
 }
 
-/// The file `--env-file <path>` names (`--env-file=<path>` too), if the arguments have one; else
-/// `ROCX_ENV_FILE`'s, if it is set ("": none).
+/// The file `--env-file <path>` names (`--env-file=<path>` too), if the arguments have one. A flag
+/// and not a variable: a variable would reach every server started under it, a test's too (D-098).
 pub fn named(args: &[String]) -> Option<String> {
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -59,22 +59,18 @@ pub fn named(args: &[String]) -> Option<String> {
             return Some(path.to_string());
         }
     }
-    std::env::var("ROCX_ENV_FILE").ok()
+    None
 }
 
-/// Reads `.env` (or the file named) into the environment. Call it only while the process has one
-/// thread.
+/// Reads the file named into the environment; nothing when none is. Call it only while the process
+/// has one thread.
 pub fn load(named: Option<&str>) -> Loaded {
-    if named.is_some_and(|path| path.trim().is_empty()) {
+    let Some(path) = named else {
         return Loaded::Nothing;
-    }
-    let file = match named {
-        Some(path) => PathBuf::from(path),
-        None => PathBuf::from(".env"),
     };
+    let file = PathBuf::from(path);
     let text = match std::fs::read_to_string(&file) {
         Ok(text) => text,
-        Err(_) if named.is_none() => return Loaded::Nothing,
         Err(error) => return Loaded::Failed { file, why: format!("can't be read: {error}") },
     };
     let (pairs, failure) = parse(&text);

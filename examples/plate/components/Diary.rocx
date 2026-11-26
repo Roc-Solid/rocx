@@ -10,9 +10,9 @@ import Summary
 import MealPart
 
 ## A day of the diary: the days either side, the day at a glance (`Summary`), and its four meals.
-## Its data is the day's endpoint (today's at `/`, any other at `/days/:day`), which the page reads
-## in a memo: once a change is in, the runtime reads it again. An entry being removed is gone at
-## once (`use_submissions!`), and the summary with it.
+## Its data is the day's endpoint (today's at `/api`, any other at `/api/days/:day`), which the
+## page reads in a memo: once a change is in, the runtime reads it again. An entry being removed is
+## gone at once (`use_submissions!`), and the summary with it.
 Diary := [].{
 	view! : { day! : () => Plate.Day, stale! : () => Bool } => Html
 	view! = |{ day!, stale! }| {

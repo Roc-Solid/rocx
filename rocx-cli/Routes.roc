@@ -10,8 +10,11 @@
 ## is read and checked with (`post_body = Signup.form`, D-093), and its handlers' annotations may
 ## give its path's params types (`params : { id : I64 }`, D-092). A directory may have dots after its
 ## first character, for a file's name (`routes/sitemap.xml/+server.roc` answers `/sitemap.xml`; its
-## names are `SitemapXmlServer` and `sitemap_xml`). Directories that start with a dot are skipped,
-## but for `.well-known` (`routes/.well-known/openid-configuration/+server.roc`).
+## names are `SitemapXmlServer` and `sitemap_xml`). One may start with an underscore, for a path
+## another service names (`routes/_verify/+server.roc` answers `/_verify`); its names drop it
+## (`VerifyServer`, `verify`), as a Roc name starting with one is a name left unused. Directories
+## that start with a dot are skipped, but for `.well-known`
+## (`routes/.well-known/openid-configuration/+server.roc`).
 ##
 ## A route file is bare: imports, then its definitions (`meta`, `view`). Roc names a module after
 ## its file, and `+page` isn't a name, so rocx writes each as a module of its own under `Generated/`
@@ -58,7 +61,11 @@ Routes := [].{
 	## spread); `takes_meta`: whether its view takes `meta` (a layout's: D-040 gives it one type).
 	## `bodies`: the rules a method's body is read with, as its `<method>_body` names them
 	## (`post_body = TaskForm.adding`, D-093), each with the line it is on.
-	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str), meta_fields : [Some(List(Str)), None], takes_meta : Bool, bodies : List(Body) }
+	Defs : { view : [Some(Str), None], meta : Bool, methods : List(Str), middleware : [Some(Str), None], docs : List({ key : Str, value : Str }), respond : Bool, channel : [Some(List(Str)), None], hooks : List(Str), handlers : List(Handler), imported : List(Str), meta_fields : [Some(List(Str)), None], takes_meta : Bool, bodies : List(Body), params : [Some(ParamsAlias), None] }
+
+	## A page's own `Params : { id : I64 }` (D-101): the types of its path's params, as written, and its
+	## line (from 1). A page whose endpoints are elsewhere (under `api/`, D-100) says them so.
+	ParamsAlias : { text : Str, line : U64 }
 
 	## A method's body's rules (D-093): the method (`post!`), what its route file's `post_body`
 	## says, as written (`TaskForm.adding`), and its line (from 1).
@@ -173,7 +180,7 @@ Routes := [].{
 	defs_of = |sources, file|
 		match sources.find_first(|source| source.file == file) {
 			Ok(source) => source.defs
-			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [], meta_fields: None, takes_meta: Bool.False, bodies: [] }
+			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [], meta_fields: None, takes_meta: Bool.False, bodies: [], params: None }
 		}
 
 	## Whether the file names a middleware.
@@ -281,12 +288,16 @@ Routes := [].{
 	}
 
 	## Whether a directory is a path's part: lower case (`blog`, `getting-started`, `feed.xml`: a dot
-	## after the first character, for a file's name) or a param (`[slug]`).
+	## after the first character, for a file's name; `_verify`: an underscore before the first, for
+	## a path another service names) or a param (`[slug]`).
 	is_path_part : Str -> Bool
 	is_path_part = |part| {
 		bytes = part.to_utf8()
 		n = bytes.len()
-		if n >= 3 and Text.at(bytes, 0) == '[' and Text.at(bytes, n - 1) == ']' {
+		if n >= 2 and Text.at(bytes, 0) == '_' and Routes.lower_or_digit(Text.at(bytes, 1)) {
+			# The rest as any other part; the names made from it drop the underscore (`word_of`).
+			Routes.is_path_part(part.drop_prefix("_"))
+		} else if n >= 3 and Text.at(bytes, 0) == '[' and Text.at(bytes, n - 1) == ']' {
 			inner = Text.slice(bytes, 1, n - 1)
 			Text.is_lower(Text.at(inner, 0)) and inner.all(|b| Text.is_lower(b) or Text.is_digit(b) or b == '_')
 		} else {
@@ -296,12 +307,13 @@ Routes := [].{
 		}
 	}
 
-	## A directory as a word of a route's names: a param's brackets and a leading dot gone.
+	## A directory as a word of a route's names: a param's brackets, and a leading dot or
+	## underscore, gone.
 	word_of : Str -> Str
 	word_of = |part| {
 		opened = if (part.starts_with("[")) part.drop_prefix("[") else part
 		closed = if (opened.ends_with("]")) opened.drop_suffix("]") else opened
-		if (closed.starts_with(".")) closed.drop_prefix(".") else closed
+		if (closed.starts_with(".")) closed.drop_prefix(".") else if (closed.starts_with("_")) closed.drop_prefix("_") else closed
 	}
 
 	## A `.roc` route file's path as its `.rocx`.
@@ -635,8 +647,30 @@ Routes := [].{
 			meta_fields: Routes.meta_fields(bytes),
 			takes_meta: Routes.takes_meta(lines),
 			bodies: Routes.method_names.keep_oks(|method| Routes.body_of(lines, method)),
+			params: Routes.params_alias(lines),
 		}
 	}
+
+	## A route file's `Params : { … }` at the start of a line (D-101), and the lines after it while a
+	## brace is open: the record as written, and its line.
+	params_alias : List(Str) -> [Some(ParamsAlias), None]
+	params_alias = |lines|
+		match lines.find_first_index(|line| line.starts_with("Params :") or line.starts_with("Params:")) {
+			Err(_) => None
+			Ok(at) => {
+				first = Text.trim((lines.get(at) ?? "").drop_prefix("Params")).drop_prefix(":")
+				var $taken = [first]
+				var $depth = Routes.depth_of(first)
+				var $next = at + 1
+				while $depth > 0 and $next < lines.len() {
+					line = lines.get($next) ?? ""
+					$taken = $taken.append(Text.trim(line))
+					$depth = $depth + Routes.depth_of(line)
+					$next = $next + 1
+				}
+				Some({ text: Text.trim(Str.join_with($taken.keep_if(|part| !part.is_empty()), " ")), line: at + 1 })
+			}
+		}
 
 	## What a route file's `<method>_body` says (`post_body = TaskForm.adding`, D-093): the rules
 	## its method's body is read with, as written (what follows `=`, on its line or the indented
@@ -1526,8 +1560,25 @@ Routes := [].{
 	## directory the param is its part of (`monitors/[id]`), its name, its type, and the route file,
 	## method and line that say so.
 	param_uses : Table, List(Source) -> List({ dir : Str, name : Str, type : Str, file : Str, method : Str, line : U64 })
-	param_uses = |table, sources|
-		table.servers.join_map(
+	param_uses = |table, sources| {
+		# A page's own `Params : { … }` (D-101), for a page whose endpoints are elsewhere.
+		pages = table.pages.join_map(
+			|page|
+				match Routes.defs_of(sources, page.file).params {
+					Some(alias) => {
+						given = Routes.record_types(alias.text)
+						page.params.keep_oks(
+							|param|
+								match given.find_first(|field| field.name == param.name) {
+									Ok(field) => Ok({ dir: Str.join_with(page.parts.take_first(param.at + 1), "/"), name: param.name, type: field.type, file: page.file, method: "Params", line: alias.line })
+									Err(_) => Err(NotGiven)
+								},
+						)
+					}
+					None => []
+				},
+		)
+		handlers = table.servers.join_map(
 			|server|
 				Routes.contracted(sources, server).join_map(
 					|method|
@@ -1550,9 +1601,11 @@ Routes := [].{
 						},
 				),
 		)
+		handlers.concat(pages)
+	}
 
 	## Each path param that has a type other than `Str` (D-092), by its directory: the first type a
-	## handler's annotation gives it. (`param_problems` says when they don't agree.)
+	## handler's annotation gives it, or a page's `Params` (D-101). (`param_problems` says when they don't agree.)
 	param_types : Table, List(Source) -> List({ dir : Str, name : Str, type : Str })
 	param_types = |table, sources|
 		Routes.param_uses(table, sources).fold(
@@ -1759,7 +1812,7 @@ Routes := [].{
 	routes_module = |table, sources, stories| {
 		pages = Routes.has_pages(table)
 		types = Routes.param_types(table, sources)
-		missing = if (pages) "if (wants_html) {\n\t\t\tRoutes.page(404)\n\t\t} else {\n\t\t\tRoutes.text(404, \"nothing at \${request.path}\")\n\t\t}" else "Routes.text(404, \"nothing at \${request.path}\")"
+		missing = if (pages) "if (wants_html) {\n\t\t\tRoutes.by_accept(Routes.page(404))\n\t\t} else {\n\t\t\tRoutes.by_accept(Routes.text(404, \"nothing at \${request.path}\"))\n\t\t}" else "Routes.text(404, \"nothing at \${request.path}\")"
 		page_answer = |entry|
 			match Routes.page_guard(table, sources, entry) {
 				Some(guard) => "Middleware.run!(${guard.module_name}.middleware, request, context, |_passed, _handed| Routes.page(200))"
@@ -1808,7 +1861,10 @@ Routes := [].{
 				} else {
 					"Endpoint.not_allowed(request, [${Str.join_with(allowed.map(Text.json_string), ", ")}])"
 				}
-			arms = get_arms.concat(other_arms).append({ test: "", then: last_arm })
+			# A page and an endpoint at one path answer by `Accept`: every answer says so (`Vary`), so a cache
+			# keeps the page and the data apart.
+			shared = at.page != None and (gets.len() > 1 or respond)
+			arms = get_arms.concat(other_arms).append({ test: "", then: last_arm }).map(|arm| if (shared) { ..arm, then: "Routes.by_accept(${arm.then})" } else arm)
 			dispatch = Str.join_with(
 				arms.map_with_index(
 					|arm, i|
@@ -2024,6 +2080,11 @@ Routes := [].{
 					"",
 					"\ttext : U16, Str -> Server.Response",
 					"\ttext = |status, body| Server.response(status, [{ name: \"content-type\", value: \"text/plain; charset=utf-8\" }], body)",
+					"",
+					"\t## An answer chosen by the request's `Accept` (a page and an endpoint at one path, or the error",
+					"\t## page): `Vary: Accept`, so a cache keeps each kind apart.",
+					"\tby_accept : Server.Response -> Server.Response",
+					"\tby_accept = |answer| { ..answer, headers: answer.headers.append({ name: \"vary\", value: \"Accept\" }) }",
 					"}",
 					"",
 					"${Routes.marker} the routes: rocx build writes it.",
@@ -3451,6 +3512,10 @@ Routes := [].{
 			meta_fields: if (Routes.truthy(Value.field(value, "metaFields"))) Some(Value.items(Value.field(value, "metaFields")).map(Value.str)) else None,
 			takes_meta: Routes.truthy(Value.field(value, "takesMeta")),
 			bodies: Value.fields(Value.field(value, "bodies")).map(|each| { method: each.key, rules: Value.str(Value.field(each.value, "rules")), line: Routes.count_of(Value.field(each.value, "line")) }),
+			params: match Value.field(value, "params") {
+				Object(_) as given => Some({ text: Value.str(Value.field(given, "text")), line: Routes.count_of(Value.field(given, "line")) })
+				_ => None
+			},
 		}
 	}
 
@@ -3572,7 +3637,13 @@ Routes := [].{
 					},
 				)
 				.concat(if (defs.takes_meta) [{ key: "takesMeta", value: Boolean(Bool.True) }] else [])
-				.concat(if (defs.bodies.is_empty()) [] else [{ key: "bodies", value: Object(defs.bodies.map(|body| { key: body.method, value: Object([{ key: "rules", value: Text(body.rules) }, { key: "line", value: Value.count(body.line) }]) })) }]),
+				.concat(if (defs.bodies.is_empty()) [] else [{ key: "bodies", value: Object(defs.bodies.map(|body| { key: body.method, value: Object([{ key: "rules", value: Text(body.rules) }, { key: "line", value: Value.count(body.line) }]) })) }])
+				.concat(
+					match defs.params {
+						Some(alias) => [{ key: "params", value: Object([{ key: "text", value: Text(alias.text) }, { key: "line", value: Value.count(alias.line) }]) }]
+						None => []
+					},
+				),
 		)
 	}
 
@@ -3691,3 +3762,8 @@ Routes := [].{
 		}
 	}
 }
+
+expect Routes.params_alias(["import pf.Html", "", "Params : { id : I64 }", "", "view! = |_| x"]) == Some({ text: "{ id : I64 }", line: 3 })
+expect Routes.params_alias(["Params : {", "\tid : I64,", "}"]) == Some({ text: "{ id : I64, }", line: 1 })
+expect Routes.params_alias(["view! = |_| x"]) == None
+expect Routes.definitions("import pf.Html\n\nParams : { id : I64 }\n\nview! = |_| x\n").params == Some({ text: "{ id : I64 }", line: 3 })

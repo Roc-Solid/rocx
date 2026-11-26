@@ -72,8 +72,9 @@ view! = |_|
 			</p>
 			<Code title={Sources.auth_example_middlewares.file} source={Sources.auth_example_middlewares.rocx} />
 			<p>
-				<strong>4. The sign-in page's endpoint.</strong> <code>Auth.link!</code> keeps a link and gives you
-				its URL, and you mail it as you like. The page's <code>GET</code> lists the providers that are set
+				<strong>4. The sign-in page's endpoint</strong>, under <code>api/</code> at the page's path
+				(<code>/api/sign-in</code>). <code>Auth.link!</code> keeps a link and gives you its URL, and you
+				mail it as you like. Its <code>GET</code>, which the page reads, lists the providers that are set
 				up, for their buttons:
 			</p>
 			<Code title={Sources.auth_example_sign_in.file} source={Sources.auth_example_sign_in.rocx} />

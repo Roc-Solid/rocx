@@ -18,14 +18,14 @@ import Game
 ##
 ## A block's first line is the question; each line after it is a choice, `*` the right one and `-`
 ## the others. One schema (packages/forms) reads it: the page checks it as it is typed, and the
-## endpoint (`routes/sets/+server.roc`) reads it into a `Draft.Made` with the very same rules, or
+## endpoint (`routes/api/sets/+server.roc`) reads it into a `Draft.Made` with the very same rules, or
 ## refuses it with the same issues.
 Draft := [].{
 
 	## A set, read: what `Sets.create!` writes.
 	Made : { title : Str, blurb : Str, questions : List(Game.Question) }
 
-	## A set, as the host's list shows it (`Sets.all!`, `GET /host`). Here, not in `Sets`, which
+	## A set, as the host's list shows it (`Sets.all!`, `GET /api/host`). Here, not in `Sets`, which
 	## imports `Db`: the browser's copy of `Generated/Api` names it too.
 	Summary : { id : I64, title : Str, blurb : Str, questions : I64 }
 

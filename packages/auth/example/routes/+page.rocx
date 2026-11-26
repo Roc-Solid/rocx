@@ -1,13 +1,16 @@
 import pf.Html
 import pf.Endpoint
 import ../Generated/Api
+import ../Middlewares
 
 ## Who is signed in, and a way to sign in or out.
 meta = { title: "Auth example" }
 
-## Who is signed in (`GET /`).
+middleware = Middlewares.anyone
+
+## Who is signed in (`GET /api`).
 home! : {} => { email : Str }
-home! = |{}| Endpoint.get!(Api.get_root({}))
+home! = |{}| Endpoint.get!(Api.get_api({}))
 
 view! = |_| {
 	me = home!({})

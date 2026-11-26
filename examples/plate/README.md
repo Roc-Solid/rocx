@@ -129,7 +129,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/p
 | A seed generated from open data, shipped as a migration | [`data/usda.mjs`](data/usda.mjs), [`migrations/`](migrations) |
 | Rules written once and run on both sides: amounts, totals, recipes, targets (Mifflin–St Jeor), the words for days and numbers | [`Plate.roc`](Plate.roc), with its expects |
 | Forms with packages/forms: decimals, choices, days, optional fields, checks across fields (`check_at`), a pattern (`Matches`) | [`PlateForm.roc`](PlateForm.roc) |
-| An endpoint's body read and checked by its form (`post_body = PlateForm.amount`, D-093): a form or JSON alike becomes a typed record, or is refused with each field's issues before the handler runs | [`routes/foods/[id]/+server.roc`](routes/foods/[id]/+server.roc), and each `+server.roc` with a `post_body` |
+| An endpoint's body read and checked by its form (`post_body = PlateForm.amount`, D-093): a form or JSON alike becomes a typed record, or is refused with each field's issues before the handler runs | [`routes/api/foods/[id]/+server.roc`](routes/api/foods/[id]/+server.roc), and each `+server.roc` with a `post_body` |
 | An entry that keeps what it had when it was logged, so a food changed later doesn't change a past day | [`Store.roc`](Store.roc) (`log!`), [`migrations/0001_tables.sql`](migrations/0001_tables.sql) |
 | A recipe kept as a food: what 100 g of the mix has, and a serving's weight, worked out in one transaction with each change | [`Store.roc`](Store.roc) (`mix!`) |
 | A time zone the day starts in: its offset from the platform (`Time.offset!`), the day from SQLite's `date(…, 'unixepoch')` | [`Store.roc`](Store.roc) (`local_now!`, `today!`, `hour!`) |
@@ -138,10 +138,11 @@ Each row names a feature and the file to read for it. Paths are from `examples/p
 
 | Feature | Where |
 |---|---|
-| `Http.fetch!` to another service, its JSON read a field at a time (packages/tools' `JsonValue`), and the result kept | [`OpenFoodFacts.roc`](OpenFoodFacts.roc), [`routes/barcode/+server.roc`](routes/barcode/+server.roc) |
+| A page's endpoints under `api/`, at the page's path: a path is a page or an endpoint, never both. `GET /foods/:id` is the page; `GET /api/foods/:id` the food as JSON, which is what the page reads; `POST /api/foods/:id` logs it | [`routes/api/`](routes/api), [`routes/api/foods/[id]/+server.roc`](routes/api/foods/[id]/+server.roc) |
+| `Http.fetch!` to another service, its JSON read a field at a time (packages/tools' `JsonValue`), and the result kept | [`OpenFoodFacts.roc`](OpenFoodFacts.roc), [`routes/api/barcode/+server.roc`](routes/api/barcode/+server.roc) |
 | A stand-in for that service in the tests, through `OFF_URL` | [`test/plate.test.mjs`](test/plate.test.mjs) |
 | Why the database failed goes on the log (`Log.error!`), never to the client, which gets a plain 500: the database's words can name the app's tables and values. A middleware logs each answer, its status and its time | [`Store.roc`](Store.roc) (`refusal!`), [`Middlewares.roc`](Middlewares.roc) (`logged`) |
-| A password, only when one is set (`PLATE_PASSWORD`), compared in constant time; wrong ones are limited with a `Kv` counter. The session is packages/auth's (`Auth.sign_in!`; the plugin is listed without `admit!`, so nobody signs in by a link or a provider): a random token in the `plate_session` cookie (`__Host-plate_session` and `Secure` when the public URL is HTTPS), kept as its hash in the database (`auth_sessions`) for 90 days and renewed while it is used. The middleware lets everything through when the diary is open, and is `Auth.required` otherwise: a browser without a session goes to sign in, and back to where it was going after. Signing out is a form posting to the plugin's `/auth/sign-out` | [`main.roc`](main.roc), [`Session.roc`](Session.roc), [`Middlewares.roc`](Middlewares.roc), [`routes/sign-in/`](routes/sign-in), [`migrations/0003_auth_sessions.sql`](migrations/0003_auth_sessions.sql) |
+| A password, only when one is set (`PLATE_PASSWORD`), compared in constant time; wrong ones are limited with a `Kv` counter. The session is packages/auth's (`Auth.sign_in!`; the plugin is listed without `admit!`, so nobody signs in by a link or a provider): a random token in the `plate_session` cookie (`__Host-plate_session` and `Secure` when the public URL is HTTPS), kept as its hash in the database (`auth_sessions`) for 90 days and renewed while it is used. The middleware lets everything through when the diary is open, and is `Auth.required` otherwise: a browser without a session goes to sign in, and back to where it was going after. Signing out is a form posting to the plugin's `/auth/sign-out` | [`main.roc`](main.roc), [`Session.roc`](Session.roc), [`Middlewares.roc`](Middlewares.roc), [`routes/sign-in/`](routes/sign-in), [`routes/api/sign-in/`](routes/api/sign-in), [`migrations/0003_auth_sessions.sql`](migrations/0003_auth_sessions.sql) |
 
 ## Test it
 
@@ -218,5 +219,6 @@ instead. None of it needed a change to the platform.
     - `targets`, `has` and `with` are reserved: they can't name a field, a local or a definition.
     - A local or a lambda's argument can't share a name with a definition of its module (`grams`,
       `words`, `whole`, `sum`, `food`, `value`, `name`).
-    - `Paths` has pages only, so a form posting to an endpoint that has no page names it with
+    - `Paths` has pages only (the endpoints are under `api/`: a path is a page or an endpoint,
+      never both), so a form posting to one names it with
       `Endpoint.url_of(Api.post_api_entries_delete({}))`.

@@ -4,20 +4,22 @@ import pf.Server
 import pf.Router exposing [use_submission!]
 import ../Board
 import ../Generated/Api
+import ../Middlewares
 import ../Ui/Avatar
 
-## The front page: every board, and a form for a new one. For members only (the middleware
-## `+server.roc` names, which a page that names none runs behind): someone who hasn't joined is
-## sent to join first.
+## The front page: every board, and a form for a new one. For members only (its middleware, which
+## its endpoints under `api/` name too): someone who hasn't joined is sent to join first.
 meta = { title: "Board" }
 
-## Who is asking, and every board (`GET /`), its type said here too (the endpoint's own is in
+middleware = Middlewares.member
+
+## Who is asking, and every board (`GET /api`), its type said here too (the endpoint's own is in
 ## Generated/Api).
 home! : {} => { me : Board.Person, boards : List(Board.Summary) }
-home! = |{}| Endpoint.get!(Api.get_root({}))
+home! = |{}| Endpoint.get!(Api.get_api({}))
 
 view! = |_| {
-	creating = use_submission!(Api.post_root({}))
+	creating = use_submission!(Api.post_api({}))
 	<div class="home">
 		<header class="top">
 			<span class="brand"><span class="mark" aria-hidden="true">▲</span> Board</span>
@@ -38,7 +40,7 @@ view! = |_| {
 					</li>
 				)}
 			</ul>
-			<form class="new" method="post" action={Endpoint.url_of(Api.post_root({}))}>
+			<form class="new" method="post" action={Endpoint.url_of(Api.post_api({}))}>
 				<label for="board-name">A new board</label>
 				<div class="row">
 					<input id="board-name" name="name" placeholder="Q1 roadmap" maxlength="60" required value={creating.field!("name")} />

@@ -16,7 +16,7 @@ meta = { title: "Who are you?" }
 view! = |_| {
 	team = Api.get_api_team({})
 	team! = create_memo!(|| Endpoint.get!(team))
-	choose = Api.post_me({})
+	choose = Api.post_api_me({})
 	# The latest submission: after a refused plain post, the flash it came back with.
 	sent = use_submission!(choose)
 	<section class="who" aria-labelledby="who-title">
