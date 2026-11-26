@@ -231,7 +231,7 @@ view! = |_|
 				To mount the page yourself, answer a route with <code>{"JobsPage.respond!(request, { mount })"}</code>
 				from a <code>respond!</code>, which <a href={"${Paths.platform_http}#routes"}>answers every method</a>:
 			</p>
-			<Code title="routes/admin/jobs/+server.roc" source={"import admin.JobsPage\nimport ../../../Middlewares\n\nmiddleware = Middlewares.admin\n\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"} numbers={Bool.False} />
+			<Code title="routes/admin/jobs/+server.roc" source={"import admin.JobsPage\n\n# routes/admin/+middleware.roc guards it, as every route under admin/: middleware = Middlewares.admin\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>What it shows.</strong> A console of the queue: how many jobs are queued, running, failed,

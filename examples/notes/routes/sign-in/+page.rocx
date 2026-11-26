@@ -6,7 +6,6 @@ import pf.Router exposing [use_submission!]
 import auth.SignInError
 import ../../Query
 import ../../Generated/Api
-import ../../Middlewares
 import ../../Ui/Brand
 
 ## Signing in: an address, and a link mailed to it. No passwords. A plain form, so it works before
@@ -17,8 +16,6 @@ meta = { title: "Sign in · Notes" }
 
 ## Its endpoint's (`/api/sign-in`), which limits the links mailed to each address. It counts
 ## posts only, so this page's GET passes by it.
-middleware = Middlewares.mail_limit
-
 view! = |_| {
 	query = Router.location!({}).query
 	then = Query.value(query, "then")

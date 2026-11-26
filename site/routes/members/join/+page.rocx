@@ -2,17 +2,15 @@ import pf.Html
 import pf.Endpoint
 import pf.Server
 import pf.Router exposing [use_submission!]
-import ../../../Middlewares
 import ../../../Generated/Api
 import ../../../Ui/PageHero
 import ../../../Ui/Button
 
-## The joining page: `Middlewares.visitor` sends a member on to the members' page instead. Its form
+## The joining page: its directory's middleware (`Middlewares.visitor`) sends a member on to the
+## members' page instead. Its form
 ## posts to the page's endpoint, which the runtime sends with fetch (D-095); a refusal (a name of
 ## spaces) shows under it, with what was typed, from its submission: the runtime's, or without
 ## JavaScript the flash.
-middleware = Middlewares.visitor
-
 meta = {
 	title: "Join",
 	description: "Join the members with a name: a form that posts to a typed endpoint.",

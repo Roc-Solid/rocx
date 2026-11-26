@@ -28,8 +28,7 @@ import Look
 ## An app that mounts it itself answers a route with `respond!` (`mount` is the path it is at):
 ##
 ## ```roc
-## # routes/admin/jobs/+server.roc
-## middleware = Middlewares.admin
+## # routes/admin/jobs/+server.roc, under routes/admin/+middleware.roc (`middleware = Middlewares.admin`)
 ## respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })   # back: as above
 ## ```
 ##

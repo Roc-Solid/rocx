@@ -12,15 +12,12 @@ import Widget
 ## middleware, at a path of its own, with one route file.
 ##
 ## ```roc
-## # routes/admin/db/+server.roc
+## # routes/admin/db/+server.roc, under routes/admin/+middleware.roc (`middleware = Middlewares.staff`)
 ## import pf.Db
 ## import pf.Random
 ## import pf.Server
 ## import admin.Admin
 ## import admin.AdminPage
-## import ../../../Middlewares
-##
-## middleware = Middlewares.staff
 ##
 ## respond! : { request : Server.Request, params : {}, context : { user : Str, staff : Bool } } => Server.Response
 ## respond! = |{ request, context, .. }| AdminPage.respond!(request, context, admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })

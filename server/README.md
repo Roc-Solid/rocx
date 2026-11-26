@@ -104,11 +104,11 @@ contract) and `Generated/Handlers`. `site/main.roc` and `examples/*/main.roc` ar
    body, peer) into a `Server.Request`. A plugin's early path (`Plugin.Early`, under its flag)
    answers first. Otherwise `program.respond!` runs. For an app built by rocx, that is
    `Generated/App`: it sets `request.route`, sends a channel's end (`x-rocx-channel: close`)
-   straight to the route's `on_close!`, and runs everything else through the app's middleware,
-   then the OpenAPI middleware, then a plugin's route or the app's own (`Plugin.respond!`, then
-   `Routes.respond!`, which runs the route's middleware: a `+server.roc`'s for its endpoints, and
-   for a page its own, or else its directory's `+server.roc`'s, D-079). `Server.clear_flash` runs
-   on the way out.
+   straight to the route's `on_close!`, and runs everything else through the platform's cross-site
+   check (`Middleware.same_origin`, unless the app says `cross_site: Allowed`), the app's middleware
+   (`routes/+middleware.roc`), then the OpenAPI middleware, then a plugin's route or the app's own
+   (`Plugin.respond!`, then `Routes.respond!`, which runs the `+middleware.roc` of each directory the
+   route is in, outermost first, D-103). `Server.clear_flash` runs on the way out.
 5. `Server.for_host` flattens the `Server.Response` for the host. Its `kind` says which body it
    has (table below).
 6. Back in the host, in the same call: a handler's `Router.revalidate!` keys become an
@@ -188,14 +188,15 @@ writes this record. `rocx build` writes `Generated/App`, and the app's `main.roc
 ```roc
 program = App.program({
     init!: |_started| Ok({}),
-    middleware: Middlewares.default,
     database: Sqlite("data/plate.db"),          # optional: Postgres by default
+    cross_site: Refused,                        # optional: Refused by default
     openapi: Page(Swagger),                     # optional: Off by default
     plugins: [Email.plugin({})],                # optional: none by default
 })
 ```
 
-`App.program` fills in the rest: every route behind the middleware, the migrations in
+`App.program` fills in the rest: every route behind its directories' middleware (`+middleware.roc`
+files under `routes/`, `routes/+middleware.roc` around every request), the migrations in
 `migrations/*.sql` (embedded), the actor methods the app's modules define, `logs: { format: Auto }`
 and the routes' claims. `App.jobs` lists the kinds of job the modules define, for the jobs plugin.
 To change the log format, update the record: `{ ..App.program({ … }), logs: { format: Json } }`.
@@ -228,11 +229,11 @@ get! : { request : Server.Request, params : { board : Str }, context : Middlewar
 get_b_board : { board : Str } -> Endpoint(context, {}, Board.Data)
 get_b_board = |params| Endpoint.remote("GET", "/b/${Server.encode_segment(params.board)}")
 
-# Generated/Handlers.roc, the server's alone: what Routes answers with, and what Endpoint.run! runs
+# Generated/Handlers.roc, the server's alone: what Routes answers with
 get_b_board = |params| Endpoint.bind(Api.get_b_board(params), |request, context, {}| BBoardServer.get!({ request, params, context }))
 
-# main.roc, or a module only it imports (an MCP server's tools): a handler, without its middleware
-Endpoint.run!(Handlers.get_b_board({ board: "launch" }), request, context, {})
+# any module's handler (an MCP server's tools too): in-process, through the route and its middleware
+Endpoint.send!(Api.get_b_board({ board: "launch" }), {})
 ```
 
 **`Generated/Api`** says what each endpoint is: its method, its URL, and the types its handler's
@@ -266,12 +267,12 @@ get_monitors_id = |params| Endpoint.remote("GET", "/monitors/${Server.encode_par
 
 **`Generated/Handlers`** binds each contract to its handler with `Endpoint.bind`, so the compiler
 checks that they agree. It imports every route file. `Generated/Routes` answers requests with these
-endpoints, and `Endpoint.run!` runs one there and then: no HTTP, and no middleware (the caller ran
-its own). Because it imports the routes, only code outside the routes' imports may import it:
-`main.roc`, a plugin, or a module only they import. A route file that wants to run another
-route's handler binds it itself, as `site/routes/calls/+server.roc` does:
-`Endpoint.bind(Api.x(params), |r, c, b| XServer.post!(…))`. `Endpoint.run!` given Api's contract
-crashes, saying to use Handlers'.
+endpoints. Code that calls an endpoint on the server sends Api's contract with `Endpoint.send!`: the
+host answers it in-process (`roc_fetch`, then `in_process`), through the app's `respond!`, so the
+endpoint's middleware runs, with the request's headers (cookies, `authorization`), the method, the
+body and its `content-type` (D-103). A route file that answers with another route's handler
+directly binds it itself, as `site/routes/calls/+server.roc` does:
+`Endpoint.bind(Api.x(params), |r, c, b| XServer.post!(…))`.
 
 How endpoints read their bodies and answer forms is under Forms, below.
 
@@ -1064,7 +1065,7 @@ runs only briefly, one call at a time, for a check or a hook.
 - **Headers.** The host drops `x-rocx-channel` and `x-rocx-tab` from every request it is sent, so
   only the host can ask these questions.
 - **Middleware.** `/rocx/live` never reaches the app's middleware, so an auth middleware has nothing
-  to let through. Each channel is guarded by its own path's middleware instead.
+  to let through. Each channel's check runs behind its own directories' middleware instead.
 - **Limits.** A stream carries at most 64 channels; a post at most 256 items and 1 MiB.
 
 ### Order, backlog and lost clients

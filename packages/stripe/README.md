@@ -25,7 +25,6 @@ Postgres against a stand-in for Stripe's API (`example/test/stand-in.mjs`), neve
 
    program = App.program({
        init!: |_started| Ok({}),
-       middleware: Middleware.same_origin({}),
        plugins: [
            Auth.plugin({ admit!: Accounts.admit! }),
            Stripe.plugin({ on_event!: Billing.on_event! }),
@@ -222,12 +221,15 @@ Stripe's words (`past_due`) into a status and back. Amounts are in the currency'
 (1500 for $15.00), times in milliseconds since 1970.
 
 A gate is middleware: the example's `subscribers` is `Auth.required_with` with
-`Stripe.subscribed!` in its step, answering anyone else with a redirect to the pricing page.
+`Stripe.subscribed!` in its step, answering anyone else with a redirect to the pricing page. It
+guards the `(subscribers)` group (its `+middleware.roc`): the Pro page and its endpoint, whose paths
+the group doesn't change.
 
 ## The webhook
 
-`POST <webhook_at>`, behind the app's middleware (a request without an `Origin`, as Stripe's is,
-passes `Middleware.same_origin`; middleware that wants every request signed in would refuse it).
+`POST <webhook_at>`, behind the app's middleware, `routes/+middleware.roc` (a request without an
+`Origin`, as Stripe's is, passes the platform's cross-site check; middleware there that wants every
+request signed in would refuse it: guard the app's routes by their directories instead).
 
 1. **Its signature.** `Stripe-Signature` is `t=<seconds>,v1=<signature>[,v1=…]`. One `v1` must be
    the HMAC-SHA256, under `STRIPE_WEBHOOK_SECRET`, of `<t>.` followed by the request's body as it

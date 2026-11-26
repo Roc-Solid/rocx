@@ -2,7 +2,7 @@ import presence.Room
 import presence.Wire
 import ../Board
 
-## What the parts of a board's page share (`routes/b/[board]/+page.rocx` makes it): the board as it
+## What the parts of a board's page share (`routes/(members)/b/[board]/+page.rocx` makes it): the board as it
 ## shows, the card being dragged and where it would land, the card that is open, and who is here.
 ## Each is an accessor or a setter, so a part that reads one is patched when it changes.
 Shared := [].{

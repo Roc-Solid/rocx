@@ -171,17 +171,17 @@ view! = |_|
 			<Heading id="origin">Requests from other sites</Heading>
 			<p>
 				A page on another site can make a visitor's browser send a request to your app, with your
-				app's cookies: a form that posts, a script that fetches. <code>{"Middleware.same_origin({})"}</code>
-				refuses, with a 403, a request that may change something (a POST, PUT, PATCH or DELETE to an
+				app's cookies: a form that posts, a script that fetches. The platform refuses, with a 403, a request that may change something (a POST, PUT, PATCH or DELETE to an
 				<a href={"${Paths.calls}#endpoints"}>endpoint</a>) when the browser says another site's page sent
 				it, that is, when its <code>Origin</code> isn't your server. A client that isn't a page
 				(<code>curl</code>, another server) sends no <code>Origin</code>, and is answered. A GET changes
 				nothing, and is answered whoever asks.
 			</p>
 			<p>
-				It is middleware, so an app puts it in front of every request, in its default middleware
-				(<a href={"${Paths.routing}#middleware"}>this site's</a> also sends headers that tell a browser
-				not to guess a file's type). An app that leaves it out has no such check. Cookies set with
+				It runs before any of the app's <a href={"${Paths.routing}#middleware"}>middleware</a>, on every
+				request, unless the app says <code>cross_site: Allowed</code> in its <code>App.program</code> (an API
+				other sites' pages call, with CORS): then <code>{"Middleware.same_origin({})"}</code> in a
+				directory's <code>+middleware.roc</code> puts it back where it should be. Cookies set with
 				<code>Server.with_cookie</code> are <code>HttpOnly</code>, so no script reads them, and
 				<code>SameSite=Lax</code>, so another site's form doesn't get them sent along.
 			</p>

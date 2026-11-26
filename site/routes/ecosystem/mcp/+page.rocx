@@ -106,20 +106,21 @@ view! = |_|
 
 		<Heading id="http">Serving it over HTTP</Heading>
 		<p>
-			<code>McpHttp</code> serves the MCP server at one path, such as <code>/mcp</code>. It sits behind the
-			<a href={"${Paths.routing}#middleware"}>middleware</a> that decides who may ask, and it makes tools
-			from what the app already has: an <a href={"${Paths.routing}#endpoints"}>endpoint</a>, a function of
-			the app's own, or a handler written for the tool. This sketch mounts it from <code>main.roc</code>
-			and makes one tool of each kind:
+			<code>McpHttp</code> serves the MCP server from a route, such as <code>routes/mcp/+server.roc</code>,
+			behind its directory's <a href={"${Paths.routing}#middleware"}>middleware</a>, which decides who may
+			ask. It makes tools from what the app already has: an <a href={"${Paths.routing}#endpoints"}>endpoint</a>,
+			a function of the app's own, or a handler written for the tool. A tool made from an endpoint sends it
+			as a handler does, through the endpoint's own route and middleware, with the MCP request's token, so an
+			agent can do what the same credentials can do over HTTP, and no more. This sketch serves one and
+			makes one tool of each kind:
 		</p>
-		<Code title="A sketch (this site serves no MCP): main.roc, and the server" source={Sources.mcp_http_sketch.rocx} />
+		<Code title="A sketch (this site serves no MCP): the route, its middleware, and the server" source={Sources.mcp_http_sketch.rocx} />
 		<TableWrap>
 			<table>
 				<thead><tr><th>McpHttp.</th><th>What it is</th></tr></thead>
 				<tbody>
-					<tr><td><code>middleware(path, server)</code></td><td>The MCP server as a middleware. It answers requests to <code>path</code> and passes every other request on.</td></tr>
-					<tr><td><code>respond!(server, request, context)</code></td><td>The answer to one request to the MCP route, for a route file's <code>respond!</code> if you'd rather serve it from <code>routes/mcp/+server.roc</code>.</td></tr>
-					<tr><td><code>endpoint(Handlers.x, about, McpHttp.openapi({"{}"}))</code></td><td>An endpoint as a tool. <code>Handlers.x</code> is the function from the endpoint's path params to the endpoint, in <code>Generated/Handlers</code>, which has each endpoint with its handler. The tool's arguments are one object holding both the path's params and the body (<code>{"{ \"id\": \"7\", \"tags\": [\"work\"] }"}</code>). The endpoint's answer is the tool's, and a refusal goes back to the model.</td></tr>
+					<tr><td><code>respond!(server, request, context)</code></td><td>The answer to one request to the MCP route, for its route file's <code>respond!</code>.</td></tr>
+					<tr><td><code>endpoint(Api.x, about, McpHttp.openapi({"{}"}))</code></td><td>An endpoint as a tool. <code>Api.x</code> is the function from the endpoint's path params to the endpoint, in <code>Generated/Api</code>. The tool's arguments are one object holding both the path's params and the body (<code>{"{ \"id\": \"7\", \"tags\": [\"work\"] }"}</code>). It is sent through the endpoint's route, behind its middleware, with the MCP request's headers. The endpoint's answer is the tool's, and a refusal goes back to the model.</td></tr>
 					<tr><td><code>function(Module.name!, about, McpHttp.openapi({"{}"}))</code></td><td>A function of the app's own as a tool, run inside the MCP request, behind the MCP route's middleware.</td></tr>
 					<tr><td><code>tool(about, handler!, McpHttp.openapi({"{}"}))</code></td><td>A handler written for the tool, <code>{"arg, Caller(c) => Try(result, Str)"}</code>, its schemas written from its types.</td></tr>
 					<tr><td><code>Caller(c)</code></td><td>What a handler is given: <code>{"{ request, context, progress! }"}</code>. <code>context</code> is what the middleware passed on, such as who is asking.</td></tr>
@@ -278,8 +279,8 @@ view! = |_|
 				tool's progress, streamed as events.
 			</li>
 			<li>
-				examples/notes, whose server is mounted from <code>main.roc</code> and whose tests call its tools
-				over JSON-RPC. A route file with <code>respond!</code> alone can serve it too.
+				examples/notes, whose server is its route <code>routes/mcp/</code> and whose tests call its tools
+				over JSON-RPC.
 			</li>
 		</ul>
 		<p>Waiting on a proposal (in <code>packages/mcp/PROPOSALS.md</code>):</p>

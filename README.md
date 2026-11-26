@@ -547,7 +547,7 @@ these beside them:
   contract and imports no route file, so any module may import `Api`: a store, a job, an actor that
   publishes on a channel.
 - `Generated/Handlers.roc`, on the server only: each endpoint bound to its handler, which the
-  router answers with. `main.roc` may import it to mount handlers elsewhere too (an MCP server).
+  router answers with. Code that calls an endpoint sends `Api`'s (below).
 - `Generated/App.roc`: the app's server program ([The server's program](#the-servers-program)).
 - For an app with pages, `Generated/Root.roc` ([How a page is put together](#how-a-page-is-put-together)).
 
@@ -567,14 +567,21 @@ param's directory are given the same type, and `Paths` and `Api` take it (D-092)
 endpoints are under `api/` (D-100) says its own, as a type in the page: `Params : { id : I64 }`
 (D-101). rocx never takes a page's types from the `api/` directory: each file says what it reads.
 
-**Middleware** (the platform's `Middleware`) runs around answers: the app's default middleware
-around every request, and a route file's own `middleware = …` around that file's page and
-endpoints. Name it in each: a page and its endpoint under `api/` are two files, each guarded by its
-own line. (A page that names none runs behind the one a `+server.roc` beside it names, D-079; a page
-that names its own keeps it.) Only the page's own directory counts: a parent's `+server.roc` doesn't
-guard the pages below it, and `rocx build` refuses a `middleware` in a layout or the error page,
-which nothing would run. A middleware may answer by itself (a redirect to sign in) or pass the
-request on, with a **context** for the handlers (who is signed in). A handler reads it as `context`.
+**Middleware** (the platform's `Middleware`) runs around answers, and goes by folder (D-103). A
+`+middleware.roc` names one (`middleware = Middlewares.signed_in`) that runs around every page,
+endpoint and channel in its directory and the directories below it, outermost first;
+`routes/+middleware.roc` runs around every request the app answers, its plugins' too. A directory in
+brackets is a **group** (`routes/(members)/`): it adds nothing to the path, so a page and its
+endpoints under `api/` share one guard (`routes/(members)/account/+page.rocx` is `/account`,
+`routes/(members)/api/account/+server.roc` is `/api/account`), and the sign-in pages sit outside it.
+A route file can't name middleware: `rocx build` refuses `middleware = …` in a page, an endpoint, a
+layout or the error page, saying which `+middleware.roc` to move it to. A middleware may answer by
+itself (a redirect to sign in) or pass the request on, with a **context** for the handlers (who is
+signed in); a handler reads it as `context`, typed: one that reads `context.user` compiles only
+behind a middleware that adds it. `Middleware.when(Server.changes, guard)` runs `guard` for writes
+alone. Before any of them, the platform refuses a change another site's page sends (a POST, PUT,
+PATCH or DELETE whose `Origin` isn't the server's), unless the app says `cross_site: Allowed`.
+`rocx routes <dir>` lists what runs around each route.
 
 ### How a page is put together
 
@@ -617,15 +624,15 @@ it for `/`, each page whose path has no params and every page those link to, eac
 the answers to the reads it made while rendering. `--base /docs/` puts every URL under a path;
 `--route <path>` asks for one no page links to (a page with params, `/feed.xml`); `--built <build>`
 uses a build already made. What only a server answers (methods that write, events, channels, a page
-with middleware of its own) isn't in the copy, and the build lists it. The docs site is built this
+behind a directory's middleware) isn't in the copy, and the build lists it. The docs site is built this
 way. The copy's `runtime.js`, as `--release`'s, has only what the app uses (D-087): the host
 functions its wasm imports and the runtime's code they and the page reach, navigating in place only
 for an app of more than one page (or one that navigates), drags, a pointer's point and glides only
 where its markup has them. The js-framework-benchmark page shipped 128 KB of the minified
 runtime's 180 when it was last measured (2026-11-26).
 
-The browser's copy keeps each endpoint's method, URL and types but not its handler, and each route
-file without its middleware. If a page or component reaches a module that imports what only the
+The browser's copy keeps each endpoint's method, URL and types but not its handler, and nothing it
+builds reaches a `+middleware.roc`. If a page or component reaches a module that imports what only the
 server has (`pf.Db`, directly or through another module), the build warns at that import: the
 browser's program couldn't compile it. An app of endpoints alone has no browser's `main.roc`, and
 the build says so.
@@ -715,12 +722,10 @@ app [program] { jobs: "../packages/jobs/main.roc", pf: platform "../server/platf
 import jobs.Cron
 import jobs.Job
 import Generated/App
-import Middlewares
 import Jobs
 
 program = App.program({
 	init!: |started| Ok({ facts: started }),
-	middleware: Middlewares.default,
 	plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.nightly, {})] })],
 })
 ```
@@ -732,15 +737,18 @@ program = App.program({
   in it. The host keeps it for as long as the server runs, and every call into the app's code is
   given it: each request's middleware, a job's run, an actor's methods, a plugin's routes and loops.
   An `Err` stops the server.
-- `middleware`: runs around every request.
+- `cross_site`: `Refused` (the default) or `Allowed`: whether the platform refuses a change another
+  site's page sends, before any middleware. (The middleware isn't here: it is
+  `routes/+middleware.roc`, and each directory's.)
 - `database`: `Postgres` (the default, at `--database-url` or `DATABASE_URL`), `Sqlite(path)` (a
   file in the server's process), or `Turso(path)` (the same SQL on Turso's engine).
   `--database-url sqlite:<path>` or `turso:<path>` overrides the path or the engine.
 - `openapi`: whether to serve the endpoints' OpenAPI document (`Off` by default; see below).
-- `plugins`: what packages add to the app (their routes answer behind the middleware, before the
-  app's own).
+- `plugins`: what packages add to the app (their routes answer behind `routes/+middleware.roc`,
+  before the app's own).
 
-Every request is answered by a plugin's route or by `Routes.respond!`, behind `middleware`.
+Every request is answered by a plugin's route or by `Routes.respond!`, behind
+`routes/+middleware.roc`.
 `App.jobs` lists the jobs the app's modules define, for the jobs plugin (`packages/jobs`). Each is
 defined at the top of its module's block (`welcome = Job.define("welcome", |context, input| …)`, or
 `Job.define_with`); one defined elsewhere, two with one name, or jobs with no jobs package in the
@@ -764,12 +772,12 @@ demos of each.
 `Api.get_api_shelf({}).read!()`. An answer that isn't 200 fails the computation that read it,
 and the nearest `<Errored>` shows why. `(…).send!({})` gives a `Try(result, Server.Problem)`
 instead. `Endpoint.with_query(endpoint, query)` adds a query string, which the handler reads as
-`request.query`. What the route's middleware handed on is the handler's `context`
+`request.query`. What the route's directories' middleware handed on is the handler's `context`
 (`get! = |{ params, context, .. }| Ok(…)`).
 
-- A page's own data is its endpoint under `api/`, at the page's path: `routes/api/members/+server.roc`
-  answers `GET /api/members`, which the page at `/members` reads, each behind its own middleware line
-  (D-100). A layout, which many pages share, reads an endpoint of its own (the docs site's footer
+- A page's own data is its endpoint under `api/`, at the page's path: `routes/(members)/api/members/+server.roc`
+  answers `GET /api/members`, which the page at `/members` (`routes/(members)/members/+page.rocx`)
+  reads, both behind their group's middleware (D-100, D-103). A layout, which many pages share, reads an endpoint of its own (the docs site's footer
   reads `GET /api/facts`).
 - A handler runs only on the server, so it may use what only the server has (`Db`, `Job`). The
   browser's copy of `Api` is the same contract, so a type a route's annotation names must compile
@@ -788,7 +796,10 @@ from a signal) fetches the endpoint's URL. A read that its middleware answers wi
 signed-out visitor sent to sign in) makes the whole page that redirect.
 
 **From handlers.** A handler sends to any endpoint with
-`Api.post_api_shout({}).send!(draft!())`.
+`Api.post_api_shout({}).send!(draft!())`. On the server, one of the app's own endpoints
+is answered in-process, through its route and its middleware, with the request's headers (its
+cookies, its `authorization`): what guards an endpoint guards every way to it, an MCP tool's call
+too (D-103).
 
 **Forms.** `<form method="post" action={Endpoint.url_of(join)}>` posts to an endpoint. The endpoint
 reads the form's fields by its body's type: a number from its text, an unticked box as `Bool.False`,
@@ -875,8 +886,9 @@ read it with `Api.get_…(params).read!()` where you would have called it.
   console.
 - The browser's runtime builds elements with `createElement` and sets text and attributes as such.
 - `rocx lint` refuses `Html.source_text` (raw HTML) in hand-written `.roc` files.
-- `Middleware.same_origin` refuses a change (a POST, a PUT…) that another site's page sends. The
-  docs site's default middleware starts with it.
+- The platform refuses a change (a POST, a PUT…) that another site's page sends, before any
+  middleware, unless the app says `cross_site: Allowed` (then `Middleware.same_origin` puts the
+  check back in a directory's `+middleware.roc`).
 
 The docs site's [safety page](https://roc-solid.github.io/safety) shows each rule at work.
 
@@ -935,7 +947,7 @@ rocx check --sql [dir]   # the app's SQL checked by its own database engine, and
 rocx test [dir]          # rocx build as rocx check runs it, then the app's expects (roc test main.roc,
                          # with the compiler rocx has), each failure at its .rocx line
 rocx lint <dir>…         # refuse Html.source_text in hand-written .roc files
-rocx routes <dir>        # list an app's routes: method, path, file, middleware
+rocx routes <dir>        # list an app's routes: method, path, file, what runs around it
 rocx fmt <path>…         # format the Roc in .rocx files and hand-written .roc files with roc fmt
   --check                # only say which files aren't formatted
 rocx qr <text>           # the text as a QR code in the terminal (--pbm: as a PBM image)

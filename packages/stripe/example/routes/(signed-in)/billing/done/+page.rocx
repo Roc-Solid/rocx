@@ -1,0 +1,43 @@
+import pf.Html
+import pf.Router
+import pf.Server
+import auth.SignInError
+import ../../../../Generated/Api
+
+## Where Stripe's Checkout comes back to once it is paid (`?session_id=`): what was bought, and
+## where it is. Signed in only (`Middlewares.signed_in`).
+meta = { title: "Thank you" }
+
+## What the checkout bought, as Stripe says now; a problem when it isn't the signed-in user's.
+bought! : Str => Try({ what : Str, subscription : Bool, paid : Bool }, Server.Problem)
+bought! = |id| Api.get_api_billing_done({}).with_query("session_id=${Server.encode_segment(id)}").send!({})
+
+## What the page says of a checkout.
+said : { what : Str, subscription : Bool, paid : Bool } -> Str
+said = |done|
+	if !done.paid {
+		"Your payment for ${done.what} is on its way: we'll have it ready once your bank says so."
+	} else if done.subscription {
+		"You're subscribed to ${done.what}."
+	} else {
+		"${done.what} is yours."
+	}
+
+view! = |_| {
+	id = SignInError.field(Router.location!({}).query, "session_id")
+	<main>
+		{match bought!(id) {
+			Ok(done) =>
+				<div>
+					<h1>Thank you</h1>
+					<p role="status">{said(done)}</p>
+					<p><a href={if (done.subscription) "/pro" else "/ebook"}>Go on</a> · <a href="/account">Your account</a></p>
+				</div>
+			Err(_) =>
+				<div role="alert">
+					<h1>That checkout isn't here</h1>
+					<p><a href="/">Back to pricing</a></p>
+				</div>
+		}}
+	</main>
+}

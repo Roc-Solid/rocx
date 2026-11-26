@@ -11,15 +11,19 @@ queue of packages/jobs. The docs site's page, `/ecosystem/admin`, shows the admi
 from made-up tables.
 
 ```roc
+# routes/admin/+middleware.roc: who is asking, around every route under admin/
+import ../../Middlewares
+
+middleware = Middlewares.staff
+```
+
+```roc
 # routes/admin/db/+server.roc
 import pf.Db
 import pf.Random
 import pf.Server
 import admin.Admin
 import admin.AdminPage
-import ../../../Middlewares
-
-middleware = Middlewares.staff
 
 respond! : { request : Server.Request, params : {}, context : { user : Str, staff : Bool } } => Server.Response
 respond! = |{ request, context, .. }| AdminPage.respond!(request, context, admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
@@ -65,7 +69,8 @@ effects, and the compiler checks that they fit.
 
 ## Who may use it
 
-The route's middleware runs first, as it does for any route, so it can send a stranger to sign in.
+The middleware of the route's directories runs first, as it does for any route, so it can send a
+stranger to sign in.
 Then `access` decides, from the context the middleware handed on:
 
 | `access` says | Then |

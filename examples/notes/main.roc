@@ -1,8 +1,8 @@
 ## Notes: personal notes in Markdown, which AI clients can search, read and write over MCP with
 ## a personal access token. rocx build writes nearly all of the program from routes/
 ## (`Generated/App`: every page and endpoint, the migrations in migrations/, the actors packages/guard
-## keeps its counts in); this says the rest: what every request goes through first (the default
-## middleware, then the MCP server at /mcp); that the JSON API's OpenAPI document is served, with
+## keeps its counts in; what every request goes through, each directory's `+middleware.roc`; the
+## MCP server at /mcp, routes/mcp/); this says the rest: that the JSON API's OpenAPI document is served, with
 ## Scalar to read it in (`/openapi.json`, `/openapi.html`); that sign-in links are mailed by
 ## packages/email's plugin (over SMTP with `SMTP_URL`; without it, under `--dev`, to the dev
 ## mailbox); that signing in is packages/auth's plugin (D-072: the links, the sessions, signing
@@ -14,12 +14,9 @@ import auth.Auth
 import email.Email
 import Generated/App
 import Account
-import Agents
-import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middlewares.default.then(Agents.mount),
 	openapi: Page(Scalar),
 	plugins: [
 		Email.plugin({ from: "Notes <notes@example.com>" }),

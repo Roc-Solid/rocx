@@ -74,7 +74,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc"
-				source={"program = App.program({\n\tinit!: |_started|\n\t\tmatch Env.var!(\"APP_SECRET\") {\n\t\t\tOk(secret) => Ok({ secret })\n\t\t\tErr(NotFound) => Err(\"APP_SECRET isn't set\")\n\t\t},\n\tmiddleware: Middlewares.default,\n})"}
+				source={"program = App.program({\n\tinit!: |_started|\n\t\tmatch Env.var!(\"APP_SECRET\") {\n\t\t\tOk(secret) => Ok({ secret })\n\t\t\tErr(NotFound) => Err(\"APP_SECRET isn't set\")\n\t\t},\n})"}
 				numbers={Bool.False}
 			/>
 			<p>

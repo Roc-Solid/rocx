@@ -195,8 +195,8 @@ view! = |_|
 				<Code title={Sources.endpoint_reader.file} source={Sources.endpoint_reader.rocx} />
 			</Versus>
 			<p>
-				A handler runs behind the app's default middleware and its route file's own
-				<code>middleware</code>. What the middleware handed on, such as who is signed in, is the handler's
+				A handler runs behind the middleware of each directory it is in, <code>routes/+middleware.roc</code>
+				first. What the middleware handed on, such as who is signed in, is the handler's
 				<code>context</code>: <code>{"get! = |{ context, .. }| Ok({ member: context.member })"}</code>
 				(<a href={"${Paths.routing}#middleware"}>middleware</a>). Its body can use what only the server has:
 				<a href={Paths.platform_database}>the database</a>, <a href={Paths.platform_kv}>Kv</a>, jobs, email.
@@ -246,8 +246,7 @@ view! = |_|
 				answers. It is the method, the URL and those types, and nothing the handler does. The browser gets the
 				same contract, so any module may import it: a component, a route, a job, an actor.
 				<code>Generated/Handlers.roc</code>, which only the server has, binds each endpoint to its handler
-				(<code>Endpoint.bind</code>, which checks that the two agree), for the router and for
-				<code>Endpoint.run!</code>:
+				(<code>Endpoint.bind</code>, which checks that the two agree), for the router:
 			</p>
 			<Versus>
 				<Code title="Generated/Api.roc, both copies" source={Sources.endpoint_api.rocx} numbers={Bool.False} />
@@ -268,13 +267,12 @@ view! = |_|
 		</Demo>
 		<NoHydration>
 			<p>
-				On the server, <code>{"Endpoint.run!(endpoint, request, context, arg)"}</code> runs an endpoint's
-				handler there and then: no HTTP, and no middleware, since the caller has run its own. This page's
-				endpoint asked the shout endpoint that way as the page rendered: <strong>{asked!({}).shouted}</strong>.
-				<code>run!</code> needs the endpoint bound to its handler. Take it from <code>Generated/Handlers</code>
-				(in <code>main.roc</code>, a plugin, or a module only they import, such as an MCP server's tools). A
-				route file can't import Handlers, which imports it, so it binds the contract to the handler itself,
-				as Handlers does.
+				On the server, a handler sends one of the app's own endpoints the same way,
+				<code>{"Endpoint.send!(endpoint, arg)"}</code>, and the server answers it in-process: no HTTP, but
+				through the endpoint's route, behind its middleware, with the request's headers (its cookies, its
+				<code>authorization</code>), as the browser's request would be. What guards an endpoint guards every
+				way to it, an MCP tool's call too. This page's endpoint asked the shout endpoint that way as the page
+				rendered: <strong>{asked!({}).shouted}</strong>.
 			</p>
 			<ul>
 				<li>
@@ -285,10 +283,11 @@ view! = |_|
 					(<code>Allow</code>).
 				</li>
 				<li>
-					<strong>Behind middleware.</strong> This site's default middleware refuses, with a 403, a POST, PUT,
-					PATCH or DELETE that a page of another site sends (its <code>Origin</code> isn't this server). A
-					client that isn't a page, such as <code>curl</code>, sends no <code>Origin</code>, and is let
-					through. A route file can name more (<code>middleware = Middlewares.member</code>).
+					<strong>Behind middleware.</strong> The platform refuses, with a 403, a POST, PUT, PATCH or DELETE
+					that a page of another site sends (its <code>Origin</code> isn't this server), unless the app says
+					<code>cross_site: Allowed</code>. A client that isn't a page, such as <code>curl</code>, sends no
+					<code>Origin</code>, and is let through. A directory's <code>+middleware.roc</code> adds more around
+					the routes in it (<a href={"${Paths.routing}#middleware"}>middleware</a>).
 				</li>
 				<li>
 					<strong>Typed at both ends.</strong> Api's types are the handler's annotation's, in the server's

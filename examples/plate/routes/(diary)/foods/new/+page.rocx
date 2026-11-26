@@ -1,0 +1,137 @@
+import pf.Html
+import pf.Router
+import forms.LiveForm
+import forms.TextField
+import ../../../../PlateForm
+import ../../../../Query
+import ../../../../Links
+import ../../../../Generated/Api
+
+## A food of your own, as its packet's label says it: what 100 g has (or a serving: say its weight
+## in "Per"), and maybe its usual serving and its barcode. The address may carry a barcode Open
+## Food Facts didn't know (`?barcode=…`), and the day and meal to log it to afterwards.
+meta = { title: "Make a food" }
+
+view! = |_| {
+	location = Router.location!({})
+	day = Query.value(location.query, "day")
+	meal = Query.value(location.query, "meal")
+	live = LiveForm.filled!(PlateForm.food, Api.post_api_foods_new({}), [("per", "100"), ("barcode", Query.value(location.query, "barcode"))])
+	<section class="new-food">
+		<header>
+			<a class="back" href={Links.add({ day, meal, query: "" })} aria-label="Back to the search">
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
+			</a>
+			<div>
+				<h1>Make a food</h1>
+				<p class="quiet">As its label says it. It's yours: searches find it first.</p>
+			</div>
+		</header>
+		<form class="card" method="post" action={live.url()} novalidate>
+			<input type="hidden" name="then_day" value={day} />
+			<input type="hidden" name="then_meal" value={meal} />
+			<fieldset>
+				<legend>The food</legend>
+				<div class="pair">
+					<TextField live={live} name="name" label="Name" autocomplete="off" />
+					<TextField live={live} name="brand" label="Brand" hint="If it has one." autocomplete="off" />
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend>What it has</legend>
+				<div class="grid">
+					<TextField live={live} name="per" label="Per (g)" hint="100, or a serving's weight." />
+					<TextField live={live} name="kcal" label="Energy (kcal)" />
+					<TextField live={live} name="protein" label="Protein (g)" />
+					<TextField live={live} name="carbs" label="Carbohydrate (g)" />
+					<TextField live={live} name="fat" label="Fat (g)" />
+					<TextField live={live} name="fiber" label="Fibre (g)" hint="If the label says." />
+					<TextField live={live} name="sugars" label="Sugars (g)" hint="If the label says." />
+					<TextField live={live} name="sat_fat" label="Saturated fat (g)" hint="If the label says." />
+					<TextField live={live} name="sodium" label="Sodium (mg)" hint="If the label says." />
+				</div>
+			</fieldset>
+			<fieldset>
+				<legend>A serving, and its barcode</legend>
+				<div class="grid">
+					<TextField live={live} name="serving" label="Serving" hint="“1 bar”, “1 cup”." autocomplete="off" />
+					<TextField live={live} name="serving_grams" label="It weighs (g)" />
+					<TextField live={live} name="barcode" label="Barcode" hint="The digits under its lines." autocomplete="off" />
+				</div>
+			</fieldset>
+			<button class="button" type="submit" disabled?={live.pending!()}>{if (live.pending!()) "Saving…" else "Save the food"}</button>
+		</form>
+	</section>
+}
+
+<style>
+	.new-food {
+		display: grid;
+		gap: 1rem;
+		max-width: 44rem;
+	}
+
+	header {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.75rem;
+	}
+
+	header p {
+		margin: 0.2rem 0 0;
+	}
+
+	.back {
+		display: grid;
+		flex: none;
+		place-items: center;
+		width: 2.75rem;
+		height: 2.75rem;
+		border: 1px solid var(--line);
+		border-radius: 50%;
+		background: var(--surface);
+		color: var(--ink-soft);
+	}
+
+	.back svg {
+		width: 1.1rem;
+		height: 1.1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	form {
+		display: grid;
+		gap: 1rem;
+	}
+
+	fieldset {
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+
+	legend {
+		margin-bottom: 0.25rem;
+		font-weight: 800;
+	}
+
+	.pair {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+		gap: 0 0.75rem;
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+		gap: 0 0.75rem;
+	}
+
+	button {
+		justify-self: start;
+	}
+</style>

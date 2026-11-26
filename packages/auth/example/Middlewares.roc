@@ -2,8 +2,9 @@ import pf.Middleware
 import auth.Auth
 import Accounts
 
-## What requests go through: `default` around every one (main.roc names it); a route file names
-## one of the others (`middleware = Middlewares.signed_in`), which runs inside it.
+## What requests go through, named by directory (D-103): `anyone` around the `(anyone)` group (the
+## home page), `signed_in` around the `(signed-in)` group; a group adds nothing to the path. A post
+## from another site's page the platform refuses first.
 Middlewares := [].{
 
 	## Who a signed-in request is: the user it acts as (their id and address), its session's id, and
@@ -12,10 +13,6 @@ Middlewares := [].{
 
 	## Whether a request is signed in, for a page anyone may see.
 	Visitor : { signed : Auth.Signed }
-
-	## Around every request: a post from another site is refused.
-	default : Middleware({}, {})
-	default = Middleware.same_origin({})
 
 	## Signed-in requests only, with their user's row read (`Auth.required_with`): a page's GET goes
 	## to the sign-in page (and comes back after), anything else is a 401; a session whose user is

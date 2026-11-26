@@ -105,7 +105,7 @@ view! = |_|
 						<p>
 							<code>--client</code> also writes the browser's copy of the app into
 							<code>{"<out>"}</code>. In it, an endpoint keeps its method, URL and types but not its
-							handler, a route file has no middleware, a <code>{"<NoHydration>"}</code> has no children, and the imports only those used
+							handler, a <code>{"<NoHydration>"}</code> has no children, and the imports only those used
 							are gone. For an app with pages, the copy has the browser's <code>main.roc</code> and
 							<code>static/rocx/</code>: <code>start.js</code>, the runtime, and the app's stylesheet,
 							named by its content (<code>styles-<var>hash</var>.css</code>). The runtime is minified
@@ -147,8 +147,8 @@ view! = |_|
 						</p>
 						<p>
 							What only a server can answer isn't in the copy, and the build lists it: a method that
-							writes (<code>post!</code>), events and channels, a page whose route has middleware of
-							its own (it answers each request as it comes), a page with params that no link or
+							writes (<code>post!</code>), events and channels, a page behind a directory's middleware
+							(it answers each request as it comes), a page with params that no link or
 							<code>--route</code> reached, and a link to a path that answered an error.
 						</p>
 					</div>
@@ -377,13 +377,13 @@ view! = |_|
 				one that ships (below). An app is two programs (<a href={Paths.platform_}>the platform</a>): the server's, on the
 				server platform (native code in a Rust host), and the browser's, the same pages on the browser
 				platform (WebAssembly). <code>rocx build</code> writes the server's program,
-				<code>Generated/App.roc</code>: every request goes through the app's middleware to a plugin's
-				route or the router rocx writes. The app's own <code>main.roc</code> says only what rocx can't
+				<code>Generated/App.roc</code>: every request goes through the app's middleware
+				(<code>routes/+middleware.roc</code>) to a plugin's route or the router rocx writes. The app's own <code>main.roc</code> says only what rocx can't
 				know:
 			</p>
 			<Code
 				title="main.roc"
-				source={"app [program] { pf: platform \"../rocx/server/platform/main.roc\" }\n\nimport pf.Middleware\nimport Generated/App\n\nprogram = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middleware.same_origin({}),\n})"}
+				source={"app [program] { pf: platform \"../rocx/server/platform/main.roc\" }\n\nimport Generated/App\n\nprogram = App.program({\n\tinit!: |_started| Ok({}),\n})"}
 			/>
 			<ul>
 				<li>
@@ -391,9 +391,11 @@ view! = |_|
 					middleware is given it.
 				</li>
 				<li>
-					<code>middleware</code> runs around every request. The one <code>rocx dev</code> writes passes
-					each request on; <code>Middleware.same_origin</code> refuses changes sent by other sites'
-					pages (<a href={"${Paths.safety}#origin"}>why</a>).
+					Middleware isn't here: a <code>+middleware.roc</code> under <code>routes/</code> runs around the
+					routes in its directory, <code>routes/+middleware.roc</code> around every request
+					(<a href={"${Paths.routing}#middleware"}>middleware</a>). Changes sent by other sites' pages are
+					refused before it (<a href={"${Paths.safety}#origin"}>why</a>), unless the app says
+					<code>cross_site: Allowed</code>.
 				</li>
 				<li>
 					It may also say <code>database</code> (<code>Postgres</code> unless it says

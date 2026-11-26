@@ -238,8 +238,9 @@ view! = |_|
 				<li>Test and live keys are told apart at start, and live keys under <code>--dev</code> are a warning.</li>
 			</ul>
 			<Note>
-				A middleware that wants every request signed in would refuse Stripe's webhook too. The webhook has no
-				<code>Origin</code>, so <code>Middleware.same_origin</code> lets it through.
+				A <code>routes/+middleware.roc</code> that wants every request signed in would refuse Stripe's webhook
+				too: guard your routes by their directories instead. The webhook has no <code>Origin</code>, so the
+				platform's cross-site check lets it through.
 			</Note>
 
 			<Heading id="status">Status</Heading>

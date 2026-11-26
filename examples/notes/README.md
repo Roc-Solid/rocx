@@ -101,20 +101,20 @@ Where to look in the code for each Roc Solid feature the app uses.
 | The page a link opens: whom it signs in (`Auth.link_for!`, which doesn't use the link), and a plain form whose button posts the token to the plugin's `/auth/link`. A mail scanner that follows links doesn't use yours up. | `routes/sign-in/link/`, `routes/api/sign-in/link/` |
 | A sign-in that didn't work comes back to the sign-in page with `?error=` (a link used or expired, an address turned away), and the page says why. | `routes/sign-in/+page.rocx` (packages/auth's `SignInError.message`) |
 | Sessions kept by the plugin: a random token in the `notes_session` cookie, its hash in the database, for 30 days, kept going while in use. | `Middlewares.signed_in` (`Auth.required`), `Account.session!` |
-| Signing out, and signing out of every browser (every session of yours ended). | `routes/api/sign-out/` (`Auth.sign_out!`), `routes/api/settings/everywhere/` (`Auth.sign_out_everywhere!`) |
-| Middleware that puts the person into the request's context and guards the pages (`signed_in`), the JSON API (`api`) and MCP (`agent`). A route file names its own with `middleware = …`. | `Middlewares.roc`, each route file |
+| Signing out, and signing out of every browser (every session of yours ended). | `routes/api/sign-out/` (`Auth.sign_out!`), `routes/(signed-in)/api/settings/everywhere/` (`Auth.sign_out_everywhere!`) |
+| Middleware by folder (D-103), each putting the person into the request's context: the pages and the endpoints only they use (`signed_in`, the `(signed-in)` group), the JSON API (`api`, the `(api)` group) and MCP (`agent`, `routes/mcp/`). A group, a directory in brackets, adds nothing to the path; the sign-in pages sit outside both. | `Middlewares.roc`, each directory's `+middleware.roc` |
 
 ### Tokens, the JSON API and MCP
 
 | Feature | Where |
 |---|---|
-| Personal access tokens: made, shown once, kept only as a SHA-256 hash, named, last use noted, read-only or not, revoked. | `routes/settings/`, `routes/api/settings/`, `Token.roc` (with `expect`s), `Account.make_token!`, `Store.bearer!` |
-| A form whose body is read by its endpoint's types: the token form's checkbox "It may write too" is `write : Bool`, and a box left unticked is `Bool.False`. | `routes/api/settings/+server.roc`, `routes/settings/+page.rocx` |
+| Personal access tokens: made, shown once, kept only as a SHA-256 hash, named, last use noted, read-only or not, revoked. | `routes/(signed-in)/settings/`, `routes/(signed-in)/api/settings/`, `Token.roc` (with `expect`s), `Account.make_token!`, `Store.bearer!` |
+| A form whose body is read by its endpoint's types: the token form's checkbox "It may write too" is `write : Bool`, and a box left unticked is `Bool.False`. | `routes/(signed-in)/api/settings/+server.roc`, `routes/(signed-in)/settings/+page.rocx` |
 | An MCP server (packages/mcp) at `/mcp`: six tools with their hints, notes as resources, and two prompts. | `Agents.roc` |
 | MCP tools made from the JSON API's endpoints (`McpHttp.endpoint`). A tool's arguments fill the endpoint's path parameters too (`read_note`'s `id`), so an agent may do exactly what a script may, checked by the same code. | `Agents.roc` (`server`) |
-| The MCP server mounted in front of the routes, as a middleware in `main.roc` (`Agents.mount`). | `main.roc`, `Agents.roc` |
+| The MCP server as a route, `/mcp` (its `respond!`), behind its directory's middleware; its tools are the JSON API's endpoints, sent with the MCP request's token through their own middleware. | `routes/mcp/`, `Agents.roc` |
 | A bearer token turned into its person, so a token never reaches another person's notes. Read-only tokens are refused for writes. | `Middlewares.agent`, `Notebook.writer`, `Store.roc` (every query names the person) |
-| The JSON API, and its OpenAPI document with Scalar to read it (`openapi: Page(Scalar)`), at `/openapi.json` and `/openapi.html`. | `routes/api/notes/`, `routes/api/search/`, `routes/api/me/`, `main.roc` |
+| The JSON API, and its OpenAPI document with Scalar to read it (`openapi: Page(Scalar)`), at `/openapi.json` and `/openapi.html`. | `routes/(api)/api/notes/`, `routes/(api)/api/search/`, `routes/(api)/api/me/`, `main.roc` |
 | Rate limits (packages/guard): sign-in links for each address, MCP calls for each token. | `Middlewares.mail_limit`, `Middlewares.agent_limit` |
 
 ### Search and Markdown
@@ -123,7 +123,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 |---|---|
 | Full-text search in SQLite: an FTS5 index kept in step by triggers, each word matched by its stem (porter). A search engine's syntax is read in Roc (`Store.matching`). Titles rank first (`bm25`), and `snippet()` shows the matches in what the body reads as (`Note.plain`). | `migrations/0001_notes.sql`, `Store.search!`, `Store.matching`, `Note.plain`, `Note.query_of` |
 | Matches highlighted as text, never as markup, so nothing a note says is read as HTML. | `Note.pieces`, `NoteCard.snippet` in `Ui/NoteCard.rocx` |
-| Markdown rendered by packages/markdown: on a note's page by the server alone (inside `<NoHydration>`), and in the editor's preview by the browser as you type. | `Ui/Prose.rocx`, `routes/notes/[id]/+page.rocx`, `Ui/Editor.rocx` |
+| Markdown rendered by packages/markdown: on a note's page by the server alone (inside `<NoHydration>`), and in the editor's preview by the browser as you type. | `Ui/Prose.rocx`, `routes/(signed-in)/notes/[id]/+page.rocx`, `Ui/Editor.rocx` |
 
 ### Notes, pages and components
 
@@ -131,9 +131,9 @@ Where to look in the code for each Roc Solid feature the app uses.
 |---|---|
 | One rule set for a note's title, body and tags, whoever writes it (a page, a script, an agent), tested with `expect`s, and one module of operations that every way in calls. | `Note.roc`, `Notebook.roc` |
 | Appends that never overwrite each other: the note is read and written in one transaction, and SQLite's transactions take turns. | `Store.append!`, `Note.appended` |
-| Tags, pinning and archiving. | `Notebook.tag!`, `Notebook.pin!`, `Notebook.archive!`, `routes/api/notes/[id]/+server.roc` (`post!`, the note page's buttons) |
-| Pages that read their endpoints (`Endpoint.read!`), with the types they answer with in one module, shared by the server and the browser. A page's endpoints are under `api/` at the page's path (`/settings` reads and posts to `/api/settings`): a path is a page or an endpoint, never both. A note's page reads the JSON API's note, `GET /api/notes/<id>`, and posts its buttons there. | `Pages.roc`, each `+page.rocx`, `routes/api/` |
-| A 404 for a note that doesn't exist or isn't yours. The endpoint refuses both alike, so ids tell nothing, and `Endpoint.read!` turns the refusal into the app's error page. | `routes/notes/[id]/+page.rocx`, `routes/+error.rocx` |
+| Tags, pinning and archiving. | `Notebook.tag!`, `Notebook.pin!`, `Notebook.archive!`, `routes/(api)/api/notes/[id]/+server.roc` (`post!`, the note page's buttons) |
+| Pages that read their endpoints (`Endpoint.read!`), with the types they answer with in one module, shared by the server and the browser. A page's endpoints are under `api/` at the page's path (`/settings` reads and posts to `/api/settings`): a path is a page or an endpoint, never both. A note's page reads the JSON API's note, `GET /api/notes/<id>`, and posts its buttons there. | `Pages.roc`, each `+page.rocx`, `routes/(signed-in)/api/`, `routes/(api)/api/` |
+| A 404 for a note that doesn't exist or isn't yours. The endpoint refuses both alike, so ids tell nothing, and `Endpoint.read!` turns the refusal into the app's error page. | `routes/(signed-in)/notes/[id]/+page.rocx`, `routes/+error.rocx` |
 | Forms that work without JavaScript. With it, the runtime sends each form to one of the app's endpoints with `fetch` and the page stays (D-095); a page that shows the answer reads it with `use_submission!`. | every `<form method="post">` |
 | Pure components (`view`) for what only shows its props; an effectful component (`view!`) for what keeps state, here the editor's draft and tabs (`create_signal!`). | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx`, `Ui/Brand.rocx` (pure); `Ui/Editor.rocx` (effectful) |
 | Pure components tested in `expect`s with packages/testing's `Dom`. | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx` |
@@ -289,11 +289,10 @@ Writing the app turned up gaps in the platform and the packages. Most are fixed 
 unticked checkbox, the app's public address, a plain form's flash, guard's refusal of a plain form,
 404s from `Endpoint.read!`, typed submissions in the browser). These are still worth knowing:
 
-1. **The MCP server is mounted in `main.roc`, not as a route.** Its tools run the endpoints'
-   handlers (`Generated/Handlers`), which import every route file, so no module a route imports may
-   import them. `Agents.mount` is a middleware that `main.roc` puts after the default one; it answers
-   `/mcp` behind its own middleware (`Middlewares.agent`, then `agent_limit`). `rocx routes` doesn't
-   list `/mcp`.
+1. **A tool call is a second request.** A tool made from an endpoint is sent through the
+   endpoint's route, in-process, with the MCP request's token (D-103), so the API's middleware
+   (`api`) reads the token again for each call, and each call shows on the log beside the MCP
+   request.
 2. **Every field of a tool's arguments is required** (packages/mcp's README), so an agent sends
    `"tags": []` to `create_note`. The search box's `#tag` syntax keeps `search_notes` to one field.
 3. **guard's Content-Security-Policy refuses the OpenAPI page**, which loads Scalar from jsDelivr.

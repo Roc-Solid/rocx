@@ -15,10 +15,10 @@ Visitor := [].{
 	cookie : Str
 	cookie = "pinwheel"
 
-	## Around every request: one that would change something, sent by another site's page, is
-	## refused (403); then the visitor's id, from the cookie, is handed on.
+	## Around every request (routes/+middleware.roc; a change sent by another site's page the platform
+	## refuses first): the visitor's id, from the cookie, handed on.
 	middleware : Middleware({}, Visitor.Context)
-	middleware = Middleware.same_origin({}).then(Middleware.make(|request, {}, next!| next!(request, { visitor: Server.cookie(request, Visitor.cookie) ?? "" })))
+	middleware = Middleware.make(|request, {}, next!| next!(request, { visitor: Server.cookie(request, Visitor.cookie) ?? "" }))
 
 	## The visitor's id, or a new one if they have none: and whether it is new (so the answer sets
 	## the cookie).

@@ -85,7 +85,7 @@ view! = |_|
 			<p>That is all the server needs. The plugin brings:</p>
 			<ul>
 				<li>
-					three endpoints, behind the app's middleware: <code>GET /push/key</code> (the public key),
+					three endpoints, behind the app's middleware (<code>routes/+middleware.roc</code>): <code>GET /push/key</code> (the public key),
 					<code>POST /push/subscribe</code> and <code>POST /push/unsubscribe</code>;
 				</li>
 				<li>its table, <code>push_subscriptions</code>, in the app's database (Postgres or SQLite);</li>

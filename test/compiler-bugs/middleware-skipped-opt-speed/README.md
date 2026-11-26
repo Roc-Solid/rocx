@@ -1,5 +1,8 @@
 # A chain of three effectful closures skips its last step under `--opt=speed`
 
+**Fixed** on the fork rocx builds with (pin 4674b5973d): `./repro.sh` answers `doc` for every app
+and both opts (checked 2026-11-26, D-103).
+
 Found 2026-11-21 on nightly-2026-11-18-a520eed (the rocx pin), while making the OpenAPI document
 opt-in: a middleware that answered `/openapi.json` was skipped when it was the third in a chain
 (`default` = `same_origin.then(headers)`, then it), in a server built with `--opt=speed`. The

@@ -1,0 +1,243 @@
+import pf.Html
+import pf.Router
+import pf.Server
+import pf.Title
+import ../../Note
+import ../../Pages
+import ../../Generated/Api
+import ../../Ui/NoteCard
+import ../../Ui/Topbar
+
+## The notebook: your notes as cards, pinned ones first; a search's results, best first, the words
+## it found highlighted; a tag's notes; or the archive. The sidebar lists your tags. Everything here
+## is a link or a plain form, so it works the same without JavaScript.
+meta = { title: "Notes" }
+
+## The notebook, as `GET /api` answers it for this page's query (`?q=`, `?tag=`, `?archived=true`).
+home! : {} => Pages.Home
+home! = |{}| Api.get_api({}).with_query(Router.location!({}).query).read!()
+
+view! = |_| {
+	home = home!({})
+	heading = heading_of(home)
+	<div class="notebook">
+		<Title>{"${heading} · Notes"}</Title>
+		{Topbar.view({ email: home.email, query: home.query })}
+		<div class="columns">
+			<nav class="side" aria-label="Notebook">
+				<ul class="views">
+					<li><a href="/" aria-current??={if (home.query.is_empty() and home.tag.is_empty() and !home.archived) "page" else ""}>All notes</a></li>
+					<li><a href="/?archived=true" aria-current??={if (home.archived) "page" else ""}>Archive</a></li>
+				</ul>
+				<h2 id="tags-title">Tags</h2>
+				{if !home!({}).tags.is_empty() {
+					<ul class="tags" aria-labelledby="tags-title">
+						{...home!({}).tags.map(|tagged|
+							<li key={tagged.name}>
+								<a href={"/?tag=${Server.encode_segment(tagged.name)}"} aria-current??={if (home!({}).tag == tagged.name) "page" else ""}>
+									<span>{"#${tagged.name}"}</span>
+									<span class="count">{tagged.count.to_str()}</span>
+								</a>
+							</li>
+						)}
+					</ul>
+				} else {
+					<p class="none">No tags yet. Give a note one in its editor.</p>
+				}}
+			</nav>
+			<main id="main" class="main">
+				<header class="head">
+					<h1>{heading}</h1>
+					<p class="found" role="status">{found_text(home)}</p>
+				</header>
+				{if !home!({}).notes.is_empty() {
+					<>
+						{if home!({}).query.is_empty() and home!({}).notes.any(|note| note.pinned) {
+							<>
+								<h2 class="group">Pinned</h2>
+								<ul class="cards" aria-label="Pinned notes">
+									{...home!({}).notes.keep_if(|note| note.pinned).map(|note|
+										<li key={note.id}>{NoteCard.view({ note: note })}</li>
+									)}
+								</ul>
+								<h2 class="group">Others</h2>
+							</>
+						}}
+						<ul class="cards" aria-label="Notes">
+							{...unpinned(home!({})).map(|note|
+								<li key={note.id}>{NoteCard.view({ note: note })}</li>
+							)}
+						</ul>
+					</>
+				} else {
+					empty(home)
+				}}
+			</main>
+		</div>
+	</div>
+}
+
+## What the page is of.
+heading_of : Pages.Home -> Str
+heading_of = |home|
+	if !home.query.is_empty() {
+		"Search"
+	} else if !home.tag.is_empty() {
+		"#${home.tag}"
+	} else if home.archived {
+		"Archive"
+	} else {
+		"All notes"
+	}
+
+## The notes under "Others": those not pinned; in a search's results, every one, in the order found.
+unpinned : Pages.Home -> List(Note.Summary)
+unpinned = |home| if (home.query.is_empty()) home.notes.keep_if(|note| !note.pinned) else home.notes
+
+## How many notes the page shows, said in words (and to a screen reader, as a status).
+found_text : Pages.Home -> Str
+found_text = |home| {
+	count = home.notes.len()
+	notes = if (count == 1) "1 note" else "${count.to_str()} notes"
+	if (home.query.is_empty()) notes else "${notes} for “${home.query}”"
+}
+
+## What the page shows with no notes to show.
+empty : Pages.Home -> Html
+empty = |home|
+	if !home.query.is_empty() {
+		<div class="nothing"><p>Nothing matches “{home.query}”.</p><p>Try fewer words, or <a href="/">see every note</a>.</p></div>
+	} else if home.archived {
+		<div class="nothing"><p>Nothing is archived. A note you archive leaves the list, and waits here.</p></div>
+	} else {
+		<div class="nothing"><p>No notes here yet.</p><p><a class="button primary" href="/new">Write your first note</a></p></div>
+	}
+
+<style>
+	.columns {
+		display: grid;
+		grid-template-columns: 14rem minmax(0, 1fr);
+		gap: 2rem;
+		max-width: 76rem;
+		margin: 0 auto;
+		padding: 1.5rem clamp(1rem, 3vw, 2rem) 4rem;
+	}
+
+	.side {
+		position: sticky;
+		top: 4.5rem;
+		align-self: start;
+	}
+
+	.side ul {
+		display: grid;
+		gap: 0.1rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.side a {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.35rem 0.6rem;
+		border-radius: 8px;
+		color: var(--ink);
+		text-decoration: none;
+	}
+
+	.side a:hover {
+		background: var(--sunk);
+	}
+
+	.side a[aria-current="page"] {
+		background: var(--accent-soft);
+		color: var(--accent);
+		font-weight: 650;
+	}
+
+	.side h2 {
+		margin: 1.5rem 0 0.4rem 0.6rem;
+		color: var(--ink-faint);
+		font-size: 0.75rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.count {
+		color: var(--ink-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.none {
+		margin: 0 0.6rem;
+		color: var(--ink-faint);
+		font-size: 0.85rem;
+	}
+
+	.head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 1rem;
+		margin-bottom: 1rem;
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 1.6rem;
+	}
+
+	.found {
+		margin: 0;
+		color: var(--ink-soft);
+	}
+
+	.group {
+		margin: 1.5rem 0 0.6rem;
+		color: var(--ink-faint);
+		font-size: 0.75rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+		gap: 0.9rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.nothing {
+		padding: 3rem 1.5rem;
+		border: 1px dashed var(--line-strong);
+		border-radius: var(--radius);
+		color: var(--ink-soft);
+		text-align: center;
+	}
+
+	@media (max-width: 48rem) {
+		.columns {
+			grid-template-columns: 1fr;
+			gap: 1rem;
+		}
+
+		.side {
+			position: static;
+		}
+
+		.side .views,
+		.side .tags {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.3rem;
+		}
+
+		.side h2 {
+			margin-top: 0.75rem;
+		}
+	}
+</style>

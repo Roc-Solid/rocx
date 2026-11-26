@@ -1,0 +1,109 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import forms.LiveForm
+import forms.TextField
+import ../../../Plate
+import ../../../PlateForm
+import ../../../Generated/Api
+import ../../../Generated/Paths
+
+## Your recipes: each with what a serving has, and a form that starts a new one. A recipe is
+## logged like any food (searches find it, by its name): a serving is its ingredients' weight
+## shared by its servings.
+meta = { title: "Recipes" }
+
+view! = |_| {
+	read = Api.get_api_recipes({})
+	recipes! = create_memo!(|| read.read!())
+	live = LiveForm.filled!(PlateForm.recipe, Api.post_api_recipes({}), [("servings", "2")])
+	<section class="recipes">
+		<h1>Recipes</h1>
+		{if !recipes!().is_empty() {
+			<ul class="cards" aria-label="Recipes">
+				{...recipes!().map(|recipe|
+					<li key={recipe.id}>
+						<a class="card recipe" href={Paths.recipes_id({ id: recipe.id })}>
+							<span class="name">{recipe.name}</span>
+							<span class="quiet">{Cards.about(recipe)}</span>
+						</a>
+					</li>
+				)}
+			</ul>
+		} else {
+			<p class="quiet">No recipes yet. Make one below: name it, then add what goes into it.</p>
+		}}
+		<section class="card new" aria-labelledby="new-recipe">
+			<h2 id="new-recipe">A new recipe</h2>
+			<form method="post" action={live.url()} novalidate>
+				<TextField live={live} name="name" label="Name" autocomplete="off" />
+				<TextField live={live} name="servings" label="Servings" hint="How many it makes." />
+				<button class="button" type="submit" disabled?={live.pending!()}>Make it</button>
+			</form>
+		</section>
+	</section>
+}
+
+## What a recipe's card says.
+Cards := [].{
+	about : Plate.Card -> Str
+	about = |recipe|
+		if recipe.ingredients == 0 {
+			"No ingredients yet"
+		} else {
+			servings = if (recipe.servings == 1) "1 serving" else "${recipe.servings.to_str()} servings"
+			"${Plate.whole(recipe.kcal)} kcal a serving · ${servings}"
+		}
+}
+
+<style>
+	.recipes {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+		gap: 0.75rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.recipe {
+		display: grid;
+		gap: 0.25rem;
+		height: 100%;
+		color: var(--ink);
+		text-decoration: none;
+	}
+
+	.recipe:hover {
+		border-color: var(--accent);
+	}
+
+	.name {
+		font-weight: 700;
+	}
+
+	.new form {
+		display: grid;
+		grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+		align-items: start;
+		gap: 0.75rem;
+	}
+
+	.new button {
+		margin-top: 1.75rem;
+	}
+
+	@media (max-width: 34rem) {
+		.new form {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
+		.new button {
+			margin-top: 0;
+		}
+	}
+</style>

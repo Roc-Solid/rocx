@@ -5,11 +5,11 @@ import ../../../Generated/ApiShoutServer
 import ../../../Generated/ApiShoutWordServer
 
 ## GET /api/calls, for JSON: what the shout endpoints answered, asked as anything over HTTP would
-## ask them (`Endpoint.respond!`), and as the app asks them, a function run here and now
-## (`Endpoint.run!`). The page at /calls reads it as it renders (`Endpoint.read!`): the page's data,
-## at the page's path under /api.
+## ask them (`Endpoint.respond!`), and as the app's own code asks them (`Endpoint.send!`, which the
+## server answers in-process, through the endpoint's route and its middleware, D-103). The page at
+## /calls reads it as it renders (`Endpoint.read!`): the page's data, at the page's path under /api.
 get! : { request : Server.Request, params : {}, context : { facts : Str } } => Try({ asked : List({ method : Str, path : Str, body : Str, status : U16, answer : Str }), shouted : Str }, Endpoint.Refusal)
-get! = |{ request, context, .. }| {
+get! = |{ context, .. }| {
 	answered = |(method, path, body, answer)| { method, path, body, status: answer.status, answer: Server.body_text(answer) }
 	posted = |body| Server.from_http("POST", "/api/shout", "content-type: application/json", body.to_utf8())
 	asked = [
@@ -19,7 +19,7 @@ get! = |{ request, context, .. }| {
 		("POST", "/api/shout", "{}", Endpoint.respond!(shout, posted("{}"), context)),
 	]
 	shouted =
-		match Endpoint.run!(shout_word("rocx"), request, context, {}) {
+		match Api.get_api_shout_word({ word: "rocx" }).send!({}) {
 			Ok(word) => "${word.shouted}, ${word.bytes.to_str()} bytes"
 			Err(_) => "(no answer)"
 		}

@@ -25,19 +25,21 @@ and reloads the page when you save a file. Under `rocx dev`:
 
 | File | What it is |
 | --- | --- |
-| `main.roc` | The server's program: the middleware, the plugins (mail and sign-in), the database |
-| `Middlewares.roc` | What requests go through: `default` (every request), `signed_in`, `anyone`, `mail_limit` |
+| `main.roc` | The server's program: the plugins (mail and sign-in), the database |
+| `Middlewares.roc` | What requests go through: `default` (every request), `signed_in`, `anyone`, `mail_limit`; each `+middleware.roc` under `routes/` names one |
 | `Accounts.roc` | The app's users: who may sign in (`admit!`), and reading a user (`user!`) |
 | `migrations/` | The database's tables, as SQL, applied in order as the server starts |
 | `routes/` | The pages and endpoints: a folder each, its path the URL |
+| `routes/+middleware.roc` | What runs around every request: the security headers |
 | `routes/+layout.rocx` | The document around every page, and the app's look (colours, light and dark) |
 | `routes/+error.rocx` | What a missing page (404) or a failed one (500) shows |
 | `routes/+page.rocx` | The front page |
 | `routes/api/me/+server.roc` | Who is signed in, for the bar at the top |
 | `routes/sign-in/` | The sign-in page, the page a link opens (`link/`), and the page that asks for a two-factor code (`code/`) |
 | `routes/api/sign-in/` | Their endpoints: what the sign-in page offers besides an address, the link it mails (`mail/`), whom a link signs in (`link/`), and whom a sign-in waiting for its code is for (`code/`) |
-| `routes/account/` | A page for signed-in people only: your address, where you're signed in, signing out everywhere, and two-factor sign-in |
-| `routes/api/account/` | Its endpoints: what the page reads (the address, the sessions, two-factor sign-in's state), signing out everywhere, and two-factor sign-in's forms (`two-factor/`, `two-factor/confirm/`, `two-factor/off/`) |
+| `routes/(signed-in)/` | A group, which adds nothing to the path: its `+middleware.roc` lets only signed-in people through to the account page and its endpoints |
+| `routes/(signed-in)/account/` | A page for signed-in people only: your address, where you're signed in, signing out everywhere, and two-factor sign-in |
+| `routes/(signed-in)/api/account/` | Its endpoints: what the page reads (the address, the sessions, two-factor sign-in's state), signing out everywhere, and two-factor sign-in's forms (`two-factor/`, `two-factor/confirm/`, `two-factor/off/`) |
 | `components/Nav.rocx` | The bar at the top: a component, with its stories and tests |
 | `.rocx-version` | The version of Roc Solid this app builds with (none when a clone of rocx made the app) |
 | `.rocx` | A link to that version (or to the clone), which `rocx` makes (not committed) |
@@ -45,16 +47,19 @@ and reloads the page when you save a file. Under `rocx dev`:
 
 In `routes/`, `+page.rocx` is a page, `+server.roc` an endpoint (what a page reads, what a form
 posts), and `+layout.rocx` wraps the pages below it. A path is a page or an endpoint, never both: a
-page's endpoints live under `routes/api/`, at the page's path, so what `/account` reads and posts is
-under `routes/api/account/`: the account at `/api/account`, two-factor sign-in's forms at
+page's endpoints live under `api/`, at the page's path, so what `/account` reads and posts is
+under `routes/(signed-in)/api/account/`: the account at `/api/account`, two-factor sign-in's forms at
 `/api/account/two-factor`. `rocx build` writes `Generated/` from them (the routes, `Api`, `Paths`):
 don't edit it, and don't commit it.
 
-A file's `middleware = Middlewares.signed_in` lets only signed-in people through. A signed-out page
-visit goes to the sign-in page, and comes back after; anything else is refused (401). Each page
-names its own middleware, as each endpoint does: `routes/account/+page.rocx` and
-`routes/api/account/+server.roc` both name `Middlewares.signed_in`, and a page that names none is
-open to anyone. A layout's middleware would guard nothing, so `rocx build` refuses one.
+Middleware goes by folder: a `+middleware.roc` runs around every page and endpoint in its folder
+and the folders below it, outermost first, and `routes/+middleware.roc` around every request.
+`routes/(signed-in)/+middleware.roc` names `Middlewares.signed_in`, which lets only signed-in
+people through: a signed-out page visit goes to the sign-in page, and comes back after; anything
+else is refused (401). `(signed-in)` is a group, a folder in brackets: it adds nothing to the path
+(`routes/(signed-in)/account/+page.rocx` is `/account`), so the page and its endpoints under
+`api/` sit in it together, and the sign-in pages outside it. A new page or endpoint in the group is
+guarded with no line of its own; `rocx routes .` says what runs around each.
 
 ## Settings in `.env`
 

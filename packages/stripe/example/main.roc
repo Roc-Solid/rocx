@@ -15,11 +15,9 @@ import stripe.Stripe
 import Generated/App
 import Accounts
 import Billing
-import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middlewares.default,
 	plugins: [
 		Auth.plugin({ admit!: Accounts.admit! }),
 		# STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET, from the environment (README.md: the Stripe CLI's

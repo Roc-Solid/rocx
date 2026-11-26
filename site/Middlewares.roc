@@ -2,20 +2,19 @@ import pf.Middleware
 import pf.Server
 import Generated/Paths
 
-## The site's middleware. `default` runs around every request (`main.roc`'s `App.program`); a route file names its
-## own (`middleware = Middlewares.member`), which runs after it, around that route.
+## The site's middleware, named by directory (D-103): `default` runs around every request
+## (routes/+middleware.roc); `member` around the members' page and its endpoint (the `(members)`
+## group's), and `visitor` around the joining page (routes/members/join/), each after it.
 Middlewares := [].{
 
-	## Around every request: one that would change something, sent by another site's page, is
-	## refused (403); every answer tells the browser not to guess a file's type, and to send where it
-	## came from only to this site.
+	## Around every request (one that would change something, sent by another site's page, the
+	## platform refuses first, 403): every answer tells the browser not to guess a file's type, and
+	## to send where it came from only to this site.
 	default : Middleware({ facts : Str }, { facts : Str })
-	default = Middleware.same_origin({}).then(
-		Middleware.headers([
-			{ name: "x-content-type-options", value: "nosniff" },
-			{ name: "referrer-policy", value: "same-origin" },
-		]),
-	)
+	default = Middleware.headers([
+		{ name: "x-content-type-options", value: "nosniff" },
+		{ name: "referrer-policy", value: "same-origin" },
+	])
 
 	## A member: someone whose `member` cookie names them, handed on as `context.member`. A browser
 	## that isn't is sent to join; anything else is refused (401).

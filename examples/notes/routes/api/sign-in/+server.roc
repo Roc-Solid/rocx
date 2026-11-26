@@ -3,11 +3,8 @@ import pf.Endpoint
 import pf.Log
 import ../../../Account
 import ../../../Address
-import ../../../Middlewares
 
 ## Links are limited for each address (packages/guard: 5 an hour, then one each 12 minutes).
-middleware = Middlewares.mail_limit
-
 ## Mails a sign-in link to `email` (packages/auth's `Auth.link!`, in notes' words); signing in with
 ## it goes on to `then` (a path of this site, or `/`). The answer says where it went. Anyone may sign
 ## in, and someone new gets a notebook, so the answer is the same whether the address has one

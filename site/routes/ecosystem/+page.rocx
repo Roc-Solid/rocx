@@ -126,7 +126,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc, in part"
-				source={"import jobs.Job\nimport email.Email\n\nprogram = App.program({\n\tinit!,\n\tmiddleware: Middlewares.default,\n\tplugins: [Job.plugin({ jobs: App.jobs }), Email.plugin({})],\n})"}
+				source={"import jobs.Job\nimport email.Email\n\nprogram = App.program({\n\tinit!,\n\tplugins: [Job.plugin({ jobs: App.jobs }), Email.plugin({})],\n})"}
 				numbers={Bool.False}
 			/>
 			<p>

@@ -73,22 +73,22 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 
 | Feature | Where to look |
 |---|---|
-| A page that reads an endpoint as it renders, and a 404 page for a board that isn't there. A page's endpoints are under `api/`, at the page's path (`GET /b/launch` is the page, `GET /api/b/launch` the board as JSON): a path is a page or an endpoint, never both | `routes/b/[board]/+page.rocx` (`board!`, `Missing`), `routes/api/b/[board]/+server.roc` (`get!`) |
+| A page that reads an endpoint as it renders, and a 404 page for a board that isn't there. A page's endpoints are under `api/`, at the page's path (`GET /b/launch` is the page, `GET /api/b/launch` the board as JSON): a path is a page or an endpoint, never both | `routes/(members)/b/[board]/+page.rocx` (`board!`, `Missing`), `routes/(members)/api/b/[board]/+server.roc` (`get!`) |
 | Drag and drop: tiles are dragged, a whole column is a drop target, and the card lands where the drag last was. Touch works too, with the same markup | `Ui/CardTile.rocx` (`on:dragstart`, `on:dragenter`), `Ui/ColumnView.rocx` (`on:drop`) |
-| A move shown before the server has it: the server's board with the moves still on their way applied (`use_action!`, `use_submissions!`), then the board read again | `routes/b/[board]/+page.rocx` (`board!`), `Board.moved`, `routes/api/b/[board]/move/+server.roc` |
-| The board dimmed while it is read again (`is_pending!`) | `routes/b/[board]/+page.rocx` (`class:stale`) |
+| A move shown before the server has it: the server's board with the moves still on their way applied (`use_action!`, `use_submissions!`), then the board read again | `routes/(members)/b/[board]/+page.rocx` (`board!`), `Board.moved`, `routes/(members)/api/b/[board]/(writes)/move/+server.roc` |
+| The board dimmed while it is read again (`is_pending!`) | `routes/(members)/b/[board]/+page.rocx` (`class:stale`) |
 | Cards gliding to their new place, between columns too (`transition:move`, with the card's id as the tile's `key`) | `Ui/CardTile.rocx` |
-| Lists that change, as rows kept by their `key` (a `.map` in a list hole, each row's root with `key={…}`) | the columns in `routes/b/[board]/+page.rocx`, the cards in `Ui/ColumnView.rocx`, the labels in `Ui/CardTile.rocx`, the checklist and people in `Ui/CardPanel.rocx`, the archive in `Ui/Archive.rocx` |
-| Live updates: the board's channel, published on after every change; each page reads the board again when it hears one | `routes/api/b/[board]/+server.roc` (`channel!`), `News.roc` (`News.tell!`), the page's `heard!` |
-| Presence: who is on the board, which card each person has open (the room's typed `data`, `Board.Viewing`, which the page says with `here.update!`), and who is away (their tab hidden) | `routes/api/b/[board]/presence/+server.roc` (packages/presence's hooks), the page's `here` (`Presence.join!`, `<Document on:visibilitychange.visible>`), `Ui/Shared.roc` |
-| An edit lease on a card, kept in `Kv` with a time to live | `Lease.roc`, `routes/api/b/[board]/cards/[card]/lease/+server.roc` and `lease/release/`, `Ui/CardPanel.rocx` (`take!`) |
+| Lists that change, as rows kept by their `key` (a `.map` in a list hole, each row's root with `key={…}`) | the columns in `routes/(members)/b/[board]/+page.rocx`, the cards in `Ui/ColumnView.rocx`, the labels in `Ui/CardTile.rocx`, the checklist and people in `Ui/CardPanel.rocx`, the archive in `Ui/Archive.rocx` |
+| Live updates: the board's channel, published on after every change; each page reads the board again when it hears one | `routes/(members)/api/b/[board]/+server.roc` (`channel!`), `News.roc` (`News.tell!`), the page's `heard!` |
+| Presence: who is on the board, which card each person has open (the room's typed `data`, `Board.Viewing`, which the page says with `here.update!`), and who is away (their tab hidden) | `routes/(members)/api/b/[board]/presence/+server.roc` (packages/presence's hooks), the page's `here` (`Presence.join!`, `<Document on:visibilitychange.visible>`), `Ui/Shared.roc` |
+| An edit lease on a card, kept in `Kv` with a time to live | `Lease.roc`, `routes/(members)/api/b/[board]/cards/[card]/lease/+server.roc` and `lease/release/`, `Ui/CardPanel.rocx` (`take!`) |
 | A card's changes shown before the server has them, as moves are | `Ui/CardPanel.rocx` (`card!`), `Board.saved`, `Board.labelled`, `Board.ticked` |
 | Timers and lifecycle in a component: renew every 10 s (`set_interval!`), focus the title once it shows (`on_settled!`, `Browser.focus!`), let the lease go when closed (`on_cleanup!`) | `Ui/CardPanel.rocx` (`Editor`) |
 | Keyboard: Alt+↑ and Alt+↓ move the open card, Escape anywhere closes it | `Ui/CardPanel.rocx` (`on:keydown.Alt+ArrowUp`, `<Document on:keydown.Escape>`) |
-| The open card in the address: a link opens it in place and adds a history entry, so Back closes it | `routes/b/[board]/+page.rocx` (`open!`, `use_search_params!`), `Board.card_in_query` |
+| The open card in the address: a link opens it in place and adds a history entry, so Back closes it | `routes/(members)/b/[board]/+page.rocx` (`open!`, `use_search_params!`), `Board.card_in_query` |
 | Fractional ranks: a move writes one row, and two cards dropped into one gap at once each get a rank of their own (below) | `Rank.roc`, `Board.rank_for`, `Store.move!` |
 | The rules both halves share: the order cards show in, where a move puts a card, a move applied to the page's copy, validation | `Board.roc` |
-| Middleware: same-origin checks and security headers on every request, a member check, and a rate limit on writes (packages/guard) | `Middlewares.roc` (`default`, `member`, `writer`); each route file's `middleware = …` |
+| Middleware by folder: security headers on every request (`routes/+middleware.roc`), a member check around the boards (the `(members)` group, which adds nothing to the paths: the join page and its endpoint sit outside it), and a rate limit on a board's changes (the `(writes)` group inside `api/b/[board]/`: its cards, columns and moves, but not a card's edit lease, which a page renews while it is open; packages/guard); a change sent by another site's page the platform refuses | `Middlewares.roc` (`default`, `member`, `writes`); `routes/+middleware.roc`, `routes/(members)/+middleware.roc` |
 | Who you are: a name and a colour, kept as a session by packages/auth's plugin with no `admit!` (nobody signs in by a link or a provider). Joining starts it and ends the one the browser had (`Auth.switch!`), `Auth.required_with` reads it and sends a page asked for without one to join, and a channel's check reads it from the stream's cookies | `main.roc` (`Auth.plugin`), `routes/api/join/+server.roc`, `Middlewares.member` |
 | SQLite in the server's process: migrations, transactions that take turns, a `json` column, every query in one module | `main.roc`, `migrations/`, `Store.roc` |
 | A seed that can run twice: three people and a board that looks lived in | `migrations/0002_seed.sql` |
@@ -98,7 +98,7 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 
 ## How the parts fit
 
-The board's page makes the state its parts share once, in `routes/b/[board]/+page.rocx`, and hands
+The board's page makes the state its parts share once, in `routes/(members)/b/[board]/+page.rocx`, and hands
 it to each component as `shared` (`Ui/Shared.roc` says what is in it). Each entry is an accessor or
 a setter: `board!` (the board as it shows), `dragging!` and `over!` (the card being dragged and where
 it would land), `open!` (the card that is open), `others!` (who else is on the board). A part that

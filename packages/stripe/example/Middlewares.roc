@@ -5,8 +5,10 @@ import stripe.Stripe
 import Accounts
 import Plans
 
-## What requests go through: `default` around every one (main.roc names it); a route file names
-## one of the others (`middleware = Middlewares.signed_in`), which runs inside it.
+## What requests go through, named by directory (D-103): each group's `+middleware.roc` names one,
+## `(anyone)` (the pricing page), `(signed-in)` (the account and billing), `(readers)` (the e-book)
+## and `(subscribers)` (Pro); a group adds nothing to the path. A post from another site's page the
+## platform refuses first; Stripe's webhook has no `Origin`, so it goes through.
 Middlewares := [].{
 
 	## Who a signed-in request is: their user's id and address.
@@ -14,11 +16,6 @@ Middlewares := [].{
 
 	## Whether a request is signed in, for a page anyone may see.
 	Visitor : { signed : Auth.Signed }
-
-	## Around every request: a post from another site's page is refused. Stripe's webhook has no
-	## `Origin`, so it goes through.
-	default : Middleware({}, {})
-	default = Middleware.same_origin({})
 
 	## Signed-in requests only, with their user's row read (`Auth.required_with`): a page's GET goes
 	## to the sign-in page (and comes back after), anything else is a 401.

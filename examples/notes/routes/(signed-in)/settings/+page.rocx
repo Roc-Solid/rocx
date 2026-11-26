@@ -1,0 +1,248 @@
+import pf.Html
+import pf.Endpoint
+import pf.Server
+import pf.Router exposing [use_submission!]
+import ../../../Note
+import ../../../Pages
+import ../../../Token
+import ../../../Generated/Api
+import ../../../Ui/Topbar
+
+## Settings: personal access tokens for AI clients and scripts (made, shown once, revoked), how to
+## connect a client to the MCP server, and signing out everywhere. Every button is a plain form.
+meta = { title: "Settings · Notes" }
+
+## Your tokens and the MCP server's address (`GET /api/settings`).
+settings! : {} => Pages.Settings
+settings! = |{}| Api.get_api_settings({}).read!()
+
+view! = |_| {
+	making = use_submission!(Api.post_api_settings({}))
+	revoking = use_submission!(Api.post_api_settings_revoke({}))
+	first = settings!({})
+	<div>
+		{Topbar.view({ email: first.email, query: "" })}
+		<main id="main" class="page">
+			<h1>Settings</h1>
+			<p class="who">Signed in as <strong>{first.email}</strong></p>
+
+			<section aria-labelledby="tokens-title">
+				<h2 id="tokens-title">Personal access tokens</h2>
+				<p class="lead">A token lets an AI client (Claude, your editor, the MCP Inspector) or a script use your notes, over MCP at <code>{first.mcp}</code> or the JSON API (<a href="/openapi.html">its reference</a>). Make one for each, so you can revoke one without the others. A read-only token can search and read, never change.</p>
+
+				{match making.result!() {
+					Ok(made) =>
+						<div class="made" role="status">
+							<h3>Copy “{made.listed.name}” now</h3>
+							<p>This is the only time it is shown: the app keeps only a hash of it.</p>
+							<label for="new-token" class="visually-hidden">Your new token</label>
+							<input id="new-token" class="token" readonly value={made.token} />
+							<p>Connect Claude Code with it:</p>
+							<pre><code>{connect(settings!({}).mcp, made.token)}</code></pre>
+						</div>
+					Err(_) => <></>
+				}}
+
+				{if !settings!({}).tokens.is_empty() {
+					<div class="table">
+						<table>
+							<thead>
+								<tr><th scope="col">Name</th><th scope="col">Access</th><th scope="col">Made</th><th scope="col">Last used</th><th scope="col"><span class="visually-hidden">Revoke</span></th></tr>
+							</thead>
+							<tbody>
+								{...settings!({}).tokens.map(|token|
+									<tr key={token.id}>
+										<th scope="row">{token.name} <span class="hint">{"…${token.hint}"}</span></th>
+										<td>{if (token.read_only) "Read only" else "Read and write"}</td>
+										<td>{Note.day(token.created)}</td>
+										<td>{if (token.last_used.is_empty()) "Never" else Note.day(token.last_used)}</td>
+										<td>
+											<form method="post" action={Endpoint.url_of(Api.post_api_settings_revoke({}))}>
+												<input type="hidden" name="id" value={token.id} />
+												<button type="submit" class="danger" disabled?={revoking.pending!()} aria-label={"Revoke ${token.name}"}>Revoke</button>
+											</form>
+										</td>
+									</tr>
+								)}
+							</tbody>
+						</table>
+					</div>
+				} else {
+					<p class="none">No tokens yet.</p>
+				}}
+				{match revoking.error!() {
+					Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+					Err(_) => <></>
+				}}
+
+				<form class="make" method="post" action={Endpoint.url_of(Api.post_api_settings({}))}>
+					<h3>A new token</h3>
+					<label for="token-name">Name</label>
+					<input id="token-name" name="name" maxlength="60" required placeholder="Laptop: Claude Code" value={making.field!("name")} />
+					<label class="choice"><input type="checkbox" name="write" /> It may write too (it always searches and reads)</label>
+					<button type="submit" class="primary" disabled?={making.pending!()}>Make a token</button>
+					{match making.error!() {
+						Ok(problem) => <p class="problem" role="alert">{Server.explain(problem)}</p>
+						Err(_) => <></>
+					}}
+				</form>
+			</section>
+
+			<section aria-labelledby="connect-title">
+				<h2 id="connect-title">Connect an AI client</h2>
+				<p class="lead">The MCP server is at <code>{first.mcp}</code>, over Streamable HTTP, with a token in the <code>Authorization</code> header. It can search, read, create, add to, tag and archive notes, read them as resources, and has two prompts: summarize a note, and capture text as one.</p>
+				<pre><code>{connect(first.mcp, "acme_pat_…")}</code></pre>
+			</section>
+
+			<section aria-labelledby="sessions-title">
+				<h2 id="sessions-title">Sessions</h2>
+				<p class="lead">Signed in on a computer that isn't yours? Sign out on every browser at once. Tokens stay until you revoke them.</p>
+				<form method="post" action={Endpoint.url_of(Api.post_api_settings_everywhere({}))}>
+					<button type="submit">Sign out everywhere</button>
+				</form>
+			</section>
+		</main>
+	</div>
+}
+
+## The command that connects Claude Code to the MCP server, with `token`.
+connect : Str, Str -> Str
+connect = |mcp, token| "claude mcp add --transport http acme-notes ${mcp} \\\n  --header \"Authorization: Bearer ${token}\""
+
+<style>
+	.page {
+		max-width: 50rem;
+		margin: 0 auto;
+		padding: 1.5rem clamp(1rem, 3vw, 2rem) 5rem;
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 1.8rem;
+	}
+
+	.who {
+		margin: 0.25rem 0 0;
+		color: var(--ink-soft);
+	}
+
+	section {
+		margin-top: 2.25rem;
+		padding-top: 1.5rem;
+		border-top: 1px solid var(--line);
+	}
+
+	h2 {
+		margin: 0 0 0.5rem;
+		font-size: 1.2rem;
+	}
+
+	h3 {
+		margin: 0 0 0.25rem;
+		font-size: 1rem;
+	}
+
+	.lead {
+		margin: 0 0 1rem;
+		color: var(--ink-soft);
+	}
+
+	code,
+	pre {
+		font-family: var(--mono);
+		font-size: 0.86rem;
+	}
+
+	pre {
+		margin: 0;
+		padding: 0.9rem 1rem;
+		overflow-x: auto;
+		border-radius: 10px;
+		background: var(--sunk);
+	}
+
+	.made {
+		display: grid;
+		gap: 0.5rem;
+		margin-bottom: 1.25rem;
+		padding: 1rem 1.1rem;
+		border: 1px solid var(--ok);
+		border-radius: var(--radius);
+		background: var(--ok-soft);
+	}
+
+	.made p {
+		margin: 0;
+	}
+
+	.token {
+		font-family: var(--mono);
+		font-size: 0.9rem;
+	}
+
+	.table {
+		overflow-x: auto;
+	}
+
+	table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.92rem;
+	}
+
+	th,
+	td {
+		padding: 0.55rem 0.5rem;
+		border-bottom: 1px solid var(--line);
+		text-align: left;
+		vertical-align: middle;
+	}
+
+	thead th {
+		color: var(--ink-faint);
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	td form {
+		margin: 0;
+		text-align: right;
+	}
+
+	.hint {
+		color: var(--ink-faint);
+		font-family: var(--mono);
+		font-weight: 400;
+		font-size: 0.8rem;
+	}
+
+	.none {
+		color: var(--ink-faint);
+	}
+
+	.make {
+		display: grid;
+		gap: 0.5rem;
+		max-width: 26rem;
+		margin-top: 1.5rem;
+	}
+
+	.make > label {
+		font-weight: 600;
+	}
+
+	.choice {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.choice input {
+		accent-color: var(--accent);
+	}
+
+	.make button {
+		justify-self: start;
+	}
+</style>

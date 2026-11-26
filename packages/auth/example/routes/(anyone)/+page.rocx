@@ -1,0 +1,24 @@
+import pf.Html
+import ../../Generated/Api
+
+## Who is signed in, and a way to sign in or out.
+meta = { title: "Auth example" }
+
+## Who is signed in (`GET /api`).
+home! : {} => { email : Str }
+home! = |{}| Api.get_api({}).read!()
+
+view! = |_| {
+	me = home!({})
+	<main>
+		<h1>Auth example</h1>
+		{if me.email.is_empty() {
+			<p>Nobody is signed in. <a href="/sign-in">Sign in</a></p>
+		} else {
+			<form method="post" action="/auth/sign-out">
+				<p>Signed in as <strong>{me.email}</strong>.</p>
+				<button type="submit">Sign out</button>
+			</form>
+		}}
+	</main>
+}

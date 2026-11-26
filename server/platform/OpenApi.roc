@@ -150,10 +150,10 @@ OpenApi := [].{
 	}
 
 	## The document and its page as a middleware: it answers what `respond` serves, and hands every
-	## other request on, unchanged. `App.program` puts it last in the app's chain, behind the app's
-	## own middleware, so a guard there guards the document too:
+	## other request on, unchanged. `App.program` runs it behind the app's own middleware
+	## (routes/+middleware.roc), so a guard there guards the document too:
 	##
-	##     Middlewares.default.then(OpenApi.middleware(Page(Swagger), Api.openapi))
+	##     Middleware.run!(OpenApi.middleware(Page(Swagger), Api.openapi), request, context, next!)
 	middleware : Serving, Str -> Middleware(context, context)
 	middleware = |serving, json|
 		Middleware.make(

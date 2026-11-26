@@ -1,7 +1,8 @@
 ## Status: an uptime monitor and its public status page. rocx build writes nearly all of the
 ## program from routes/ (`Generated/App`: every page, endpoint and channel, the migrations in
-## migrations/ and the jobs Jobs.roc defines); this says the rest: what every request goes through
-## first, the plugins, and its database, SQLite (D-045).
+## migrations/ and the jobs Jobs.roc defines; what every request goes through, routes/+middleware.roc,
+## and the admin's, routes/(admin)/+middleware.roc); this says the rest: the plugins, and its
+## database, SQLite (D-045).
 ##
 ## - packages/jobs runs the jobs: a sweep every 10 seconds that queues the checks due, the checks,
 ##   the alerts, and a roll-up each night at 03:00 UTC.
@@ -27,7 +28,6 @@ import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middlewares.default,
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/uptime.db"),
 	plugins: [

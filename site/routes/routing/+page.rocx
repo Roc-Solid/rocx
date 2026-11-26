@@ -10,7 +10,7 @@ import ../../Ui/Versus
 ## File-based routing, as SvelteKit has it: this site's own pages are routed this way.
 meta = {
 	title: "Routing",
-	description: "File routing in Roc Solid: pages, layouts, the error page and endpoints are files under routes/, params come from directory names, middleware guards a route, links navigate without a reload, and rocx writes a typed path for every page and a typed function for every endpoint.",
+	description: "File routing in Roc Solid: pages, layouts, the error page and endpoints are files under routes/, params come from directory names, a directory's middleware guards the routes in it, links navigate without a reload, and rocx writes a typed path for every page and a typed function for every endpoint.",
 	toc: [
 		{ id: "files", label: "The files" },
 		{ id: "page", label: "A page" },
@@ -56,7 +56,8 @@ view! = |_|
 						<tr><td><code>+layout.rocx</code></td><td>wraps every page in its directory and below it</td></tr>
 						<tr><td><code>routes/+error.rocx</code></td><td>what a browser sees at a path nothing answers (404), and when a page fails</td></tr>
 						<tr><td><code>routes/blog/+server.roc</code></td><td>the endpoints at <code>/blog</code>: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code> and <code>delete!</code>; <code>events!</code>, a stream of events; <code>channel!</code>, a channel pages subscribe to; <code>respond!</code>, every other method</td></tr>
-						<tr><td><code>middleware = …</code></td><td>a definition in a page or a <code>+server.roc</code>: the middleware that runs before that file's page or endpoints</td></tr>
+						<tr><td><code>routes/admin/+middleware.roc</code></td><td>the middleware around every page, endpoint and channel in <code>admin/</code> and below it (<a href="#middleware">below</a>); <code>routes/+middleware.roc</code> runs around every request</td></tr>
+						<tr><td><code>routes/(members)/…</code></td><td>a group: a directory in brackets adds nothing to the path, so files at different paths share its middleware and layout</td></tr>
 						<tr><td><code>routes/.well-known/…</code></td><td>routed, as RFC 8615 asks; any other directory whose name starts with a dot is skipped</td></tr>
 					</tbody>
 				</table>
@@ -258,44 +259,58 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.middleware_type.file}, in part"} source={Sources.middleware_type.rocx} numbers={Bool.False} />
 			<p>
-				Two places name middleware, and nothing else runs any. The first is the app's default middleware,
-				named in <code>main.roc</code>'s <code>App.program</code>, which runs around every request:
+				Middleware goes by folder, as routes do. A <code>+middleware.roc</code> names the middleware that runs
+				around every page, endpoint and channel in its directory and the directories below it, and
+				nothing else runs any. The one in <code>routes/</code> itself is the app's, around every request
+				it answers (a plugin's route, a path nothing has). This site's adds two headers to every answer:
 			</p>
-			<Code title={Sources.route_main.file} source={Sources.route_main.rocx} numbers={Bool.False} />
+			<Code title={Sources.site_root_middleware.file} source={Sources.site_root_middleware.rocx} numbers={Bool.False} />
 			<p>
-				The second is a route file's own, <code>middleware = …</code>. It runs after the default, around
-				that file's page or its endpoints, and each file names its own: the page at <code>/members</code>
-				and its endpoint under <code>api/</code> each say <code>Middlewares.member</code>. A route file
-				further up guards nothing below it, and <code>rocx build</code> refuses a <code>middleware</code> in a
-				layout or the error page, since nothing would run it. What a middleware hands on is the <code>context</code> the file's handlers are given
-				(<code>{"get! = |{ context, .. }| …"}</code>). This site's middleware:
+				Below it, each runs inside the ones above, outermost first. What a middleware hands on is the
+				<code>context</code> the next one is given, and the handlers inside all of them
+				(<code>{"get! = |{ context, .. }| …"}</code>). The members' page, <code>/members</code>, and its
+				endpoint, <code>/api/members</code>, sit in a group, <code>routes/(members)/</code>: a directory in
+				brackets adds nothing to the path, so the page and its endpoint under <code>api/</code> share one
+				guard, and the joining page, <code>routes/members/join/</code>, sits outside it with its own. A
+				change another site's page sends (a POST, PUT, PATCH or DELETE) is refused before any of them,
+				unless the app says <code>cross_site: Allowed</code> in its <code>App.program</code>. This site's
+				middleware:
 			</p>
 			<Code title={Sources.site_middlewares.file} source={Sources.site_middlewares.rocx} />
+			<Code title={Sources.site_members_middleware.file} source={Sources.site_members_middleware.rocx} numbers={Bool.False} />
 			<Versus>
 				<Code title={"${Sources.members_page.file}, in part"} source={Sources.members_page.rocx} numbers={Bool.False} />
 				<Code title={Sources.members_server.file} source={Sources.members_server.rocx} numbers={Bool.False} />
 			</Versus>
 			<p>
-				A request to <code>/members</code> goes through the app's default middleware, then
-				<code>Middlewares.member</code>, then the page. The answer goes back out through them, and picks up
-				the default's headers on its way. The page itself isn't given the context. It reads its endpoint,
-				<code>GET /api/members</code>, as it renders, and the server answers that read behind the endpoint's
-				own <code>Middlewares.member</code>, so the handler gets the member's name. <code>rocx routes</code> lists every route, the file that answers it, and the
-				middleware it runs behind:
+				A request to <code>/members</code> goes through <code>routes/+middleware.roc</code>'s, then the
+				group's <code>Middlewares.member</code>, then the page. The answer goes back out through them, and
+				picks up the headers on its way. The page itself isn't given the context. It reads its endpoint,
+				<code>GET /api/members</code>, as it renders, and the server answers that read through the
+				endpoint's route, behind the same middleware, so the handler gets the member's name. A handler's
+				<code>Endpoint.send!</code> of the app's own endpoint, and an MCP tool made from one, go the same
+				way: what guards an endpoint guards every way to it. <code>rocx routes</code> lists every route, the
+				file that answers it, and what runs around it, outermost first:
 			</p>
 			<Code title="A terminal" source={Sources.route_list.rocx} numbers={Bool.False} plain />
 			<ul>
 				<li>
 					<strong>The context is typed.</strong> <code>member</code> is a
 					<code>{"Middleware({ facts : Str }, { facts : Str, member : Str })"}</code>: it is given the
-					default's context, and hands on one with <code>member</code> added. So the members' endpoint can
-					read <code>context.member</code>, and an endpoint that read it without that middleware in front
-					wouldn't compile.
+					context the one above it handed on, and hands on one with <code>member</code> added. So the
+					members' endpoint can read <code>context.member</code>, and an endpoint that read it outside
+					that group wouldn't compile.
 				</li>
 				<li>
-					<strong>Each file names its own.</strong> A page's middleware doesn't guard its endpoints or the
-					pages below it, so <code>api/members/+server.roc</code> names <code>Middlewares.member</code> too.
-					What guards a route is written in its file, and <code>rocx routes</code> shows them all together.
+					<strong>A new file is guarded by where it is.</strong> A page or endpoint added to the group
+					runs behind its middleware with no line of its own. A route file can't name middleware:
+					<code>rocx build</code> refuses <code>middleware = …</code> in a page, an endpoint, a layout or the
+					error page, and says which <code>+middleware.roc</code> to move it to.
+				</li>
+				<li>
+					<strong>Only some requests.</strong> <code>{"Middleware.when(Server.changes, guard)"}</code> runs
+					<code>guard</code> for the requests that change something, and lets reads by: a rate limit on a
+					form's posts, say.
 				</li>
 				<li>
 					<strong>Try it with <code>just dev</code>.</strong> <a href={Paths.members}>/members</a> sends you to
@@ -444,10 +459,11 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.route_routes.file}, in part"} source={Sources.route_routes.rocx} numbers={Bool.False} />
 			<p>
-				<code>App.program</code> answers every request with it, behind the app's default middleware, and
-				the GETs the server makes while it renders a page go the same way. When a file names middleware, its
-				page and its endpoints are wrapped in <code>Middleware.run!</code>, and the handler is given what the
-				middleware passed on. The members page and its endpoint each run behind their own:
+				<code>App.program</code> answers every request with it, behind the app's middleware
+				(<code>routes/+middleware.roc</code>), and the GETs the server makes while it renders a page go the
+				same way. A route in a directory with a <code>+middleware.roc</code> above it is wrapped in
+				<code>Middleware.run!</code>, one inside the other, outermost first, and the handler is given what
+				the innermost passed on. The members page and its endpoint run behind their group's:
 			</p>
 			<Code title={"${Sources.route_members.file}, in part"} source={Sources.route_members.rocx} numbers={Bool.False} />
 
@@ -469,7 +485,7 @@ view! = |_|
 			</p>
 			<h3>Turning it on</h3>
 			<p>It is off unless the app turns it on, with <code>openapi</code> in its <code>App.program</code>:</p>
-			<Code title="main.roc" source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\tmiddleware: Middlewares.default,\n\topenapi: Page(Swagger),\n})"} numbers={Bool.False} />
+			<Code title="main.roc" source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\topenapi: Page(Swagger),\n})"} numbers={Bool.False} />
 			<TableWrap>
 				<table>
 					<thead><tr><th><code>openapi:</code></th><th>The app serves</th></tr></thead>
@@ -482,8 +498,8 @@ view! = |_|
 			</TableWrap>
 			<ul>
 				<li>
-					<strong>It is behind the app's middleware</strong>, as every answer is: a guard that keeps a page
-					from strangers keeps these from them too.
+					<strong>It is behind the app's middleware</strong> (<code>routes/+middleware.roc</code>), as every
+					answer is: a guard there keeps these from strangers too.
 				</li>
 				<li>
 					<strong>The page loads its viewer from jsDelivr</strong>, pinned to one version and checked
@@ -600,16 +616,15 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>No static pages with params.</strong> This site's static copy writes the pages without
-					params (<code>Paths.all</code>) and without middleware of their own (named in the page, or in a
-					<code>+server.roc</code> beside it). A page with params would need a list of the values to write.
+					params (<code>Paths.all</code>) and behind no directory's middleware but <code>routes/</code>'s. A
+					page with params would need a list of the values to write.
 				</li>
 				<li>
 					<strong>One error page</strong>, the app's, at the root of <code>routes/</code>: <code>rocx build</code>
 					refuses a <code>+error.rocx</code> anywhere else.
 				</li>
 				<li>
-					<strong>No rest params</strong> (<code>[...path]</code>) or route groups (<code>(marketing)</code>),
-					and no middleware for a whole directory: each file names its own.
+					<strong>No rest params</strong> (<code>[...path]</code>).
 				</li>
 				<li>
 					<strong>The OpenAPI document</strong> calls every JSON field required, describes a type that holds

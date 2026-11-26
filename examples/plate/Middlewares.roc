@@ -5,24 +5,25 @@ import pf.Time
 import auth.Auth
 import Session
 
-## What runs around every request (`main.roc` names `Middlewares.default`), before the page or the
-## endpoint that answers it.
+## What runs around the requests, named by directory (D-103): `default` around every one
+## (routes/+middleware.roc), and `gate` around the diary (routes/(diary)/, a group that adds nothing
+## to the paths: everything but the sign-in page and its endpoint).
 Middlewares := [].{
 
-	## Around every request: a change sent from another site's page is refused (403); then, when the
-	## diary has a password, someone signed in (or the way to sign in); then each answer is logged.
+	## Around every request (a change sent from another site's page the platform refuses first, 403):
+	## each answer logged.
 	default : Middleware({}, {})
-	default = Middleware.same_origin({}).then(Middlewares.gate).then(Middlewares.logged)
+	default = Middlewares.logged
 
-	## When `PLATE_PASSWORD` is set, packages/auth's `Auth.required` (`signed_in`): a browser asking
-	## for a page without a session is sent to sign in (`/sign-in?then=…`), and back after; anything
-	## else is refused (401). The sign-in page and its endpoint (`/api/sign-in`), the auth plugin's
-	## endpoints (signing out) and the runtime's files are for anyone. Without a password, everything
-	## is.
+	## The diary, when `PLATE_PASSWORD` is set: packages/auth's `Auth.required` (`signed_in`): a
+	## browser asking for a page without a session is sent to sign in (`/sign-in?then=…`), and back
+	## after; anything else is refused (401). Without a password, everyone. The sign-in page and its
+	## endpoint sit outside its group, and the auth plugin's endpoints (signing out) and the
+	## runtime's files outside routes/: they are for anyone.
 	gate : Middleware({}, {})
 	gate = Middleware.make(
 		|request, context, next!|
-			if Middlewares.is_public(request.path) or Session.open!({}) {
+			if Session.open!({}) {
 				next!(request, context)
 			} else {
 				Middleware.run!(Middlewares.signed_in, request, context, next!)
@@ -32,10 +33,6 @@ Middlewares := [].{
 	## Someone signed in (a session of packages/auth's), or the way to sign in.
 	signed_in : Middleware({}, {})
 	signed_in = Auth.required(|context, _session| context)
-
-	## The paths anyone may ask for.
-	is_public : Str -> Bool
-	is_public = |path| path == "/sign-in" or path == "/api/sign-in" or path.starts_with("/auth/") or path.starts_with("/rocx/") or path.starts_with("/__")
 
 	## Logs each answer: its method, path, status and time (`Log.info!`), and what it said when it
 	## failed (`Log.error!`): the plain message the client got; why the database failed is logged
@@ -55,11 +52,3 @@ Middlewares := [].{
 		},
 	)
 }
-
-expect Middlewares.is_public("/sign-in")
-expect Middlewares.is_public("/api/sign-in")
-expect Middlewares.is_public("/rocx/start.js")
-expect !Middlewares.is_public("/")
-expect !Middlewares.is_public("/sign-in-elsewhere")
-expect Middlewares.is_public("/auth/sign-out")
-expect !Middlewares.is_public("/authors")

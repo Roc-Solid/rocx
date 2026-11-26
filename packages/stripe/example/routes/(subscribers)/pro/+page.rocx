@@ -1,0 +1,19 @@
+import pf.Html
+import ../../../Generated/Api
+
+## The pro pages: subscribers only, as its middleware (`Middlewares.subscribers`) says. Anyone
+## else goes to the pricing page.
+meta = { title: "Pro" }
+
+## Whose page it is (`GET /api/pro`).
+reader! : {} => { email : Str }
+reader! = |{}| Api.get_api_pro({}).read!()
+
+view! = |_| {
+	reader = reader!({})
+	<main>
+		<h1>The pro pages</h1>
+		<p>Thank you for subscribing, {reader.email}. Everything here is yours while your subscription is.</p>
+		<p><a href="/account">Your account</a></p>
+	</main>
+}

@@ -66,10 +66,10 @@ Otel := [].{
 	request_duration : Metric.Instrument
 	request_duration = Metric.histogram({ name: "http.server.request.duration", description: "Duration of HTTP server requests.", unit: "s", buckets: Metric.seconds })
 
-	## Times every request it runs around (`request_duration`). First in the app's middleware, so it
-	## times the rest too:
+	## Times every request it runs around (`request_duration`). First in the app's middleware
+	## (routes/+middleware.roc), so it times the rest too:
 	##
-	##     middleware: Otel.middleware({}).then(Middlewares.default)
+	##     middleware = Otel.middleware({}).then(Middlewares.default)
 	middleware : {} -> Middleware(context, context)
 	middleware = |{}|
 		Middleware.make(

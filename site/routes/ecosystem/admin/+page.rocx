@@ -72,7 +72,8 @@ view! = |_|
 			<ul>
 				<li>
 					the context the route's <a href={"${Paths.routing}#middleware"}>middleware</a> handed on
-					(<code>middleware = Middlewares.staff</code> says who is asking);
+					(its directory's <code>+middleware.roc</code>, <code>middleware = Middlewares.staff</code>, says who
+					is asking);
 				</li>
 				<li>
 					the admin's options: only <code>mount</code> (the route's path) and <code>access</code> are

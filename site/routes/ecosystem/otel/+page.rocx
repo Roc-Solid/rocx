@@ -53,7 +53,7 @@ view! = |_|
 					List its plugin, <code>Otel.plugin({"{}"})</code>, in the program's <code>plugins</code>, and
 					<code>import otel.Otel</code> where you record. Nothing is copied into the app.
 				</li>
-				<li>Put <code>Otel.middleware({"{}"})</code> first in the app's middleware.</li>
+				<li>Put <code>Otel.middleware({"{}"})</code> first in the app's middleware, <code>routes/+middleware.roc</code>.</li>
 				<li>
 					Start the server with <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> set to your collector, such as
 					<code>http://localhost:4318</code>.
@@ -63,7 +63,7 @@ view! = |_|
 			<Heading id="requests">Every request, timed</Heading>
 			<Code
 				title="main.roc, in part"
-				source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\tmiddleware: Otel.middleware({}).then(Middlewares.default),\n\tplugins: [Otel.plugin({})],\n})"}
+				source={"# main.roc\nprogram = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\tplugins: [Otel.plugin({})],\n})\n\n# routes/+middleware.roc: around every request, first, so it times the rest too\nmiddleware = Otel.middleware({}).then(Middlewares.default)"}
 				numbers={Bool.False}
 			/>
 			<p>

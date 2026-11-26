@@ -9,8 +9,10 @@ import guard.RateLimit
 import guard.Security
 import Accounts
 
-## What requests go through. `default` runs around every one (main.roc names it). A route file names
-## one of the others for its own route (`middleware = Middlewares.signed_in`), which runs inside it.
+## What requests go through. Each is named by a `+middleware.roc` under routes/, which runs around
+## every page and endpoint in its directory and the directories below it: `default` in routes/
+## itself (every request), `signed_in` in routes/(signed-in)/, `anyone` and `mail_limit` beside
+## the endpoints they guard.
 Middlewares := [].{
 
 	## What a signed-in route is handed: the user, and the id of the session they came with.
@@ -19,11 +21,11 @@ Middlewares := [].{
 	## What a route anyone may use is handed: whether the request is signed in.
 	Visitor : { signed : Auth.Signed }
 
-	## Around every request: a post from another site's page is refused (403), and every answer
-	## carries security headers (packages/guard: a Content-Security-Policy that lets pages run the
+	## Around every request (a post from another site's page the platform refuses first, 403): every
+	## answer carries security headers (packages/guard: a Content-Security-Policy that lets pages run the
 	## site's own scripts and nothing else, HSTS, and the rest). Under `--dev` the CSP only reports.
 	default : Middleware({}, {})
-	default = Middleware.same_origin({}).then(Guard.security_headers(Security.defaults))
+	default = Guard.security_headers(Security.defaults)
 
 	## Signed-in requests only, with their user's row read. Signed out, a page goes to the sign-in
 	## page (and comes back after); anything else is a 401. A session whose user is gone ends, and is

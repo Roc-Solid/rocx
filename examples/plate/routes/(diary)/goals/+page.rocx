@@ -1,0 +1,205 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import forms.LiveForm
+import forms.TextField
+import ../../../Plate
+import ../../../PlateForm
+import ../../../Query
+import ../../../Generated/Api
+import ../../../Generated/Paths
+
+## Your targets, and who they're worked out for: the energy a day (Mifflin–St Jeor, times how
+## active you are, changed by your goal; or a number of your own), and the grams of protein, carbs
+## and fat in it. As the form is changed, the targets follow, worked out in the browser by the
+## same `Plate.aim` the server uses.
+meta = { title: "Goals" }
+
+view! = |_| {
+	read = Api.get_api_goals({})
+	goals! = create_memo!(|| read.read!())
+	<Profile goals!={goals!()} />
+}
+
+## The profile's form, once it has been read.
+Profile := [].{
+	view! : { goals! : () => Plate.Goals } => Html
+	view! = |{ goals! }| {
+		profile = goals!().profile
+		live = LiveForm.filled!(
+			PlateForm.profile,
+			Api.post_api_goals({}),
+			[
+				("sex", profile.sex),
+				("birth_year", profile.birth_year.to_str()),
+				("height_cm", Plate.number(profile.height_cm)),
+				("weight_kg", Plate.number(profile.weight_kg)),
+				("activity", profile.activity),
+				("goal", profile.goal),
+				("kcal_target", if (profile.kcal_target > 0.0) Plate.number(profile.kcal_target) else ""),
+				("timezone", profile.timezone),
+			],
+		)
+		# The targets as the form says them now; the saved ones while it says something that isn't a profile.
+		aim! = || {
+			typed = Query.of(live.fields!().map(|field| (field.name, field.value)))
+			match PlateForm.profile.parse_body(typed) {
+				Ok(changed) => Plate.aim(changed, goals!().year)
+				Err(_) => Plate.aim(profile, goals!().year)
+			}
+		}
+		<section class="goals">
+			<h1>Goals</h1>
+			<section class="card aim" aria-label="Your targets">
+				<p class="kcal"><strong>{Plate.whole(aim!().kcal)}</strong> kcal a day</p>
+				<ul>
+					<li class="protein"><strong>{Plate.grams_label(aim!().protein)}</strong> protein</li>
+					<li class="carbs"><strong>{Plate.grams_label(aim!().carbs)}</strong> carbs</li>
+					<li class="fat"><strong>{Plate.grams_label(aim!().fat)}</strong> fat</li>
+				</ul>
+			</section>
+			<form class="card" method="post" action={live.url()} novalidate>
+				<div class="grid">
+					<Choice live={live} name="sex" label="Sex" options={Plate.sexes.map(|each| (each.id, each.label))} />
+					<TextField live={live} name="birth_year" label="Born in" hint="The year." />
+					<TextField live={live} name="height_cm" label="Height (cm)" />
+					<TextField live={live} name="weight_kg" label="Weight (kg)" hint="Logging a weight on Trends changes it." />
+				</div>
+				<Choice live={live} name="activity" label="How active you are" options={Plate.activities.map(|each| (each.id, each.label))} />
+				<Choice live={live} name="goal" label="Your goal" options={Plate.goals.map(|each| (each.id, each.label))} />
+				<div class="grid">
+					<TextField live={live} name="kcal_target" label="Your own energy target (kcal)" hint="Leave it empty to have it worked out." />
+					<TextField live={live} name="timezone" label="Time zone" hint="As Europe/Berlin or America/New_York: when your day starts." autocomplete="off" />
+				</div>
+				<p class="saved" aria-live="polite">{if (live.accepted!()) "Saved." else ""}</p>
+				<button class="button" type="submit" disabled?={live.pending!()}>{if (live.pending!()) "Saving…" else "Save"}</button>
+			</form>
+			<p class="quiet small">
+				The energy a day is the Mifflin–St Jeor estimate of the energy you use at rest, times a factor for how active you are, then less or more for your goal; never under 1,200 kcal. Protein, carbs and fat are 25%, 45% and 30% of it. It's an estimate: your weight over a few weeks says how right it is.
+			</p>
+			{if goals!().locked {
+				<form method="post" action="/auth/sign-out">
+					<input type="hidden" name="then" value="/sign-in" />
+					<button class="button quiet" type="submit">Sign out</button>
+				</form>
+			}}
+		</section>
+	}
+}
+
+## A choice among a few, as a `<select>` that a `LiveForm` checks: its label, and its issues under it.
+Choice := [].{
+	view! : { live : LiveForm, name : Str, label : Str, options : List((Str, Str)) } => Html
+	view! = |{ live, name, label, options }|
+		<div class="choice">
+			<label for={LiveForm.field_id(name)}>{label}</label>
+			<select id={LiveForm.field_id(name)} name={name} on:change.value={|picked| live.input!(name, picked)}>
+				{...options.map(|(value, said)| <option value={value} selected?={live.value!(name) == value}>{said}</option>)}
+			</select>
+		</div>
+
+	<style>
+		.choice {
+			display: grid;
+			gap: 0.25rem;
+			margin-bottom: 0.9rem;
+		}
+
+		label {
+			font-weight: 600;
+		}
+
+		select {
+			width: 100%;
+			min-width: 0;
+			min-height: 2.6rem;
+			padding: 0.4rem 0.5rem;
+			border: 1px solid var(--line-strong);
+			border-radius: 0.55rem;
+		}
+	</style>
+}
+
+<style>
+	.goals {
+		display: grid;
+		gap: 1rem;
+		max-width: 44rem;
+	}
+
+	.aim {
+		display: grid;
+		gap: 0.5rem;
+		background: var(--accent-soft);
+	}
+
+	.kcal {
+		margin: 0;
+	}
+
+	.kcal strong {
+		font-size: 2rem;
+	}
+
+	.aim ul {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1.25rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.aim li {
+		color: var(--ink-soft);
+	}
+
+	.aim li::before {
+		display: inline-block;
+		width: 0.6rem;
+		height: 0.6rem;
+		margin-right: 0.4rem;
+		border-radius: 50%;
+		content: "";
+	}
+
+	.protein::before {
+		background: var(--protein);
+	}
+
+	.carbs::before {
+		background: var(--carbs);
+	}
+
+	.fat::before {
+		background: var(--fat);
+	}
+
+	.aim li strong {
+		color: var(--ink);
+	}
+
+	form {
+		display: grid;
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+		gap: 0 0.75rem;
+	}
+
+	.saved {
+		min-height: 1.5rem;
+		margin: 0;
+		color: var(--accent-strong);
+		font-weight: 600;
+	}
+
+	button {
+		justify-self: start;
+	}
+
+	.small {
+		font-size: 0.85rem;
+	}
+</style>

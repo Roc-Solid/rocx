@@ -10,15 +10,17 @@ import Address
 import guard.Guard
 import Store
 
-## What requests go through. `default` runs around every one (main.roc names it); a route file names
-## the one for its own route (`middleware = Middlewares.signed_in`), which runs inside it. There are
-## three ways in, each handing on who is asking (`Me`):
+## What requests go through, named by directory (D-103): `default` runs around every one
+## (routes/+middleware.roc); a directory's `+middleware.roc` names the one for the routes in it,
+## which runs inside it. There are three ways in, each handing on who is asking (`Me`):
 ##
-## - `signed_in`, for pages and their endpoints (under /api at the page's path, as `/api/new` for
-##   `/new`): a session (packages/auth's), or a browser is sent to sign in;
-## - `api`, for the JSON API (`/api/notes`, `/api/search`, `/api/me`): a personal access token, or
-##   the session;
-## - `agent`, for MCP (Agents.roc mounts it at /mcp): a personal access token, nothing else.
+## - `signed_in`, for pages and their endpoints (the `(signed-in)` group: under /api at the page's
+##   path, as `/api/new` for `/new`): a session (packages/auth's), or a browser is sent to sign in;
+## - `api`, for the JSON API (the `(api)` group: `/api/notes`, `/api/search`, `/api/me`): a personal
+##   access token, or the session;
+## - `agent`, for MCP (routes/mcp/): a personal access token, nothing else.
+##
+## A group, a directory in brackets, adds nothing to the path.
 ##
 ## packages/mcp's `Bearer` reads a bearer token; packages/auth's `Auth` is sign-in.
 Middlewares := [].{
@@ -29,12 +31,12 @@ Middlewares := [].{
 	## (`Notebook.writer`), whichever way it came.
 	Me : { person : Store.Person, token : Str, read_only : Bool }
 
-	## Around every request: a change sent by another site's page is refused (403), and every answer
-	## has packages/guard's security headers (a Content-Security-Policy that lets the page run its
+	## Around every request (a change sent by another site's page the platform refuses first): every
+	## answer has packages/guard's security headers (a Content-Security-Policy that lets the page run its
 	## own scripts and WebAssembly, and nothing else), but the OpenAPI page, which loads Scalar from
 	## jsDelivr.
 	default : Middleware({}, {})
-	default = Middleware.same_origin({}).then(Middlewares.security)
+	default = Middlewares.security
 
 	## guard's headers, but on `/openapi.html`.
 	security : Middleware({}, {})
@@ -117,11 +119,7 @@ Middlewares := [].{
 	## someone's inbox with links. Counted by the address the link is for, not the client's: the
 	## inbox is what needs keeping.
 	mail_limit : Middleware({}, {})
-	mail_limit = Middlewares.posts_only(Guard.rate_limit("sign-in mail", RateLimit.per_hour(5), |request, _| Middlewares.address_in(request)))
-
-	## `guard` around requests that change something (`POST`, …); the rest pass by it.
-	posts_only : Middleware(c, c) -> Middleware(c, c)
-	posts_only = |guard| Middleware.make(|request, context, next!| if (Server.changes(request)) Middleware.run!(guard, request, context, next!) else next!(request, context))
+	mail_limit = Middleware.when(Server.changes, Guard.rate_limit("sign-in mail", RateLimit.per_hour(5), |request, _| Middlewares.address_in(request)))
 
 	## The address a sign-in form (or JSON) was sent for, as `Address.of` reads it; `""` (not counted)
 	## when there is none, which the endpoint refuses anyway.

@@ -4,18 +4,18 @@ import pf.Log
 import pf.Time
 import auth.Auth
 
-## What runs around every request (`main.roc` names `Middlewares.default`), before the page or the
-## endpoint that answers it.
+## What runs around every request (`routes/+middleware.roc` names `Middlewares.default`), before the
+## page or the endpoint that answers it.
 Middlewares := [].{
 
 	## What every page and endpoint is handed as its `context`: who you said you are (a person's
 	## id, the user of the session `/me` starts), or `""`.
 	Context : { me : Str }
 
-	## Around every request: a change sent from another site's page is refused (403), then
+	## Around every request (a change sent from another site's page the platform refuses first, 403):
 	## `identify` hands on who you are, and `logged` logs the answer.
 	default : Middleware({}, Middlewares.Context)
-	default = Middleware.same_origin({}).then(Middlewares.identify).then(Middlewares.logged)
+	default = Middlewares.identify.then(Middlewares.logged)
 
 	## Reads who you are from the request's session (packages/auth, its cookie `tasks_session`) into
 	## the context: the person picked at `/me`, or `""` for nobody. It is not a sign-in: anyone may

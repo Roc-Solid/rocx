@@ -20,7 +20,7 @@ view! = |_|
 			</li>
 			<li>
 				<h2>A page for signed-in people</h2>
-				<p><a href="/account">Your account</a> is the page <code>routes/account/+page.rocx</code>, and what it reads and posts is the endpoints under <code>routes/api/account/</code>. Each names a <code>middleware</code> that lets only signed-in people through.</p>
+				<p><a href="/account">Your account</a> is the page <code>routes/(signed-in)/account/+page.rocx</code>, and what it reads and posts is the endpoints under <code>routes/(signed-in)/api/account/</code>. The group's <code>+middleware.roc</code> lets only signed-in people through to both; the brackets keep it out of the path.</p>
 			</li>
 			<li>
 				<h2>Your data</h2>

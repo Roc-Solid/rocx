@@ -330,10 +330,10 @@ view! = |_|
 				</li>
 			</ul>
 			<Note>
-				List <code>Middleware.same_origin</code> in your app's middleware, so a form on another site can't
-				post to yours, and put a <a href={Paths.ecosystem_guard}>rate limit</a> on your sign-in endpoint,
-				per address and per client, so nobody can mail an address a hundred links. The app
-				<code>rocx new</code> makes has both.
+				A form on another site can't post to yours: the platform refuses it
+				(<a href={"${Paths.safety}#origin"}>why</a>). Put a <a href={Paths.ecosystem_guard}>rate limit</a>
+				on your sign-in endpoint, per address and per client (its directory's <code>+middleware.roc</code>),
+				so nobody can mail an address a hundred links. The app <code>rocx new</code> makes has it.
 			</Note>
 
 			<Heading id="status">Status</Heading>

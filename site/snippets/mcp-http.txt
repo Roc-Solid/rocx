@@ -1,18 +1,19 @@
-# main.roc: the MCP server at /mcp, behind the middleware that decides who may ask
-program = App.program({
-	init!: |_started| Ok({}),
-	middleware: Middlewares.signed_in.then(McpHttp.middleware("/mcp", Agents.server)),
-})
+# routes/mcp/+server.roc: the MCP server at /mcp
+respond! = |{ request, context, .. }| McpHttp.respond!(Agents.server, request, context)
 
-# Agents.roc: two endpoints (from Generated/Handlers), a function and a handler of the app's own,
-# a tool each; a tool's arguments fill an endpoint's path too (read_note's id)
+# routes/mcp/+middleware.roc: who may ask
+middleware = Middlewares.signed_in
+
+# Agents.roc: two endpoints (from Generated/Api), a function and a handler of the app's own, a tool
+# each; a tool's arguments fill an endpoint's path too (read_note's id), and an endpoint is sent
+# through its own route and middleware, with the MCP request's token
 server : Mcp.Server(McpHttp.Caller(Context))
 server = {
 	name: "notes",
 	version: "1.0.0",
 	tools: [
-		McpHttp.endpoint(Handlers.post_api_convert, { name: "convert", description: "Celsius to Fahrenheit" }, McpHttp.openapi({})),
-		McpHttp.endpoint(Handlers.get_api_notes_id, { name: "read_note", description: "A note, by its id" }, McpHttp.openapi({})),
+		McpHttp.endpoint(Api.post_api_convert, { name: "convert", description: "Celsius to Fahrenheit" }, McpHttp.openapi({})),
+		McpHttp.endpoint(Api.get_api_notes_id, { name: "read_note", description: "A note, by its id" }, McpHttp.openapi({})),
 		McpHttp.function(Echo.echo!, { name: "echo", description: "Says a message back" }, McpHttp.openapi({})),
 		McpHttp.tool({ name: "greet", description: "Greets someone" }, greet!, McpHttp.openapi({})),
 	],

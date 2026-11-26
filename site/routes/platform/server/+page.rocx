@@ -279,7 +279,7 @@ view! = |_|
 			<p>
 				When a component reads an endpoint (<code>Endpoint.read!</code>, a GET of one of the app's own
 				paths), the host makes that request in-process: it runs through the app's <code>respond!</code>,
-				behind the route's middleware, with <code>accept: application/json</code>, the page's headers
+				behind the middleware of the route's directories, with <code>accept: application/json</code>, the page's headers
 				(cookies included) and the app's context. So the component gets the same answer the browser would.
 				Each URL is asked once per render. The answers go into a script at the end of the page, each under
 				its URL, followed by <code>/rocx/start.js</code>, and the browser reads them from there instead of
@@ -327,7 +327,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc"
-				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tinit!,\n\tmiddleware: Middlewares.default,\n\tplugins: [Acme.plugin({ at: \"/acme\" })],\n})"}
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tinit!,\n\tplugins: [Acme.plugin({ at: \"/acme\" })],\n})"}
 				numbers={Bool.False}
 			/>
 			<p>

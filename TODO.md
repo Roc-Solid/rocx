@@ -87,13 +87,8 @@ When an item lands, delete its line here in the same commit.
   - A checked body sent as JSON (D-093) may not read back through a `Form.choice` field whose
     option's text differs from its tag (`"lunch"` read as `Lunch`): worth a test in examples/plate.
 
-- **MCP tools skip a checked body's rules (D-093).** packages/mcp's `McpHttp.endpoint` runs a
-  handler with `Endpoint.run!`, its arg read from the model's JSON by its type, so `post_body`'s
-  rules don't run there: read the arguments through the endpoint's rules (`Endpoint.form_of` on the
-  JSON's fields) and give the model their issues.
-- **A page's own typed params (D-092).** A param is typed by the handlers under its directory; a
-  page whose directory has none that names it gets `Str`. A page could say its params' types itself
-  (a `Params` alias in `+page.rocx`), when an app needs it.
+- **A `+middleware.roc` that guards nothing (D-103):** one in a directory with no route file below
+  it (a group emptied by a move) is written as a module nothing imports; `rocx build` could say so.
 - **The engine in the browser (spike/wasm-engine/REPORT.md, "Round 2").** native/core's engine is
   within 0 to 5% of today's runtime on the benchmark's page (clear about 1.6x), but its wasm is
   119 KB with brotli at opt-level s (markup read without serde_json since round 3) against today's
@@ -280,9 +275,6 @@ When an item lands, delete its line here in the same commit.
   - packages/posthog: `sent!` drops a batch that is `TooLarge` without a log line.
   - packages/storage: directory and memory buckets keep multipart parts under `.uploads/`, and an
     app's key starting with `.uploads` isn't refused.
-  - `--opt=speed`: is the three-step `Middleware.then` miscompile
-    (`test/compiler-bugs/middleware-skipped-opt-speed`) still there? journal's and plate's chains
-    have three steps.
 - **Database errors sent to clients:** the package examples answer a failed query with its text
   (`Err(Status(503, why))`: packages/auth's, stripe's, push's and guard's examples, and
   sqlite-vs-turso's bench routes), which can name tables, columns and values. examples/tasks, plate

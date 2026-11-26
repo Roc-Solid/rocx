@@ -4,8 +4,9 @@ import pf.Server
 import admin.Admin
 import admin.AdminPage
 
-## An admin, as an app writes it in a route file (`routes/admin/db/+server.roc`), with the
-## middleware that says who is asking (`middleware = Middlewares.staff`). Here it is a module of the
+## An admin, as an app writes it in a route file (`routes/admin/db/+server.roc`), behind the
+## middleware that says who is asking (`routes/admin/+middleware.roc`: `middleware =
+## Middlewares.staff`). Here it is a module of the
 ## docs site, so the compiler checks it with the site's server; no route answers with it, since the
 ## site has no database.
 AdminRoute := [].{
