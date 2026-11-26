@@ -138,14 +138,11 @@ view! = |_|
 			When the client asks to hear progress, it gets the answer as a stream of
 			<a href={"${Paths.calls}#events"}>server-sent events</a>: each step as it is taken, then the answer.
 		</p>
-		<Callout kind="note" title="Copied in, for now">
-			<p>
-				<code>McpHttp</code> needs the server platform, and the protocol's package names no platform, so
-				<code>McpHttp</code> lives apart, in the package's <code>server/</code> folder. Today an app copies
-				<code>server/McpHttp.roc</code> into its own folder, as examples/notes does, and names the protocol's
-				package <code>mcp</code> in its header.
-			</p>
-		</Callout>
+		<p>
+			<code>McpHttp</code> is the package's own, on the server platform: an app names the package
+			<code>mcp</code> in its header and writes <code>import mcp.McpHttp</code>. The browser's half of the app
+			sees only the protocol's modules, which run anywhere.
+		</p>
 
 		<Heading id="access">Who may ask</Heading>
 		<p>
@@ -286,7 +283,6 @@ view! = |_|
 		</ul>
 		<p>Waiting on a proposal (in <code>packages/mcp/PROPOSALS.md</code>):</p>
 		<ul>
-			<li>reaching an app without copying <code>McpHttp.roc</code> in by hand;</li>
 			<li>
 				a tag union in a tool's arguments, which the schema calls "any value" until the generated
 				<code>Api</code> lists the tags it found;

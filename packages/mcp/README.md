@@ -12,12 +12,12 @@ The user guide, with real requests and the package's answers, is the docs site's
 
 ## Installing it
 
-The package has two parts:
+Name it in the app's header as `mcp`. It has two parts, one package:
 
-- **The protocol** (`main.roc`): plain Roc on no platform. Name it in the app's header as `mcp`.
-- **The HTTP side** (`server/McpHttp.roc`): a module on the server platform that serves the protocol
-  at a path and makes tools from the app's endpoints. Copy it into the app (examples/notes has it as
-  `examples/notes/McpHttp.roc`); see [The HTTP side](#the-http-side) for why.
+- **The protocol** (`Mcp`, `Resource`, `Template`, `Prompt`, `Rpc`, `Bearer`): plain Roc on no
+  platform, which the browser's half of an app may import too (`browser.roc` lists them).
+- **The HTTP side** (`McpHttp`): on the server platform, it serves the protocol at a path and makes
+  tools from the app's endpoints. `import mcp.McpHttp`; nothing is copied.
 
 ```roc
 # main.roc
@@ -25,7 +25,8 @@ app [program] { mcp: "…/packages/mcp/main.roc", pf: platform "…/server/platf
 ```
 
 The package is not a plugin, and it has no components: its readers are agents, not people. It
-depends on `packages/crypto` (for Base64) and `packages/tools`, which it names itself. What a tool
+depends on `packages/crypto` (for Base64), `packages/tools` and the server's platform, which it
+names itself. What a tool
 is (`Tool`), what it answers (`Content`) and `JsonValue` are packages/tools', not this package's
 (D-085): packages/ai gives the same tools to Claude. An app that makes tools names `tools` too, and
 imports `tools.Tool`.
@@ -38,7 +39,7 @@ tools:
 ```roc
 # Agents.roc
 import mcp.Mcp
-import McpHttp              # the copy of server/McpHttp.roc
+import mcp.McpHttp
 import Generated/Handlers   # each endpoint with its handler, which a tool runs
 
 ## What the app offers agents.
@@ -95,11 +96,10 @@ made there is served here as it is, and packages/ai's models use it too.
 
 ## The HTTP side
 
-`server/McpHttp.roc` imports the server platform (`Server`, `Endpoint`, `OpenApi`, `Events`,
-`Middleware`, `Log`), and the protocol's package names no platform, so the HTTP side can't live in
-it. `server/main.roc` makes it a package of its own that names the server platform, so
-`roc check packages/mcp/server/main.roc` checks it alone. Apps copy the module in today; making
-copying unnecessary is proposal 1 in PROPOSALS.md, "Server-only modules in packages".
+`McpHttp` imports the server platform (`Server`, `Endpoint`, `OpenApi`, `Events`, `Middleware`,
+`Log`), so the package names it, and its `browser.roc` lists the protocol's modules alone for the
+browser's half of an app (D-033, as packages/push and packages/guard do). `roc test
+packages/mcp/main.roc` runs McpHttp's expects with the protocol's.
 
 | `McpHttp.` | What it is |
 |---|---|
@@ -263,11 +263,10 @@ Tested:
 
 Waiting on a proposal (PROPOSALS.md):
 
-1. reaching an app without copying `server/McpHttp.roc` in by hand;
-2. a union's tags in a tool's schema (`Api.tags`): today a tag union none of whose tags are given in
+1. a union's tags in a tool's schema (`Api.tags`): today a tag union none of whose tags are given in
    `About.tags` is "any value";
-3. an endpoint's doc comment as its tool's description (today the app repeats it);
-4. an OAuth authorization server of the platform's own.
+2. an endpoint's doc comment as its tool's description (today the app repeats it);
+3. an OAuth authorization server of the platform's own.
 
 ## Limits
 

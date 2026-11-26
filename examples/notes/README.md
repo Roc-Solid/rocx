@@ -251,7 +251,6 @@ node --test 'examples/notes/test/*.test.mjs'
 - **`test/browser.test.mjs`** (3 tests, in Chromium): sign in with the mailed link; write a note and
   see its preview render as it is typed, then save it; find it by searching, the word highlighted.
   Every page hydrates with strict checks and no errors.
-- **`test/copies.test.mjs`** (1 test): `McpHttp.roc` is still packages/mcp's `server/McpHttp.roc`.
 
 Also tried by hand: the official MCP TypeScript SDK's v2 client (`@modelcontextprotocol/client`
 2.4.0), at protocol version 2026-07-28 and in `auto`, listed the tools, searched, read the index and
@@ -290,23 +289,20 @@ Writing the app turned up gaps in the platform and the packages. Most are fixed 
 unticked checkbox, the app's public address, a plain form's flash, guard's refusal of a plain form,
 404s from `Endpoint.get!`, typed submissions in the browser). These are still worth knowing:
 
-1. **A package's server modules are copied in by hand.** packages/mcp's HTTP side (`McpHttp`)
-   imports the server platform, so `rocx build` doesn't copy it into an app, as its README says. The
-   app keeps a word-for-word copy, and `test/copies.test.mjs` fails when it drifts.
-2. **The MCP server is mounted in `main.roc`, not as a route.** Its tools run the endpoints'
+1. **The MCP server is mounted in `main.roc`, not as a route.** Its tools run the endpoints'
    handlers (`Generated/Handlers`), which import every route file, so no module a route imports may
    import them. `Agents.mount` is a middleware that `main.roc` puts after the default one; it answers
    `/mcp` behind its own middleware (`Middlewares.agent`, then `agent_limit`). `rocx routes` doesn't
    list `/mcp`.
-3. **Every field of a tool's arguments is required** (packages/mcp's README), so an agent sends
+2. **Every field of a tool's arguments is required** (packages/mcp's README), so an agent sends
    `"tags": []` to `create_note`. The search box's `#tag` syntax keeps `search_notes` to one field.
-4. **guard's Content-Security-Policy refuses the OpenAPI page**, which loads Scalar from jsDelivr.
+3. **guard's Content-Security-Policy refuses the OpenAPI page**, which loads Scalar from jsDelivr.
    `Middlewares.security` leaves `/openapi.html` out.
-5. **Roc gotchas met on the way:**
+4. **Roc gotchas met on the way:**
    - `{ ttl_ms }` alone is a block, not a record: write `{ ttl_ms: ttl_ms }`.
    - A tag isn't a function: write `map_err(|why| BadRequest(why))`, not `map_err(BadRequest)`.
    - A list's `keep_if` takes a pure function, so a page reads its endpoint once before filtering.
-6. **SQLite has no regular expressions, and no search engine's syntax.** The app moved from
+5. **SQLite has no regular expressions, and no search engine's syntax.** The app moved from
    Postgres to SQLite, and two things are now done in Roc:
    - What a body reads as (`Note.plain`, the text without Markdown's marks) was a column Postgres
      generated with `regexp_replace`. Now `Store` writes it with every body, so an append reads the

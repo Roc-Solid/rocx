@@ -7,61 +7,12 @@ to by the MCP Inspector's CLI and the TypeScript SDK's v2 client.
 
 ## 1. Server-only modules in packages
 
-**Problem.** `server/McpHttp.roc` imports the server platform (`Server`, `Endpoint`, `OpenApi`,
-`Events`, `Middleware`, `Log`). A Roc package may name a platform only if it is the app's exact one,
-and a Roc Solid app is two apps (the browser's half on web/platform, the server's on
-server/platform). `rocx build` copies a package's `components/*.rocx` into the app, where `pf` is
-whichever platform each half has; nothing does that for modules only the server should have. Today
-the app copies `McpHttp.roc` in by hand.
-
-**Options considered.**
-
-- **A. `rocx build` copies `server/*.roc`** (all but `main.roc`) into the server's half only, to
-  `Generated/<alias>/<Name>.roc` with the marker line, as it copies components, and rewrites
-  `import <alias>.<Name>` to the copy in the code the server compiles. The browser's half gets no
-  copy. An import of one from code the browser compiles is an error rocx reports, naming the module.
-- **B. A package that names the server platform** (`server/main.roc`:
-  `package [McpHttp] { pf: platform "../../../server/platform/main.roc", mcp: "../main.roc" }`), named
-  in the server's header (`mcpserver: "../packages/mcp/server/main.roc"`). Tried: the server's half
-  builds and runs (`app2`), and `roc check packages/mcp/server/main.roc` checks it alone. The
-  browser's half fails with "platform dependency mismatch", for one reason: `rocx build --client`
-  copies every package of the server's header into the browser's (`headerPackages`), this one too.
-  rocx would leave out a package whose `main.roc` names a platform. **But** Roc's check is of the
-  identical platform, resolved path included: the same files reached by another path (another
-  symlink, another checkout) are a mismatch. In this repo the paths agree; an app elsewhere, or one
-  on a prebuilt platform bundle by URL, would name another.
-- **C. Two packages, `mcp` and `mcp-server`, published per platform.** The same path problem as B,
-  and a package per platform version.
-
-**Recommended: A**, as charts' components already work: `pf` is the app's own, whatever path the app
-names it by, and nothing in the package depends on where the platform is. Keep `server/main.roc`
-(B's header) only so `roc check packages/mcp/server/main.roc` checks the module alone; rocx doesn't
-copy it.
-
-Sketch, in `bin/rocx.mjs`:
-
-```js
-// componentPackages(dir): each package also lists its server modules.
-const server = join(root, "server");
-const serverPaths = existsSync(server) ? [...files(server, ".roc")].filter((path) => basename(path) !== "main.roc") : [];
-found.set(name, { name, own: basename(root), paths, modules, serverPaths,
-    serverModules: new Set(serverPaths.map((path) => basename(path, ".roc"))) });
-
-// build(): for the server's half only (no --client), beside the components' copies:
-for (const pkg of packages) for (const path of pkg.serverPaths)
-    writeGenerated(join(dir, "Generated", pkg.name, basename(path)), rewriteOwnImports(readFileSync(path, "utf8"), pkg), path);
-
-// linkComponents(): `import mcp.McpHttp` is a path import of the copy when McpHttp is a server
-// module, on the server; in the browser's copy of the app, an error:
-//   "McpHttp is server-only (packages/mcp/server): import it from main.roc, a +server file,
-//    or a module only they import"
-```
-
-**Depends on it.** `server/McpHttp.roc` reaches apps without copying. The README's "copy it into the
-app" step goes away; apps write `import mcp.McpHttp`.
-
-**Undo.** Remove the copy step: apps copy server modules by hand again, as now. Nothing else
-changes.
+**Done (D-033), as option B was sketched here.** The package names the server platform (`main.roc`
+lists `McpHttp` with the protocol's modules), and `browser.roc` lists the protocol's alone, which
+`rocx build --client` names in the browser's copy of the app instead (as packages/push, guard and
+auth do). Apps write `import mcp.McpHttp`; nothing is copied, and `server/` is gone. The caveat
+this section raised holds for every package that names the server platform: Roc wants the app's
+platform and the package's at one path, which `rocx new`'s vendored `.rocx` gives.
 
 ## 2. `Api` imports only route files with endpoints
 

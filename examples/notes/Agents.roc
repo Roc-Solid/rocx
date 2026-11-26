@@ -5,7 +5,7 @@ import mcp.Prompt
 import mcp.Resource
 import mcp.Template
 import Generated/Handlers
-import McpHttp
+import mcp.McpHttp
 import Middlewares
 import Note
 import Notebook

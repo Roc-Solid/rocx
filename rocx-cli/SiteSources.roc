@@ -166,7 +166,7 @@ SiteSources := [].{
 		Pick("mcp_test", "site/Demos/McpTemperatures.rocx", ["## What MCP takes", "expect Mcp.problems("]),
 		Whole("mcp_http_sketch", "site/snippets/mcp-http.txt"),
 		Whole("mcp_demo", "site/Demos/McpTemperatures.rocx"),
-		Whole("mcp_http", "packages/mcp/server/McpHttp.roc"),
+		Whole("mcp_http", "packages/mcp/McpHttp.roc"),
 		Picks("presence_use", "site/Demos/PresenceDemo.rocx", [["import presence.AvatarStack", "import presence.Cursors", "import presence.LiveCursors", "import presence.TypingIndicator", "import presence.Presence", "import presence.Room", "import presence.Wire"], ["(members!, set_members!) = create_signal!(", "typing = Presence.create_typing!(", "cursors = Presence.create_cursors!("], ["<AvatarStack faces!="], ["<LiveCursors cursors!=", "<div class=\"note\"", "<p class=\"note-title\">", "<p class=\"line\">", "<p class=\"line short\">", "<p class=\"line\">", "<p class=\"line shorter\">", "</div>", "</LiveCursors>"], ["<TypingIndicator names!="]]),
 		Pick("presence_stores", "site/Demos/PresenceDemo.rocx", ["did! = |step| {", "set_members!(", "set_seed!(", "if (!step.typed", "if !step.left", "(typing.stopped!)(", "(cursors.gone!)(", "}", "var $after", "for move in step.moves {", "_ = set_timeout!(", "$after = $after + 150", "}", "}", "act! = |action| "]),
 		Whole("presence_route", "examples/board/routes/b/[board]/presence/+server.roc"),
