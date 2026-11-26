@@ -452,12 +452,6 @@ function plainName(name, attribute) {
 	return length > 0 && !(attribute && length >= 2 && (name.charCodeAt(0) | 32) === 111 && (name.charCodeAt(1) | 32) === 110);
 }
 
-/** The events an element's handler for is delegated (`delegate`): common ones that bubble. */
-const DELEGATED = new Set(["click", "dblclick", "input", "change", "keydown", "keyup", "submit", "pointerdown", "pointerup", "mousedown", "mouseup", "contextmenu"]);
-/** An element's delegated handlers, by event; the events the root element listens for. */
-const HANDLERS = Symbol("rocx handlers");
-const LISTENED = Symbol("rocx listened");
-
 /** Attributes that name themselves (the others are handlers, keys, classes and styles). */
 const NAMED = new Set(["v", "o", "vo", "oo", "f", "fo"]);
 
@@ -517,9 +511,6 @@ const escape = (text) => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;
 
 /** The bootstrap the host puts before a page's `</body>` (server/host/src/signals.rs's `START`). */
 const START = '<script type="module" data-rocx src="/rocx/start.js"></script>';
-/** The runtime and the app's wasm, which start.js loads, asked for from the `<head>` (signals.rs's
- * `PRELOADS`): the host's own elements, which hydrating passes over. */
-const PRELOADS = '<link rel="modulepreload" data-rocx href="/rocx/runtime.js"><link rel="preload" data-rocx href="/rocx/app.wasm" as="fetch" crossorigin>';
 
 /** The bootstrap with the build's id (`Router.app!`, D-040), as signals.rs's `start` writes it. */
 const startWith = (build) => (build === null ? START : `<script type="module" data-rocx data-build="${build.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}" src="/rocx/start.js"></script>`);
@@ -1354,7 +1345,7 @@ export class Runtime {
 				if (!selector) throw new Error("rocx: a selector was read after the part that made it went away");
 				const key = text(ptr, len);
 				let source = selector.keys.get(key);
-				if (!source) selector.keys.set(key, (source = { observers: null }));
+				if (!source) selector.keys.set(key, (source = { observers: null, selector, key }));
 				this.track(source);
 				if (selector.key === null) throw new NotReady(selector.settled ??= new Promise((resolve) => (selector.settle = resolve)));
 				return selector.key === key ? 1 : 0;
@@ -3762,7 +3753,12 @@ export class Runtime {
 		computation.disposed = true;
 		this.readers.delete(computation);
 		this.revalidated(computation);
-		for (const source of computation.sources) source.observers?.delete(computation);
+		for (const source of computation.sources) {
+			source.observers?.delete(computation);
+			// A selector's key no reader reads any more (its row gone): gone from the selector too, so
+			// rows made and cleared with new keys leave none behind.
+			if (source.selector && !source.observers?.size) source.selector.keys.delete(source.key);
+		}
 		computation.scope.loading?.done(computation);
 		if (computation.kind === "leave") {
 			// A `use_before_leave!` listener, gone with its owner: asked no more.
@@ -5425,7 +5421,6 @@ export class Runtime {
 				const handler = this.listener(kind, name, value, wanted, scope, owner);
 				if (drag && name === "dragenter") drag.enter.push(handler);
 				else if (drag && name === "dragleave") drag.leave.push(handler);
-				else if (DELEGATED.has(name)) this.delegate(element, name, handler);
 				else element.addEventListener(name, handler);
 			} else if (kind === "k") this.keys.set(element, name);
 			else if (kind === "ko") this.run(new Computation(this, { kind: "key", runner: this.kept.get(name), owner, scope, target: element }));
@@ -5463,30 +5458,6 @@ export class Runtime {
 			}
 		}
 		if (drag) this.dragAndDrop(element, drag); //#drag
-	}
-
-	/**
-	 * An element's handler for an event that bubbles and is common (`DELEGATED`), kept on the element,
-	 * and one listener for the event on the document's root element, which runs the handlers of the
-	 * elements the event passes, from where it happened up, as their own listeners would (Solid's
-	 * delegation): a row costs no listener of its own. The runtime's own listeners (a link's click, a
-	 * form's submit) are the document's, so these run before them, as an element's did.
-	 */
-	delegate(element, name, handler) {
-		const own = (element[HANDLERS] ??= {});
-		(own[name] ??= []).push(handler);
-		const root = element.ownerDocument?.documentElement;
-		if (!root) return;
-		const listened = (root[LISTENED] ??= new Set());
-		if (listened.has(name)) return;
-		listened.add(name);
-		root.addEventListener(name, (event) => {
-			for (const node of event.composedPath()) {
-				const handlers = node[HANDLERS]?.[name];
-				if (handlers) for (const run of handlers) run(event);
-				if (node === root || event.cancelBubble) break;
-			}
-		});
 	}
 
 	/**
@@ -6279,14 +6250,11 @@ export class Runtime {
 	 * the page read (if it did), the answers script, the plugins' scripts (`scripts`, by URL) and
 	 * the bootstrap (start.js, with the build's id if the page's root told it: `data-build`) just
 	 * before the last `</body>`, or at the end with none. The `<Meta>`s, `<Link>`s and `<Style>`s
-	 * it rendered (`heads`) go before `</head>`, then the preloads of what start.js loads.
+	 * it rendered (`heads`) go before `</head>`.
 	 */
 	static documentOf(markup, answers, flash = "", title = null, scripts = [], heads = [], build = null) {
 		if (title !== null) markup = Runtime.titled(markup, title);
 		markup = Runtime.headed(markup, heads);
-		// What start.js loads, asked for as the `<head>` is read.
-		const head = markup.indexOf("</head>");
-		if (head >= 0) markup = `${markup.slice(0, head)}${PRELOADS}${markup.slice(head)}`;
 		const doctype = /^<!doctype/i.test(markup.trimStart()) ? "" : "<!doctype html>";
 		const before = `${flash ? Runtime.flashScript(flash) : ""}${Runtime.answersScript(answers)}${Runtime.scriptTags(scripts)}${startWith(build)}`;
 		const at = markup.lastIndexOf("</body>");

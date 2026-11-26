@@ -2001,7 +2001,7 @@ window.mounted = true;
 
 /** What the document looks like rendered for `/inner/page?x=1`: as the server platform answers it. */
 const DOCUMENT_PAGE =
-	'<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>A document</title> <style>.count { color: red }</style> <script>window.ran = (window.ran ?? 0) + 1</script><link rel="modulepreload" data-rocx href="/rocx/runtime.js"><link rel="preload" data-rocx href="/rocx/app.wasm" as="fetch" crossorigin></head> <body class="page"><h1>A document</h1> <p class="at"><!--x-->/inner/page<!--/x--> ? <!--x-->x=1<!--/x--></p> <button class="count">Clicked <!--x-->0<!--/x--> times</button> <!--loading--><output class="said"><!--x-->Said: hello<!--/x--></output><!--/loading--> <button class="again">Again</button> <svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"></circle></svg> ' +
+	'<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>A document</title> <style>.count { color: red }</style> <script>window.ran = (window.ran ?? 0) + 1</script></head> <body class="page"><h1>A document</h1> <p class="at"><!--x-->/inner/page<!--/x--> ? <!--x-->x=1<!--/x--></p> <button class="count">Clicked <!--x-->0<!--/x--> times</button> <!--loading--><output class="said"><!--x-->Said: hello<!--/x--></output><!--/loading--> <button class="again">Again</button> <svg class="dot" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"></circle></svg> ' +
 	'<!--nohydration--><section class="prose"><aside class="aside"><h2>Unhydrated</h2> <p>Words the browser never hydrates.</p></aside> <p class="once">Rendered once: 0, Said: quiet</p></section><!--/nohydration-->' +
 	`${Runtime.answersScript([RENDERED[0]])}<script type="module" data-rocx src="/rocx/start.js"></script></body></html>`;
 
@@ -2295,7 +2295,7 @@ async function until(check, ms = 3000, what = String(check)) {
 test("titles: the last <Title> rendered that is still there is the title, put first in <head> by the server, kept by the browser from hydration on, strictly; with none, the layout's own", { skip }, async () => {
 	await withDocument({ app: "titles", pages: { "/": (render) => documentPage(render, "/") } }, async ({ site, server }) => {
 		const { html } = server.renderToString({ path: "/" });
-		assert.match(html, /<head><meta charset="utf-8"> <title data-rocx>Inner 1<\/title><title>The layout&#39;s<\/title><link rel="modulepreload" data-rocx href="\/rocx\/runtime\.js"><link rel="preload" data-rocx href="\/rocx\/app\.wasm" as="fetch" crossorigin><\/head>/, "the last one rendered, first in <head>, the layout's after it");
+		assert.match(html, /<head><meta charset="utf-8"> <title data-rocx>Inner 1<\/title><title>The layout&#39;s<\/title><\/head>/, "the last one rendered, first in <head>, the layout's after it");
 		assert.match(html, /<!--show--><!--x--><!--\/x--><!--\/show-->.*<p class="inner"><!--x--><!--\/x-->inner<\/p>/s, "where each is, a hole that renders nothing");
 		const before = server.live();
 		for (let i = 0; i < 10; i++) server.renderToString({ path: "/" });
@@ -2554,7 +2554,7 @@ test("actions (D-054): <Meta>, <Link> and <Style> in <head>, rendered by the ser
 	};
 	await withDocument({ app: "actions", api, pages: { "/": (render) => documentPage(render, "/") } }, async ({ site, server: rendering, asked }) => {
 		const { html } = rendering.renderToString({ path: "/", answers: RENDERED });
-		const heads = '<meta data-rocx property="og:type" content="website"><meta data-rocx name="description" content="First"><link data-rocx rel="canonical" href="/actions"><style data-rocx>.count { color: rgb(1, 2, 3) }</style><link rel="modulepreload" data-rocx href="/rocx/runtime.js"><link rel="preload" data-rocx href="/rocx/app.wasm" as="fetch" crossorigin></head>';
+		const heads = '<meta data-rocx property="og:type" content="website"><meta data-rocx name="description" content="First"><link data-rocx rel="canonical" href="/actions"><style data-rocx>.count { color: rgb(1, 2, 3) }</style></head>';
 		assert.ok(html.includes(heads), `before </head>, in the order they ran, the page's description in the place of the layout's: ${html.slice(0, 600)}`);
 		assert.match(html, /<p class="count"><!--x-->0<!--\/x--><\/p>/);
 		const before = rendering.live();

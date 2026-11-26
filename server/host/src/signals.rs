@@ -235,10 +235,6 @@ enum Stop {
 /// build's id (`Router.app!`, D-040), `data-build` before `src` (web/runtime.js's `start`).
 const START: &str = r#"<script type="module" data-rocx src="/rocx/start.js"></script>"#;
 
-/// The runtime and the app's wasm, which start.js loads, asked for from the `<head>` (web/runtime.js's
-/// `PRELOADS`): the host's own elements, which hydrating passes over.
-const PRELOADS: &str = r#"<link rel="modulepreload" data-rocx href="/rocx/runtime.js"><link rel="preload" data-rocx href="/rocx/app.wasm" as="fetch" crossorigin>"#;
-
 /// The bootstrap, with the build's id when the page's root told it.
 fn start(build: Option<&str>) -> String {
     match build {
@@ -318,12 +314,6 @@ fn headed(markup: &str, heads: &[(String, String)]) -> String {
 fn document(markup: &str, answers: &[[String; 3]], flash: Option<&str>, build: Option<&str>) -> String {
     let begun = markup.trim_start().get(..9).is_some_and(|start| start.eq_ignore_ascii_case("<!doctype"));
     let doctype = if begun { "" } else { "<!doctype html>" };
-    // What start.js loads, asked for as the `<head>` is read, beside it rather than after it.
-    let markup = match markup.find("</head>") {
-        Some(at) => format!("{}{PRELOADS}{}", &markup[..at], &markup[at..]),
-        None => markup.to_string(),
-    };
-    let markup = markup.as_str();
     let scripts = format!("{}{}{}{}", flash.map(flash_script).unwrap_or_default(), answers_script(answers), crate::files::script_tags(), start(build));
     match markup.rfind("</body>") {
         Some(at) => format!("{doctype}{}{scripts}{}", &markup[..at], &markup[at..]),

@@ -167,9 +167,9 @@ When an item lands, delete its line here in the same commit.
   rendering times.
 - **js-framework-benchmark: what is still slower** (D-074; `just js-bench`, `benchmarks/jsframework/`).
   The five steps of 2026-11-25/26 are in: `create_selector!` (D-083), the host's allocation notes
-  without a hash map, `.map` rows as templates (D-084), fewer calls and listeners per row (known rows
-  make no box, the wasm's imports called directly, handlers delegated), and the runtime shaken to
-  what an app uses (D-087, with D-086's links and preload hints). By hand (click to layout, median of
+  without a hash map, `.map` rows as templates (D-084), fewer calls per row (known rows
+  make no box, the wasm's imports called directly), and the runtime shaken to
+  what an app uses (D-087, with D-086's links). By hand (click to layout, median of
   15) creating 1,000 rows went from about 36 ms to 23, against vanillajs's 16 and Solid's 15; the
   benchmark page's runtime from 175 KB raw (37.5 with brotli) to 124 (27.5).
   What is left, measured: each hole is a computation of its own, run by a call into wasm (about 4

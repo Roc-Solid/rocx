@@ -5267,8 +5267,12 @@ them. The runtime is read by its lines, as it is written (members at one tab, cl
 `}`; imports at three); a runtime written otherwise ships whole, with a warning. `rocx build
 --client` and dev builds ship it whole, as do the tests that load web/runtime.js. Two methods were
 renamed so a name names one thing (the forms' `send` is `sendSubmission`, the server-side `html` is
-`serverHtml`); start.js's page also asks for runtime.js and the wasm from `<head>` (preload hints),
-and the runtime compiles the wasm as it downloads (`instantiateStreaming`).
+`serverHtml`); the runtime compiles the wasm as it downloads (`instantiateStreaming`). Preload hints
+for runtime.js and the wasm in `<head>` were tried and dropped: on the benchmark's server, which
+compresses each file as it sends it, the page's stylesheet waited behind them, and the first paint
+went from about 45 ms to 275 for a page ready 16 ms sooner. So were delegated event handlers (one
+listener on `<html>`): no gain that showed above the noise, and a handler kept on each element is
+the page's JS heap where `addEventListener`'s isn't (0.2 MB more for 1,000 rows).
 
 **Why.** What a page downloads and the benchmark's "ready to use" both grow with the runtime's
 bytes; most apps use a part of it.
