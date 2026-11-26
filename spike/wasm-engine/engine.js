@@ -158,6 +158,23 @@ export async function start(source, path = location.pathname) {
 					}
 					break;
 				}
+				case 15: {
+					// Everything between a list's comments, gone at once: emptied, when the list is all its
+					// parent holds.
+					const start = nodes[u32()];
+					const end = nodes[u32()];
+					const parent = start.parentNode;
+					if (parent && parent.firstChild === start && parent.lastChild === end) {
+						parent.textContent = "";
+						parent.append(start, end);
+					} else {
+						const range = document.createRange();
+						range.setStartAfter(start);
+						range.setEndBefore(end);
+						range.deleteContents();
+					}
+					break;
+				}
 				case 14: {
 					const old = nodes[u32()];
 					old.replaceWith(nodes[u32()]);

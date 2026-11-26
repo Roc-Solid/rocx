@@ -117,6 +117,20 @@ impl Dom {
         self.let_go(nodes)
     }
 
+    /// Everything between a range's comments taken off the page at once (15 CLEAR start end) and
+    /// let go of for good: a list whose rows all went.
+    pub fn free_inside(&mut self, range: Range) -> Vec<NodeId> {
+        let nodes = self.inside(range);
+        if nodes.is_empty() {
+            return nodes;
+        }
+        self.op(15, &[range.start as u32, range.end as u32], &[]);
+        for &node in &nodes {
+            self.unlink(node);
+        }
+        self.let_go(nodes)
+    }
+
     /// Detached nodes and everything inside them let go of for good (`free_range`).
     pub fn let_go(&mut self, mut nodes: Vec<NodeId>) -> Vec<NodeId> {
         let mut gone = Vec::new();

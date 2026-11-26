@@ -1710,8 +1710,22 @@ fn settle_for(id: u64, entries: Vec<Value>) {
         }
         Some(gone)
     });
-    for key in gone.unwrap_or_default() {
-        drop_row(list, &key);
+    let gone = gone.unwrap_or_default();
+    if order.is_empty() && !gone.is_empty() {
+        // Every row went: their computations disposed, then their nodes taken off at once.
+        for key in &gone {
+            drop_row_quietly(list, key);
+        }
+        with(|engine| {
+            for node in engine.dom.free_inside(range) {
+                engine.listeners.remove(&node);
+                engine.values.remove(&node);
+            }
+        });
+    } else {
+        for key in gone {
+            drop_row(list, &key);
+        }
     }
     // The order the rows were in, for the moves below.
     let was = with(|engine| engine.lists.get_mut(&list).map(|list| std::mem::replace(&mut list.order, order.clone()))).unwrap_or_default();
@@ -1821,6 +1835,19 @@ fn drop_row(list: u64, key: &str) {
             engine.values.remove(&node);
         }
     });
+}
+
+/// A row's computations disposed and its box let go of, its nodes left for its caller to take off
+/// with the others' (`Dom::free_inside`).
+fn drop_row_quietly(list: u64, key: &str) {
+    let row = with(|engine| {
+        let list = engine.lists.get_mut(&list)?;
+        list.indexes.remove(key);
+        list.rows.remove(key)
+    });
+    let Some(row) = row else { return };
+    dispose(row.comp);
+    with(|engine| engine.release_kept(row.runner));
 }
 
 fn drop_list(list: u64) {
