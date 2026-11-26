@@ -4,8 +4,8 @@
 //! power of two in number, from `memory.grow`. Fast and small; memory is never given back to the
 //! browser, but a freed slot is used again by the next of its size.
 
-use crate::Global;
 use core::alloc::{GlobalAlloc, Layout};
+use core::cell::UnsafeCell;
 
 const WORD: usize = size_of::<usize>();
 const BIGPAGE: usize = 64 * 1024;
@@ -24,11 +24,21 @@ struct Brk {
     big_frees: [usize; BIG_CLASSES],
 }
 
-static BRK: Global<Brk> = Global::new(Brk {
+/// The allocator's state: one, the wasm being single-threaded. Self-contained, so another crate can
+/// use this file as it is (native/core's engine in a browser, spike/wasm-engine).
+struct State(UnsafeCell<Brk>);
+
+unsafe impl Sync for State {}
+
+static BRK: State = State(UnsafeCell::new(Brk {
     next_addrs: [0; SIZE_CLASSES],
     frees: [0; SIZE_CLASSES],
     big_frees: [0; BIG_CLASSES],
-});
+}));
+
+fn state() -> &'static mut Brk {
+    unsafe { &mut *BRK.0.get() }
+}
 
 /// A slot's size class: log2 of its size, less the smallest's.
 fn class_of(slot: usize) -> usize {
@@ -46,7 +56,7 @@ fn link(addr: usize, slot: usize) -> *mut usize {
 
 /// `len` bytes aligned to `alignment` (a power of two), or null when memory can't grow.
 pub fn alloc(len: usize, alignment: usize) -> *mut u8 {
-    let brk = BRK.get();
+    let brk = state();
     // Room for the free list's link.
     let actual = len.saturating_add(WORD).max(alignment);
     let Some(slot) = actual.checked_next_power_of_two() else { return core::ptr::null_mut() };
@@ -87,7 +97,7 @@ pub fn resize(len: usize, alignment: usize, new_len: usize) -> bool {
 
 /// `len` bytes at `addr` (as allocated, or resized to), freed: its slot on its size's list.
 pub fn free(addr: *mut u8, len: usize, alignment: usize) {
-    let brk = BRK.get();
+    let brk = state();
     let addr = addr as usize;
     let actual = (len + WORD).max(alignment);
     let slot = actual.next_power_of_two();

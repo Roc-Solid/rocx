@@ -102,7 +102,18 @@ pub extern "C" fn rocx_event(node: u32, name_len: usize, value_len: usize) {
     crate::pump();
 }
 
-/// Each flush's ops, from the engine's document (`Dom::ops`).
+/// Each flush's ops, from the engine's document (`Dom::ops`): the ops' length (u32), the ops, then
+/// their strings.
 pub(crate) fn ops() -> Vec<u8> {
-    engine::with(|engine| std::mem::take(&mut engine.dom.ops))
+    engine::with(|engine| {
+        let dom = &mut engine.dom;
+        if dom.ops.is_empty() {
+            return Vec::new();
+        }
+        let mut batch = Vec::with_capacity(4 + dom.ops.len() + dom.texts.len());
+        batch.extend_from_slice(&(dom.ops.len() as u32).to_le_bytes());
+        batch.append(&mut dom.ops);
+        batch.append(&mut dom.texts);
+        batch
+    })
 }

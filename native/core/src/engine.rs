@@ -18,7 +18,8 @@ use crate::roc::{self, Abort, Wait};
 use crate::{Level, log};
 use serde_json::Value;
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use crate::fx::{HashMap, HashSet};
+use std::collections::{BTreeSet, VecDeque};
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -173,8 +174,8 @@ impl Comp {
             sources: Vec::new(),
             made: Made::default(),
             making: None,
-            calls: HashMap::new(),
-            used: HashSet::new(),
+            calls: HashMap::default(),
+            used: HashSet::default(),
             disposed: false,
             untracked: false,
             recheck: false,
@@ -478,40 +479,40 @@ pub fn init(origin: String, path: String) {
             dom: Dom::new(),
             origin,
             path,
-            kept: HashMap::new(),
-            signals: HashMap::new(),
-            comps: HashMap::new(),
-            observers: HashMap::new(),
-            lists: HashMap::new(),
-            boundaries: HashMap::new(),
-            loadings: HashMap::new(),
-            handlers: HashMap::new(),
-            probes: HashMap::new(),
+            kept: HashMap::default(),
+            signals: HashMap::default(),
+            comps: HashMap::default(),
+            observers: HashMap::default(),
+            lists: HashMap::default(),
+            boundaries: HashMap::default(),
+            loadings: HashMap::default(),
+            handlers: HashMap::default(),
+            probes: HashMap::default(),
             current: None,
             dirty: BTreeSet::new(),
             due: BTreeSet::new(),
             tasks: VecDeque::new(),
-            waiters: HashMap::new(),
-            requests: HashMap::new(),
-            asked: HashMap::new(),
-            readers: HashSet::new(),
-            listeners: HashMap::new(),
-            values: HashMap::new(),
-            timers: HashMap::new(),
-            titles: HashMap::new(),
+            waiters: HashMap::default(),
+            requests: HashMap::default(),
+            asked: HashMap::default(),
+            readers: HashSet::default(),
+            listeners: HashMap::default(),
+            values: HashMap::default(),
+            timers: HashMap::default(),
+            titles: HashMap::default(),
             title_seqs: 0,
             title: None,
             calling: Vec::new(),
             place: String::new(),
-            actions: HashMap::new(),
-            submissions: HashMap::new(),
-            revalidations: HashMap::new(),
+            actions: HashMap::default(),
+            submissions: HashMap::default(),
+            revalidations: HashMap::default(),
             transition: None,
-            transitions: HashMap::new(),
-            held: HashMap::new(),
-            sheets: HashMap::new(),
-            warned: HashSet::new(),
-            template_ids: HashMap::new(),
+            transitions: HashMap::default(),
+            held: HashMap::default(),
+            sheets: HashMap::default(),
+            warned: HashSet::default(),
+            template_ids: HashMap::default(),
             templates: vec![None],
             outbox: Vec::new(),
         })
@@ -744,7 +745,7 @@ pub fn run(id: u64) -> Option<Outcome> {
     let previous = with(|engine| {
         let comp = engine.comp(id)?;
         comp.making = Some(Made::default());
-        comp.used = HashSet::new();
+        comp.used = HashSet::default();
         Some(engine.current.replace(Current::Comp(id)))
     })?;
     let result = if kind == CompKind::Root { roc::mount() } else { roc::run(runner) };
@@ -901,7 +902,7 @@ fn answers_changed(id: u64) -> bool {
 pub fn probe(callable: Callable) -> Vec<u64> {
     let (id, previous) = with(|engine| {
         let id = engine.id();
-        engine.probes.insert(id, Probe { memos: Vec::new(), calls: HashMap::new() });
+        engine.probes.insert(id, Probe { memos: Vec::new(), calls: HashMap::default() });
         (id, engine.current.replace(Current::Probe(id)))
     });
     let result = roc::run(callable);
@@ -1400,7 +1401,7 @@ fn later(write: Write) {
 pub fn handle(runner: u64, event: String, scope: Scope, owner: Option<u64>, cleanups_of: Option<u64>, release: Option<u64>) {
     let id = with(|engine| {
         let id = engine.id();
-        engine.handlers.insert(id, Handler { runner, calls: HashMap::new(), writes: Vec::new(), event, scope, owner, cleanups_of, release });
+        engine.handlers.insert(id, Handler { runner, calls: HashMap::default(), writes: Vec::new(), event, scope, owner, cleanups_of, release });
         id
     });
     go(id);
@@ -1654,7 +1655,7 @@ fn settle_for(id: u64, entries: Vec<Value>) {
         return;
     };
     let mut order = Vec::new();
-    let mut seen: HashSet<String> = HashSet::with_capacity(entries.len());
+    let mut seen: HashSet<String> = HashSet::with_capacity_and_hasher(entries.len(), Default::default());
     for (index, entry) in entries.iter().enumerate() {
         let key = entry.get("k").and_then(Value::as_str).unwrap_or("").to_string();
         let runner = entry.get("r").and_then(Value::as_u64).unwrap_or(0);
@@ -1814,7 +1815,11 @@ fn drop_row(list: u64, key: &str) {
     dispose(row.comp);
     with(|engine| {
         engine.release_kept(row.runner);
-        engine.dom.remove_range(row.range);
+        // Its computations disposed, nothing names its nodes but their handlers and typed values.
+        for node in engine.dom.free_range(row.range) {
+            engine.listeners.remove(&node);
+            engine.values.remove(&node);
+        }
     });
 }
 
@@ -2004,7 +2009,7 @@ pub fn build(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
                 let at = engine.id();
                 let (range, fragment) = engine.dom.make_range();
                 let children = engine.dom.fragment();
-                engine.loadings.insert(at, Loading { waiting: HashSet::new(), revealed: false, built: false, range, children });
+                engine.loadings.insert(at, Loading { waiting: HashSet::default(), revealed: false, built: false, range, children });
                 (at, range, fragment, Scope { loading: Some(at), ..scope.clone() })
             });
             for child in children(node) {

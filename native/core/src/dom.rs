@@ -26,6 +26,8 @@ pub struct Node {
     last: Option<NodeId>,
     prev: Option<NodeId>,
     next: Option<NodeId>,
+    /// Let go of (`free`): its id is used again once the next render is over (`recycle`).
+    gone: bool,
 }
 
 /// The nodes between two comments: what a markup or list hole, a <Show>, a <For>, a row or a
@@ -49,20 +51,37 @@ pub struct Dom {
     /// 8 ATTR node name value   9 REMOVE_ATTR node name   10 STYLE node name value ("": none)
     /// ```
     ///
-    /// Ids are u32 little-endian; a string is its UTF-8 length (u32) and its bytes.
+    /// Ids are u32 little-endian; a string is its length in UTF-16 units (u32), its UTF-8 bytes in
+    /// `texts`, in the ops' order, for the page to decode at once. 11 FREE node: the node is gone
+    /// for good (its id may name another node in a later batch).
     pub ops: Vec<u8>,
+    pub texts: Vec<u8>,
+    /// Nodes let go of since the last render, and the ids free to use again.
+    freed: Vec<NodeId>,
+    spare: Vec<NodeId>,
 }
 
 impl Dom {
     pub fn new() -> Dom {
-        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new() };
+        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new(), texts: Vec::new(), freed: Vec::new(), spare: Vec::new() };
         dom.root = dom.element("rocx-root");
         dom
     }
 
     fn add(&mut self, kind: Kind) -> NodeId {
+        let node = Node { kind: Kind::Comment, parent: None, first: None, last: None, prev: None, next: None, gone: false };
+        let id = match self.spare.pop() {
+            Some(id) => {
+                self.nodes[id] = node;
+                id
+            }
+            None => {
+                self.nodes.push(node);
+                self.nodes.len() - 1
+            }
+        };
         if cfg!(target_arch = "wasm32") {
-            let id = self.nodes.len() as u32;
+            let id = id as u32;
             match &kind {
                 Kind::Element { tag, .. } => self.op(1, &[id], &[tag]),
                 Kind::Text(data) => self.op(2, &[id], &[data]),
@@ -70,8 +89,43 @@ impl Dom {
                 Kind::Fragment => self.op(4, &[id], &[]),
             }
         }
-        self.nodes.push(Node { kind, parent: None, first: None, last: None, prev: None, next: None });
-        self.nodes.len() - 1
+        self.nodes[id].kind = kind;
+        id
+    }
+
+    /// A range's nodes and everything inside them, taken off the page and let go of for good (a
+    /// list's row gone, its computations disposed): the nodes it held; their ids are used again
+    /// after the next render, so a render never sees an id name two nodes.
+    pub fn free_range(&mut self, range: Range) -> Vec<NodeId> {
+        let mut nodes = vec![range.start];
+        nodes.extend(self.inside(range));
+        nodes.push(range.end);
+        for &node in &nodes {
+            self.detach(node);
+        }
+        let mut gone = Vec::new();
+        while let Some(node) = nodes.pop() {
+            if self.nodes[node].gone {
+                continue;
+            }
+            nodes.extend(self.children(node));
+            self.nodes[node].gone = true;
+            self.nodes[node].parent = None;
+            self.nodes[node].first = None;
+            self.nodes[node].last = None;
+            self.nodes[node].prev = None;
+            self.nodes[node].next = None;
+            self.nodes[node].kind = Kind::Comment;
+            self.op(11, &[node as u32], &[]);
+            self.freed.push(node);
+            gone.push(node);
+        }
+        gone
+    }
+
+    /// The render after nodes were let go of is over: their ids may be used again.
+    pub fn recycle(&mut self) {
+        self.spare.append(&mut self.freed);
     }
 
     /// An op for the browser's DOM (`ops`): its code, its ids, its strings.
@@ -84,8 +138,9 @@ impl Dom {
             self.ops.extend_from_slice(&id.to_le_bytes());
         }
         for text in texts {
-            self.ops.extend_from_slice(&(text.len() as u32).to_le_bytes());
-            self.ops.extend_from_slice(text.as_bytes());
+            let units = if text.is_ascii() { text.len() } else { text.encode_utf16().count() };
+            self.ops.extend_from_slice(&(units as u32).to_le_bytes());
+            self.texts.extend_from_slice(text.as_bytes());
         }
     }
 

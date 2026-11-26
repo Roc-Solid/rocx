@@ -15,12 +15,21 @@ pub mod css;
 mod dom;
 pub mod engine;
 mod hosted;
+mod fx;
 mod http;
 pub mod native;
 pub mod roc;
 pub mod svg;
 #[cfg(target_arch = "wasm32")]
 mod web;
+// In a browser (spike/wasm-engine), the browser's host's allocator (web/host, Zig's for wasm ported):
+// fast and small, where Rust's default for wasm is dlmalloc.
+#[cfg(target_arch = "wasm32")]
+#[path = "../../../web/host/src/brk.rs"]
+mod brk;
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static MEMORY: brk::Memory = brk::Memory;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -145,6 +154,8 @@ pub fn pump() {
     let ops = web::ops();
     #[cfg(not(target_arch = "wasm32"))]
     let ops = native::render();
+    // Nodes let go of in this flush are in no render from now on: their ids may be used again.
+    engine::with(|engine| engine.dom.recycle());
     // A stylesheet the render found named (`Engine::sheet`).
     engine::send_requests();
     if !ops.is_empty()

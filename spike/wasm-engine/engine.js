@@ -56,56 +56,85 @@ export async function start(source, path = location.pathname) {
 		return node;
 	}
 
+	// A flush's ops (dom.rs's `ops`): their length, the ops, then their strings, decoded at once, each
+	// op's string its length in UTF-16 units from where the last ended.
 	function apply(bytes) {
 		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-		let at = 0;
+		const end = 4 + view.getUint32(0, true);
+		const texts = decoder.decode(bytes.subarray(end));
+		let at = 4;
+		let read = 0;
 		const u32 = () => {
 			const value = view.getUint32(at, true);
 			at += 4;
 			return value;
 		};
 		const str = () => {
-			const length = u32();
-			const value = decoder.decode(bytes.subarray(at, at + length));
-			at += length;
-			return value;
+			const units = u32();
+			return texts.slice(read, (read += units));
 		};
-		while (at < bytes.length) {
+		while (at < end) {
 			const op = bytes[at++];
-			if (op === 1) {
-				const id = u32();
-				nodes[id] = make(id, str());
-			} else if (op === 2) {
-				const id = u32();
-				nodes[id] = document.createTextNode(str());
-			} else if (op === 3) nodes[u32()] = document.createComment("");
-			else if (op === 4) nodes[u32()] = document.createDocumentFragment();
-			else if (op === 5) {
-				const parent = nodes[u32()];
-				const node = nodes[u32()];
-				const before = u32();
-				// The page's own <html>, <head> and <body> are where they are; the head the server's.
-				if (kept.has(node) || node === document.body || kept.has(parent) && parent === document.head) continue;
-				if (parent === document.documentElement) continue;
-				parent.insertBefore(node, before === LAST ? null : nodes[before]);
-			} else if (op === 6) nodes[u32()]?.remove?.();
-			else if (op === 7) {
-				const id = u32();
-				nodes[id].data = str();
-			} else if (op === 8) {
-				const id = u32();
-				const name = str();
-				const value = str();
-				if (!kept.has(nodes[id])) nodes[id].setAttribute(name, value);
-			} else if (op === 9) {
-				const id = u32();
-				nodes[id].removeAttribute(str());
-			} else if (op === 10) {
-				const id = u32();
-				const name = str();
-				const value = str();
-				value ? nodes[id].style.setProperty(name, value) : nodes[id].style.removeProperty(name);
-			} else throw new Error(`rocx engine: op ${op} at ${at - 1}`);
+			switch (op) {
+				case 1: {
+					const id = u32();
+					nodes[id] = make(id, str());
+					break;
+				}
+				case 2: {
+					const id = u32();
+					nodes[id] = document.createTextNode(str());
+					break;
+				}
+				case 3:
+					nodes[u32()] = document.createComment("");
+					break;
+				case 4:
+					nodes[u32()] = document.createDocumentFragment();
+					break;
+				case 5: {
+					const parent = nodes[u32()];
+					const node = nodes[u32()];
+					const before = u32();
+					// The page's own <html>, <head> and <body> are where they are; the head the server's.
+					if (kept.has(node) || node === document.body || (kept.has(parent) && parent === document.head)) break;
+					if (parent === document.documentElement) break;
+					parent.insertBefore(node, before === LAST ? null : nodes[before]);
+					break;
+				}
+				case 6:
+					nodes[u32()]?.remove?.();
+					break;
+				case 7: {
+					const id = u32();
+					nodes[id].data = str();
+					break;
+				}
+				case 8: {
+					const id = u32();
+					const name = str();
+					const value = str();
+					if (!kept.has(nodes[id])) nodes[id].setAttribute(name, value);
+					break;
+				}
+				case 9: {
+					const id = u32();
+					nodes[id].removeAttribute(str());
+					break;
+				}
+				case 10: {
+					const id = u32();
+					const name = str();
+					const value = str();
+					value ? nodes[id].style.setProperty(name, value) : nodes[id].style.removeProperty(name);
+					break;
+				}
+				case 11:
+					nodes[u32()] = undefined;
+					break;
+				default:
+					throw new Error(`rocx engine: op ${op} at ${at - 1}`);
+			}
 		}
 	}
 
