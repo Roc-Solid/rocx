@@ -63,12 +63,10 @@ function makeApp(dir, { to, version = VERSION }) {
 	const files = {
 		"main.roc": `app [program] { crypto: "./.rocx/packages/crypto/main.roc", pf: platform "./.rocx/server/platform/main.roc" }
 
-import pf.Middleware
 import Generated/App
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middleware.make(|request, context, next!| next!(request, context)),
 })
 `,
 		"Greeting.roc": `import crypto.Hex

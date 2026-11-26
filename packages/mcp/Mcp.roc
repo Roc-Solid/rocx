@@ -14,7 +14,7 @@ import tools.Tool
 ##         name: "notes",
 ##         version: "1.0.0",
 ##         instructions: "Notes, by id. List them first.",
-##         tools: [McpHttp.endpoint(Handlers.post_api_notes, { name: "add_note", description: "Adds a note" }, McpHttp.openapi({}))],
+##         tools: [McpHttp.endpoint(Api.post_api_notes, { name: "add_note", description: "Adds a note" }, McpHttp.openapi({}))],
 ##     }
 ##
 ## It speaks both eras of MCP. The current one (2026-07-28) has no handshake: each request says its
@@ -25,7 +25,8 @@ import tools.Tool
 ##
 ## `receive` is the protocol, pure: it reads a request and either answers it (`Reply`) or says
 ## what to run (`Run`: a tool, reading a resource, a prompt), which `handle!` does. Who may ask is
-## the app's middleware's to decide, in front of the route that serves it (`McpHttp.respond!`).
+## for the middleware of the route that serves it (`McpHttp.respond!`) to decide: its folder's
+## `+middleware.roc`.
 Mcp := [].{
 
 	## What the server says about itself (`name`, `version`, `title`, and `instructions` for the

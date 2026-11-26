@@ -27,7 +27,7 @@ import Fingerprint
 ##
 ## ```roc
 ## plugins: [PostHog.plugin({})]          # POSTHOG_KEY, POSTHOG_HOST and POSTHOG_RELEASE, from the environment
-## middleware: Middlewares.member.then(PostHog.middleware(|context| context.member.id))
+## middleware = Middlewares.member.then(PostHog.middleware(|context| context.member.id))   # routes/+middleware.roc
 ##
 ## PostHog.capture!("the payment provider refused a refund", { order: order.id, why: why })
 ## ```
@@ -71,7 +71,8 @@ PostHog := [].{
 	## from what the middleware before handed on ("" for nobody known): put it after the one that
 	## knows who is signed in, or first with `|_| ""`.
 	##
-	##     middleware: Middlewares.member.then(PostHog.middleware(|context| context.member.id))
+	##     # routes/+middleware.roc
+	##     middleware = Middlewares.member.then(PostHog.middleware(|context| context.member.id))
 	middleware : (context -> Str) -> Middleware(context, context)
 	middleware = |user|
 		Middleware.make(

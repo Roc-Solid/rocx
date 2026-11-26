@@ -10,12 +10,10 @@
 app [program] { jobs: "../../packages/jobs/main.roc", pf: platform "../../server/platform/main.roc" }
 
 import jobs.Job
-import pf.Middleware
 import Generated/App
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middleware.make(|request, context, next!| next!(request, context)),
 	# A file beside where the server starts (`--database-url turso:<path>` runs it on Turso).
 	database: Sqlite("data/bench.db"),
 	plugins: [Job.plugin({ jobs: App.jobs, workers: 0 })],

@@ -1,7 +1,7 @@
 ## An app whose route files are components, for the e2e tests (test/e2e.test.mjs): rocx build writes
 ## its program (`Generated/App`: its routes, the jobs its modules define, migrations/*.sql), and this
-## is all its author writes besides the route files and the modules they use: its context, its
-## middleware, and its plugins (the jobs, and the jobs page).
+## is all its author writes besides the route files (routes/+middleware.roc around every request)
+## and the modules they use: its context, and its plugins (the jobs, and the jobs page).
 app [program] { admin: "../../../packages/admin/main.roc", jobs: "../../../packages/jobs/main.roc", pf: platform "../../../server/platform/main.roc" }
 
 import jobs.Cron
@@ -13,7 +13,6 @@ import Jobs
 
 program = App.program({
 	init!: |started| Ok({ started: started }),
-	middleware: Middlewares.default,
 	# The jobs plugin (packages/jobs): the kinds of job the app's modules define, and a schedule; and
 	# the jobs page (packages/admin), for members only.
 	plugins: [

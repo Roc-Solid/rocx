@@ -3811,6 +3811,11 @@ test("endpoints: what a page reads is answered over HTTP too, behind its middlew
 	const refused = await get("/probe/member");
 	assert.equal(refused.status, 401, "refused: the middleware's status");
 	assert.equal(await refused.text(), "members only");
+	// A handler's send of the app's own endpoint (an MCP tool's, D-103): answered in-process by its
+	// route, behind its middleware, with the request's cookies.
+	const relayed = async (headers) => (await get("/probe/relay", { method: "POST", body: "{}", headers: { "content-type": "application/json", ...headers } })).text();
+	assert.equal(await relayed({ cookie: "member=Ada" }), '"relayed: member Ada, GET /probe/member"', "behind its middleware, given this request's cookie");
+	assert.equal(await relayed({}), '"refused: 401 members only"', "its middleware refused it: no cookie");
 	const posted = (path, body) => get(path, { method: "POST", body, headers: { "content-type": "application/json" } });
 	const measured = await posted("/probe/measure", '{"seconds":1.5,"parts":4}');
 	assert.deepEqual([measured.status, await measured.text()], [200, '{"each":0.375,"seconds":1.5}'], "F64s, each way, as JSON numbers");

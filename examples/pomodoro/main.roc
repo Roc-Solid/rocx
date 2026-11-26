@@ -6,14 +6,12 @@
 ## script: its host plays and buzzes itself.
 app [program] { audio: "../../packages/audio/main.roc", pf: platform "../../server/platform/main.roc", vibrate: "../../packages/vibrate/main.roc" }
 
-import pf.Middleware
 import audio.AudioPlayer
 import vibrate.Vibrator
 import Generated/App
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middleware.make(|request, context, next!| next!(request, context)),
 	database: Sqlite("data/pomodoro.db"),
 	plugins: [AudioPlayer.plugin({}), Vibrator.plugin({})],
 })

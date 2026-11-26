@@ -395,7 +395,7 @@ Dev := [].{
 	}
 
 	## The smallest program, for an app that has none: what every request's middleware starts from
-	## (nothing), and a middleware that passes each request on to the routes. The platform is the
+	## (nothing); its middleware, if any, is routes/+middleware.roc's (D-103). The platform is the
 	## root's (`Hosts.root_of!`), by a path from the app, as Roc wants it: `./.rocx/…` through an app's
 	## link, `../../server/…` in the repo.
 	write_main! : Str, Str, Str => {}
@@ -403,16 +403,14 @@ Dev := [].{
 		pf_path = Fs.dotted(Fs.relative(dir, Fs.join([rocx, "server", "platform", "main.roc"])))
 		text = [
 			"## The app's program, written by `rocx dev` because there was none: it is yours to change.",
-			"## `context` is what each request's middleware is given, and `middleware` runs around every",
-			"## request (this one passes it on to the routes); App.program also takes `plugins` and `openapi`.",
+			"## `context` is what each request's middleware is given (routes/+middleware.roc runs around every",
+			"## request, if the app has one); App.program also takes `plugins`, `openapi`, `database` and `cross_site`.",
 			"app [program] { pf: platform \"${pf_path}\" }",
 			"",
-			"import pf.Middleware",
 			"import Generated/App",
 			"",
 			"program = App.program({",
 			"\tinit!: |_started| Ok({}),",
-			"\tmiddleware: Middleware.make(|request, context, next!| next!(request, context)),",
 			"})",
 			"",
 		]

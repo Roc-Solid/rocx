@@ -4,5 +4,6 @@ Generated/
 build/
 routes/**/*.roc
 !routes/**/+server.roc
+!routes/**/+middleware.roc
 # The database rocx dev and a run make.
 data/

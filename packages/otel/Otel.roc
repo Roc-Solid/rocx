@@ -24,8 +24,11 @@ Otel := [].{
 	## The plugin: its start reads the `OTEL_*` settings once (`Config`), its check says where the
 	## metrics go (`otel.metrics`, on the log), and its loop (`otel.export`) adds up and sends.
 	##
+	##     # main.roc
 	##     plugins: [Otel.plugin({})],
-	##     middleware: Otel.middleware({}).then(Middlewares.default),
+	##
+	##     # routes/+middleware.roc
+	##     middleware = Otel.middleware({}).then(Middlewares.default)
 	plugin : {} -> Plugin.Value(context, ctx)
 	plugin = |{}| {
 		name: "otel",

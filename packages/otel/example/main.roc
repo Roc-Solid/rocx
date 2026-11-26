@@ -6,9 +6,8 @@ app [program] { otel: "../main.roc", pf: platform "../../../server/platform/main
 import Generated/App
 import otel.Otel
 
-## Every request timed, then the routes.
+## Every request timed (routes/+middleware.roc), then the routes.
 program = App.program({
 	init!: |started| Ok({ facts: started }),
-	middleware: Otel.middleware({}),
 	plugins: [Otel.plugin({})],
 })

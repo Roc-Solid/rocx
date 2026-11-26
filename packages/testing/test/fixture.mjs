@@ -17,14 +17,12 @@ export function writeFixture(dir) {
 ## keeps its mail.
 app [program] { email: "${email}", jobs: "${jobs}", pf: platform "${platform}" }
 
-import pf.Middleware
 import email.Email
 import jobs.Job
 import Generated/App
 
 program = App.program({
 	init!: |started| Ok({ started: started }),
-	middleware: Middleware.same_origin({}),
 	# A failed job waits 5 s for its next attempt: longer than a test settles the queue for.
 	plugins: [Job.plugin({ jobs: App.jobs, retry_ms: 5000 }), Email.plugin({})],
 })

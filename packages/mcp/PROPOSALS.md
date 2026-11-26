@@ -142,10 +142,9 @@ guarded : (Str => Try({ subject : Str, scopes : List(Str) }, [Invalid])), { reso
 
 ## Open questions (for the user)
 
-1. **Mounting.** Lead the docs with `McpHttp.middleware("/mcp", server)` in `main.roc` (works for
-   any server today), or with a route file (`routes/mcp/+server.roc`), which needs proposal 2 for a
-   server whose tools are `Api`'s, but gives `/mcp` its own route middleware and a row in
-   `rocx routes`?
+1. **Mounting.** Decided by D-103: a route file (`routes/mcp/+server.roc`), guarded by its
+   directory's `+middleware.roc`; `McpHttp.middleware` is gone, and a tool sends `Api`'s endpoint
+   in-process, through the endpoint's own middleware.
 2. **Caching.** Current MCP asks every list how long a client may keep it. The package says 5
    minutes, `public` (a server's lists are fixed when it is built; who is asking doesn't change
    them), and 0, `private` for a resource read. Right defaults, or should a list be `private` when

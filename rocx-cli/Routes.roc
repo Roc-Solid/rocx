@@ -5,8 +5,11 @@
 ## `respond!`: every method the others don't, with a `Server.Response` of its own; `channel!`: a
 ## channel, which pages subscribe to over the tab's one stream, `/rocx/live`, with its hooks
 ## `receive!`, `on_open!` and `on_close!`), and `+error.rocx` is what a path nothing has shows. A
-## route file names its `middleware`, which runs around it; a page that names none runs behind the
-## one the `+server.roc` beside it names (D-079). A `+server.roc` may name the rules a method's body
+## `+middleware.roc` names the middleware that runs around every page, endpoint and channel in its
+## directory and the directories below it, outermost first; the one in `routes/` itself runs around
+## every request the app answers (D-103). A directory in brackets, `(members)`, is a group: it adds
+## nothing to the path, so files at different paths can share a directory's middleware or layout
+## (`routes/(members)/api/members/+server.roc` answers `/api/members`). A `+server.roc` may name the rules a method's body
 ## is read and checked with (`post_body = Signup.form`, D-093), and its handlers' annotations may
 ## give its path's params types (`params : { id : I64 }`, D-092). A directory may have dots after its
 ## first character, for a file's name (`routes/sitemap.xml/+server.roc` answers `/sitemap.xml`; its
@@ -23,7 +26,7 @@
 ## page, `Generated/Paths.roc` has a path for every page, `Generated/Api.roc` is the app's contract
 ## (each endpoint and channel, a function of its params, its method, URL and types copied from its
 ## handler's annotation, and their OpenAPI document, `Api.openapi`), and `Generated/Handlers.roc`
-## binds each to its handler, for the router and `Endpoint.run!` (D-037). (A record field can't be
+## binds each to its handler, for the router (D-037). (A record field can't be
 ## called `module` in Roc: these records call a route's module `mod`.)
 import Value
 import Text
@@ -38,20 +41,23 @@ Routes := [].{
 	## An import Api makes for a route's type (`contract_imports`).
 	ContractImport : { target : Str, alias : Str, renamed : Bool, exposed : List(Str), file : Str, method : Str, at : U64, type : Str }
 
-	## A route file, from its path under `routes/`: its kind (`page`, `layout`, `error`, `server`),
-	## its directories, its module (`BlogSlugPage`) and its name (`blog_slug`, for Paths).
-	Layout : { file : Str, kind : Str, parts : List(Str), module_name : Str, name : Str }
+	## A route file, from its path under `routes/`: its kind (`page`, `layout`, `error`, `server`,
+	## `middleware`), its path's parts (`parts`: its directories but the groups, `(members)`), its
+	## directories (`dirs`: the groups too), its module (`BlogSlugPage`, from its directories) and its
+	## name (`blog_slug`, from its path's parts, for Paths).
+	Layout : { file : Str, kind : Str, parts : List(Str), dirs : List(Str), module_name : Str, name : Str }
 
 	## A page's, an endpoint's or the error page's route file, with its path (`/blog/[slug]`), its
 	## params and the layouts above it, outermost first. (The error page has no path or params.)
-	Entry : { file : Str, kind : Str, parts : List(Str), module_name : Str, name : Str, path : Str, params : List(Param), layouts : List(Layout) }
+	Entry : { file : Str, kind : Str, parts : List(Str), dirs : List(Str), module_name : Str, name : Str, path : Str, params : List(Param), layouts : List(Layout) }
 
 	## A path something answers: its page, its endpoints, or both.
 	At : { path : Str, parts : List(Str), params : List(Param), name : Str, page : [Some(Entry), None], server : [Some(Entry), None] }
 
-	## The routes: the pages and endpoints in the order they are tried, the layouts, the error
-	## page, every path something answers, and the route files' paths they were made from.
-	Table : { pages : List(Entry), servers : List(Entry), layouts : List(Layout), error : [Some(Entry), None], paths : List(At), files : List(Str) }
+	## The routes: the pages and endpoints in the order they are tried, the layouts, the
+	## directories' middleware (`+middleware.roc`, D-103), the error page, every path something
+	## answers, and the route files' paths they were made from.
+	Table : { pages : List(Entry), servers : List(Entry), layouts : List(Layout), middlewares : List(Layout), error : [Some(Entry), None], paths : List(At), files : List(Str) }
 
 	## What a route file defines (`definitions`). `channel`: its channel's hooks, if it defines
 	## `channel!`; `hooks`: the hooks it defines when it defines no channel (for rocx build to refuse);
@@ -92,7 +98,8 @@ Routes := [].{
 	## A job or a kind of actor an app's module defines (`jobs_in!`, `actors_in!`).
 	Found : { define : Str, name : Str, module_path : Str, file : Str, line : U64, route : [Some(Str), None], thunk : Bool }
 
-	## A line of `rocx routes`.
+	## A line of `rocx routes`: `middleware`, what runs around it, outermost first (`routes/` +
+	## `(members)`'s), as each `+middleware.roc` says it, or `None`.
 	Row : { method : Str, path : Str, file : Str, middleware : [Some(Str), None] }
 
 	## The last lines of every generated file start with this.
@@ -137,10 +144,11 @@ Routes := [].{
 
 	# ---- small things ----
 
-	## A route file's kind, from its name (`+page.rocx`: `page`).
+	## A route file's kind, from its name (`+page.rocx`: `page`). A directory's middleware is plain
+	## Roc (`+middleware.roc`); a `+middleware.rocx` is found too, for `route_table` to refuse.
 	route_kind : Str -> Try(Str, [NotRoute])
 	route_kind = |entry_name| {
-		found = ["page", "layout", "error", "server"].find_first(|kind| entry_name == "+${kind}.rocx" or entry_name == "+${kind}.roc")
+		found = ["page", "layout", "error", "server", "middleware"].find_first(|kind| entry_name == "+${kind}.rocx" or entry_name == "+${kind}.roc")
 		match found {
 			Ok(kind) => Ok(kind)
 			Err(_) => Err(NotRoute)
@@ -183,37 +191,57 @@ Routes := [].{
 			Err(_) => { view: None, meta: Bool.False, methods: [], middleware: None, docs: [], respond: Bool.False, channel: None, hooks: [], handlers: [], imported: [], meta_fields: None, takes_meta: Bool.False, bodies: [], params: None }
 		}
 
-	## Whether the file names a middleware.
+	## Whether the file names a middleware (`middleware = …`).
 	guards : List(Source), Str -> Bool
 	guards = |sources, file| Routes.filled(Routes.defs_of(sources, file).middleware)
 
-	## The middleware a page runs behind (D-079): the page's own, when it names one; else the one the
-	## `+server.roc` in its directory names, which guards the page's own data, so the page can't
-	## render for someone its data refuses. As its module (`MembersServer`) and as written. A
-	## layout's, or a parent directory's, never counts.
-	page_guard : Table, List(Source), Entry -> [Some({ module_name : Str, said : Str }), None]
-	page_guard = |table, sources, page| {
-		own = Routes.defs_of(sources, page.file).middleware
-		if Routes.filled(own) {
-			Some({ module_name: page.module_name, said: Routes.or_empty(own) })
-		} else {
-			match table.servers.find_first(|server| server.parts == page.parts) {
-				Ok(server) if Routes.guards(sources, server.file) => Some({ module_name: server.module_name, said: Routes.or_empty(Routes.defs_of(sources, server.file).middleware) })
-				_ => None
-			}
+	## Whether `outer` is `dirs` or a directory above it (both as directories under `routes/`).
+	within : List(Str), List(Str) -> Bool
+	within = |outer, dirs| outer.len() <= dirs.len() and dirs.take_first(outer.len()) == outer
+
+	## The directories' middleware a route file in `dirs` runs behind (D-103), below the app's: each
+	## `+middleware.roc` in a directory above it or in its own, but `routes/`'s (which `App` runs
+	## around every request), outermost first.
+	chain_of : Table, List(Str) -> List(Layout)
+	chain_of = |table, dirs|
+		table.middlewares
+			.keep_if(|each| !each.dirs.is_empty() and Routes.within(each.dirs, dirs))
+			.sort_with(|a, b| if (a.dirs.len() < b.dirs.len()) Before else if (a.dirs.len() > b.dirs.len()) After else Same)
+
+	## The app's middleware: the module of `routes/+middleware.roc`, which runs around every request
+	## the app answers (its plugins' too), if it has one.
+	root_middleware : Table -> [Some(Str), None]
+	root_middleware = |table|
+		match table.middlewares.find_first(|each| each.dirs.is_empty()) {
+			Ok(found) => Some(found.module_name)
+			Err(_) => None
 		}
+
+	## Whether a page runs behind a directory's middleware (`chain_of`): `rocx build --static` leaves
+	## it out, as the static copy would answer anyone.
+	page_guarded : Table, Entry -> Bool
+	page_guarded = |table, page| !Routes.chain_of(table, page.dirs).is_empty()
+
+	## What runs around a route file in `dirs`, as `rocx routes` says it: what each `+middleware.roc`
+	## above it says (`Middlewares.member`, or its file when it says more than a line), the app's
+	## (`routes/`'s) first, joined by ` → `; `None` when nothing does.
+	chain_said : Table, List(Source), List(Str) -> [Some(Str), None]
+	chain_said = |table, sources, dirs| {
+		root = table.middlewares.keep_if(|each| each.dirs.is_empty())
+		said = root.concat(Routes.chain_of(table, dirs)).map(
+			|each|
+				match Routes.defs_of(sources, each.file).middleware {
+					Some(text) if !text.is_empty() and !text.ends_with("(") and !text.ends_with("{") => text
+					_ => "routes/${each.file}"
+				},
+		)
+		if (said.is_empty()) None else Some(Str.join_with(said, " → "))
 	}
 
-	## Whether a page runs behind a middleware, its own or its directory's (`page_guard`).
-	page_guarded : Table, List(Source), Entry -> Bool
-	page_guarded = |table, sources, page|
-		match Routes.page_guard(table, sources, page) {
-			Some(_) => Bool.True
-			None => Bool.False
-		}
-
-	## A layout or the error page that names a middleware, a line each: nothing runs it, so it would
-	## guard nothing (D-079).
+	## What is wrong with where the app names middleware (D-103), a line each: a `+middleware.roc`
+	## that names none, and a page, an endpoint, a layout or the error page that names its own
+	## (`middleware = …`): a directory's middleware is its `+middleware.roc`, which runs around every
+	## route file in it and below it.
 	middleware_problems : Table, List(Source) -> List(Str)
 	middleware_problems = |table, sources| {
 		errors =
@@ -221,11 +249,25 @@ Routes := [].{
 				Some(error) => [error.file]
 				None => []
 			}
-		table.layouts
-			.map(|layout| layout.file)
-			.concat(errors)
-			.keep_if(|file| Routes.guards(sources, file))
-			.map(|file| "routes/${file}: names a middleware, which nothing runs: a layout's or the error page's guards no page. Name it in the +server.roc beside each page (a page takes its directory's), or in the page")
+		unnamed =
+			table.middlewares
+				.keep_if(|each| !Routes.guards(sources, each.file))
+				.map(|each| "routes/${each.file}: defines no middleware: a directory's +middleware.roc says what runs around the pages, endpoints and channels in it and below it (`middleware = Middlewares.signed_in`)")
+		named =
+			table.pages
+				.map(|entry| entry.file)
+				.concat(table.servers.map(|entry| entry.file))
+				.concat(table.layouts.map(|layout| layout.file))
+				.concat(errors)
+				.keep_if(|file| Routes.guards(sources, file))
+				.map(
+					|file| {
+						dir = file.split_on("/").drop_last(1)
+						at = if (dir.is_empty()) "routes/+middleware.roc" else "routes/${Str.join_with(dir, "/")}/+middleware.roc"
+						"routes/${file}: names its own middleware, which a directory's +middleware.roc names now (D-103): move the line to ${at}, which runs around every route file in that directory and below it. A group, a directory in brackets (`(members)`), adds nothing to the path"
+					},
+				)
+		unnamed.concat(named)
 	}
 
 	## Whether the file defines a channel.
@@ -307,11 +349,27 @@ Routes := [].{
 		}
 	}
 
-	## A directory as a word of a route's names: a param's brackets, and a leading dot or
-	## underscore, gone.
+	## Whether a directory is a group (D-103): a name in brackets (`(members)`, `(signed-in)`), lower
+	## case, which adds nothing to the path; its `+middleware.roc` and `+layout.rocx` are for the
+	## route files in it alone.
+	is_group : Str -> Bool
+	is_group = |part| {
+		bytes = part.to_utf8()
+		n = bytes.len()
+		if n >= 3 and Text.at(bytes, 0) == '(' and Text.at(bytes, n - 1) == ')' {
+			inner = Text.slice(bytes, 1, n - 1)
+			Text.is_lower(Text.at(inner, 0)) and inner.all(|b| Text.is_lower(b) or Text.is_digit(b) or b == '-' or b == '_')
+		} else {
+			Bool.False
+		}
+	}
+
+	## A directory as a word of a route's names: a param's or a group's brackets, and a leading dot
+	## or underscore, gone.
 	word_of : Str -> Str
 	word_of = |part| {
-		opened = if (part.starts_with("[")) part.drop_prefix("[") else part
+		grouped = if (Routes.is_group(part)) part.drop_prefix("(").drop_suffix(")") else part
+		opened = if (grouped.starts_with("[")) grouped.drop_prefix("[") else grouped
 		closed = if (opened.ends_with("]")) opened.drop_suffix("]") else opened
 		if (closed.starts_with(".")) closed.drop_prefix(".") else if (closed.starts_with("_")) closed.drop_prefix("_") else closed
 	}
@@ -338,21 +396,21 @@ Routes := [].{
 		}
 	}
 
-	## The layouts above some parts: those whose parts begin them.
+	## The layouts above some directories: those in one of them, or above them.
 	above : List(Layout), List(Str) -> List(Layout)
-	above = |layouts, parts| layouts.keep_if(|layout| layout.parts.len() <= parts.len() and parts.take_first(layout.parts.len()) == layout.parts)
+	above = |layouts, dirs| layouts.keep_if(|layout| Routes.within(layout.dirs, dirs))
 
 	## Every route file a table has, as JavaScript's `routedEntries` lists them: the pages, the
-	## endpoints, the layouts and the error page.
+	## endpoints, the layouts, the error page and the directories' middleware.
 	entries : Table -> List(Layout)
 	entries = |table| {
-		plain = |entry| { file: entry.file, kind: entry.kind, parts: entry.parts, module_name: entry.module_name, name: entry.name }
+		plain = |entry| { file: entry.file, kind: entry.kind, parts: entry.parts, dirs: entry.dirs, module_name: entry.module_name, name: entry.name }
 		errors =
 			match table.error {
 				Some(error) => [plain(error)]
 				None => []
 			}
-		table.pages.map(plain).concat(table.servers.map(plain)).concat(table.layouts).concat(errors)
+		table.pages.map(plain).concat(table.servers.map(plain)).concat(table.layouts).concat(errors).concat(table.middlewares)
 	}
 
 	## Every route file a table has.
@@ -363,7 +421,7 @@ Routes := [].{
 				Some(error) => [error.file]
 				None => []
 			}
-		table.pages.map(|entry| entry.file).concat(table.servers.map(|entry| entry.file)).concat(table.layouts.map(|layout| layout.file)).concat(errors)
+		table.pages.map(|entry| entry.file).concat(table.servers.map(|entry| entry.file)).concat(table.layouts.map(|layout| layout.file)).concat(errors).concat(table.middlewares.map(|each| each.file))
 	}
 
 	## Every route file a table has, with its module.
@@ -375,7 +433,7 @@ Routes := [].{
 				Some(error) => [pick(error)]
 				None => []
 			}
-		table.pages.map(pick).concat(table.servers.map(pick)).concat(table.layouts.map(|layout| { file: layout.file, module_name: layout.module_name })).concat(errors)
+		table.pages.map(pick).concat(table.servers.map(pick)).concat(table.layouts.map(|layout| { file: layout.file, module_name: layout.module_name })).concat(errors).concat(table.middlewares.map(|each| { file: each.file, module_name: each.module_name }))
 	}
 
 	# ---- finding the routes ----
@@ -408,23 +466,30 @@ Routes := [].{
 		var $made = []
 		for path in paths {
 			pieces = path.split_on("/")
-			parts = pieces.drop_last(1)
+			dirs = pieces.drop_last(1)
+			# A group (`(members)`) adds nothing to the path (D-103).
+			parts = dirs.drop_if(Routes.is_group)
 			kind_found = Routes.route_kind(pieces.last() ?? "")
 			if kind_found == Err(NotRoute) {
 				return Err(Problem("Cannot read properties of null (reading '1')"))
 			}
 			kind = kind_found ?? ""
+			if kind == "middleware" and path.ends_with(".rocx") {
+				return Err(Problem("routes/${path}: a directory's middleware is plain Roc: call it +middleware.roc"))
+			}
 			if paths.any(|other| other != path and Routes.as_rocx(other) == path) {
 				return Err(Problem("routes/${path} and routes/${path}x are the same route: keep one"))
 			}
-			match parts.find_first(|part| !(Routes.is_path_part(part) or part == Routes.well_known)) {
-				Ok(part) => return Err(Problem("routes/${path}: a directory is a path's part in lower case (`blog`, `getting-started`, `feed.xml`) or a param (`[slug]`): not `${part}`"))
+			match dirs.find_first(|part| !(Routes.is_path_part(part) or part == Routes.well_known or Routes.is_group(part))) {
+				Ok(part) => return Err(Problem("routes/${path}: a directory is a path's part in lower case (`blog`, `getting-started`, `feed.xml`), a param (`[slug]`) or a group, which adds nothing to the path (`(members)`): not `${part}`"))
 				Err(_) => {}
 			}
-			words = parts.map(Routes.word_of)
+			# A module is named after its file's directories, groups too; Paths' name, after its path.
+			words = dirs.map(Routes.word_of)
 			stem = if (words.is_empty()) "Root" else Str.join_with(words.map(Routes.pascal), "")
-			named = if (words.is_empty()) "root" else Str.join_with(words, "_").replace_each("-", "_").replace_each(".", "_")
-			$made = $made.append({ file: path, kind, parts, module_name: "${stem}${Routes.pascal(kind)}", name: if (Routes.keywords.contains(named)) "${named}_" else named })
+			path_words = parts.map(Routes.word_of)
+			named = if (path_words.is_empty()) "root" else Str.join_with(path_words, "_").replace_each("-", "_").replace_each(".", "_")
+			$made = $made.append({ file: path, kind, parts, dirs, module_name: "${stem}${Routes.pascal(kind)}", name: if (Routes.keywords.contains(named)) "${named}_" else named })
 		}
 		made = $made
 		var $seen = []
@@ -437,17 +502,30 @@ Routes := [].{
 			}
 		}
 		errors = made.keep_if(|entry| entry.kind == "error")
-		match errors.find_first(|entry| !entry.parts.is_empty()) {
+		match errors.find_first(|entry| !entry.dirs.is_empty()) {
 			Ok(misplaced) => return Err(Problem("routes/${misplaced.file}: an error page is the app's, in routes/ itself, for now"))
 			Err(_) => {}
 		}
 		layouts = made.keep_if(|entry| entry.kind == "layout")
+		middlewares = made.keep_if(|entry| entry.kind == "middleware")
 		routed = |entry| {
 			params = entry.parts.map_with_index(|part, i| { part, i }).keep_if(|each| each.part.starts_with("[")).map(|each| { name: each.part.drop_prefix("[").drop_suffix("]"), at: each.i })
-			{ file: entry.file, kind: entry.kind, parts: entry.parts, module_name: entry.module_name, name: entry.name, path: "/${Str.join_with(entry.parts, "/")}", params, layouts: Routes.above(layouts, entry.parts) }
+			{ file: entry.file, kind: entry.kind, parts: entry.parts, dirs: entry.dirs, module_name: entry.module_name, name: entry.name, path: "/${Str.join_with(entry.parts, "/")}", params, layouts: Routes.above(layouts, entry.dirs) }
 		}
 		unsorted_pages = made.keep_if(|entry| entry.kind == "page").map(routed)
 		unsorted_servers = made.keep_if(|entry| entry.kind == "server").map(routed)
+		# Two pages, or two +server files, at one path (in two groups): one answers it.
+		for kind_of in [unsorted_pages, unsorted_servers] {
+			var $at = []
+			for entry in kind_of {
+				match $at.find_first(|other| other.path == entry.path) {
+					Ok(other) => return Err(Problem("routes/${entry.file} and routes/${other.file} both answer ${entry.path}: a group, a directory in brackets, adds nothing to the path, so keep one"))
+					Err(_) => {
+						$at = $at.append(entry)
+					}
+				}
+			}
+		}
 		var $names = []
 		for page in unsorted_pages {
 			match $names.find_first(|other| other.name == page.name) {
@@ -473,10 +551,10 @@ Routes := [].{
 		}
 		error =
 			match errors.first() {
-				Ok(entry) => Some({ file: entry.file, kind: entry.kind, parts: entry.parts, module_name: entry.module_name, name: entry.name, path: "", params: [], layouts: Routes.above(layouts, []) })
+				Ok(entry) => Some({ file: entry.file, kind: entry.kind, parts: entry.parts, dirs: entry.dirs, module_name: entry.module_name, name: entry.name, path: "", params: [], layouts: Routes.above(layouts, []) })
 				Err(_) => None
 			}
-		Ok({ pages, servers, layouts, error, paths: $answered.sort_with(by_route), files: paths })
+		Ok({ pages, servers, layouts, middlewares, error, paths: $answered.sort_with(by_route), files: paths })
 	}
 
 	# ---- what a route file defines ----
@@ -1790,21 +1868,38 @@ Routes := [].{
 		}
 	}
 
-	## The routes a path answers with, around `answer`: behind the file's middleware if it names one.
-	guarded : List(Source), Entry, (Str, Str -> Str) -> Str
-	guarded = |sources, entry, answer|
-		if Routes.guards(sources, entry.file) {
-			"Middleware.run!(${entry.module_name}.middleware, request, context, |passed, handed| ${answer("passed", "handed")})"
-		} else {
+	## The routes a path answers with, around `answer`: behind its directories' middleware
+	## (`chain_of`, D-103), each run around the next, outermost first; `answer` is given the request
+	## and the context the innermost passed on.
+	guarded : Table, Entry, (Str, Str -> Str) -> Str
+	guarded = |table, entry, answer| {
+		chain = Routes.chain_of(table, entry.dirs)
+		n = chain.len()
+		if n == 0 {
 			answer("request", "context")
+		} else {
+			inner = answer("passed", "handed")
+			# The innermost's names, as the answer uses them (a page's uses neither).
+			last_passed = if (Routes.has_word(inner, "passed")) "passed" else "_passed"
+			last_handed = if (Routes.has_word(inner, "handed")) "handed" else "_handed"
+			opening = chain.map_with_index(
+				|each, i| {
+					request = if (i == 0) "request" else "passed_${i.to_str()}"
+					context = if (i == 0) "context" else "handed_${i.to_str()}"
+					names = if (i + 1 == n) "${last_passed}, ${last_handed}" else "passed_${(i + 1).to_str()}, handed_${(i + 1).to_str()}"
+					"Middleware.run!(${each.module_name}.middleware, ${request}, ${context}, |${names}| "
+				},
+			)
+			"${Str.join_with(opening, "")}${inner}${Str.repeat(")", n)}"
 		}
+	}
 
 	## The server entry of a path (one is there when this is called).
 	server_of : At -> Entry
 	server_of = |at|
 		match at.server {
 			Some(entry) => entry
-			None => { file: "", kind: "server", parts: [], module_name: "", name: "", path: "", params: [], layouts: [] }
+			None => { file: "", kind: "server", parts: [], dirs: [], module_name: "", name: "", path: "", params: [], layouts: [] }
 		}
 
 	## `Generated/Routes.roc`: the answer to a request.
@@ -1813,12 +1908,8 @@ Routes := [].{
 		pages = Routes.has_pages(table)
 		types = Routes.param_types(table, sources)
 		missing = if (pages) "if (wants_html) {\n\t\t\tRoutes.by_accept(Routes.page(404))\n\t\t} else {\n\t\t\tRoutes.by_accept(Routes.text(404, \"nothing at \${request.path}\"))\n\t\t}" else "Routes.text(404, \"nothing at \${request.path}\")"
-		page_answer = |entry|
-			match Routes.page_guard(table, sources, entry) {
-				Some(guard) => "Middleware.run!(${guard.module_name}.middleware, request, context, |_passed, _handed| Routes.page(200))"
-				None => "Routes.page(200)"
-			}
-		endpoint = |at, method| Routes.guarded(sources, Routes.server_of(at), |request, context| "Endpoint.${if (method == "events!") "stream!" else "respond!"}(Handlers.${Routes.api_name(method, at.name)}(params), ${request}, ${context})")
+		page_answer = |entry| Routes.guarded(table, entry, |_request, _context| "Routes.page(200)")
+		endpoint = |at, method| Routes.guarded(table, Routes.server_of(at), |request, context| "Endpoint.${if (method == "events!") "stream!" else "respond!"}(Handlers.${Routes.api_name(method, at.name)}(params), ${request}, ${context})")
 		branch = |at| {
 			condition = Routes.matched_by(at.parts, at.params)
 			params = Routes.params_of(at.params)
@@ -1857,7 +1948,7 @@ Routes := [].{
 			server = Routes.server_of(at)
 			last_arm =
 				if respond {
-					Routes.guarded(sources, server, |request, context| "${server.module_name}.respond!({ request: ${request}, params: params, context: ${context} })")
+					Routes.guarded(table, server, |request, context| "${server.module_name}.respond!({ request: ${request}, params: params, context: ${context} })")
 				} else {
 					"Endpoint.not_allowed(request, [${Str.join_with(allowed.map(Text.json_string), ", ")}])"
 				}
@@ -1887,11 +1978,13 @@ Routes := [].{
 				Str.join_with(["if (${condition}) {"].concat(if (reads) ["\t\t\tparams = ${params}"] else []).concat(["\t\t\t${dispatch}", "\t\t}"]), "\n")
 			}
 		}
+		# The directories' middleware the routes run behind (`routes/`'s is App's).
+		guarding = Text.unique(table.pages.concat(table.servers).join_map(|entry| Routes.chain_of(table, entry.dirs)).map(|each| each.module_name))
 		modules = Text.sorted(
-			table.pages
-				.keep_if(|entry| Routes.guards(sources, entry.file))
-				.concat(table.servers.keep_if(|entry| Routes.guards(sources, entry.file) or Routes.defs_of(sources, entry.file).respond or !Routes.hooks_of(sources, entry.file).is_empty()))
-				.map(|entry| entry.module_name),
+			table.servers
+				.keep_if(|entry| Routes.defs_of(sources, entry.file).respond or !Routes.hooks_of(sources, entry.file).is_empty())
+				.map(|entry| entry.module_name)
+				.concat(guarding),
 		)
 		channels = table.paths.keep_if(
 			|at|
@@ -1916,9 +2009,9 @@ Routes := [].{
 			answer = |request, context| "Endpoint.channel!(Handlers.${Routes.api_name(Routes.channel_name, at.name)}(params), ${request}, ${context}, { opened!: ${opened}, received!: ${received}, closes: ${closes} })"
 			typed = Routes.typed_params(types, at.parts, at.params)
 			if Routes.is_typed(typed) {
-				Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\t${Routes.params_read(typed, "\t\t\t", Bool.True, Routes.guarded(sources, server, answer), no_channel)}", "\t\t}"], "\n")
+				Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\t${Routes.params_read(typed, "\t\t\t", Bool.True, Routes.guarded(table, server, answer), no_channel)}", "\t\t}"], "\n")
 			} else {
-				Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\tparams = ${Routes.params_of(at.params)}", "\t\t\t${Routes.guarded(sources, server, answer)}", "\t\t}"], "\n")
+				Str.join_with(["if (${Routes.matched_by(at.parts, at.params)}) {", "\t\t\tparams = ${Routes.params_of(at.params)}", "\t\t\t${Routes.guarded(table, server, answer)}", "\t\t}"], "\n")
 			}
 		}
 		channel_function =
@@ -1927,7 +2020,7 @@ Routes := [].{
 			} else {
 				[
 					"\t## A channel's subscription, as the host asks about it (`/rocx/live`; `x-rocx-channel` says",
-					"\t## what): its check, behind its route file's middleware, then its hooks. 404 where no channel is.",
+					"\t## what): its check, behind its directories' middleware, then its hooks. 404 where no channel is.",
 					"\tchannel! = |segments, request, context| {",
 					"\t\t${Str.join_with(channels.map(channel_arm), " else ")} else {\n\t\t\t${no_channel}\n\t\t}",
 					"\t}",
@@ -2009,7 +2102,7 @@ Routes := [].{
 					}
 			}
 		branches = [asked].concat(table.paths.keep_if(answers).map(branch)).concat(if (storied) [story_branch] else [])
-		uses_middleware = Routes.routed_files(table).any(|file| Routes.guards(sources, file))
+		uses_middleware = !guarding.is_empty()
 		context_name = if (branches.any(|each| Routes.has_word(each, "context"))) "context" else "_context"
 		chained = if (branches.is_empty()) "\t\t${missing}" else "\t\t${Str.join_with(branches, " else ")} else {\n\t\t\t${missing.replace_each("\n", "\n\t")}\n\t\t}"
 		wants_html = branches.any(|each| each.contains("wants_html")) or missing.contains("wants_html")
@@ -2035,10 +2128,10 @@ Routes := [].{
 					"Routes := [].{",
 					"\t## The answer to `request` (a `Server.Request`): a page, in its layouts, for a browser's GET; an",
 					"\t## endpoint's answer for its method; a channel's, for the host's asks about its subscriptions",
-					"\t## (`channel!`); the error page (404) where nothing is. A file that names its `middleware` has it",
-					"\t## run around its page, endpoints and channel; a page that names none runs behind the one its",
-					"\t## +server.roc names. `context` is what the app's middleware handed on: each page, layout,",
-					"\t## endpoint and channel is given it (or what its own middleware hands on).",
+					"\t## (`channel!`); the error page (404) where nothing is. Each runs behind the `+middleware.roc` of",
+					"\t## each directory it is in, outermost first (D-103). `context` is what the app's middleware",
+					"\t## (`routes/+middleware.roc`) handed on: each page, layout, endpoint and channel is given it,",
+					"\t## or what its directories' middleware hands on.",
 					"\trespond! = |request, ${context_name}| {",
 					"\t\tsegments = request.path.split_on(\"/\").keep_if(|segment| !segment.is_empty()).map(Server.decode_segment)",
 					"\t\tmethod = if (request.method == \"HEAD\") \"GET\" else request.method",
@@ -2495,9 +2588,9 @@ Routes := [].{
 	}
 
 	## `Generated/Handlers.roc`, the server's alone: each endpoint and channel of Api with its
-	## handler (`Endpoint.bind`), which the router answers with and `Endpoint.run!` runs. It imports
-	## every route file with one, so a module a route file imports can't import it: main.roc can, and
-	## a plugin, or a module only they import.
+	## handler (`Endpoint.bind`), which the router answers with. It imports every route file with
+	## one, so a module a route file imports can't import it. Code that calls an endpoint sends Api's
+	## (`Endpoint.send!`: in-process on the server, behind the endpoint's middleware, D-103).
 	handlers_module : Table, List(Source) -> Str
 	handlers_module = |table, sources| {
 		bound = |server, method| {
@@ -2514,9 +2607,8 @@ Routes := [].{
 		lines =
 			[
 				"## Written by rocx build from the app's routes/: each endpoint and channel of Api with its handler,",
-				"## for the server alone: the router answers with them, and `Endpoint.run!` runs one (skipping its",
-				"## middleware). It imports every route file, so a module they import can't import it: main.roc",
-				"## can, a plugin can. Edit the routes.",
+				"## for the server's router alone. Code that calls an endpoint sends Api's (`Endpoint.send!`, which",
+				"## the server answers in-process, behind the endpoint's middleware). Edit the routes.",
 				"import pf.Endpoint",
 				"import Api",
 			]
@@ -2574,7 +2666,7 @@ Routes := [].{
 	routes_json = |table, sources, stories| {
 		level = |code, path| "{\"code\":${Text.json_string(code)},\"path\":${Text.json_string(path)}}"
 		layout_path = |layout| "/${Str.join_with(layout.parts, "/")}"
-		root = table.layouts.keep_if(|layout| layout.parts.is_empty()).map(|layout| level(layout.module_name, "/"))
+		root = table.layouts.keep_if(|layout| layout.dirs.is_empty()).map(|layout| level(layout.module_name, "/"))
 		page_json = |path, levels| "{\"path\":${Text.json_string(path)},\"levels\":[${Str.join_with(levels, ",")}]}"
 		pages = table.pages.map(|page| page_json(page.path, page.layouts.map(|layout| level(layout.module_name, layout_path(layout))).append(level(page.module_name, page.path))))
 		storied = stories.map(|story| page_json("${Routes.stories_path}/${story.id}", root.append(level(story.alias, "${Routes.stories_path}/${story.id}"))))
@@ -2596,7 +2688,7 @@ Routes := [].{
 		takers = table.layouts.keep_if(|layout| Routes.defs_of(sources, layout.file).takes_meta)
 		takers.join_map(
 			|layout| {
-				rooted = layout.parts.is_empty()
+				rooted = layout.dirs.is_empty()
 				error =
 					match table.error {
 						Some(entry) if rooted => [entry]
@@ -2657,7 +2749,7 @@ Routes := [].{
 		# Each page's params with their types (D-092): a part that isn't its param's type is no page.
 		types = Routes.param_types(table, sources)
 		typed_of = |page| Routes.typed_params(types, page.parts, page.params)
-		root = table.layouts.find_first(|layout| layout.parts.is_empty())
+		root = table.layouts.find_first(|layout| layout.dirs.is_empty())
 		has_root =
 			match root {
 				Ok(_) => Bool.True
@@ -3214,7 +3306,7 @@ Routes := [].{
 	}
 
 	## `Generated/App.roc`, the server's program.
-	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), endpoints : Bool, jobs_package : Str } -> Str
+	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), endpoints : Bool, jobs_package : Str, middleware : [Some(Str), None] } -> Str
 	app_module = |input| {
 		# The jobs package, as the app's header names it (packages/jobs): `App.jobs` is for its plugin.
 		jobs_package = input.jobs_package
@@ -3261,9 +3353,9 @@ Routes := [].{
 		lines =
 			[
 				"## Written by rocx build: the app's `program`, for its main.roc, which says what only it can",
-				"## (`program = App.program({ init!, middleware })`, `database` if it isn't Postgres, `openapi` if it serves its endpoints' OpenAPI",
-				"## document, and `plugins`). Every request is answered by a plugin's route or the app's",
-				"## (`Routes.respond!`), behind the app's middleware; the actors' methods are the ones its modules",
+				"## (`program = App.program({ init! })`, `database` if it isn't Postgres, `openapi` if it serves its endpoints' OpenAPI",
+				"## document, `cross_site` if it takes changes from other sites' pages, and `plugins`). Every request is answered by a plugin's route or the app's",
+				"## (`Routes.respond!`), behind the app's middleware (`routes/+middleware.roc`, D-103); the actors' methods are the ones its modules",
 				"## define (`Actor.method`), and the kinds of job in `App.jobs` are theirs too (`Job.define`), for the jobs",
 				"## plugin; the migrations, migrations/*.sql, in the order of their names; the log's format is",
 				"## `Auto` (`ROCX_LOG`, or pretty on a terminal and JSON elsewhere), which the app may change:",
@@ -3274,6 +3366,12 @@ Routes := [].{
 				"import pf.OpenApi",
 				"import pf.Plugin",
 			]
+				.concat(
+					match input.middleware {
+						Some(module_name) => ["import ${module_name}"]
+						None => []
+					},
+				)
 				.concat(if (jobs_package.is_empty()) [] else ["import ${jobs_package}.Job"])
 				.concat(if (input.actors.is_empty()) [] else ["import pf.Actor"])
 				.concat(if (input.endpoints) ["import Api"] else [])
@@ -3300,8 +3398,10 @@ Routes := [].{
 				.concat([
 					"\t## What only the app can say: `init!`, which makes the app's context once, when the server starts",
 					"\t## (after the migrations), from what it was started with (`--context-file`: `|started| Ok(…)`):",
-					"\t## the host keeps it, and every request's middleware is given it; `middleware`, which runs around every",
-					"\t## request; `database`, its database (D-045): `Postgres` unless it says, at `--database-url`, or",
+					"\t## the host keeps it, and every request's middleware is given it (`routes/+middleware.roc`'s, which",
+					"\t## runs around every request, D-103); `cross_site`, a change (POST, PUT, PATCH, DELETE) another",
+					"\t## site's page sends: `Refused` (403, `Middleware.same_origin`) unless the app says `Allowed`, when",
+					"\t## a directory's middleware may refuse it where it should; `database`, its database (D-045): `Postgres` unless it says, at `--database-url`, or",
 					"\t## `Sqlite(path)`, a file in the server's process (`--database-url sqlite:<path>` puts it elsewhere),",
 					"\t## or `Turso(path)`, the same SQL on Turso's engine (D-046; `turso:<path>` runs a SQLite app on it);",
 					"\t## `openapi`, whether it serves its endpoints' OpenAPI document, and a page to read it",
@@ -3310,7 +3410,7 @@ Routes := [].{
 					"\t## platform runs the rest (the jobs plugin: `App.jobs`, and its schedules).",
 					"\tConfig(given, handed) := {",
 					"\t\tinit! : Str => Try(given, Str),",
-					"\t\tmiddleware : Middleware(given, handed),",
+					"\t\tcross_site : [Refused, Allowed] ?? Refused,",
 					"\t\tdatabase : [Postgres, Sqlite(Str), Turso(Str)] ?? Postgres,",
 					"\t\topenapi : OpenApi.Serving ?? Off,",
 					"\t\tplugins : List(Plugin.Value(given, handed)) ?? [],",
@@ -3330,22 +3430,36 @@ Routes := [].{
 					"\t\t\tif (Endpoint.channel_asked(request) == \"close\") {",
 					"\t\t\t\tRoutes.closed!(request)",
 					"\t\t\t} else {",
-					"\t\t\t\t# A page a browser asks for lets a plain form's flash go (`Server.flash!`): it has read it, or never will.",
+				])
+				.concat([
+					"\t\t\t\t# A plugin's route, or the app's.",
+					"\t\t\t\troute! = |routed, context| Plugin.respond!(config.plugins, routed, context, |answered, handed| Routes.respond!(answered, handed))",
 				])
 				.concat(
 					if input.endpoints {
 						[
-							"\t\t\t\t# The app's middleware, then the endpoints' OpenAPI document and its page, as the app says",
-							"\t\t\t\t# (`OpenApi.middleware`), then the routes.",
-							"\t\t\t\tchain = config.middleware.then(OpenApi.middleware(config.openapi, Api.openapi))",
+							"\t\t\t\t# The endpoints' OpenAPI document and its page, as the app says (`OpenApi.middleware`), then the routes.",
+							"\t\t\t\topened! = |asked, context| Middleware.run!(OpenApi.middleware(config.openapi, Api.openapi), asked, context, route!)",
 						]
 					} else {
-						["\t\t\t\tchain = config.middleware"]
+						["\t\t\t\topened! = route!"]
+					},
+				)
+				.concat(
+					match input.middleware {
+						Some(module_name) =>
+							[
+								"\t\t\t\t# The app's middleware (routes/+middleware.roc), around everything else.",
+								"\t\t\t\tchecked! = |asked, context| Middleware.run!(${module_name}.middleware, asked, context, opened!)",
+							]
+						None => ["\t\t\t\tchecked! = opened!"]
 					},
 				)
 				.concat([
-					"\t\t\t\t# A plugin's route, or the app's.",
-					"\t\t\t\tServer.clear_flash(request, Middleware.run!(chain, request, given, |passed, context| Plugin.respond!(config.plugins, passed, context, |routed, handed| Routes.respond!(routed, handed))))",
+					"\t\t\t\t# A change another site's page sends refused first, unless the app takes them (`cross_site`).",
+					"\t\t\t\tanswer = if (config.cross_site == Allowed) checked!(request, given) else Middleware.run!(Middleware.same_origin({}), request, given, checked!)",
+					"\t\t\t\t# A page a browser asks for lets a plain form's flash go (`Server.flash!`): it has read it, or never will.",
+					"\t\t\t\tServer.clear_flash(request, answer)",
 					"\t\t\t}",
 					"\t\t},",
 					"\t\tdatabase: config.database,",
@@ -3391,14 +3505,7 @@ Routes := [].{
 			|at| {
 				page_rows =
 					match at.page {
-						Some(page) => {
-							middleware =
-								match Routes.page_guard(table, sources, page) {
-									Some(guard) => Some(guard.said)
-									None => None
-								}
-							[{ method: "GET", path: at.path, file: "routes/${page.file}", middleware }]
-						}
+						Some(page) => [{ method: "GET", path: at.path, file: "routes/${page.file}", middleware: Routes.chain_said(table, sources, page.dirs) }]
 						None => []
 					}
 				server_rows =
@@ -3406,11 +3513,12 @@ Routes := [].{
 						Some(server) => {
 							defs = Routes.defs_of(sources, server.file)
 							file = "routes/${server.file}"
-							methods = defs.methods.map(|method| { method: if (method == "events!") "EVENTS" else Routes.verb_of(method), path: at.path, file, middleware: defs.middleware })
-							responds = if (defs.respond) [{ method: "*", path: at.path, file, middleware: defs.middleware }] else []
+							middleware = Routes.chain_said(table, sources, server.dirs)
+							methods = defs.methods.map(|method| { method: if (method == "events!") "EVENTS" else Routes.verb_of(method), path: at.path, file, middleware })
+							responds = if (defs.respond) [{ method: "*", path: at.path, file, middleware }] else []
 							channels =
 								match defs.channel {
-									Some(_) => [{ method: "CHANNEL", path: at.path, file, middleware: defs.middleware }]
+									Some(_) => [{ method: "CHANNEL", path: at.path, file, middleware }]
 									None => []
 								}
 							methods.concat(responds).concat(channels)
@@ -3421,7 +3529,7 @@ Routes := [].{
 			},
 		)
 		match table.error {
-			Some(error) => rows.append({ method: "*", path: "(anything else)", file: "routes/${error.file}", middleware: None })
+			Some(error) => rows.append({ method: "*", path: "(anything else)", file: "routes/${error.file}", middleware: Routes.chain_said(table, sources, []) })
 			None => rows
 		}
 	}
@@ -3436,7 +3544,7 @@ Routes := [].{
 			$sources = $sources.append({ file, defs: Routes.definitions(Fs.read_or_empty!(Fs.join([routes, file]))) })
 		}
 		rows = Routes.route_list(table, $sources).map(|row| [row.method, row.path, row.file, if (row.middleware == None) "-" else Routes.or_empty(row.middleware)])
-		header = ["METHOD", "PATH", "FILE", "MIDDLEWARE (after the app's default)"]
+		header = ["METHOD", "PATH", "FILE", "MIDDLEWARE (outermost first)"]
 		widths = header.map_with_index(|title, i| rows.fold(Text.length(title), |widest, row| if (Text.length(row.get(i) ?? "") > widest) Text.length(row.get(i) ?? "") else widest))
 		Ok(Str.join_with([header].concat(rows).map(|row| Str.join_with(row.map_with_index(|cell, i| if (i + 1 == row.len()) cell else Text.pad_end(cell, widths.get(i) ?? 0)), "  ")), "\n"))
 	}
@@ -3542,7 +3650,7 @@ Routes := [].{
 
 	layout_value : Layout -> Value
 	layout_value = |layout|
-		Object([{ key: "file", value: Text(layout.file) }, { key: "kind", value: Text(layout.kind) }, { key: "parts", value: Value.strs(layout.parts) }, { key: "module", value: Text(layout.module_name) }, { key: "name", value: Text(layout.name) }])
+		Object([{ key: "file", value: Text(layout.file) }, { key: "kind", value: Text(layout.kind) }, { key: "parts", value: Value.strs(layout.parts) }, { key: "dirs", value: Value.strs(layout.dirs) }, { key: "module", value: Text(layout.module_name) }, { key: "name", value: Text(layout.name) }])
 
 	entry_value : Entry -> Value
 	entry_value = |entry|
@@ -3550,6 +3658,7 @@ Routes := [].{
 			{ key: "file", value: Text(entry.file) },
 			{ key: "kind", value: Text(entry.kind) },
 			{ key: "parts", value: Value.strs(entry.parts) },
+			{ key: "dirs", value: Value.strs(entry.dirs) },
 			{ key: "module", value: Text(entry.module_name) },
 			{ key: "name", value: Text(entry.name) },
 			{ key: "path", value: Text(entry.path) },
@@ -3563,6 +3672,7 @@ Routes := [].{
 			{ key: "file", value: Text(entry.file) },
 			{ key: "kind", value: Text(entry.kind) },
 			{ key: "parts", value: Value.strs(entry.parts) },
+			{ key: "dirs", value: Value.strs(entry.dirs) },
 			{ key: "module", value: Text(entry.module_name) },
 			{ key: "name", value: Text(entry.name) },
 			{ key: "layouts", value: Array(entry.layouts.map(Routes.layout_value)) },
@@ -3589,6 +3699,7 @@ Routes := [].{
 			{ key: "pages", value: Array(table.pages.map(Routes.entry_value)) },
 			{ key: "servers", value: Array(table.servers.map(Routes.entry_value)) },
 			{ key: "layouts", value: Array(table.layouts.map(Routes.layout_value)) },
+			{ key: "middlewares", value: Array(table.middlewares.map(Routes.layout_value)) },
 			{
 				key: "error",
 				value: match table.error {
@@ -3742,7 +3853,7 @@ Routes := [].{
 			"migrationsIn" => Ok(Value.strs(Routes.migrations_in!(Value.str(arg(0)))))
 			"appModule" => {
 				input = arg(0)
-				Ok(Text(Routes.app_module({ jobs: Value.items(Value.field(input, "jobs")).map(Routes.found_from), actors: Value.items(Value.field(input, "actors")).map(Routes.found_from), migrations: Value.items(Value.field(input, "migrations")).map(Value.str), endpoints: Routes.truthy(Value.field(input, "endpoints")), jobs_package: Value.str_or(Value.field(input, "jobsPackage"), "") })))
+				Ok(Text(Routes.app_module({ jobs: Value.items(Value.field(input, "jobs")).map(Routes.found_from), actors: Value.items(Value.field(input, "actors")).map(Routes.found_from), migrations: Value.items(Value.field(input, "migrations")).map(Value.str), endpoints: Routes.truthy(Value.field(input, "endpoints")), jobs_package: Value.str_or(Value.field(input, "jobsPackage"), ""), middleware: Routes.maybe_text(Value.field(input, "middleware")) })))
 			}
 			"clientMainModule" => {
 				input = arg(0)

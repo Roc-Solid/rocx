@@ -10,10 +10,13 @@ import Server
 ##             Err(_) => Server.redirect("/sign-in")
 ##         })
 ##
-## `a.then(b)` is `a`, then `b`. An app runs its default middleware around every request (in its
-## `respond!`); a route file names its own (`middleware = Middlewares.member`), which runs after,
-## around that route's page or endpoints. What a middleware hands on is typed: a handler that reads
-## `context.user` compiles only behind one that adds it.
+## `a.then(b)` is `a`, then `b`; `Middleware.when(Server.changes, guard)` is `guard` for some
+## requests alone. Middleware is named by folder, as routes are (D-103): a `+middleware.roc` under
+## `routes/` (`middleware = Middlewares.member`) runs around every page, endpoint and channel in its
+## folder and the folders below it, outermost first; the one in `routes/` itself runs around every
+## request the app answers, its plugins' too. A folder in brackets, `(members)`, adds nothing to
+## the path: pages and their endpoints under `api/` share one that way. What a middleware hands on
+## is typed: a handler that reads `context.user` compiles only behind one that adds it.
 Middleware(given, handed) :: { run : Server.Request, given, (Server.Request, handed => Server.Response) => Server.Response }.{
 
 	## A middleware, from what it does.
@@ -33,6 +36,15 @@ Middleware(given, handed) :: { run : Server.Request, given, (Server.Request, han
 	run! = |middleware, request, context, last!| {
 		go = middleware.run
 		go(request, context, last!)
+	}
+
+	## `guard` for the requests `asked` says, and the rest passed on as they are
+	## (`Middleware.when(Server.changes, Guard.rate_limit(…))`: a limit on what changes something,
+	## reads let through).
+	when : (Server.Request -> Bool), Middleware(context, context) -> Middleware(context, context)
+	when = |asked, guard| {
+		run_guard = guard.run
+		{ run: |request, context, next!| if (asked(request)) run_guard(request, context, next!) else next!(request, context) }
 	}
 
 	## A request that would change something (POST, PUT, PATCH, DELETE: a form, an endpoint's send,

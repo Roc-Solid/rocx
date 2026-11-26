@@ -19,7 +19,6 @@ import audio.AudioPlayer
 
 program = App.program({
 	init!,
-	middleware: Middlewares.default,
 	plugins: [AudioPlayer.plugin({})],
 })
 ```

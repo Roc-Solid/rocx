@@ -357,11 +357,11 @@ Static := [].{
 
 	# ---- Asking the server ----
 
-	## The routes of the pages behind a middleware of their own (`/members`), named in the page or
-	## in the +server.roc beside it (D-079): it answers each request as it comes (who is asking?),
-	## so the copy has none of them, and no link is followed to one.
+	## The routes of the pages behind a directory's middleware (`/members`, under a
+	## `+middleware.roc` other than `routes/`'s, D-103): it answers each request as it comes (who is
+	## asking?), so the copy has none of them, and no link is followed to one.
 	own_middleware : Routes.Table, List(Routes.Source) -> List(Str)
-	own_middleware = |table, sources| table.pages.keep_if(|page| Routes.page_guarded(table, sources, page)).map(|page| page.path)
+	own_middleware = |table, _sources| table.pages.keep_if(|page| Routes.page_guarded(table, page)).map(|page| page.path)
 
 	## The paths of the pages whose route has no params (`/`, `/about`; not `/blog/[slug]`) and no
 	## middleware of its own (`guarded`).

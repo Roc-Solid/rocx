@@ -8,12 +8,10 @@
 ## ANTHROPIC_MODEL names another. The tests run it against a stand-in for the API (test/stand-in.mjs).
 app [program] { ai: "../main.roc", crypto: "../../crypto/main.roc", pf: platform "../../../server/platform/main.roc", tools: "../../tools/main.roc" }
 
-import pf.Middleware
 import ai.Ai
 import Generated/App
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middleware.same_origin({}),
 	plugins: [Ai.plugin({})],
 })

@@ -1,7 +1,6 @@
 import pf.Endpoint
 import pf.Events
 import pf.Log
-import pf.Middleware
 import pf.OpenApi
 import pf.Server
 import tools.JsonValue
@@ -9,17 +8,16 @@ import Mcp
 import tools.Tool
 
 ## The HTTP side of an app's MCP server, on the server platform: the route that serves it
-## (`respond!`, or `middleware`), and tools made from what the app has already, in a line each: an
-## endpoint, its path's params too (`endpoint`), a function of the app's (`function`), a handler of
-## its own (`tool`). Their
-## arguments' and answers' JSON Schemas are the platform's, written from their types as
-## /openapi.json's are (`OpenApi`).
+## (`respond!`), and tools made from what the app has already, in a line each: an endpoint, its
+## path's params too (`endpoint`), a function of the app's (`function`), a handler of its own
+## (`tool`). Their arguments' and answers' JSON Schemas are the platform's, written from their
+## types as /openapi.json's are (`OpenApi`).
 ##
-##     # main.roc
-##     middleware: Middlewares.default.then(McpHttp.middleware("/mcp", Agents.server)),
+##     # routes/mcp/+server.roc
+##     respond! = |{ request, context, .. }| McpHttp.respond!(Agents.server, request, context)
 ##
-## The middleware in front of it decides who may ask, as for any route (`Bearer` has the pieces of
-## OAuth's answers).
+## The `+middleware.roc` of its folder decides who may ask, as for any route (`Bearer` has the
+## pieces of OAuth's answers).
 McpHttp := [].{
 
 	## What a tool is given: the request the MCP route is answering, what its middleware handed on
@@ -70,23 +68,6 @@ McpHttp := [].{
 	response : { status : U16, headers : List({ name : Str, value : Str }), body : Str } -> Server.Response
 	response = |answer| Server.response(answer.status, answer.headers, answer.body)
 
-	## The MCP server as a middleware: it answers requests to `path` (`respond!`), and hands every
-	## other request on. An app whose tools are its endpoints mounts it this way, in `main.roc` (its
-	## tools run `Generated/Handlers`' endpoints, which a module the routes import can't import,
-	## D-037), after the middleware that decides who may ask:
-	##
-	##     middleware: Middlewares.default.then(McpHttp.middleware("/mcp", Agents.server)),
-	middleware : Str, Mcp.Server(Caller(c)) -> Middleware(c, c)
-	middleware = |path, server|
-		Middleware.make(
-			|request, context, next!|
-				if request.path == path {
-					McpHttp.respond!(server, request, context)
-				} else {
-					next!(request, context)
-				},
-		)
-
 	## How the platform writes the JSON Schemas of what an endpoint's path holds (`params`), what it
 	## is sent and what it answers: `McpHttp.openapi`. (Given to `endpoint`, `function` and `tool`
 	## as a value, so it is instantiated where the types are known: a generic function can't read a
@@ -97,23 +78,23 @@ McpHttp := [].{
 	openapi = |{}| { params: OpenApi.body, body: OpenApi.body, answer: OpenApi.answer }
 
 	## An endpoint as a tool, from the function of its params that names it
-	## (`McpHttp.endpoint(Handlers.put_api_notes_id_tags, { name: "tag_note", description: "Sets a
+	## (`McpHttp.endpoint(Api.put_api_notes_id_tags, { name: "tag_note", description: "Sets a
 	## note's tags" }, McpHttp.openapi({}))`): the tool's arguments are one object, read as the
 	## path's params (`{ id : Str }`) and as the endpoint's body (`{ tags : List(Str) }`), so the
 	## model sends `{ "id": "7", "tags": ["work"] }`; its answer is the tool's. An endpoint of no
-	## params is the same (`Handlers.post_api_search`). It runs as `Endpoint.run!` runs it (so it is
-	## `Generated/Handlers`' endpoint, with its handler, not Api's contract), given the MCP route's
-	## request and context; its own middleware doesn't run (the MCP route's has). A refusal
-	## (`NotFound`, `BadRequest`) goes back to the model as a tool error. A field of the body named as
-	## a param is an input schema `Mcp.problems` reports.
-	endpoint : (params -> Endpoint(c, arg, result)), About, Schemas(c, params, arg, result) -> Tool(Caller(c))
-		where [params.Json.Parseable([InvalidJson(Str)]), arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
+	## params is the same (`Api.post_api_search`). It is sent as a handler sends it
+	## (`Endpoint.send!`): answered in-process, by its route, with the MCP request's headers (its
+	## `authorization`), so the endpoint's middleware decides, as it does for a script (D-103). A
+	## refusal (`NotFound`, `BadRequest`) goes back to the model as a tool error. A field of the body
+	## named as a param is an input schema `Mcp.problems` reports.
+	endpoint : (params -> Endpoint(e, arg, result)), About, Schemas(e, params, arg, result) -> Tool(Caller(c))
+		where [params.Json.Parseable([InvalidJson(Str)]), arg.Json.Parseable([InvalidJson(Str)]), arg.Json.Encodable(f), result.Json.Encodable(g), result.Json.Parseable([InvalidJson(Str)])]
 	endpoint = |api, about, schemas| {
 		describe_params = schemas.params
 		describe_body = schemas.body
 		describe_answer = schemas.answer
 		named = contract_of(api)
-		run! = |params, arg, caller| Endpoint.run!(api(params), caller.request, caller.context, arg).map_err(Server.explain)
+		run! = |params, arg, _caller| Endpoint.send!(api(params), arg).map_err(Server.explain)
 		Tool.typed_with_params(about.name, about.description, describe_params(params_of(api), about.tags), describe_body(named, about.tags), run!).answers(answer_schema(describe_answer(named, about.tags))).titled(about.title)
 	}
 
@@ -123,7 +104,7 @@ McpHttp := [].{
 	## behind the MCP route's middleware.
 	function : (arg => result), About, Schemas(c, {}, arg, result) -> Tool(Caller(c))
 		where [arg.Json.Parseable([InvalidJson(Str)]), result.Json.Encodable(e)]
-	function = |called!, about, schemas| McpHttp.endpoint(|{}| Endpoint.local_json("POST", "/", |_, _, arg| Ok(called!(arg))), about, schemas)
+	function = |called!, about, schemas| McpHttp.tool(about, |arg, _caller| Ok(called!(arg)), schemas)
 
 	## A handler of the app's own as a tool: its arguments are a Roc type, its answer another, each
 	## with the schema the platform writes for it.

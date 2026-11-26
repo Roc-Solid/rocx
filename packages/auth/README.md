@@ -25,7 +25,6 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
 
    program = App.program({
        init!: |_started| Ok({}),
-       middleware: Middleware.same_origin({}),
        plugins: [
            Email.plugin({ from: "Acme <hello@example.com>" }),
            Auth.plugin({ admit!: Accounts.admit!, providers: [Auth.google, Auth.github], link_page: "/sign-in/link" }),
@@ -45,11 +44,17 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
        }
    ```
 
-3. Name the middleware in the routes that need a signed-in user:
+3. Put the middleware around the routes that need a signed-in user: a `+middleware.roc` in their
+   directory guards every page, endpoint and channel in it and below it (a group, `(members)/`,
+   adds nothing to their paths):
 
    ```roc
+   # Middlewares.roc
    signed_in : Middleware({}, { user : Str })
    signed_in = Auth.required(|{}, session| { user: session.user })
+
+   # routes/(members)/+middleware.roc
+   middleware = Middlewares.signed_in
    ```
 
 4. Write the sign-in page: a form whose endpoint calls `Auth.link!` and mails the URL, a link per

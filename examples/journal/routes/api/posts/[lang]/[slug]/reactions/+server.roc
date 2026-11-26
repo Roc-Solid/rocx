@@ -5,9 +5,6 @@ import ../../../../../../Posts
 import ../../../../../../Reaction
 import ../../../../../../Reactions
 
-## Sending reactions is rate limited (guard: 20 a minute from each reader); reading them isn't.
-middleware = Middlewares.reactions_limit
-
 ## A post's reactions: each kind's count, and the kinds this reader (their `reader` cookie) has
 ## given. 404 for a post the language doesn't have.
 get! : { request : Server.Request, params : { lang : Str, slug : Str }, context : Middlewares.Context } => Try(Reaction.Tally, Endpoint.Refusal)

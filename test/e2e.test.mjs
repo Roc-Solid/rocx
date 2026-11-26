@@ -240,7 +240,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 
 		// As the server answers: a page, 200; a path no page has, the error page, 404 (text for a client
 		// that doesn't take HTML); a page that fails, the error page inside the layout, 500; a page
-		// behind its route file's middleware, refused without a cookie, its endpoint's answer in it with one.
+		// behind its directory's middleware, refused without a cookie, its endpoint's answer in it with one.
 		const get = async (path, headers = {}) => {
 			const response = await fetch(`${server.url}${path}`, { headers: { accept: "text/html", ...headers } });
 			return { status: response.status, app: response.headers.get("x-app"), html: await response.text() };
@@ -295,7 +295,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.match(jobsPage.html, /<body class="rocx-admin">/, "the jobs page, in the admin look (no database here, so it says why)");
 		const member = await get("/members", { cookie: "member=Ada" });
 		assert.equal(member.status, 200);
-		assert.match(member.html, /<p class="who"><!--x-->Welcome, Ada<!--\/x--><\/p>/, "its endpoint, read as the page renders, answered by its route behind the file's middleware, in-process");
+		assert.match(member.html, /<p class="who"><!--x-->Welcome, Ada<!--\/x--><\/p>/, "its endpoint, read as the page renders, answered by its route behind its directory's middleware, in-process");
 		const carried = JSON.parse(/<script type="application\/json" class="rocx-answers">(.*?)<\/script>/s.exec(member.html)[1]);
 		assert.deepEqual(carried, [["GET /members", "", JSON.stringify({ status: 200, body: JSON.stringify("Welcome, Ada") })]], "and recorded, once, though read twice");
 		assert.match(member.html, /<!--nohydration--><p class="again">Welcome, Ada, said once<\/p><!--\/nohydration-->/, "read inside a <NoHydration> too: the browser never reads it there");
@@ -497,7 +497,7 @@ function contractApp() {
 		mkdirSync(dirname(join(dir, path)), { recursive: true });
 		writeFileSync(join(dir, path), text);
 	};
-	put("main.roc", 'app [program] { jobs: "../../../packages/jobs/main.roc", pf: platform "../../../server/platform/main.roc" }\n\nimport pf.Middleware\nimport jobs.Job\nimport Generated/App\n\nprogram = App.program({\n\tinit!: |_started| Ok({}),\n\tmiddleware: Middleware.headers([]),\n\tplugins: [Job.plugin({ jobs: App.jobs })],\n})\n');
+	put("main.roc", 'app [program] { jobs: "../../../packages/jobs/main.roc", pf: platform "../../../server/platform/main.roc" }\n\nimport jobs.Job\nimport Generated/App\n\nprogram = App.program({\n\tinit!: |_started| Ok({}),\n\tplugins: [Job.plugin({ jobs: App.jobs })],\n})\n');
 	// The channel's message, in a module of its own: Api imports it, and the modules below import Api.
 	put("News.roc", "## What the news channel says: who said it, and a number.\nNews := [].{\n\tSaid : { from : Str, n : U64 }\n}\n");
 	put("routes/news/+server.roc", 'import pf.Server\nimport pf.Endpoint\nimport pf.Channel\nimport ../../News\n\n## The news: anyone may listen.\nchannel! : { request : Server.Request, params : {}, context : {} } => Try(Channel(Str, News.Said, []), Endpoint.Refusal)\nchannel! = |_| Ok(Channel.allow("anyone"))\n');

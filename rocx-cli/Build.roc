@@ -127,9 +127,12 @@ Build := [].{
 							match Routes.route_module(made.code, place) {
 								Err(Problem(message)) => Err("✗ ${message}")
 								Ok(server_module) => {
+									# A directory's middleware is the server's alone: nothing the browser builds reaches it,
+									# so it isn't transpiled again for the browser's copy (which has the server's).
 									browser_module =
 										match options.client {
 											None => Ok(None)
+											Some(_) if entry.kind == "middleware" => Ok(None)
 											Some(_) =>
 												match Transpile.transpile_module(source, file, { module_path, client: Bool.True, contexts, views, route: Bool.True, dev: options.dev }) {
 													Err(Rocx(problem)) => Err(Build.rocx_message!(path, problem))
@@ -398,7 +401,7 @@ Build := [].{
 					.concat([{ name: "Paths", content: Routes.paths_module(table, sources) }, { name: "Styles", content: Build.styles_module(css, sheet) }])
 					.concat(api)
 					.concat(root_page)
-					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints, jobs_package }) }])
+					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints, jobs_package, middleware: Routes.root_middleware(table) }) }])
 			if pages {
 				match options.client {
 					Some(_) => {

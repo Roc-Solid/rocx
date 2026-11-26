@@ -641,20 +641,22 @@ SiteSources := [].{
 			$sources = $sources.append({ file, defs: Routes.definitions(Fs.read_or_empty!(Fs.join([routes, file]))) })
 		}
 		sources = $sources
-		# A page's, as it runs (its own, or its +server.roc's: D-079); any other file's own.
-		behind = |file|
-			match table.pages.find_first(|page| page.file == file) {
-				Ok(page) =>
-					match Routes.page_guard(table, sources, page) {
-						Some(guard) => ", behind ${guard.said}"
-						None => ""
-					}
-				Err(_) =>
-					match Routes.defs_of(sources, file).middleware {
-						Some(middleware) if !middleware.is_empty() => ", behind ${middleware}"
-						_ => ""
-					}
+		# What a page or an endpoint runs behind: its directories' middleware (D-103), not the app's.
+		behind = |file| {
+			dirs = file.split_on("/").drop_last(1)
+			if table.pages.any(|page| page.file == file) or table.servers.any(|server| server.file == file) {
+				said = Routes.chain_of(table, dirs).map(
+					|each|
+						match Routes.defs_of(sources, each.file).middleware {
+							Some(text) if !text.is_empty() => text
+							_ => "routes/${each.file}"
+						},
+				)
+				if (said.is_empty()) "" else ", behind ${Str.join_with(said, " → ")}"
+			} else {
+				""
 			}
+		}
 		paths = table.pages.map(|page| { file: page.file, path: page.path }).concat(table.servers.map(|server| { file: server.file, path: "${server.path}, its endpoints" }))
 		depth = |file| file.split_on("/").len()
 		sorted = files.sort_with(
@@ -672,6 +674,7 @@ SiteSources := [].{
 			match file.split_on("/").last() ?? "" {
 				"+layout.rocx" => "around every page"
 				"+error.rocx" => "where no page is"
+				"+middleware.roc" => if (file == "+middleware.roc") "around every request" else "around every route in it and below it"
 				_ => "undefined"
 			}
 		lines = sorted.map(

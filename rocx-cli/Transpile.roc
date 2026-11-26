@@ -20,8 +20,7 @@ Transpile := [].{
 
 	## How a file is transpiled: `module_path` names it (`Demos/Echo`, the file's path in its app without
 	## `.rocx`; `""` for the file's name); with `client`, the code is the browser's copy, in which each
-	## `<NoHydration>` has no children (and, for a `route` file, there is no `middleware`), the imports
-	## only those used dropped. `contexts` are the contexts other modules define, by their providers'
+	## `<NoHydration>` has no children, the imports only those used dropped. `contexts` are the contexts other modules define, by their providers'
 	## tags (`PicksContext` → `Picks.picks_context`), and `views` how other modules' components are
 	## called (`Heading` → `view`: pure, called where written; `view!`, put off in `Html.component`).
 	Options : { module_path : Str, client : Bool, contexts : List({ key : Str, value : Str }), views : List({ key : Str, value : Str }), route : Bool, dev : Bool }
@@ -3091,24 +3090,6 @@ Transpile := [].{
 		Ok({ st: st1, out: "Html.source_text(Str.join_with([${Str.join_with($pieces, ", ")}], \"\\n\"))" })
 	}
 
-	## The browser's copy of a route file without its `middleware` (its annotation and definition, to the
-	## next definition at the file's top level), which only the server runs: each line left empty.
-	without_middleware : Str -> Str
-	without_middleware = |code| {
-		var $dropping = Bool.False
-		var $out = []
-		for line in code.split_on("\n") {
-			bytes = line.to_utf8()
-			if bytes.starts_with("middleware".to_utf8()) and (Text.at(bytes, Text.run_end(bytes, 10, Transpile.is_space_or_tab)) == ':' or Text.at(bytes, Text.run_end(bytes, 10, Transpile.is_space_or_tab)) == '=') and Text.run_end(bytes, 10, Transpile.is_space_or_tab) < bytes.len() {
-				$dropping = Bool.True
-			} else if $dropping and !bytes.is_empty() and !Text.is_space_at(bytes, 0) and !([')', ']', '}'].contains(Text.at(bytes, 0))) {
-				$dropping = Bool.False
-			}
-			$out = $out.append(if ($dropping) "" else line)
-		}
-		Str.join_with($out, "\n")
-	}
-
 	## Whether `code` (its lines but its imports) uses `name.` (`/(^|[^A-Za-z0-9_.])name\./m`).
 	uses_name : List(U8), Str -> Bool
 	uses_name = |code, name| {
@@ -3134,8 +3115,8 @@ Transpile := [].{
 	without_imports = |code|
 		Str.join_with(code.split_on("\n").drop_if(|line| line.starts_with("import") and Text.is_space_at(line.to_utf8(), 6)), "\n").to_utf8()
 
-	## The browser's copy without the imports only what it drops (a `<NoHydration>`'s children, or a route
-	## file's middleware) used: each such line left empty, so lines stay lines. `server` is the server's
+	## The browser's copy without the imports only what it drops (a `<NoHydration>`'s children) used:
+	## each such line left empty, so lines stay lines. `server` is the server's
 	## copy; an import its code doesn't use either is kept, for the compiler to warn about. A module a
 	## comment or a string names (`## Behind Middlewares.member`) isn't used by that.
 	without_server_imports : Str, Str -> Str
@@ -3418,13 +3399,11 @@ Transpile := [].{
 				Transpile.read_code(cfg2, Transpile.fresh, Bool.False)?
 			}
 		body0 = second.out
-		# The browser's copy of a route file has no middleware: only the server runs it.
-		kept = if (opts.client and opts.route) Transpile.without_middleware(body0) else body0
 		body =
-			if opts.client and (second.st.regions > 0 or kept != body0) {
+			if opts.client and second.st.regions > 0 {
 				server_cfg = Transpile.new_cfg(source, file, { ..opts, client: Bool.False }, scopes)?
 				server = Transpile.read_code(server_cfg, Transpile.fresh, Bool.False)?
-				Transpile.without_server_bindings(Transpile.without_server_imports(kept, server.out), server.out)
+				Transpile.without_server_bindings(Transpile.without_server_imports(body0, server.out), server.out)
 			} else {
 				body0
 			}

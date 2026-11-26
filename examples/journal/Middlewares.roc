@@ -6,21 +6,19 @@ import guard.Security
 import guard.Guard
 
 ## The journal's middleware: what runs around its answers. `default` runs around every request
-## (main.roc names it); a route file names its own (`middleware = Middlewares.reactions_limit`),
-## which runs inside it, around that route alone.
+## (routes/+middleware.roc names it); the reactions' directory names its own
+## (routes/api/posts/[lang]/[slug]/reactions/+middleware.roc: `Middlewares.reactions_limit`), which
+## runs inside it, around that route alone (D-103).
 Middlewares := [].{
 
 	## What every route is handed: the reader, by the `reader` cookie the journal gives each browser
 	## (`""` until it has one). Reactions are remembered and rate limited by it.
 	Context : { reader : Str }
 
-	## Around every request: a change sent by another site's page is refused; every answer has
-	## guard's security headers; and the reader is known.
+	## Around every request (inside the platform's refusal of a change another site's page sends):
+	## every answer has guard's security headers, and the reader is known.
 	default : Middleware({}, Middlewares.Context)
-	default =
-		Middleware.same_origin({})
-			.then(Middlewares.security)
-			.then(Middlewares.reader)
+	default = Middlewares.security.then(Middlewares.reader)
 
 	## guard's security headers (a Content-Security-Policy that lets the page run only its own
 	## scripts and wasm, and the rest), but on the OpenAPI page, which loads Scalar from jsDelivr.
@@ -63,11 +61,7 @@ Middlewares := [].{
 	## the connection's (`request.peer`), or behind a proxy the address it saw (`Hops(1)`: the last
 	## in `X-Forwarded-For`). Reading the counts isn't limited: every post's page does it.
 	reactions_limit : Middleware(Middlewares.Context, Middlewares.Context)
-	reactions_limit = Middlewares.writes_only(Guard.rate_limit("reactions", RateLimit.per_minute(20), Guard.user(|context| context.reader, Hops(1))))
-
-	## `guard` around requests that change something (`POST`, …); the rest pass by it.
-	writes_only : Middleware(c, c) -> Middleware(c, c)
-	writes_only = |guard| Middleware.make(|request, context, next!| if (Server.changes(request)) Middleware.run!(guard, request, context, next!) else next!(request, context))
+	reactions_limit = Middleware.when(Server.changes, Guard.rate_limit("reactions", RateLimit.per_minute(20), Guard.user(|context| context.reader, Hops(1))))
 }
 
 expect Middlewares.is_reader("r1234567890") and !Middlewares.is_reader("r") and !Middlewares.is_reader("admin")

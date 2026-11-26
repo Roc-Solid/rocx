@@ -110,7 +110,7 @@ export const rootModule = (table, { sources, stories = [], build = "0badc0de", d
 export const jobsIn = (dir, table) => call("jobsIn", dir, table);
 export const actorsIn = (dir, table) => call("actorsIn", dir, table);
 export const migrationsIn = (dir) => call("migrationsIn", dir);
-export const appModule = ({ jobs = [], actors = [], migrations = [], endpoints = false, jobsPackage = "" } = {}) => call("appModule", { jobs, actors, migrations, endpoints, jobsPackage });
+export const appModule = ({ jobs = [], actors = [], migrations = [], endpoints = false, jobsPackage = "", middleware = null } = {}) => call("appModule", { jobs, actors, migrations, endpoints, jobsPackage, middleware });
 export const clientMainModule = ({ web, packages = [], dir = "." }) => call("clientMainModule", { web, packages, dir });
 export const routeList = (table, sources) => call("routeList", table, plain(sources));
 export const routesTable = (dir) => call("routesTable", dir);

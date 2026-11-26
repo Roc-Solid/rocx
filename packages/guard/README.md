@@ -25,14 +25,13 @@ Middlewares := [].{
 
 	Context : { facts : Str, user : Str }
 
-	## Every request: who is signed in, then the guards.
+	## Every request (routes/+middleware.roc): who is signed in, then the guards.
 	default : Middleware({ facts : Str }, Context)
 	default =
 		signed_in
 			.then(Guard.security_headers(Security.defaults))
 			.then(Guard.body_limit(1_000_000))
 			.then(Guard.maintenance({ flag: Features.maintenance, message: "Back soon.", retry_after_s: 600, except: ["/admin"] }))
-			.then(Guard.under("/api", Middlewares.api_limit))
 
 	## 5 a minute from each client, behind one proxy.
 	login_limit : Middleware(Context, Context)
@@ -57,8 +56,17 @@ signed_in : Middleware({ facts : Str }, Middlewares.Context)
 signed_in = Middleware.make(|request, context, next!| next!(request, { facts: context.facts, user: Server.cookie(request, "user") ?? "" }))
 ```
 
+Each goes in the `+middleware.roc` of the directory it guards, which runs around every route in
+it and below it (D-103):
+
 ```roc
-# routes/login/+server.roc
+# routes/+middleware.roc: every request
+middleware = Middlewares.default
+
+# routes/api/+middleware.roc: the whole API
+middleware = Middlewares.api_limit
+
+# routes/login/+middleware.roc
 middleware = Middlewares.login_limit
 ```
 
@@ -141,9 +149,10 @@ Guard.rate_limit_with({ name, policy, key, max_keys: 50_000 })
   `Guard.both(key, key)` each pair. A key is any `Server.Request, context -> Str`. A request whose
   key is `""` isn't limited. A client whose address can't be told (an `X-Forwarded-For` that isn't
   an address, where it is trusted) counts as `unknown`, one count for every such client, not none.
-- **Each limit its own name.** `name` keeps limits' counts apart. Put a limit in a route file's
-  `middleware` for one route, or `Guard.under("/api", …)` in the default middleware for a whole
-  tree.
+- **Each limit its own name.** `name` keeps limits' counts apart. Put a limit in the
+  `+middleware.roc` of the directory it guards (`routes/api/+middleware.roc` for the whole API).
+  For a plugin's paths, which no directory has, use `Guard.under("/jobs", …)` in
+  routes/+middleware.roc.
 - **Answers.** An allowed request gets `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
   (seconds until the whole limit is back) and `RateLimit-Policy` (`5;w=60`). A refused one gets
   429, those headers, `Retry-After` (exactly the seconds until one more would be allowed), and the
@@ -245,7 +254,7 @@ alone.
 route from anyone who doesn't have a flag on (they get 404), use `Guard.feature`:
 
 ```roc
-# routes/beta/+server.roc: `Middlewares.beta` is Guard.feature(Features.new_checkout, …), above
+# routes/beta/+middleware.roc: `Middlewares.beta` is Guard.feature(Features.new_checkout, …), above
 middleware = Middlewares.beta
 ```
 
@@ -301,7 +310,7 @@ it, every flag is off. `Flags.enabled(values, name)` reads one flag where an `if
 | `Guard.ips({ allow, deny, trust })` | refuses an address in `deny`, or (when `allow` lists any) one not in `allow`, 403 |
 | `Guard.maintenance({ flag, message, retry_after_s, except })` | while the flag is on, answers 503 with `Retry-After` and a small page (text for a client that isn't a browser), except under the paths in `except` (`/admin`, `/health`) |
 | `Guard.feature(flag, who)` | answers 404 to anyone who doesn't have the flag on |
-| `Guard.under("/api", guard)` | runs `guard` for `/api` and the paths under it only (not `/apiary`) |
+| `Guard.under("/jobs", guard)` | runs `guard` for `/jobs` and the paths under it only (not `/jobsite`): for a plugin's paths; the app's own routes are guarded by their directory's `+middleware.roc` |
 
 The default CSP fits a Roc Solid app: scripts and WebAssembly from the site's own origin
 (`'wasm-unsafe-eval'`, which a page needs to start wasm under a CSP), styles inline too (components

@@ -22,11 +22,9 @@ app [program] { email: "../packages/email/main.roc", jobs: "../packages/jobs/mai
 import email.Email
 import jobs.Job
 import Generated/App
-import Middlewares
 
 program = App.program({
     init!: |started| Ok({ facts: started }),
-    middleware: Middlewares.default,
     plugins: [Job.plugin({ jobs: App.jobs }), Email.plugin({})],
 })
 ```

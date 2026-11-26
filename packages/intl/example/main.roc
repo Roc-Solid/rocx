@@ -5,9 +5,7 @@
 app [program] { intl: "../main.roc", pf: platform "../../../server/platform/main.roc" }
 
 import Generated/App
-import pf.Middleware
 
 program = App.program({
 	init!: |_started| Ok({}),
-	middleware: Middleware.same_origin({}),
 })

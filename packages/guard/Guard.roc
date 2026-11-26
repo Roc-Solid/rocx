@@ -15,7 +15,8 @@ import FlagStore
 import Kept
 
 ## Guards, as middleware: each runs around a request, and lets it on or refuses it. Name them in
-## the app's default middleware (every request) or in a route file's (that route):
+## routes/+middleware.roc (every request) or in a directory's `+middleware.roc` (the routes in it
+## and below it, D-103):
 ##
 ##     # Middlewares.roc
 ##     default = Guard.security_headers(Security.defaults)
@@ -24,7 +25,7 @@ import Kept
 ##
 ##     login_limit = Guard.rate_limit("login", RateLimit.per_minute(5), Guard.ip(Hops(1)))
 ##
-##     # routes/login/+server.roc
+##     # routes/login/+middleware.roc
 ##     middleware = Middlewares.login_limit
 ##
 ## Every guard hands on the context it was given, unchanged (`Middleware(c, c)`), so they go
@@ -117,8 +118,10 @@ Guard := [].{
 			if (a.is_empty() or b.is_empty()) "" else "${a}|${b}"
 		}
 
-	## `middleware` for requests whose path is `prefix` or under it (`"/api"`: `/api`, `/api/x`, not
-	## `/apiary`); others pass by it.
+	## `middleware` for requests whose path is `prefix` or under it (`"/jobs"`: `/jobs`, `/jobs/x`,
+	## not `/jobsite`); others pass by it. For paths no directory of routes/ has, in
+	## routes/+middleware.roc: a plugin's (the jobs page's). The app's own routes are guarded by their
+	## directory's `+middleware.roc`.
 	under : Str, Middleware(c, c) -> Middleware(c, c)
 	under = |prefix, middleware| {
 		trimmed = prefix.drop_suffix("/")

@@ -10,7 +10,9 @@ Call := [].{
 	## plain value. A handler or computation that asks stops until it is in, and runs again then; no
 	## answer at all (offline) shows the nearest <Errored>. On the server, while a page renders, a
 	## GET of one of the app's own paths is answered in-process and noted for the page
-	## (`Endpoint.read!`); any other request is a handler's, and fails there.
+	## (`Endpoint.read!`), and any other request is a handler's, which fails there; outside a render,
+	## a request of the code answering one (a handler's `Endpoint.send!`) to one of the app's own
+	## paths is answered in-process, by its route, behind its middleware (D-103).
 	fetch! : { method : Str, url : Str, headers : List({ name : Str, value : Str }), body : Str } => { status : U16, body : Str }
 	fetch! = |request| {
 		lines = Str.join_with(request.headers.map(|header| "${header.name}: ${header.value}"), "\n")

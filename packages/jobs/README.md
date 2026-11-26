@@ -15,12 +15,10 @@ app [program] { jobs: "../packages/jobs/main.roc", pf: platform "../server/platf
 import jobs.Cron
 import jobs.Job
 import Generated/App
-import Middlewares
 import Jobs
 
 program = App.program({
     init!: |started| Ok({ facts: started }),
-    middleware: Middlewares.default,
     plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.nightly, {})] })],
 })
 ```

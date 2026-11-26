@@ -9,20 +9,19 @@ Middlewares := [].{
 
 	Context : { facts : Str, user : Str }
 
-	## Every request: who is signed in, then the guards.
+	## Every request (routes/+middleware.roc): who is signed in, then the guards.
 	default : Middleware({ facts : Str }, Context)
 	default =
 		signed_in
 			.then(Guard.security_headers(Security.defaults))
 			.then(Guard.body_limit(1_000_000))
 			.then(Guard.maintenance({ flag: Features.maintenance, message: "Back soon.", retry_after_s: 600, except: ["/admin"] }))
-			.then(Guard.under("/api", Middlewares.api_limit))
 
 	## 5 a minute from each client, behind one proxy.
 	login_limit : Middleware(Context, Context)
 	login_limit = Guard.rate_limit("login", RateLimit.per_minute(5), Guard.ip(Hops(1)))
 
-	## 100 a minute for each user, or each address when signed out.
+	## 100 a minute for each user, or each address when signed out (routes/api/+middleware.roc).
 	api_limit : Middleware(Context, Context)
 	api_limit = Guard.rate_limit("api", RateLimit.per_minute(100), Guard.user(|context| context.user, Hops(1)))
 

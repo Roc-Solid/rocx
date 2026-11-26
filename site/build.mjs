@@ -16,7 +16,7 @@
 //   1 and 2 are rocx's (`rocx site prepare`, rocx-cli/Site.roc), run by `prepare` below:
 //   1. .rocx → .roc (rocx build): the pages (site/routes), their components (site/Ui, site/Demos)
 //      and the program (site/Generated/App.roc), and the browser's copy of the site
-//      (site/build/client), in which a route file has no middleware, with its main.roc
+//      (site/build/client), with its main.roc
 //   2. site/Generated/Sources.roc: the sources, refusals and report the pages show
 //      (rocx-cli/SiteSources.roc); and, before step 1 copies the site,
 //      site/Generated/PlatformReference.roc: every module the server platform exposes, read from
@@ -64,9 +64,12 @@ const routeDefinitions = () => {
 	return routeDefs;
 };
 
-/** Whether a page runs behind middleware: its own, or, when it names none, the one its directory's
- * `+server.roc` names (D-079). */
-const guarded = (file) => Boolean(routeDefinitions().get(file).middleware || routeDefinitions().get(file.replace(/\+page\.rocx$/, "+server.roc"))?.middleware);
+/** Whether a page runs behind a directory's middleware: a `+middleware.roc` in its directory or one
+ * above it, but routes/'s, which runs around every request (D-103). */
+const guarded = (file) => {
+	const dirs = file.split("/").slice(0, -1);
+	return dirs.some((_, i) => routeDefinitions().has(`${dirs.slice(0, i + 1).join("/")}/+middleware.roc`));
+};
 
 /** The pages a static build writes: those with no params, and none behind middleware, which
  * answers each request as it comes (`/members`: who is asking?). */
@@ -308,8 +311,7 @@ async function measure({ compare }) {
 	return text;
 }
 
-/** Steps 1 and 2: the Roc the compiler checks, and the browser's copy of the site, in which a
- * route file has no middleware. */
+/** Steps 1 and 2: the Roc the compiler checks, and the browser's copy of the site. */
 export function prepare({ dev = false } = {}) {
 	// rocx's (rocx-cli/Site.roc): the platform's reference, the example apps' facts and SQLite against
 	// Turso as Roc; rocx build of the site, with the stories for a dev build (the catalog at

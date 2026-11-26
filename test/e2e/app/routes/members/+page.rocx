@@ -1,7 +1,7 @@
 import pf.Html
 import ../../Generated/Api
 
-## Members only: it names no middleware, so it runs behind the one `+server.roc` names (D-079).
+## Members only: it runs behind its directory's middleware (routes/members/+middleware.roc, D-103).
 meta = { title: "Members" }
 
 ## Who is asking: this path's endpoint (`GET /members`, for JSON), behind the same middleware,

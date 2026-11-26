@@ -31,9 +31,11 @@ costs nothing.
 ## Installing it
 
 The package names the server platform, so only the server's half of an app sees it. Name it in the
-app's header, add the middleware and the plugin, and give the jobs plugin `PostHog.job_failed!`:
+app's header, add the plugin, give the jobs plugin `PostHog.job_failed!`, and put the middleware in
+`routes/+middleware.roc`, the one around every request:
 
 ```roc
+# main.roc
 app [program] { jobs: "…/packages/jobs/main.roc", posthog: "…/packages/posthog/main.roc", pf: platform "…/server/platform/main.roc" }
 
 import jobs.Job
@@ -42,13 +44,20 @@ import Generated/App
 
 program = App.program({
 	init!: |started| Ok({ facts: started }),
-	# After the middleware that knows who is signed in, so an error says who it reached.
-	middleware: Middlewares.member.then(PostHog.middleware(|context| context.member.id)),
 	plugins: [
 		Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }),
 		PostHog.plugin({}),
 	],
 })
+```
+
+```roc
+# routes/+middleware.roc
+import posthog.PostHog
+import ../Middlewares
+
+# After the middleware that knows who is signed in, so an error says who it reached.
+middleware = Middlewares.member.then(PostHog.middleware(|context| context.member.id))
 ```
 
 And in the layout, so pages send their errors too:

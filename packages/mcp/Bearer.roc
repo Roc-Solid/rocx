@@ -3,8 +3,8 @@ import tools.JsonValue
 ## Who may ask. MCP's authorization is OAuth 2.1: a client sends an access token with each request
 ## (`Authorization: Bearer …`), and a request without a good one is refused with 401 and where to
 ## learn how to get one (the server's protected resource metadata, RFC 9728). Which tokens are
-## good is the app's middleware's to say, in front of its MCP route; these are the pieces it
-## answers with. (An authorization server of the platform's own is a proposal: PROPOSALS.md.)
+## good is for the middleware of its MCP route to say (the `+middleware.roc` of its folder); these
+## are the pieces it answers with. (An authorization server of the platform's own is a proposal: PROPOSALS.md.)
 ##
 ##     bearer = Middleware.make(|request, context, next!|
 ##         match Bearer.token(request.headers) {

@@ -17,8 +17,8 @@ state.
    app [program] { otel: "…/packages/otel/main.roc", pf: platform "…/server/platform/main.roc" }
    ```
 
-2. List its plugin, and put `Otel.middleware({})` first in the app's middleware (`import otel.Otel`
-   wherever you record):
+2. List its plugin, and put `Otel.middleware({})` first in the app's middleware, the one around
+   every request, `routes/+middleware.roc` (`import otel.Otel` wherever you record):
 
    ```roc
    # main.roc
@@ -26,9 +26,16 @@ state.
 
    program = App.program({
        init!: |started| Ok({ facts: started }),
-       middleware: Otel.middleware({}).then(Middlewares.default),
        plugins: [Otel.plugin({})],
    })
+   ```
+
+   ```roc
+   # routes/+middleware.roc
+   import otel.Otel
+   import ../Middlewares
+
+   middleware = Otel.middleware({}).then(Middlewares.default)
    ```
 
 3. Start the server with a collector to send to:
@@ -94,7 +101,8 @@ attributes OpenTelemetry's HTTP conventions name:
   `/posts/42`, so each post isn't a series of its own; left out when no route matched);
 - `http.response.status_code`.
 
-Put it first, so it times the rest of the middleware too.
+Put it first in `routes/+middleware.roc`, so it times the rest of the middleware too, and every
+request the app answers, its plugins' too.
 
 ## Where they go
 

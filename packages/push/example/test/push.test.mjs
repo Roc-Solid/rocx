@@ -71,7 +71,7 @@ changed = |done|
 /**
  * The example for `database` ("sqlite" or "postgres"), in build/<database>/app: its routes and
  * main.roc (the packages' paths from there, and the program's `database`), and the store's route.
- * With `guarded`, its middleware is a guard that refuses every request for a script (a path ending
+ * With `guarded`, its routes/+middleware.roc is a guard that refuses every request for a script (a path ending
  * in `.js`) the app would answer. Its folder.
  */
 function app(database, { guarded = false } = {}) {
@@ -83,12 +83,11 @@ function app(database, { guarded = false } = {}) {
 		.replaceAll('"../', '"../../../../')
 		.replace("\tplugins: [", `\tdatabase: ${database === "sqlite" ? 'Sqlite("data/push.db")' : "Postgres"},\n\tplugins: [`);
 	assert.match(main, /database: /, "the program's database written");
-	if (guarded) {
-		main = main.replace("middleware: Middleware.same_origin({}),", 'middleware: Middleware.make(|request, context, next!| if (request.path.ends_with(".js")) Server.response(403, [], "the guard refuses scripts") else next!(request, context)),');
-		main = main.replace("import pf.Middleware\n", "import pf.Middleware\nimport pf.Server\n");
-		assert.match(main, /the guard refuses scripts/, "the guard written");
-	}
 	writeFileSync(join(dir, "main.roc"), main);
+	if (guarded) {
+		// The app's middleware (routes/+middleware.roc, D-103), around every request it answers.
+		writeFileSync(join(dir, "routes", "+middleware.roc"), 'import pf.Middleware\nimport pf.Server\n\nmiddleware = Middleware.make(|request, context, next!| if (request.path.ends_with(".js")) Server.response(403, [], "the guard refuses scripts") else next!(request, context))\n');
+	}
 	mkdirSync(join(dir, "routes", "test", "store"), { recursive: true });
 	writeFileSync(join(dir, "routes", "test", "store", "+server.roc"), storeRoute);
 	return dir;

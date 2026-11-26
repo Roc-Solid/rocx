@@ -456,7 +456,7 @@ ServerOnly := [].{
 				"imports ${Str.join_with(steps.map(|step| step.written), ", which imports ")}, which imports ${reached.server_module}"
 			}
 		source = Str.join_with([app_dir, ServerOnly.source_of!(target, place.file)].keep_if(|part| !part.is_empty() and part != "."), "/")
-		"⚠ ${source}:${place.line.to_str()}: the browser's copy ${file_imports}, which only the server has, so the browser's build can't compile it. Use it in an endpoint (+server.roc) or middleware, which the browser's copy leaves out."
+		"⚠ ${source}:${place.line.to_str()}: the browser's copy ${file_imports}, which only the server has, so the browser's build can't compile it. Use it in an endpoint (+server.roc) or a directory's middleware (+middleware.roc), which the browser's copy leaves out."
 	}
 }
 

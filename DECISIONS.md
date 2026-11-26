@@ -6168,3 +6168,92 @@ gives the value, not a `Try` (a type error where it is matched). Apps outside th
 by hand.
 
 **Reversible:** yes: `get!` back as `read!`'s other name.
+
+## D-103 Middleware by folder: `+middleware.roc`, groups, and guards that go with an endpoint
+
+**Status.** Built (2026-11-26), the user's call, after a review of where an app names middleware;
+changes D-079 (a page's middleware from the `+server.roc` beside it).
+
+**Context.** An app named middleware in two places, with a rule between them: the app's default
+(`App.program({ middleware })` in main.roc) around every request, and a route file's own line
+(`middleware = Middlewares.signed_in`) around that file alone; a page that named none took the line
+of the `+server.roc` beside it (D-079). Nothing went down the tree, so the same line was copied into
+nearly every file of an area: `Middlewares.signed_in` 64 times across the repository's apps, the
+private app's 47 route files of 66, board's 18 of 20; and a file that forgot it was open. Two apps
+scoped by path by hand instead, a list of public paths in their default middleware (plate's
+`is_public`, the private app's `reachable_signed_out`), which nothing kept in step with the routes;
+guard's example did the same for its API (`Guard.under("/api", …)`). D-100 put a page's endpoints
+under `api/`, so the page and its data no longer share a directory, and D-079's rule guarded less.
+Besides: an MCP tool ran an endpoint's handler directly (`Endpoint.run!`), past the endpoint's
+middleware, so notes' `agent` middleware repeated `api`'s bearer check; the MCP server answered its
+path from inside the app's middleware (`McpHttp.middleware`), a third way to put something at a
+URL; two apps wrote the same "only for writes" wrapper (`posts_only`, `writes_only`); five
+programs wrote a middleware that does nothing; and fifteen of twenty-two defaults began with
+`Middleware.same_origin({})`.
+
+**Decision.**
+
+- **A `+middleware.roc` in a directory under `routes/`** names a middleware (`middleware = …`, a
+  bare file as a route file is, written as a module under Generated/: `MembersMiddleware`) that runs
+  around every page, endpoint and channel in that directory and the directories below it, outermost
+  first, each given what the one around it handed on. Generated/Routes nests them
+  (`Middleware.run!(A.middleware, request, context, |passed_1, handed_1| Middleware.run!(B…`); the
+  types are checked as before: a handler that reads `context.user` compiles only behind one that
+  adds it. `+middleware.rocx` is refused (it is plain Roc).
+- **`routes/+middleware.roc` is the app's**, around every request the app answers (its plugins'
+  routes, the OpenAPI document, a path nothing has): `App.program` loses `middleware`, and
+  Generated/App imports the file's module. An app without one has no middleware.
+- **Groups**: a directory in brackets, lower case (`(members)`, `(signed-in)`), adds nothing to the
+  path. Its `+middleware.roc` and `+layout.rocx` reach the files in it alone, so a page and its
+  endpoint under `api/` share a guard, and public pages sit outside it. Module names keep the group
+  (`(members)/account/+page.rocx` is `MembersAccountPage`); paths and Paths' names don't (`/account`,
+  `Paths.account`). Two pages, or two `+server` files, at one path in two groups are refused. The
+  error page stays in `routes/` itself.
+- **No middleware in a route file.** A page, an endpoint, a layout or the error page that names one
+  is refused, saying which `+middleware.roc` to move the line to. D-079's rule is gone, and so is
+  the transpiler's dropping of a page's middleware from the browser's copy (`without_middleware`).
+- **A change another site's page sends is refused by the platform** (`Middleware.same_origin`,
+  outermost, before routes/+middleware.roc), unless the app says `cross_site: Allowed`; then a
+  directory's middleware may refuse it where it should.
+- **`rocx routes`** says what runs around each route, outermost first (`Middlewares.default →
+  Middlewares.signed_in`); the static build leaves out the pages behind any directory's middleware
+  but routes/'s, as it left out a page behind its own.
+- **An endpoint sent on the server goes through its route.** `Endpoint.send!` in code answering a
+  request (a handler, an MCP tool) is answered in-process, as a page's reads are while it renders:
+  behind the app's middleware and the endpoint's, with the request's headers (its cookies, its
+  `authorization`), the method, the body and its `content-type` (the server's `roc_fetch`; nothing
+  is noted for a page). `Endpoint.run!` is gone. `McpHttp.endpoint` sends Api's contract
+  (`Api.post_api_search`, not Handlers'), so what guards an endpoint guards the tool, and a module a
+  route file imports may make tools; `McpHttp.middleware` is gone: the MCP server is a route
+  (`routes/mcp/+server.roc`, `respond! = |{ request, context, .. }| McpHttp.respond!(Agents.server,
+  request, context)`, its folder's `+middleware.roc` deciding who may ask). `McpHttp.function`
+  calls its function itself.
+- **`Middleware.when(asked, guard)`**: `guard` for the requests `asked` says
+  (`Middleware.when(Server.changes, Guard.rate_limit(…))`). `Guard.under` stays, for paths no
+  directory has (a plugin's).
+
+**Why.** One place says what guards an area, and it is where the area's files are: a new file in it
+is guarded without a line, and `rocx routes` shows the whole chain. A guard written once in an
+endpoint's directory holds for every way to reach the endpoint: a browser, a script, a page's read,
+an MCP tool.
+
+**Considered.** Prefix scoping by URL (a `+middleware.roc` reaching every request under its path,
+plugins' and missing paths too): D-100's `api/` would have needed every guard twice. Keeping the
+file's line beside the directory's, for a guard of one file alone: every file is alone in its
+directory already, so a `+middleware.roc` there does it; what it costs is that it reaches the
+directories below too. Middleware in `+layout.rocx` (SvelteKit's layouts' loads guard pages):
+endpoints have no layouts, and D-079 refused it.
+
+**Tests.** test/routes.test.mjs: nesting, groups, the root's middleware in App and not in Routes,
+`rocx routes`' chains, the problems (a file that names its own, a `+middleware.roc` that names
+none), clashes in groups; the browser's build reaches no middleware. server/test: a handler's
+`send!` of an endpoint behind a middleware, answered with the request's cookie and refused without
+it. The examples, the packages' examples, the template, the e2e app and the docs site moved.
+
+**Costs.** Every app moves its main.roc's `middleware` and its route files' lines into
+`+middleware.roc` files. A one-off guard in a directory with directories below reaches them too.
+Middleware errors are reported in Generated/Routes.roc, as before. A plugin under a guarded
+directory isn't guarded by it (`JobsPage.plugin({ guard })`, or `Guard.under` in routes/'s). A tool
+call is a second request through the app's middleware (its log, its limits) inside the MCP request.
+
+**Reversible:** yes: the field back in `App.program`, the line back in route files.

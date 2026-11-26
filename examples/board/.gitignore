@@ -3,5 +3,6 @@ Generated/
 build/
 routes/**/*.roc
 !routes/**/+server.roc
+!routes/**/+middleware.roc
 Ui/*.roc
 !Ui/Shared.roc

@@ -39,7 +39,7 @@ tools:
 # Agents.roc
 import mcp.Mcp
 import mcp.McpHttp
-import Generated/Handlers   # each endpoint with its handler, which a tool runs
+import Generated/Api   # each endpoint's contract, which a tool sends
 
 ## What the app offers agents.
 server : Mcp.Server(McpHttp.Caller(Context))
@@ -48,32 +48,34 @@ server = {
     version: "1.0.0",
     instructions: "Notes, by id: list them, then read or add one.",
     tools: [
-        McpHttp.endpoint(Handlers.post_api_notes, { name: "add_note", description: "Adds a note" }, McpHttp.openapi({})),
-        McpHttp.endpoint(Handlers.get_api_notes_id, { name: "read_note", description: "A note, by its id" }, McpHttp.openapi({})).read_only(),
+        McpHttp.endpoint(Api.post_api_notes, { name: "add_note", description: "Adds a note" }, McpHttp.openapi({})),
+        McpHttp.endpoint(Api.get_api_notes_id, { name: "read_note", description: "A note, by its id" }, McpHttp.openapi({})).read_only(),
         McpHttp.function(Notes.search!, { name: "search", description: "Finds notes by their words" }, McpHttp.openapi({})).read_only(),
     ],
 }
 ```
 
-Mount it in `main.roc`, after the middleware that decides who may ask:
+Serve it from a route, and decide who may ask in its directory's middleware, as for any route:
 
 ```roc
-program = App.program({
-    init!: |started| Ok({ secret: started }),
-    middleware: Middlewares.signed_in.then(McpHttp.middleware("/mcp", Agents.server)),
-})
-```
+# routes/mcp/+server.roc
+import mcp.McpHttp
+import ../../Agents
 
-Why `main.roc`: the tools run the endpoints' handlers through `Generated/Handlers`, and
-`Generated/Handlers` imports every route file that has endpoints. So a module those route files
-import can't import it (that would be an import cycle), but `main.roc`, or a module only `main.roc`
-imports, can. A route file that has `respond!` and no endpoints may serve it too
-(`routes/mcp/+server.roc`, with its own `middleware`), because `Generated/Handlers` doesn't import
-such a file:
-
-```roc
 respond! = |{ request, context, .. }| McpHttp.respond!(Agents.server, request, context)
 ```
+
+```roc
+# routes/mcp/+middleware.roc
+import ../../Middlewares
+
+middleware = Middlewares.signed_in
+```
+
+A tool made from an endpoint sends it as a handler sends one (`Endpoint.send!`): the server answers
+it in-process, by the endpoint's route, with the MCP request's headers (its `authorization`, its
+cookies). So the endpoint's own middleware decides, as it does for a script, and an agent can do
+what the same credentials can do over HTTP, and no more (D-103).
 
 ## The protocol's modules
 
@@ -95,16 +97,14 @@ made there is served here as it is, and packages/ai's models use it too.
 
 ## The HTTP side
 
-`McpHttp` imports the server platform (`Server`, `Endpoint`, `OpenApi`, `Events`, `Middleware`,
-`Log`), so the package names it, and its `browser.roc` lists the protocol's modules alone for the
+`McpHttp` imports the server platform (`Server`, `Endpoint`, `OpenApi`, `Events`, `Log`), so the package names it, and its `browser.roc` lists the protocol's modules alone for the
 browser's half of an app (D-033, as packages/push and packages/guard do). `roc test
 packages/mcp/main.roc` runs McpHttp's expects with the protocol's.
 
 | `McpHttp.` | What it is |
 |---|---|
-| `middleware(path, server)` | The MCP server as a middleware: it answers requests to `path` and passes every other request on. Put it after the middleware that decides who may ask. |
 | `respond!(server, request, context)` | The answer to one request to the MCP route, for a route file's `respond!`. |
-| `endpoint(Handlers.x, about, McpHttp.openapi({}))` | An endpoint as a tool. `Handlers.x` is the function from the endpoint's path params to the endpoint, from `Generated/Handlers` (which has the handler), not `Generated/Api` (the contract alone). The tool's arguments are one object, read both as the path's params and as the body: `{ "id": "7", "tags": ["work"] }` for `Handlers.put_api_notes_id_tags`. An endpoint with no params takes its body alone. It runs as `Endpoint.run!` runs it, with the MCP route's request and context; its own middleware doesn't run (the MCP route's has). Its answer is the tool's, and a refusal (`NotFound`, `BadRequest`) goes back to the model as a tool error. A body field with the same name as a path param is a problem `Mcp.problems` reports. |
+| `endpoint(Api.x, about, McpHttp.openapi({}))` | An endpoint as a tool. `Api.x` is the function from the endpoint's path params to the endpoint, from `Generated/Api` (its contract). The tool's arguments are one object, read both as the path's params and as the body: `{ "id": "7", "tags": ["work"] }` for `Api.put_api_notes_id_tags`. An endpoint with no params takes its body alone. It is sent as a handler sends it (`Endpoint.send!`): answered in-process by its route, behind its middleware, with the MCP request's headers. Its answer is the tool's, and a refusal (`NotFound`, `BadRequest`, its middleware's 401) goes back to the model as a tool error. A body field with the same name as a path param is a problem `Mcp.problems` reports. |
 | `function(Module.name!, about, McpHttp.openapi({}))` | A function of the app's own, `arg => result`, as a tool, run inside the MCP request, behind the MCP route's middleware. An argument that isn't a record is the arguments' `input` field. |
 | `tool(about, handler!, McpHttp.openapi({}))` | A handler written for the tool, `arg, Caller(c) => Try(result, Str)`, its schemas written from its types. |
 | `Caller(c)` | What a tool is given: `{ request, context, progress! }`. `context` is what the middleware passed on, such as who is asking. |
@@ -183,8 +183,9 @@ prompts: [Prompt.new("summarize", "Summarizes a note", [Prompt.argument("id", "T
 
 ## Who may ask
 
-The middleware in front of the MCP route decides, as it does for any route: a session cookie, an API
-key, an OAuth access token. examples/notes takes a personal access token (`Middlewares.agent`) and
+The middleware of the MCP route's directory (`routes/mcp/+middleware.roc`) decides, as it does for
+any route: a session cookie, an API key, an OAuth access token. A tool made from an endpoint passes
+the endpoint's own middleware too. examples/notes takes a personal access token (`Middlewares.agent`) and
 limits how often each token may ask. For OAuth, `Bearer` has the answers the spec wants:
 
 - `Bearer.token(headers)`: the token a request carries (`Authorization: Bearer …`), or `NoToken`.

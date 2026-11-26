@@ -6,13 +6,11 @@
 app [program] { guard: "../main.roc", pf: platform "../../../server/platform/main.roc" }
 
 import Generated/App
-import Middlewares
 import guard.FlagStore
 
-## Every request: the default middleware, then the routes.
+## Every request: routes/+middleware.roc's, then each directory's on the way to its route.
 program = App.program({
 	init!: |started| Ok({ facts: started }),
-	middleware: Middlewares.default,
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/guard.db"),
 	plugins: [FlagStore.plugin({})],

@@ -3,6 +3,7 @@ Generated/
 Ui/*.roc
 routes/**/*.roc
 !routes/**/+server.roc
+!routes/**/+middleware.roc
 # Written by the tests (buildForTests) and by hand builds
 build/
 data/

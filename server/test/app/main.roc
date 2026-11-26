@@ -1303,6 +1303,7 @@ route! = |request, context| {
 		("POST", "/probe/measure") => Endpoint.respond!(measure_endpoint, request, {})
 		("POST", "/probe/length") => Endpoint.respond!(length_endpoint, request, {})
 		("POST", "/probe/award") => Middleware.run!(badged, request, { started: context }, |passed, handed| Endpoint.respond!(award_endpoint, passed, handed))
+		("POST", "/probe/relay") => Endpoint.respond!(relay_endpoint, request, {})
 
 		_ => text(404, "No page at ${request.path}.")
 	}
@@ -1908,6 +1909,21 @@ member_probe = Endpoint.local("GET", "/probe/member", |request, handed, {}| Ok("
 
 member! : {} => Str
 member! = |{}| member_probe.read!()
+
+## POST /probe/relay: GET /probe/member, sent from its handler (`Endpoint.send!`, as an MCP tool
+## sends an endpoint): answered in-process by its route, behind `members_only`, with this request's
+## cookies (D-103). What it answered, or why not.
+relay_endpoint : Endpoint({}, {}, Str)
+relay_endpoint = Endpoint.local(
+	"POST",
+	"/probe/relay",
+	|_request, {}, {}|
+		match Endpoint.send!(member_probe, {}) {
+			Ok(said) => Ok("relayed: ${said}")
+			Err(Refused(status, why)) => Ok("refused: ${status.to_str()} ${why}")
+			Err(problem) => Ok("failed: ${Server.explain(problem)}")
+		},
+)
 
 ## ---- Channels (D-020), as `Generated/Api` and `Generated/Routes` would answer them ----
 

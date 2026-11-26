@@ -13,9 +13,9 @@ import Host
 ## reads a GET endpoint as a plain value (`Api.get_board({}).read!()`): while the server renders
 ## the page, the server answers it, and the page carries the answer to the browser. It sends any
 ## endpoint (`Api.post_card({}).send!(card)`, a refusal as a value; a GET too, with `{}`), or
-## listens to one's events (`listen!`), through the platform's `Call`. On the server, a channel's
-## messages are published to it (`publish!`), and `run!` runs an endpoint there and then, with its
-## handler (`Generated/Handlers.roc`, which `bind`s each contract to its handler).
+## listens to one's events (`listen!`), through the platform's `Call`. On the server, a handler
+## sends one of the app's own endpoints with `send!` too, answered in-process by its route, behind
+## its middleware (D-103), and a channel's messages are published to it (`publish!`).
 ##
 ## A handler is given the request, the context its middleware handed on, its path's params and its
 ## body, and answers `Ok(result)`, sent as JSON with the status 200, or a `Refusal`: a status and
@@ -41,14 +41,14 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	Refusal : [BadRequest(Str), Unauthorized, Forbidden, NotFound, Conflict(Str), Status(U16, Str), Json(U16, Str), Answer(Server.Response)]
 
 	## An endpoint of the app's own, with its handler, outside the routes: its method, its URL and
-	## what it does (a test's, or one made for `run!` alone). Its reader of a form (`FormBody`) is
+	## what it does (a test's, or a witness of its types). Its reader of a form (`FormBody`) is
 	## made here, where its arg's type is known.
 	local : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result) where [arg.FormBody.Readable]
 	local = |method, url, handler| { method: method, url: url, run: handler, form: Typed(|fields| FormBody.parse(fields)), bound: "" }
 
 	## As `local`, for a function generic in its arg that knows it as JSON alone
 	## (`where [arg.Json.Parseable(…)]`, which can't be asked for with `FormBody`'s: see
-	## test/compiler-bugs/two-formats-one-where): an endpoint only code sends (`run!`). A form posted
+	## test/compiler-bugs/two-formats-one-where): a witness of types, say. A form posted
 	## to it is read as a record of strings.
 	local_json : Str, Str, (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
 	local_json = |method, url, handler| { method: method, url: url, run: handler, form: Untyped, bound: "" }
@@ -61,13 +61,13 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## server's router reads a form posted to it with it (`bind` keeps it), and the browser what a
 	## form sent (`Router.use_submission!`).
 	remote : Str, Str -> Endpoint(context, arg, result) where [arg.FormBody.Readable]
-	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "Endpoint.run! was given a contract (Generated/Api), which has no handler: give it Generated/Handlers' endpoint of the same name. In the browser, send it (Endpoint.send!)", form: Typed(|fields| FormBody.parse(fields)), bound: "" }
+	remote = |method, url| { method: method, url: url, run: |_, _, _| crash "a contract (Generated/Api) has no handler: the router answers with Generated/Handlers' endpoint of the same name. Send it (Endpoint.send!)", form: Typed(|fields| FormBody.parse(fields)), bound: "" }
 
 	## On the server: the contract `endpoint` (Api's: its method, its URL, its types) with the
 	## handler that answers it, as `Generated/Handlers.roc` pairs each route's
 	## (`Endpoint.bind(Api.get_board(params), |request, context, {}| BoardServer.get!({ request, params,
 	## context }))`), so the compiler checks that they agree. The router answers with it (`respond!`,
-	## `stream!`, `channel!`), and `run!` runs it. It keeps the contract's reader of a form.
+	## `stream!`, `channel!`). It keeps the contract's reader of a form.
 	bind : Endpoint(context, arg, result), (Server.Request, context, arg => Try(result, Refusal)) -> Endpoint(context, arg, result)
 	bind = |endpoint, handler| { method: endpoint.method, url: endpoint.url, run: handler, form: endpoint.form, bound: endpoint.bound }
 
@@ -185,6 +185,10 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	## platform's `Call.fetch!`; the handler stops until the answer is in, and runs again then. A GET
 	## (`Api.get_board({}).send!({})`) is asked as `read!` asks it, while the page renders too, for a
 	## computation that shows a refusal itself.
+	## On the server, from the code answering a request (a handler, an MCP tool), one of the app's
+	## own endpoints is answered in-process, by its route, as the browser's request would be: behind
+	## the app's middleware and the endpoint's, with the request's headers (its cookies, its
+	## `authorization`), so what guards the endpoint guards this call too (D-103).
 	send! : Endpoint(context, arg, result), arg => Try(result, Server.Problem)
 		where [arg.Json.Encodable(e), result.Json.Parseable([InvalidJson(Str)])]
 	send! = |endpoint, arg|
@@ -403,22 +407,6 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			}
 		encoded = Str.join_with(fields.map(|field| "${Server.encode_segment(field.name)}=${Server.encode_segment(field.value)}"), "&")
 		{ ..endpoint, bound: if (endpoint.bound.is_empty()) encoded else if (encoded.is_empty()) endpoint.bound else "${endpoint.bound}&${encoded}" }
-	}
-
-	## On the server: runs it there and then, with the request being answered and the context its
-	## handler is given (its middleware doesn't run: the caller ran its own); a refusal as the
-	## browser would see it. It needs the endpoint with its handler: `Generated/Handlers`'s
-	## (`Endpoint.run!(Handlers.get_note({ id }), request, context, {})`), not Api's contract.
-	run! : Endpoint(context, arg, result), Server.Request, context, arg => Try(result, Server.Problem)
-	run! = |endpoint, request, context, arg| {
-		handler = endpoint.run
-		match handler(request, context, arg) {
-			Ok(result) => Ok(result)
-			Err(refusal) => {
-				(status, why) = Endpoint.refused(refusal)
-				Err(Refused(status, why))
-			}
-		}
 	}
 
 	## The request the browser sends for it: `arg` as JSON in its body (with POST, PUT and PATCH;

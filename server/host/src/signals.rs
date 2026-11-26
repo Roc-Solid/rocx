@@ -1223,20 +1223,37 @@ pub extern "C" fn roc_context_get(id: u64) -> Callable {
     }
 }
 
-/// A component's request. While the server renders a page, a GET of one of the app's own endpoints
-/// (a path, `/…`: `Endpoint.read!`, `Endpoint.send!`) is answered in-process, by its route, as the
-/// browser's GET would be (`in_process`, with `accept: application/json`), whatever its status;
-/// the answer, `{"status":…,"body":…}`, is noted for the page under `GET <url>` (not inside a
-/// `<NoHydration>`: the browser never asks), so hydrating, the browser reads it there. Any other
-/// request is a handler's, sent from the browser: the server renders without it.
+/// A component's request, or a handler's. While the server renders a page, a GET of one of the
+/// app's own endpoints (a path, `/…`: `Endpoint.read!`, `Endpoint.send!`) is answered in-process,
+/// by its route, as the browser's GET would be (`in_process`, with `accept: application/json`),
+/// whatever its status; the answer, `{"status":…,"body":…}`, is noted for the page under
+/// `GET <url>` (not inside a `<NoHydration>`: the browser never asks), so hydrating, the browser
+/// reads it there. Any other request while a page renders is a handler's, sent from the browser:
+/// the server renders without it. Outside a render, a request to one of the app's own paths from
+/// the code answering a request (`Endpoint.send!` in a handler: an MCP tool's call of an
+/// endpoint) is answered in-process too, by its route, behind its middleware, with the method,
+/// body and `content-type` it was sent with (D-103); nothing is noted.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_fetch(method: RocStr, url: RocStr, headers: RocStr, body: RocStr) -> RocStr {
     let _host = crate::preempt::host();
     touched(true);
     let (method, url) = (taken(method), taken(url));
-    drop((taken(headers), taken(body)));
+    let (headers, body) = (taken(headers), taken(body));
     let rendering = with(|_| ()).is_some();
     let own = url.starts_with('/') && !url.starts_with("//");
+    if !rendering && own {
+        let named = |wanted: &str| headers.lines().find_map(|line| line.split_once(':').filter(|(name, _)| name.trim().eq_ignore_ascii_case(wanted)).map(|(_, value)| value.trim().to_string()));
+        let accept = named("accept").unwrap_or_else(|| "application/json".into());
+        let content_type = named("content-type");
+        let label = format!("{method} {url}");
+        let answered = in_process(&label, &method, &url, &accept, content_type.as_deref(), body.as_bytes());
+        drop((method, url, headers, body));
+        return match answered {
+            Ok(InProcess { status, text }) => given(&format!("{{\"status\":{status},\"body\":{}}}", serde_json::to_string(&text).unwrap_or_else(|_| "\"\"".into()))),
+            Err(message) => roc::fail(message),
+        };
+    }
+    drop((headers, body));
     if !(rendering && method == "GET" && own) {
         let message = if rendering && method == "GET" {
             format!("GET {url}: while the server renders, a page reads only the app's own endpoints (a path, /…)")
