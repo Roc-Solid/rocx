@@ -290,7 +290,8 @@ Not yet (each a proposal in `PROPOSALS.md`):
 
 - Trusted raw HTML in `<Markdown>`, or HTML from an allowlist.
 - The site's highlighter in a package of its own.
-- Server-only modules in a package (a feed endpoint for a collection, say).
+- An RSS or Atom feed for a collection, on the server: a package may have server-only modules now
+  (D-033), and this one has none yet.
 - A component that never hydrates, without writing `<NoHydration>` around it.
 
 Limits:

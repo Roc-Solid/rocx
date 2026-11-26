@@ -1,8 +1,9 @@
 # Proposals: what packages/markdown would like from outside it
 
-Everything here is a proposal: nothing outside `packages/markdown/` was changed. The package
-compiles and its tests pass without any of them. Each section: the problem, the options, the
-recommended change (sketched), what in the package depends on it, and how to undo it.
+Proposals 1 and 4 are done; the others are proposals, and nothing outside `packages/markdown/` was
+changed for them. The package compiles and its tests pass without any of them. Each section: the
+problem, the options, the recommended change (sketched), what in the package depends on it, and how
+to undo it.
 
 ## 1. Content collections found by `rocx build`
 
@@ -104,6 +105,11 @@ Tried with a copy of `site/Ui/Highlight.roc` in a scratch app: built on both hal
 browser's wasm renders the coloured code. **Undo:** move the file back.
 
 ## 4. Server-only modules in packages
+
+**Done (D-033), differently.** A package that needs the server names the server platform in its
+`main.roc`, and lists what the browser's half may import in a `browser.roc` beside it (as
+packages/push does), so a feed module could live in this package as it is; none is written yet.
+What follows is the proposal as it was.
 
 **Problem (shared with the other packages).** A package can't import a platform module, since an
 app is two apps on two platforms; `rocx build` copies only `components/*.rocx` into the app.

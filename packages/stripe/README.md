@@ -193,7 +193,7 @@ All of these read the package's tables, never Stripe:
 | `paid_for! : Str, Str => Bool` | whether they pay for a price or a product (`price_…`, `prod_…`): a `paying` subscription with it among its items, or a one-time payment for the price that was paid (and not refunded in full, nor disputed) |
 | `subscription! : Str => Try(Stripe.Subscription, [NotSubscribed, DbErr(Str), ..])` | their subscription: the one that hasn't ended (the one changed last, if several), else the one that ended last |
 | `subscriptions! : Str => Try(List(Stripe.Subscription), [DbErr(Str), ..])` | all of them, the one changed last first |
-| `payments! : Str => Try(List(Stripe.Payment), [DbErr(Str), ..])` | their one-time payments that were paid, the newest first |
+| `payments! : Str => Try(List(Stripe.Payment), [DbErr(Str), ..])` | their one-time payments that were paid (and not refunded in full, nor disputed), the newest first |
 | `customer! : Str => Try(Str, [NoCustomer, DbErr(Str), ..])` | their Stripe customer (`cus_…`) |
 
 `subscribed!` and `paid_for!` are a no when the database can't be read (and an error on the log),
@@ -341,5 +341,6 @@ does what paying on Checkout's page does, `update`, `deleteCustomer`, `event(typ
 
 Built and tested (D-082): Checkout (payments and subscriptions, trials, promotion codes), the
 Customer Portal, the webhook (signatures, once, out of order), the tables on SQLite and Postgres, the
-checks for who has paid. Not yet: Stripe Tax, metered billing, Connect, embedded Checkout, refunds
-and invoices beyond `post!`. PROPOSALS.md has them.
+checks for who has paid, a one-time payment refunded in full or disputed no longer paid for, and
+the app's own idempotency keys (`post_with!`). Not yet: Stripe Tax, metered billing, Connect,
+embedded Checkout, refunds and invoices beyond `post!`. PROPOSALS.md has them.

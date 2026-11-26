@@ -173,7 +173,6 @@ view! = |_|
 				</li>
 				<li>Up-down counters, exemplars, and Prometheus's <code>/metrics</code> for pulling.</li>
 				<li>A job's duration and outcome.</li>
-				<li>Metrics kept in memory alone, without a database write per value.</li>
 			</ul>
 		</NoHydration>
 	</>

@@ -197,9 +197,9 @@ view! = |_|
 					<thead><tr><th>Function</th><th>Says</th></tr></thead>
 					<tbody>
 						<tr><td><code>Stripe.subscribed!(user)</code></td><td>whether they have a subscription that is active, trialing, or past due while Stripe tries the card again</td></tr>
-						<tr><td><code>Stripe.paid_for!(user, what)</code></td><td>whether such a subscription has a price or product (<code>price_…</code>, <code>prod_…</code>), or a paid one-time payment was for the price</td></tr>
+						<tr><td><code>Stripe.paid_for!(user, what)</code></td><td>whether such a subscription has a price or product (<code>price_…</code>, <code>prod_…</code>), or a paid one-time payment was for the price and hasn't been refunded in full or disputed since</td></tr>
 						<tr><td><code>Stripe.subscription!(user)</code></td><td>their subscription: status, items, when it renews or ends, whether it ends then</td></tr>
-						<tr><td><code>Stripe.payments!(user)</code></td><td>their one-time payments that were paid</td></tr>
+						<tr><td><code>Stripe.payments!(user)</code></td><td>their one-time payments that were paid, and not refunded in full or disputed since</td></tr>
 						<tr><td><code>{"Stripe.portal!(user, return_url)"}</code></td><td>the URL of their Customer Portal, or <code>NoCustomer</code></td></tr>
 					</tbody>
 				</table>
@@ -222,7 +222,8 @@ view! = |_|
 
 			<Heading id="tables">The tables</Heading>
 			<p>
-				The plugin's migration makes four tables, the same on SQLite and on Postgres:
+				The plugin's migrations (<code>stripe/0001_stripe</code>, then <code>stripe/0002_refunds</code>) make four
+				tables, the same on SQLite and on Postgres:
 				<code>stripe_customers</code> (each user's Stripe customer), <code>stripe_checkouts</code>,
 				<code>stripe_subscriptions</code> (as the events last said) and <code>stripe_events</code> (those handled,
 				swept after 30 days). Your users stay in your own table; the package knows them by your id.
@@ -243,9 +244,10 @@ view! = |_|
 
 			<Heading id="status">Status</Heading>
 			<p>
-				Checkout (payments and subscriptions, trials, promotion codes), the Customer Portal, the webhook and the
-				checks for who has paid are built and tested. Stripe Tax, metered billing, Connect and embedded Checkout
-				are not; the package's <code>PROPOSALS.md</code> has them.
+				Checkout (payments and subscriptions, trials, promotion codes), the Customer Portal, the webhook, the
+				checks for who has paid, and refunds and disputes taking a one-time payment back are built and
+				tested. Stripe Tax, metered billing, Connect and embedded Checkout are not; the package's
+				<code>PROPOSALS.md</code> has them.
 			</p>
 		</NoHydration>
 	</>

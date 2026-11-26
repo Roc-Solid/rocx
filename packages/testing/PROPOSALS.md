@@ -1,18 +1,25 @@
 # packages/testing: proposals
 
-What this package needs from outside `packages/testing/`, written up instead of built: each is a
-change to the platform, the host, the runtime or the `rocx` CLI. Everything in the package compiles
-and passes its tests without them. Each section: the problem, the options weighed, the recommended
-change, what in the package waits on it, and how to undo it.
+What this package needs from outside `packages/testing/`, written up instead of built (sections 1
+and 11 are done since): each is a change to the platform, the host, the runtime or the `rocx` CLI.
+Everything in the package compiles and passes its tests without them. Each section: the problem,
+the options weighed, the recommended change, what in the package waits on it, and how to undo it.
 
 The package as built (README.md) tests a Roc Solid app from outside, as a browser would: the built
-server on a port of its own, its pages parsed and found in by role, Postgres per test, Chromium.
+server on a port of its own, its pages parsed and found in by role, a Postgres or SQLite database
+per test, Chromium and Gecko.
 Most of what is below lets a test reach inside instead: a clock it sets, randomness it seeds, effects
 it stubs, jobs it runs, requests answered without a socket.
 
 ---
 
 ## 1. Server-only modules in packages
+
+**Done (D-033), differently.** A package that needs the server names the server platform in its
+`main.roc`, and lists what the browser's half may import in a `browser.roc` beside it (as
+packages/push does); no `server/` folder is copied, and `just check` keeps it so
+(`test/no-copies.test.mjs`). So `TestHooks` could be this package's own module; it waits on
+section 2. What follows is the proposal as it was.
 
 **Problem.** A package can't hold a Roc module that imports the platform (`Middleware`, `Db`, `Job`,
 `Http`, `Endpoint`, …). A Roc package may name a platform only if it is the app's exact platform,
@@ -406,6 +413,9 @@ then opens each tab isolated by default.
 ---
 
 ## 11. This package's tests in `just test`
+
+**Done.** `just test` runs every package's `roc test` (`packages/*/main.roc`, this one's included)
+and `node --test 'packages/testing/test/*.test.mjs'`. What follows is the proposal as it was.
 
 **Problem.** `just test` runs `roc test packages/charts/main.roc` and nothing of this package's.
 

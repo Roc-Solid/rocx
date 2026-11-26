@@ -31,7 +31,7 @@ state.
    })
    ```
 
-4. Start the server with a collector to send to:
+3. Start the server with a collector to send to:
 
    ```sh
    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_SERVICE_NAME=shop ./server

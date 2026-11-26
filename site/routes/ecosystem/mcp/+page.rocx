@@ -267,7 +267,8 @@ view! = |_|
 		<Heading id="status">What is tested</Heading>
 		<ul>
 			<li>
-				The protocol, in both eras, by 146 <code>expect</code>s.
+				The protocol, in both eras, by 93 <code>expect</code>s (what a tool is has its own, in
+				<a href={Paths.ecosystem_tools}>the tools package</a>).
 			</li>
 			<li>
 				Over HTTP, in an app built with <code>rocx build</code> on the server platform, with the official

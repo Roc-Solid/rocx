@@ -26,10 +26,9 @@ app [program] { mcp: "…/packages/mcp/main.roc", pf: platform "…/server/platf
 
 The package is not a plugin, and it has no components: its readers are agents, not people. It
 depends on `packages/crypto` (for Base64), `packages/tools` and the server's platform, which it
-names itself. What a tool
-is (`Tool`), what it answers (`Content`) and `JsonValue` are packages/tools', not this package's
-(D-085): packages/ai gives the same tools to Claude. An app that makes tools names `tools` too, and
-imports `tools.Tool`.
+names itself. What a tool is (`Tool`), what it answers (`Content`) and `JsonValue` are
+packages/tools', not this package's (D-085): packages/ai gives the same tools to Claude. An app that
+makes tools names `tools` too, and imports `tools.Tool`.
 
 ## A first server
 
@@ -252,7 +251,8 @@ expect Mcp.problems(Agents.server) == []
 
 Tested:
 
-- The protocol: 146 expects.
+- The protocol: 93 expects, and McpHttp's 2 (`Tool`, `Content` and `JsonValue` are packages/tools',
+  with theirs).
 - End to end, in scratch apps built with `rocx build` on the server platform, with the official
   clients: the MCP Inspector's CLI (2.16.0, which speaks 2025-11-25) and the TypeScript SDK's v2
   client (`@modelcontextprotocol/client` 2.4.0), pinned to 2026-07-28 and in `auto` mode (it asks

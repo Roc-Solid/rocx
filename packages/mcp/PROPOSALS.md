@@ -1,9 +1,10 @@
 # Proposals: what packages/mcp needs outside its folder
 
-Each is written up, not built: the package works today without them, with the workaround each one
-names. Tried in scratch apps under `/tmp/rocx-pkg-mcp/` (`app`: the glue copied in; `app2`: the glue
-named as a package), both built with `rocx build` and `roc build` on the server platform, and talked
-to by the MCP Inspector's CLI and the TypeScript SDK's v2 client.
+Proposals 1 and 2 are done. The others are written up, not built: the package works today without
+them, with the workaround each one names. Tried in scratch apps under `/tmp/rocx-pkg-mcp/` (`app`:
+the glue copied in; `app2`: the glue named as a package), both built with `rocx build` and
+`roc build` on the server platform, and talked to by the MCP Inspector's CLI and the TypeScript
+SDK's v2 client.
 
 ## 1. Server-only modules in packages
 

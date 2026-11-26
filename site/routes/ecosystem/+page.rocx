@@ -54,17 +54,19 @@ view! = |_|
 
 			<Heading id="halves">What is in a package</Heading>
 			<p>
-				A package lives in its own directory (the ones above are in the repository's <code>packages/</code>).
-				It can have two kinds of code, and many have both.
+				A package lives in its own directory (the ones above are in the repository's <code>packages/</code>,
+				beside <code>dbcheck</code>, which <code>rocx check --sql</code> uses and no app imports). It can
+				have two kinds of code, and many have both.
 			</p>
 			<FeatureGrid>
 				<Feature title="Roc modules">
 					<p>
-						<code>main.roc</code> is an ordinary Roc package header that lists the package's modules. Most
-						packages name no platform: their code can't render or fetch anything, so the server, a component
-						in the browser and a test all call the same functions, and every function is an
-						<code>expect</code> away from a test. A package that needs the server (to send email, run jobs or
-						read the database) names the server platform instead.
+						<code>main.roc</code> is an ordinary Roc package header that lists the package's modules. A
+						package that only computes (charts, forms, intl, Markdown, QR codes) names no platform: its code
+						can't render or fetch anything, so the server, a component in the browser and a test all call the
+						same functions, and every function is an <code>expect</code> away from a test. A package that
+						needs the server (to send email, run jobs or read the database) names the server platform
+						instead, as more than half of them do.
 					</p>
 				</Feature>
 				<Feature title="Components">
@@ -80,9 +82,10 @@ view! = |_|
 			<p>
 				A package that names the server platform can still have modules the browser uses (the audio
 				package's <code>Audio.play!</code> is called from a click handler). It lists them in a second
-				header, <code>browser.roc</code>, which names the browser platform. The browser's half of the app
-				sees that header instead of <code>main.roc</code>, so it can import only those modules. If a page
-				imports one of the others, <code>rocx build</code> stops and says which import pulled it in.
+				header, <code>browser.roc</code>, which names the browser platform when they need it (as audio's
+				does) and no platform when they don't. The browser's half of the app sees that header instead of
+				<code>main.roc</code>, so it can import only those modules. If a page imports one of the others,
+				<code>rocx build</code> stops and says which import pulled it in.
 			</p>
 
 			<Heading id="use">Adding one to an app</Heading>
@@ -95,7 +98,9 @@ view! = |_|
 			<p>
 				That one line is enough for both halves. When <code>rocx build</code> writes the browser's copy of
 				the app, it writes that copy's header from this one: the same packages, on the browser platform,
-				each through its <code>browser.roc</code> if it has one.
+				each through its <code>browser.roc</code> if it has one. A package that names the server platform
+				and has no <code>browser.roc</code> (Stripe, storage, PostHog) is left out of that copy, since the
+				browser can import nothing of it.
 			</p>
 			<p>
 				Then import what you need. A module is imported as in any Roc program
@@ -139,15 +144,16 @@ view! = |_|
 				<li><a href={Paths.ecosystem_auth}>Auth</a>: <code>{"Auth.plugin({ admit! })"}</code> adds the endpoints a mailed link and a provider come back to, signing out, and the sessions' tables. Its middleware hands the signed-in user on.</li>
 				<li><a href={Paths.ecosystem_stripe}>Stripe</a>: <code>{"Stripe.plugin({ on_event! })"}</code> adds the webhook Stripe sends its events to, and the tables of customers, checkouts and subscriptions it keeps in step. Its functions send people to Checkout and the Customer Portal, and say who has paid.</li>
 				<li><a href={Paths.ecosystem_ai}>AI</a>: <code>{"Ai.plugin({})"}</code> keeps the API's key and the model when the server starts (a server outside <code>--dev</code> doesn't start without a key), and once started logs which model it asks. Its functions ask Claude: an answer whole or streamed to a page, an answer read into a Roc type, and the app's own functions as tools. Its agents are models with a role and tools of their own, and an agent can be another agent's tool.</li>
-				<li><a href={Paths.ecosystem_jobs}>Jobs and cron</a>: <code>{"Job.plugin({ jobs: App.jobs, crons })"}</code> adds the queue's table, its workers and the schedules' loop.</li>
+				<li><a href={Paths.ecosystem_jobs}>Jobs and cron</a>: <code>{"Job.plugin({ jobs: App.jobs, crons })"}</code> adds the queue's table, its workers, the schedules' loop, and a sweep that removes finished jobs after a while.</li>
 				<li><a href={Paths.ecosystem_admin}>Admin</a>: <code>{"JobsPage.plugin({ guard })"}</code> adds the jobs page, which shows and manages the jobs plugin's queue. The tables admin is no plugin: you mount it on a route of your own.</li>
-				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code> adds the dev mailbox under <code>--dev</code>, and once the server has started, logs whether the SMTP server answers.</li>
-				<li><a href={Paths.ecosystem_push}>Push</a>: <code>{"Push.plugin({})"}</code> adds its endpoints, the subscriptions' table, the job that sends notifications (it needs the jobs plugin), the service worker and the page's script.</li>
+				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code> adds the dev mailbox under <code>--dev</code>, and once the server has started, logs whether the SMTP server answers. Outside <code>--dev</code>, a server with no <code>SMTP_URL</code> doesn't start.</li>
+				<li><a href={Paths.ecosystem_push}>Push</a>: <code>{"Push.plugin({})"}</code> adds its endpoints, the subscriptions' table, the job that sends notifications (it needs the jobs plugin), the service worker and the page's script. Under <code>--dev</code> with no VAPID keys, it makes a pair for the run.</li>
 				<li><a href={Paths.ecosystem_storage}>Storage</a>: <code>{"Storage.plugin({})"}</code> answers the signed links of a bucket kept on the server's disk or in memory.</li>
 				<li><a href={Paths.ecosystem_guard}>Guard</a>: <code>{"FlagStore.plugin({})"}</code> keeps feature-flag overrides in a table, so they survive a restart. The rate limits and guards need no plugin.</li>
 				<li><a href={Paths.ecosystem_audio}>Audio</a>: <code>{"AudioPlayer.plugin({})"}</code> adds the player for <code>Audio.play!</code>, a script every page loads.</li>
 				<li><a href={Paths.ecosystem_vibrate}>Vibrate</a>: <code>{"Vibrator.plugin({})"}</code> adds the script that passes <code>Vibrate.pattern!</code> to the browser's vibration motor. An app on a phone needs none.</li>
 				<li><a href={Paths.ecosystem_posthog}>PostHog</a>: <code>{"PostHog.plugin({})"}</code> sends errors to PostHog's error tracking, and adds the page's script and the endpoint it reports to.</li>
+				<li><a href={Paths.ecosystem_otel}>OpenTelemetry</a>: <code>{"Otel.plugin({})"}</code> reads the <code>OTEL_*</code> settings when the server starts, and adds the loop that adds up the app's measurements and sends them to the collector. Its middleware times every request.</li>
 			</ul>
 		</NoHydration>
 	</>
