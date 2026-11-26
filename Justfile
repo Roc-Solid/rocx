@@ -318,8 +318,9 @@ deploy-pages: site
         exit 1
     fi
     bytes=$(wc -c < "$wasm" | tr -d ' ')
-    if [ "$bytes" -gt 1500000 ]; then
-        echo "Not published: site/dist/rocx/app.wasm is $((bytes / 1024)) KB, a dev build's (just site's is about 700 KB)." >&2
+    # just site's is about 1.7 MB (2026-11-26; 1.4 MB on 2026-11-24), a dev build's 4.7 to 5.8 MB.
+    if [ "$bytes" -gt 3000000 ]; then
+        echo "Not published: site/dist/rocx/app.wasm is $((bytes / 1024)) KB, a dev build's (just site's is about 1.7 MB)." >&2
         echo "A dev build (just dev) wrote site/build while just site copied it: stop just dev, or restart it, then try again." >&2
         exit 1
     fi
