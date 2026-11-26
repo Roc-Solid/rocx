@@ -37,8 +37,9 @@ and reloads the page when you save a file. Under `rocx dev`:
 | `routes/sign-in/` | The sign-in page, the endpoint that mails a link (`mail/`), the page a link opens (`link/`), and the page that asks for a two-factor code (`code/`) |
 | `routes/account/` | A page for signed-in people only: your address, where you're signed in, signing out everywhere, and two-factor sign-in (its forms post to `two-factor/`) |
 | `components/Nav.rocx` | The bar at the top: a component, with its stories and tests |
-| `.rocx-version` | The version of Roc Solid this app builds with |
-| `.rocx` | A link to that version, which every `rocx` command makes (not committed) |
+| `.rocx-version` | The version of Roc Solid this app builds with (none when a clone of rocx made the app) |
+| `.rocx` | A link to that version (or to the clone), which `rocx` makes (not committed) |
+| `.env` | Settings for the server, if you make one ([Settings in `.env`](#settings-in-env); not committed) |
 
 In `routes/`, `+page.rocx` is a page, `+server.roc` its endpoints (what the page reads and what its
 forms post), and `+layout.rocx` wraps the pages below it. `rocx build` writes `Generated/` from them
@@ -49,12 +50,20 @@ visit goes to the sign-in page, and comes back after; anything else is refused (
 names no middleware runs behind its `+server.roc`'s, so `routes/account/+server.roc`'s line guards
 the account page too. A layout's middleware would guard nothing, so `rocx build` refuses one.
 
+## Settings in `.env`
+
+The server reads a `.env` file in the folder it starts in, if there is one, as it starts: a setting
+a line (`SMTP_URL=smtps://…`, `APP_SECRET=…`), `#` for a comment. Under `rocx dev` that is the
+folder you run it from. A variable the environment already has keeps its value, so a server's own
+settings win over a file left beside it. `--env-file FILE` names another file. `.gitignore` keeps
+`.env` out of git: keep secrets there, never in the code.
+
 ## Mail
 
 Under `rocx dev`, without `SMTP_URL`, nothing is sent: each message is kept for the dev mailbox, and
 the log says so. A server started without `--dev` needs `SMTP_URL`: without it, it doesn't start
 (the log says why), rather than lose every sign-in link. To send mail, set these where the server
-runs:
+runs (or see [Settings in `.env`](#settings-in-env)):
 
 | Variable | What it is |
 | --- | --- |
@@ -128,7 +137,8 @@ PUBLIC_URL=https://app.example.com SMTP_URL=smtps://… APP_SECRET=… ./server 
 ```
 
 `APP_SECRET` is the secret two-factor sign-in's key comes from (`openssl rand -hex 32`, once, and
-kept): without it the server doesn't start.
+kept): without it the server doesn't start. The settings may be in a `.env` beside it instead
+([Settings in `.env`](#settings-in-env)).
 
 On SQLite or Turso the database is `data/app.db` beside where it starts: keep that folder between
 deploys, and back it up (or point `DATABASE_URL` at a file elsewhere).

@@ -96,15 +96,18 @@ in `.rocx-version` (commit it) and reaches the platform through `.rocx`, a link 
 
 To work on Roc Solid itself, or before the first release:
 
-- macOS or Linux, with `git`, `curl` and [`just`](https://github.com/casey/just).
-- Zig 0.17.1 and Rust 1.85 or newer, with Rust's `wasm32-unknown-unknown` target. If the ones on
-  your PATH (from Nix, say) match, they are used; otherwise `just setup` downloads them into
-  `.tools/`.
+- macOS or Linux, with `git`, `curl` and [`just`](https://github.com/casey/just) (and `python3`
+  when `just setup` downloads Zig: it reads Zig's checksum with it).
+- Zig 0.17.1 and Rust 1.85 or newer, with Rust's `wasm32-unknown-unknown` target (the browser's
+  host is Rust, built for it; Zig makes it the object Roc links, and builds the Roc fork). If the
+  ones on your PATH (from Nix, say) match, they are used, and `just setup` adds the wasm32 target
+  with `rustup` when it is missing; otherwise it downloads them into `.tools/`.
 - Roc: Roc Solid builds with a fork of Roc's pinned nightly that carries the compiler fixes rocx
   needs. `just setup` builds it from a local clone of the fork (`~/roc-fork`, or `$ROC_FORK`), or,
   without one, downloads it prebuilt from this repository's releases (macOS on Apple silicon,
   Linux on arm64; elsewhere you need the fork's source). A `roc` on your PATH is never used.
-- Node.js only for this repository's tests and build scripts. Docker only for `just db`.
+- Node.js only for this repository's checks, tests and build scripts (`just check`, `just test`,
+  `just site`); rocx itself and your apps don't need it. Docker only for `just db`.
 
 ```sh
 git clone https://github.com/Roc-Solid/rocx && cd rocx
@@ -147,8 +150,9 @@ rocx dev                       # http://localhost:8080, built again on each save
 ```
 
 The first run writes `main.roc` beside `routes/`. That is the app's server program, the smallest
-one, and yours to change from then on. It also builds the server platform's host, which takes a few
-minutes, once. `rocx dev <dir>` serves an app in another directory.
+one, and yours to change from then on. From a clone, it also builds the platforms' hosts (Rust),
+which takes a few minutes, once; an install has them prebuilt. `rocx dev <dir>` serves an app in
+another directory.
 
 [`examples/hello`](examples/hello) is this app, plus an endpoint at `GET /hello`. Next, read
 [`examples/tasks`](examples/tasks), the example written to be read first, and the docs site's
@@ -161,8 +165,8 @@ minutes, once. `rocx dev <dir>` serves an app in another directory.
 |---|---|
 | `just setup` | The toolchain into `.tools/` (Zig and Rust if need be, the pinned Roc nightly, the Roc fork), then `bin/rocx` |
 | `just dev [port]` | The docs site at http://localhost:8080: its native server answers each page; it is rebuilt, restarted and reloaded on save |
-| `just check` | Checks formatting, then type-checks the site's two programs (errors at `.rocx` lines), each package's server modules and every example (`just examples-check`), and lints them |
-| `just test` | Everything, in three parts: `just test-rocx` (the transpiler, routing, every Roc module's `expect`s), `just test-web` (the browser platform in Node and Chromium, and the docs site in Chromium), `just test-server` (the server platform, and the packages' own test suites) |
+| `just check` | Checks formatting and that no package is copied into an app by hand (`test/no-copies.test.mjs`), then type-checks the site's two programs (errors at `.rocx` lines) and every example's (`just examples-check`), and lints them |
+| `just test` | Everything, in three parts: `just test-rocx` (the transpiler, routing, the `rocx` commands, every Roc module's `expect`s), `just test-web` (the hosts' shared memory, `web/memory`; the browser platform in Node and Chromium; the docs site in Chromium), `just test-server` (the server platform, the packages' own test suites, and `rocx new`'s template on each database) |
 | `just examples [name…]` | Builds, checks and tests every example app, or the ones named |
 | `just fmt` | Formats the Roc in every `.rocx` file and hand-written `.roc` file |
 | `just db` | A Postgres in Docker for the server platform's Postgres tests; prints its `DATABASE_URL`. SQLite apps need none |
@@ -171,6 +175,10 @@ minutes, once. `rocx dev <dir>` serves an app in another directory.
 | `just compiler-bugs` | Runs each Roc compiler bug rocx has met, with the nightly and with the fork |
 | `just grammar-check`, `just vscode-extension`, `just orca-plugin` | Editor support (see [In an editor](#in-an-editor)) |
 | `just example-apps`, `just example-shots`, `just db-bench` | Measure the example apps, take their screenshots and run the SQLite-against-Turso benchmark, for the docs' examples pages |
+| `just js-bench` | Roc Solid in js-framework-benchmark: builds its entries into the benchmark's clone and measures them beside other frameworks, into `site/js-framework-benchmark.json` ([`benchmarks/jsframework`](benchmarks/jsframework)) |
+| `just check-times` | How long checking each example and the site takes, as CI measures it |
+| `just release-hosts`, `release-compilers`, `release-pack`, `release-test` | A release of rocx, in `release/out/`: what is built per target, the fork's compilers, the archives with `install.sh`, and an install of them tested (the release workflow runs these) |
+| `just roc-fork-linux [arch]`, `just publish-roc-fork` | Cross-build the fork's compiler for Linux, and publish the compilers built here for `just setup` to download (maintainers, with the fork) |
 | `just rocx-bootstrap` | Builds `bin/rocx` from nothing, without Node (`just setup` runs it when needed) |
 | `just glue` | Regenerates the platforms' glue after a change to a platform's header |
 
@@ -185,7 +193,7 @@ shows what each one's browser half weighs and what it is made of, with screensho
 Every example with a database uses SQLite: a file beside its server, so each one runs with nothing
 else installed.
 
-- [`hello`](examples/hello): the app from [Your first app](#your-first-app), a counting button and
+- [`hello`](examples/hello): the app from [An app by hand](#an-app-by-hand), a counting button and
   `GET /hello`. Its `main.roc` is the one `rocx dev` writes.
 - [`tasks`](examples/tasks): Tasks, a small team's task lists. **Start here.** File routing, a
   middleware, a database, pages that read endpoints, forms that work without JavaScript, and
@@ -588,7 +596,8 @@ routes as `Routes` does, and renders the page inside its layouts.
 With `--client <out>`, `rocx build` also writes the browser's copy of the app: `<out>/main.roc` (the
 browser's program, `Root.view!`) and `<out>/static/rocx/` with `start.js`, `runtime.js` (minified:
 its comments and indentation gone, D-075; as it is written under `--dev`) and the stylesheet. Build the wasm beside them
-(`roc build --target=wasm32 --opt=size --output=<out>/static/rocx/app.wasm <out>/main.roc`) and
+(`roc build --target=wasm32 --opt=size --specialize=yes --output=<out>/static/rocx/app.wasm <out>/main.roc`,
+as `--release` builds it) and
 serve the directory with the server's `--static <out>/static`. A page's `/rocx/start.js` loads the
 other files. `rocx dev` does all of this for you.
 
@@ -603,7 +612,8 @@ with middleware of its own) isn't in the copy, and the build lists it. The docs 
 way. The copy's `runtime.js`, as `--release`'s, has only what the app uses (D-087): the host
 functions its wasm imports and the runtime's code they and the page reach, navigating in place only
 for an app of more than one page (or one that navigates), drags, a pointer's point and glides only
-where its markup has them. The benchmark's page ships 124 KB of the runtime's 175.
+where its markup has them. The js-framework-benchmark page shipped 128 KB of the minified
+runtime's 180 when it was last measured (2026-11-26).
 
 The browser's copy keeps each endpoint's method, URL and types but not its handler, and each route
 file without its middleware. If a page or component reaches a module that imports what only the
@@ -864,7 +874,8 @@ The docs site's [safety page](https://roc-solid.github.io/safety) shows each rul
 
 ```sh
 rocx new <dir>           # a new app from rocx's template (sign-in, its users, security headers),
-                         # its .rocx-version and .rocx link made
+                         # its .rocx link made, and its .rocx-version (an installed rocx's version;
+                         # from a clone, none, and .rocx links to the clone)
   --db sqlite            # its database: sqlite (the default), postgres or turso; asked at a terminal
 rocx dev [dir]           # build the app (a directory with routes/) and serve it at :8080 with the
                          # server's --dev; rebuilt and restarted on each save, open pages reloaded;
@@ -880,6 +891,12 @@ rocx build <dir>…        # each .rocx file under the directories becomes the .
                          # Generated/Content/<Name>.roc (its Markdown files: packages/markdown's README)
   --client <out>         # and the browser's copy of the app in <out> (main.roc, static/rocx/)
   --dev                  # and the stories, served at /__rocx/stories
+rocx build <dir> --static <out>   # the app as static files, for a host with no server: every page its
+                         # server answers, as <path>/index.html, with 404.html, static/ and rocx/
+  --base /docs/          # every URL under a path
+  --route /feed.xml      # also ask for a path no page links to (a page with params, a file)
+  --built <build>        # use a build already made (its server and client/static)
+  -- <server options>    # given to the app's server while it answers
 rocx build <dir> --release <out>  # the app built to deploy: <out>/server (optimized for speed) and
                          # <out>/static (the app's static/ and the browser's files, its wasm
                          # optimized for size); run <out>/server --static <out>/static behind a proxy
@@ -919,11 +936,12 @@ app (`dev`, `build`, `check`, `test`, `routes`, `lint`) makes the link (and mend
 app wants another version than the one running, that version runs the command instead, installed
 first if it isn't (into `ROCX_HOME`, `~/.rocx` by default). rocx from a clone links apps to the clone.
 
-`rocx` is `bin/rocx`, a native executable built from its Roc (`rocx-cli/`). `just setup` builds it,
-and any script in this repository builds it again when `rocx-cli/` has changed. From another
-directory, run `<repo>/bin/rocx …`, or put `<repo>/bin` on your PATH. A Node script gets its path
-from `rocxBinary()` (`import { rocxBinary } from "<repo>/server/build.mjs"`), which builds it if it is
-missing or stale.
+In a clone, `rocx` is `bin/rocx`, a native executable built from its Roc (`rocx-cli/`). `just
+setup` builds it, and any script in this repository builds it again when `rocx-cli/` has changed.
+From another directory, run `<repo>/bin/rocx …`, or put `<repo>/bin` on your PATH. A Node script
+gets its path from `rocxBinary()` (`import { rocxBinary } from "<repo>/server/build.mjs"`), which
+builds it if it is missing or stale. An install's is `~/.rocx/bin/rocx`, which runs the default
+version (`~/.rocx/current`).
 
 - `build` writes a file only when its content changes, deletes `.roc` files it wrote whose `.rocx`
   is gone, and stops at the first markup problem with its line and column.
@@ -945,6 +963,7 @@ options, each also read from the environment variable in parentheses:
 --static DIR                   # files served as they are (also --file /PATH=FILE)
 --database-url URL             # postgres://…, or sqlite:<path> / turso:<path> (DATABASE_URL)
 --context-file FILE            # the text init! is given
+--env-file FILE                # settings read into the environment as it starts (ROCX_ENV_FILE)
 --public-url URL               # where the app is, for links it sends (PUBLIC_URL)
 --max-body 16MiB               # the largest request body (MAX_BODY)
 --kv-max-mb 64                 # the key-value store's limit (KV_MAX_MB)
@@ -953,6 +972,13 @@ options, each also read from the environment variable in parentheses:
 ```
 
 `--help` lists the rest (`--roc-threads`, `--actor-idle-ms`, `--live-beat-ms`).
+
+As it starts, the server reads `.env` in the directory it starts in, when there is one (or the
+file `--env-file` names, which must be there; `ROCX_ENV_FILE=` set but empty reads none), so a key
+kept there (`SMTP_URL=…`, `ANTHROPIC_API_KEY=…`) reaches `Env.var!`, the app's plugins and the
+server's own settings. A variable the environment already has keeps its value. A line that isn't a
+setting stops the server, saying which; the log names what it set, never a value. Keep `.env` out
+of git (`rocx new`'s `.gitignore` does).
 
 ### In an editor
 
@@ -1018,10 +1044,10 @@ browser runtime's engine. See `spike/native-apps/README.md` and `examples/pomodo
 
 | Where | What |
 |---|---|
-| `rocx-cli/` | rocx itself, in Roc on the CLI platform: the command (`main.roc`), the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), the build (`Build.roc`) and its warning when the browser's copy reaches server-only code (`ServerOnly.roc`), stories, error remapping (`Remap.roc`), `rocx fmt`, `rocx dev` (`Dev.roc`; `SiteDev.roc` for `just dev`), `rocx check --sql` (`CheckSql.roc`), and the docs site's generated modules (`Site.roc`, `SiteSources.roc`, `SiteReference.roc`). Built into `bin/rocx`. `rocx-cli/rocx.mjs` lets the JavaScript tests call its functions by name (`rocx internal`) |
+| `rocx-cli/` | rocx itself, in Roc on the CLI platform: the command (`main.roc`), the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), the build (`Build.roc`) and its warning when the browser's copy reaches server-only code (`ServerOnly.roc`), stories, error remapping (`Remap.roc`), `rocx fmt`, `rocx dev` (`Dev.roc`; `SiteDev.roc` for `just dev`), `rocx check --sql` (`CheckSql.roc`), `--static` (`Static.roc`) and `--release` (`Release.roc`), the runtime minified and shaken for them (`Minify.roc`, `Shake.roc`), `rocx new` (`New.roc`), versions and `rocx upgrade` (`Versions.roc`), the hosts and compiler it builds with (`Hosts.roc`), and the docs site's generated modules (`Site.roc`, `SiteSources.roc`, `SiteReference.roc`). Built into `bin/rocx`. `rocx-cli/rocx.mjs` lets the JavaScript tests call its functions by name (`rocx internal`) |
 | `cli/` | The command-line platform rocx runs on: its Roc modules (`cli/platform`: output, files, commands, a watched directory tree, signals, and `Events.next!`, the one wait) and its Rust host (`cli/host`); see its README |
 | `server/` | The server platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`); see `server/README.md` |
-| `web/` | The browser platform: the modules components are written with (`Html`, `Solid`, `Store`, `Router`, …) and HTTP's (`Server`, `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server platform shares; its Rust host; `runtime.js` and `start.js`; see `web/README.md` |
+| `web/` | The browser platform: the modules components are written with (`Html`, `Solid`, `Store`, `Router`, …) and HTTP's (`Server`, `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server platform shares; its Rust host (`web/host`, built for wasm32) and the memory it shares with the phone's host (`web/memory`); `runtime.js` and `start.js`; see `web/README.md` |
 | `packages/` | The ecosystem. Each package has a README, a `PROPOSALS.md` of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees |
 | `packages/charts` | Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: the arithmetic in plain Roc (scales, round ticks, SVG paths, in `Dec`), the components copied into each app |
 | `packages/forms` | Zod-like schemas: one for the page and the endpoint, issues shown in place, `LiveForm` |
@@ -1032,6 +1058,9 @@ browser runtime's engine. See `spike/native-apps/README.md` and `examples/pomodo
 | `packages/admin`, `guard`, `intl`, `markdown`, `mcp`, `otel`, `posthog`, `presence`, `testing`, `virtual` | A Django-style admin for the app's tables (and the jobs page); rate limits, feature flags and request guards; formatting and translations; Markdown with typed frontmatter; an MCP server; OpenTelemetry metrics and logs; PostHog error tracking; who is here; test helpers; virtual lists |
 | `packages/dbcheck` | What `rocx check --sql` checks rows with; apps don't import it |
 | `examples/` | Whole apps, each with its README and tests ([Examples](#examples)) |
+| `templates/` | The app `rocx new` copies (`templates/app`), and its tests (`templates/test`) |
+| `release/`, `flake.nix`, `nix/` | A release of rocx: what is built per target, the archives, `install.sh` (from `install.sh.in`) and its smoke test; the Nix flake, and the release it names (`nix/release.json`) |
+| `benchmarks/` | Roc Solid's entries in js-framework-benchmark, and the script that measures them |
 | `site/` | The docs site: pages in `routes/`, components in `Ui/`, demos in `Demos/`, real examples in `examples/`, its program in `main.roc` ([The docs site](#the-docs-site)) |
 | `editors/` | The `.rocx` grammar, the VS Code extension and the Orca plugin |
 | `native/` | The native host for phones, an experiment: a Rust port of the browser runtime's engine (`core`), Android's views (`android`, `android-dev`), and a Mac test harness (`mac`) |
@@ -1061,8 +1090,9 @@ app). `site/main.roc` is its program.
   browser downloads no code for them.
 - **Building.** `site/build.mjs` builds it: `.rocx` to `.roc`, and `site/Generated/Sources.roc`, the
   sources the pages show (both by `rocx site prepare`); the browser's wasm (`app.wasm`, from the copy
-  in `site/build/client`); the server, native; then it measures the wasm. `just site` then starts
-  the server and writes every page it answers into `site/dist`, with what the demos ask for besides
+  in `site/build/client`); the server, native; then it measures the wasm. `just site` then writes
+  the static copy with `rocx build --static` (from that build, `--built site/build`): every page
+  the server answers, into `site/dist`, with what the demos ask for besides
   pages (the shout's words, `/openapi.json`, `/openapi.html`) as files: a copy of the site that is
   only files and still works. Most demos need no server, because the server rendered their answers
   as the site was built. A demo that sends or follows something (the planner's moves, the lobby's
@@ -1084,14 +1114,17 @@ just test
 
 - `test/transpile.test.mjs` covers the syntax, `test/routes.test.mjs` routing, and
   `test/e2e.test.mjs` builds an app with routes and checks where a type error is reported. Other
-  files in `test/` cover `rocx check`, `rocx check --sql`, `rocx dev`, stories, styles, formatting
-  and content.
+  files in `test/` cover `rocx check`, `rocx check --sql`, `rocx dev`, `rocx new`, versions and the
+  install, `rocx build --static` (a copy served as files and used in Chromium), stories, styles,
+  formatting, content, and that no package is copied into an app.
 - `roc test` runs every Roc module's `expect`s: rocx's own (`rocx-cli/main.roc`), the site's
   (`site/main.roc` imports the platform's modules, the pages and their components, the demos' rules,
   the highlighter) and each package's (`packages/<name>/main.roc`).
 - `web/test/platform.test.mjs` builds components on the browser platform, renders them as the server
   would in Node, then hydrates and uses them in Chromium: signals, `if`, `match` and `.map` in holes,
   boundaries, contexts, documents, memory. `web/test/navigation.test.mjs` covers navigation in place.
+  Before them, `cargo test` runs `web/memory`'s own tests (a run that unwinds freed, a box handed
+  over still held).
 - `site/test/site.test.mjs` builds the docs site, starts its server, hydrates every page strictly and
   uses every demo in Chromium (the game with real keys). It compares every page the server renders
   with the browser's own render, byte for byte outside its `<NoHydration>`s, both natively and as the
@@ -1104,6 +1137,12 @@ just test
 - `packages/testing/test/` tests that package's helpers against an app it builds; posthog, and the
   guard, push, auth, stripe and ai packages' examples, have tests of their own (stripe's against a
   stand-in for Stripe's API, ai's against one for Anthropic's Messages API).
+- `templates/test/template.test.mjs` makes an app from `templates/app` as `rocx new` would, for
+  each database (SQLite, Turso, and Postgres with `DATABASE_URL`), checks it (`rocx check`,
+  `rocx lint`, `rocx check --sql`, its expects), then builds and starts it and signs in as people
+  do, in Chromium too on SQLite.
+- `release/test-install.sh` (`just release-test`) installs a release from its own archives and
+  takes a first app from `rocx new` to signed in: the release workflow's smoke test.
 
 The browser tests drive Chromium's headless shell over the DevTools protocol, with no npm
 dependencies: `$CHROME`, or Playwright's cached one; without one they are skipped, and the run
@@ -1120,5 +1159,13 @@ pull request, on GitHub's Linux runners on arm64, with the fork's compiler prebu
 checking (`just check-times`: each example's and the site's `rocx build` and `rocx check`, with no
 cache) into the job's summary, against the last green master run, and warns when a check got slower
 by half. A change to `roc_fork_commit` in the Justfile needs its compilers published first, on the machine
-with the fork: `just setup` (the Mac's), `just roc-fork-linux` (Linux's, cross-built by Zig),
-`just publish-roc-fork`, then the SHA-256s it prints in `roc_fork_sha256_<platform>`.
+with the fork: `just setup` (the Mac's), `just roc-fork-linux` (Linux's on arm64, cross-built by
+Zig; `just roc-fork-linux x86_64` too, for a release), `just publish-roc-fork`, then the SHA-256s it
+prints in `roc_fork_sha256_<platform>`.
+
+**Releases** (`.github/workflows/release.yml`) run on a tag a maintainer pushes, a date
+(`v2026.11.25`). It builds what each target needs (`just release-hosts`, on Linux and on a Mac),
+packs the archives with the fork's compilers (`just release-compilers`, `just release-pack`),
+installs each from them and takes a first app to signed in (`release/test-install.sh`) on macOS and
+in bare Alpine on arm64 and x86_64, then publishes the GitHub release and commits the
+`nix/release.json` the flake reads. Run by hand, it is a dry run that publishes nothing.

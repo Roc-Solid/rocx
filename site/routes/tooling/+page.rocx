@@ -9,7 +9,7 @@ import ../../Ui/TableWrap
 
 meta = {
 	title: "Tooling",
-	description: "The rocx command: dev, build (and a static copy), check (an app, a command's reports, its SQL), lint, routes, fmt and qr; compiler errors reported at your .rocx lines; editor support; stories; building an app by hand for production.",
+	description: "The rocx command: new, dev, build (a static copy, a release), check (an app, a command's reports, its SQL), test, lint, routes, fmt, qr and upgrade; compiler errors reported at your .rocx lines; editor support; stories; building an app by hand for production.",
 	toc: [
 		{ id: "commands", label: "Commands" },
 		{ id: "errors", label: "Errors at your lines" },
@@ -28,7 +28,8 @@ view! = |_|
 				title="A few commands, and the compiler you already have"
 			>
 				Everything Roc Solid does for you as you work goes through one command, <code>rocx</code>
-				(<code>bin/rocx</code> in the repository, itself written in Roc). It turns markup into Roc,
+				(in <code>~/.rocx/bin</code> once installed, or <code>bin/rocx</code> in a clone of the
+				repository; itself written in Roc). It turns markup into Roc,
 				builds and serves your app while you edit it, and points the Roc compiler's reports at your
 				<code>.rocx</code> lines. The Roc compiler does the rest. This page covers each command, how
 				errors are reported, editor support, stories, and how to build an app for production by hand.
@@ -50,7 +51,9 @@ view! = |_|
 						mail is rate limited. It asks which database (SQLite unless you say otherwise; off a terminal,
 						SQLite), names the app's version of rocx in <code>.rocx-version</code> (commit it), and makes
 						<code>.rocx</code>, the link through which the app's header reaches the platform and the
-						packages (gitignore it). Its <code>README.md</code> says what to change first.
+						packages (gitignore it). A rocx run from a clone of the repository writes no
+						<code>.rocx-version</code>, and links <code>.rocx</code> to the clone. Its
+						<code>README.md</code> says what to change first.
 					</p>
 				</div>
 				<div class="command">
@@ -67,7 +70,9 @@ view! = |_|
 						<p>
 							The port is <code>--port</code>, else <code>PORT</code>, else 8080. What follows
 							<code>--</code> goes to the server (<code>--database-url postgres://…</code>), which also
-							reads its environment (<code>DATABASE_URL</code>). Development mode serves the
+							reads its environment (<code>DATABASE_URL</code>), and a <code>.env</code> file in the
+							folder you run it from (<code>SMTP_URL=…</code>, a line each; a variable the environment
+							has keeps its value). Development mode serves the
 							<a href="#stories">stories</a> at <code>/__rocx/stories</code>, plugins' development pages
 							(the email package's <a href={"${Paths.ecosystem_email}#mailbox"}>mailbox</a>), and a
 							crash's message in its 500 answer. Builds use Roc's development backend, which compiles
@@ -99,16 +104,17 @@ view! = |_|
 						</p>
 						<p>
 							<code>--client</code> also writes the browser's copy of the app into
-							<code>{"<out>"}</code>. In it, an endpoint is only its method and URL, a route file has no
-							middleware, a <code>{"<NoHydration>"}</code> has no children, and the imports only those used
+							<code>{"<out>"}</code>. In it, an endpoint keeps its method, URL and types but not its
+							handler, a route file has no middleware, a <code>{"<NoHydration>"}</code> has no children, and the imports only those used
 							are gone. For an app with pages, the copy has the browser's <code>main.roc</code> and
 							<code>static/rocx/</code>: <code>start.js</code>, the runtime, and the app's stylesheet,
 							named by its content (<code>styles-<var>hash</var>.css</code>). The runtime is minified
 							(its comments and indentation gone: about half its size with brotli), but in a
 							<code>--dev</code> build, which keeps it as it is written, to read and debug. A
-							<code>--static</code> or <code>--release</code> build ships only what the app uses of it
-							(D-087): the host functions its wasm imports and the code they and the page reach;
-							navigating in place only for an app of more than one page. An app of endpoints alone
+							<code>--static</code> or <code>--release</code> build ships only what the app uses of it:
+							the host functions its wasm imports and the code they and the page reach; navigating in
+							place only for an app of more than one page (or one that navigates), and drags, a
+							pointer's point and glides only where its markup has them. An app of endpoints alone
 							has no browser program, and the build says so. If the browser's copy reaches a module that
 							imports what only the server has (<code>pf.Db</code>, directly or through another module),
 							the build warns at the import a page or component makes, before the browser's build would
@@ -155,7 +161,8 @@ view! = |_|
 						optimized for size. Run <code>out/server --static out/static</code> behind a proxy that speaks
 						TLS (Caddy, say). <code>--target</code> builds for another machine: <code>arm64mac</code>,
 						<code>x64mac</code>, or <code>arm64musl</code> and <code>x64musl</code>, static Linux executables
-						for a container. It refuses an <code>out</code> that has something else in it.
+						for a container. The build is made beside <code>out</code> and replaces it only once it is
+						complete; <code>out</code> must be empty, or an earlier build (it has a <code>server</code>).
 					</p>
 				</div>
 				<div class="command">
@@ -226,8 +233,9 @@ view! = |_|
 					<p class="command-usage">rocx fmt {"<path>…"}<span>--check</span></p>
 					<p>
 						Formats the Roc in each <code>.rocx</code> file, and each <code>.roc</code> file rocx didn't
-						write, under the paths, with <code>roc fmt</code> (the one <code>ROC</code> names, else the
-						<code>roc</code> on your <code>PATH</code>). Markup, and the Roc in its holes, stay as
+						write, under the paths, with <code>roc fmt</code>: the compiler rocx builds with (an installed
+						version's, a clone's <code>.tools/roc-active</code>, else the one <code>ROC</code> names), or
+						else the <code>roc</code> on your <code>PATH</code>. Markup, and the Roc in its holes, stay as
 						written: a piece of markup moves only with the code around it, and the text of a
 						<code>{"<pre>"}</code> or <code>{"<textarea>"}</code> never moves. <code>--check</code> only
 						lists the files that aren't formatted, and exits 1 if there are any.
@@ -237,7 +245,7 @@ view! = |_|
 					<p class="command-usage">rocx qr {"<text>"}<span>--pbm</span></p>
 					<p>
 						Prints the text as a QR code in the terminal, as <code>rocx dev --android --lan</code> does
-						for a phone, or as a PBM image with <code>--pbm</code>. A code holds 106 bytes at most.
+						for a phone, or as a PBM image with <code>--pbm</code>. A code holds 2,331 bytes at most.
 					</p>
 				</div>
 				<div class="command">
@@ -420,26 +428,31 @@ view! = |_|
 					<tbody>
 						<tr><td><code>rocx-cli/</code></td><td>rocx, in Roc: the transpiler and every command, <code>rocx dev</code> and <code>just dev</code>'s loop included, built into <code>bin/rocx</code></td></tr>
 						<tr><td><code>cli/</code></td><td>the command-line platform rocx is built on: files, commands, a watched directory tree, signals, and one wait for whichever comes first; a Rust host</td></tr>
-						<tr><td><code>web/</code></td><td>the browser's platform: its Roc modules (those both platforms share among them: components', and requests, endpoints, events, middleware), the Rust host, and the JavaScript runtime</td></tr>
+						<tr><td><code>web/</code></td><td>the browser's platform: its Roc modules (those both platforms share among them: components', and requests, endpoints, events, middleware), the Rust host (built for wasm32), and the JavaScript runtime</td></tr>
 						<tr><td><code>server/</code></td><td>the server's platform: its Roc modules, the Rust host, and the build</td></tr>
 						<tr><td><code>packages/</code>, <code>examples/</code></td><td>the <a href={Paths.ecosystem}>ecosystem</a>'s packages, and complete <a href={Paths.examples}>example apps</a></td></tr>
 						<tr><td><code>site/</code></td><td>this site, in rocx: its pages in <code>routes/</code>; <code>just dev</code> serves them as you edit, and <code>site/build.mjs</code> (<code>just site</code>) builds the static site</td></tr>
+						<tr><td><code>templates/</code></td><td>the app <code>rocx new</code> copies, and its tests</td></tr>
+						<tr><td><code>release/</code></td><td>a release of rocx: what is built per target, the archives, the install script and its test</td></tr>
 						<tr><td><code>editors/</code></td><td>the <code>.rocx</code> grammar, the VS Code extension and the Orca plugin</td></tr>
 						<tr><td><code>test/</code>, <code>web/test/</code>, <code>site/test/</code>, <code>server/test/</code></td><td>the transpiler and CLI, the browser's platform, the site in a real browser, the server's platform</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				<code>just setup</code> takes Zig 0.17.1 and Rust 1.85 or newer from your system (from Nix, say)
-				when it has them, and downloads them into <code>.tools/</code> when it doesn't. Roc is a fork of
+				To work on Roc Solid itself, clone the repository. <code>just setup</code> takes Zig 0.17.1 and
+				Rust 1.85 or newer from your system (from Nix, say) when it has them, and downloads them into
+				<code>.tools/</code> when it doesn't. Rust needs its <code>wasm32-unknown-unknown</code> target,
+				for the browser's host: <code>just setup</code> adds it with <code>rustup</code> when it is
+				missing. Roc is a fork of
 				a pinned nightly with the compiler fixes Roc Solid needs. <code>just setup</code> builds it from
 				a clone of the fork when there is one, or downloads it prebuilt from the repository's releases
 				(for macOS on Apple silicon and Linux on arm64). Scripts use that compiler, never the <code>roc</code> on
-				your <code>PATH</code>. Node is needed only for the tests, the site's build and the VS Code
-				extension.
+				your <code>PATH</code>. Node is needed only for the repository's checks and tests, the site's
+				build and the VS Code extension: rocx and your apps don't need it.
 			</p>
 			<Code
-				source={"just setup   # the Roc fork, the pinned nightly, Zig and Rust if need be, into .tools/; then bin/rocx\njust db      # a Postgres in Docker, for the server platform (prints its DATABASE_URL)\njust test    # everything: the transpiler, both platforms, the packages, the site in Chromium\njust check   # formatting, lint, and the site's, packages' and examples' type checks\njust dev     # this site, rendered per request, rebuilt and reloaded on save\njust site    # the static site, in site/dist"}
+				source={"just setup   # the Roc fork, the pinned nightly, Zig and Rust if need be, into .tools/; then bin/rocx\njust db      # a Postgres in Docker, for the server platform (prints its DATABASE_URL)\njust test    # everything: the transpiler, both platforms, the packages, rocx new's template, the site in Chromium\njust check   # formatting, no package copied by hand, lint, and the site's and examples' type checks\njust dev     # this site, rendered per request, rebuilt and reloaded on save\njust site    # the static site, in site/dist"}
 				numbers={Bool.False}
 			/>
 			<p>
