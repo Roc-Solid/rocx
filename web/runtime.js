@@ -6309,7 +6309,7 @@ export class Runtime {
 		return Number(this.ex.live_allocations());
 	}
 
-	/** For the tests: the host's notes of what runs allocate (web/host/host.zig's log), as counts: how
+	/** For the tests: the host's notes of what runs allocate (web/host/src/track.rs's log), as counts: how
 	 * many it keeps, and the room it keeps for them. */
 	notes() {
 		return { kept: this.ex.notes_kept(), room: this.ex.notes_room() };

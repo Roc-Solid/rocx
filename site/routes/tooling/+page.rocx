@@ -420,7 +420,7 @@ view! = |_|
 					<tbody>
 						<tr><td><code>rocx-cli/</code></td><td>rocx, in Roc: the transpiler and every command, <code>rocx dev</code> and <code>just dev</code>'s loop included, built into <code>bin/rocx</code></td></tr>
 						<tr><td><code>cli/</code></td><td>the command-line platform rocx is built on: files, commands, a watched directory tree, signals, and one wait for whichever comes first; a Rust host</td></tr>
-						<tr><td><code>web/</code></td><td>the browser's platform: its Roc modules (those both platforms share among them: components', and requests, endpoints, events, middleware), the Zig host, and the JavaScript runtime</td></tr>
+						<tr><td><code>web/</code></td><td>the browser's platform: its Roc modules (those both platforms share among them: components', and requests, endpoints, events, middleware), the Rust host, and the JavaScript runtime</td></tr>
 						<tr><td><code>server/</code></td><td>the server's platform: its Roc modules, the Rust host, and the build</td></tr>
 						<tr><td><code>packages/</code>, <code>examples/</code></td><td>the <a href={Paths.ecosystem}>ecosystem</a>'s packages, and complete <a href={Paths.examples}>example apps</a></td></tr>
 						<tr><td><code>site/</code></td><td>this site, in rocx: its pages in <code>routes/</code>; <code>just dev</code> serves them as you edit, and <code>site/build.mjs</code> (<code>just site</code>) builds the static site</td></tr>

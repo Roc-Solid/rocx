@@ -7,10 +7,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildApp, buildHost, hasRust, roc as findRoc, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
+import { buildApp, buildHost, buildWebHost, hasRust, roc as findRoc, rocxBinary, start, syncShared, zig } from "../server/build.mjs";
 import { findChrome, launch } from "../web/test/browser.mjs";
 import { testDatabase } from "../packages/testing/postgres.mjs";
 import { Runtime } from "../web/runtime.js";
@@ -197,16 +197,6 @@ test("routes: a directory that isn't a path's part is refused", () => {
 const root = join(here, "..");
 const appSkip = (!hasRoc && "no Roc (run `just setup`, or set ROC)") || (spawnSync(zig(), ["version"]).status !== 0 && "no Zig (run `just setup`)") || (!hasRust() && "no Rust (run `just setup`)") || (!findChrome() && "no Chromium (set CHROME)");
 
-/** The web platform's host, built if it isn't, or is older than its sources. */
-function webHost() {
-	const object = join(root, "web", "platform", "targets", "wasm32", "host.wasm");
-	const sources = [join(root, "web", "host", "host.zig"), join(root, "web", "host", "roc_platform_abi.zig")];
-	if (existsSync(object) && sources.every((source) => statSync(object).mtimeMs >= statSync(source).mtimeMs)) return;
-	mkdirSync(dirname(object), { recursive: true });
-	const built = spawnSync(zig(), ["build-obj", sources[0], "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${object}`], { encoding: "utf8" });
-	assert.equal(built.status, 0, built.stderr);
-}
-
 /** A tab that hydrates strictly (a page that isn't what the app renders throws) and notes `rocx:ready`. */
 async function strictTab(browser) {
 	const tab = await browser.page();
@@ -236,7 +226,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.match(app, /\t\tmigrations: \[\{ name: "0001_e2e_notes\.sql", sql: m0001_e2e_notes \}, \{ name: "0002_e2e_note_index\.sql", sql: m0002_e2e_note_index \}\],/, "the migrations, in order");
 		assert.ok(existsSync(join(client, "static", "rocx", "start.js")) && existsSync(join(client, "static", "rocx", "runtime.js")), "what a page loads, beside where the wasm goes");
 		// The browser's half, from the main.roc rocx wrote; the server's, natively (optimized, as it ships).
-		webHost();
+		buildWebHost();
 		const wasm = spawnSync(roc, ["build", "--target=wasm32", "--opt=size", `--output=${join(client, "static", "rocx", "app.wasm")}`, join(client, "main.roc")], { encoding: "utf8" });
 		assert.equal(wasm.status, 0, `${wasm.stdout}${wasm.stderr}`);
 		buildHost();

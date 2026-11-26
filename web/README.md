@@ -1,7 +1,7 @@
 # Roc Solid's browser platform (`web/`)
 
 The browser platform runs a Roc Solid app's components in the browser. An app's `.rocx` files
-compile to one WebAssembly module. Inside that module, a small host written in Zig manages Roc's
+compile to one WebAssembly module. Inside that module, a small host written in Rust manages Roc's
 memory and passes every platform call out to JavaScript. A JavaScript runtime, `runtime.js`, keeps
 the signals, runs the computations, and builds and patches the DOM.
 
@@ -11,7 +11,7 @@ keeps the page live from then on. The two platforms share most of their Roc modu
 modules are written here, in `web/platform`, and `server/build.mjs` copies them into
 `server/platform`, so the same component code compiles on both.
 
-Read this before you change `web/platform/*.roc`, `runtime.js`, `start.js` or `host/host.zig`. It
+Read this before you change `web/platform/*.roc`, `runtime.js`, `start.js` or `host/`. It
 explains how the pieces fit, how each feature works inside, and which tests cover it. For how to
 *use* the features, see the docs site (`site/routes/`: the components, syntax and platform pages)
 and the platform reference (`/platform/reference`, generated from the modules' `##` comments).
@@ -57,8 +57,8 @@ Decision numbers (D-0xx) point into `DECISIONS.md`, which records why things are
 ## Quick start
 
 ```sh
-just setup        # the toolchain: the Roc fork, Zig, Rust, Node. Once.
-just web-host     # host/host.zig -> platform/targets/wasm32/host.wasm (the tests build it too)
+just setup        # the toolchain: the Roc fork, Zig, Rust (with its wasm32 target), Node. Once.
+just web-host     # host/ (Rust) -> platform/targets/wasm32/host.wasm (the tests build it too)
 just test-web     # this platform's tests and the docs site's, in Chromium
 
 # One suite, or the tests whose name matches:
@@ -75,7 +75,7 @@ node --test --test-concurrency=1 --test-name-pattern="stores" web/test/platform.
 | Platform header | `platform/main.roc` | Says what an app provides (`main! : {} => Html`, its root), what the platform exposes, and which Roc function each hosted symbol is (`"roc_fetch": Host.fetch!`, …). Gives the host two entry points: `roc_mount` (the root's markup, as JSON) and `roc_run` (run a kept box). Its targets: `wasm32` for the browser, and `arm64musl` and `arm64mac` archives for the native engine (below). |
 | Platform modules | `platform/*.roc` | What components are written with: `Html`, `Solid`, `Router`, `Endpoint`… ([the modules](#the-modules)). |
 | Host interface | `platform/Host.roc` | Every hosted function, each a call into the runtime: signals, memos, rows, contexts, fetches, timers, submissions, navigation. Its `##` comments say what each does. |
-| Host | `host/host.zig` | Lives inside the wasm. Roc's allocator, strings in and out, and one small wrapper per hosted function that calls a `js_*` import. Notes each run's allocations, so a run that unwinds can be freed ([Waiting](#waiting-reads-that-arent-in-yet)). `just web-host` builds it into `platform/targets/wasm32/host.wasm`. |
+| Host | `host/` | Rust with no std, inside the wasm. Roc's allocator (`src/brk.rs`, slots of a power of two, as Zig's allocator for wasm has them), strings in and out, and one small wrapper per hosted function that calls a `js_*` import (`src/lib.rs`). Notes each run's allocations, so a run that unwinds can be freed (`src/track.rs`; [Waiting](#waiting-reads-that-arent-in-yet)). `just web-host` builds it with cargo for wasm32 and makes the relocatable object Roc links (`zig wasm-ld -r`): `platform/targets/wasm32/host.wasm`. Its glue, `src/roc_platform_abi.rs`, is `just glue`'s, the same as `native/core`'s. |
 | Runtime | `runtime.js` | The engine. Keeps boxes, signals, memos and computations; tracks what reads what; schedules and flushes; builds, hydrates and patches the DOM; talks to the server (reads, event streams, forms, the channel hub); navigates in place; and renders to a string as the server would. |
 | Bootstrap | `start.js` | The script the server puts before `</body>`. Loads `runtime.js` and `app.wasm` from beside itself and hydrates the document. |
 | Tests | `test/` | Two test apps (`test/app`, `test/nav`), a scripted server (`serve.mjs`), a browser driver (`browser.mjs`) and two suites ([Tests](#tests)). |

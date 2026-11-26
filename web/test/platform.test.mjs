@@ -13,7 +13,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { roc as findRoc, rocxBinary, zig } from "../../server/build.mjs";
+import { roc as findRoc, rocxBinary, buildWebHost } from "../../server/build.mjs";
 import { findChrome, findGecko, launch, launchGecko } from "./browser.mjs";
 import { serve } from "./serve.mjs";
 import { Runtime } from "../runtime.js";
@@ -49,8 +49,7 @@ if (!skip) {
 	cpSync(join(here, "app", "Untracked.rocx"), join(devApp, "Untracked.rocx"));
 	writeFileSync(join(devApp, "main.roc"), readFileSync(join(here, "app", "untracked_app.roc"), "utf8").replace('"../../platform/main.roc"', '"../../../platform/main.roc"'));
 	run(rocxBinary(), ["build", devApp, "--dev"]);
-	mkdirSync(join(web, "platform", "targets", "wasm32"), { recursive: true });
-	run(zig(), ["build-obj", join(web, "host", "host.zig"), "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${join(web, "platform", "targets", "wasm32", "host.wasm")}`]);
+	buildWebHost();
 	for (const [name, app, opt] of [
 		["app-dev", join(here, "app", "main.roc"), "dev"],
 		["app-size", join(here, "app", "main.roc"), "size"],

@@ -2,7 +2,7 @@ import pf.Html
 
 ## A part of the platform, in `<Arch>`: its `name` (markup: code, say), a `label` above it, and what
 ## it does (what is inside: paragraphs, or the parts inside it). `kind` gives its colour: `roc`,
-## `js`, `zig`, or `wasm` for a part that holds others.
+## `js`, `rust`, or `wasm` for a part that holds others.
 ArchBox := [].{
 	Props := {
 		kind : Str,
@@ -22,7 +22,7 @@ ArchBox := [].{
 	<story name="Each kind">
 		<div class="kinds">
 			<ArchBox kind="js" name={[<code>runtime.js</code>]}><p>JavaScript.</p></ArchBox>
-			<ArchBox kind="zig" name={[<code>host.zig</code>]}><p>Zig.</p></ArchBox>
+			<ArchBox kind="rust" name={[<code>web/host</code>]}><p>Rust.</p></ArchBox>
 			<ArchBox kind="roc" name={[<>The app</>]}><p>Roc.</p></ArchBox>
 			<ArchBox kind="wasm" label="One wasm module"><p>What holds the others.</p></ArchBox>
 		</div>
@@ -62,7 +62,7 @@ ArchBox := [].{
 			box-shadow: inset 0 3px 0 var(--warn);
 		}
 
-		.zig {
+		.rust {
 			box-shadow: inset 0 3px 0 var(--good);
 		}
 

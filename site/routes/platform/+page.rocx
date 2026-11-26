@@ -60,7 +60,7 @@ view! = |_|
 				right={[
 					<ArchBox kind="wasm" name={[<code>web/</code>, <>: wasm</>]}>
 						<p>
-							The app's components, compiled to WebAssembly with a small Zig host, and
+							The app's components, compiled to WebAssembly with a small Rust host, and
 							<code>web/runtime.js</code>, which takes over the page the server sent, updates it when
 							signals change, and sends requests to the server.
 						</p>

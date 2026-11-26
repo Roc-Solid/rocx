@@ -1,5 +1,5 @@
 # The toolchain for a CI job, on Linux (arm64, GitHub's ubuntu-24.04-arm): Node, just, Rust with
-# the musl target the hosts are built for, `just setup` (Zig and the pinned nightly, cached; the Roc
+# the musl target the hosts are built for and wasm32 (the browser's host), `just setup` (Zig and the pinned nightly, cached; the Roc
 # fork's compiler, which `just setup` downloads prebuilt from this repository's release of it;
 # bin/rocx), the Rust hosts' dependencies (cached), and, when a job asks for them, Chromium and
 # Firefox for the browser tests. A job's Postgres is a service of its own (ci.yml).
@@ -22,10 +22,11 @@ runs:
         curl -fsSL https://just.systems/install.sh | bash -s -- --tag 1.59.0 --to "$HOME/.local/bin"
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-    # Rust for the hosts (server/host, cli/host), built for musl: what Roc links on Linux.
+    # Rust for the hosts (server/host, cli/host), built for musl: what Roc links on Linux; and for
+    # wasm32, the browser's host (web/host).
     - uses: dtolnay/rust-toolchain@stable
       with:
-        targets: aarch64-unknown-linux-musl
+        targets: aarch64-unknown-linux-musl, wasm32-unknown-unknown
 
     # Zig, the nightly and the glue spec, by the versions the Justfile pins (the fork's compiler is
     # downloaded each time: as quick as a cache, from the same place).
@@ -41,12 +42,14 @@ runs:
           .tools/glue
         key: tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.pins.outputs.key }}
 
-    # The hosts' crates (server/host, cli/host): every job shares one cache, saved by master's runs.
+    # The hosts' crates (server/host, cli/host, web/host): every job shares one cache, saved by
+    # master's runs.
     - uses: Swatinem/rust-cache@v2
       with:
         workspaces: |
           server/host -> target
           cli/host -> target
+          web/host -> target
         shared-key: hosts
         save-if: ${{ github.ref == 'refs/heads/master' }}
 

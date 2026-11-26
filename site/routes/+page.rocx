@@ -220,7 +220,7 @@ view! = |_| {
 				</li>
 				<li>
 					<strong>The browser's program</strong> is the same pages compiled to WebAssembly, with a small
-					Zig host, and a JavaScript runtime. The script at the end of the page loads both. Each component
+					Rust host, and a JavaScript runtime. The script at the end of the page loads both. Each component
 					runs once, over the HTML the server sent, and attaches to it: handlers to their elements, and
 					each hole that reads a signal to the node it shows. No element is built again, and the endpoint
 					reads are answered from the page, not fetched again.

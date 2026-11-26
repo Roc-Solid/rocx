@@ -1,0 +1,18 @@
+[package]
+name = "rocx-web-host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The browser's host: Roc's memory and web/platform's hosted functions, each passed through to web/runtime.js"
+
+[lib]
+path = "src/lib.rs"
+# A static library, which `zig wasm-ld -r` makes the relocatable object Roc links an app's wasm
+# with (web/platform/targets/wasm32/host.wasm): web/build.mjs.
+crate-type = ["staticlib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

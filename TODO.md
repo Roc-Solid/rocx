@@ -76,6 +76,11 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **One tracking for both of the web platform's hosts (D-090).** `web/host/src/track.rs` (Roc's
+  memory with the header of the host's, the frames, and freeing what a run that unwound held) could be
+  a crate `native/core` shares, which would end its leak of what a run that waits held
+  (`native/core/src/roc.rs`). Then the hosted functions themselves, if the reactive graph moves into
+  the wasm (`spike/wasm-engine/REPORT.md`).
 - **D-079's names on the phone.** native/core's engine builds what hand-built markup names as it is.
   It runs no script and hides `<script>`, so nothing runs from a name there, but for parity with the
   web it could leave out the same names (and say so on its log).
@@ -94,7 +99,8 @@ When an item lands, delete its line here in the same commit.
   2026-11-24 section): the median page's first load 174 KB brotli against 310 today, but data stays
   in main (72 KB) until the fork keeps relocations through the final link. To pick up: the fork's
   `--keep-temp` fix and kept relocations, then rocx's build step, manifest, loader and render check
-  (a decision, D-068 or the next free number).
+  (a decision, D-068 or the next free number). Its parked copy (`spike/wasm-split/parked`) builds
+  the browser's host from Zig, which D-090 made Rust.
 - **The rest of Solid 2.0 and Solid Router's actions:** see `web/README.md`, "Not yet".
 - **D-052's dev warning has blind spots:** a reactive read inside a helper call that takes
   arguments, and one at the top of a `.map`'s row or a function child, aren't marked, so they don't

@@ -40,7 +40,7 @@ import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import { definitionsOf, findRouteFiles, routeTable } from "../rocx-cli/rocx.mjs";
 import { machine } from "./machine.mjs";
 import { Runtime } from "../web/runtime.js";
-import { buildApp, buildHost, rocxBinary, start, zig } from "../server/build.mjs";
+import { buildApp, buildHost, buildWebHost, rocxBinary, start } from "../server/build.mjs";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const site = join(root, "site");
@@ -99,8 +99,6 @@ function writeIfChanged(path, content) {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, content);
 }
-
-const newer = (path, than) => existsSync(path) && than.every((other) => statSync(path).mtimeMs >= statSync(other).mtimeMs);
 
 // ---- One build at a time ----
 //
@@ -190,14 +188,6 @@ function exclusive(what, act) {
 // runs.
 
 // ---- 3. The wasm ----
-
-function host() {
-	const object = join(root, "web", "platform", "targets", "wasm32", "host.wasm");
-	const sources = [join(root, "web", "host", "host.zig"), join(root, "web", "host", "roc_platform_abi.zig")];
-	if (newer(object, sources)) return;
-	mkdirSync(dirname(object), { recursive: true });
-	run(zig(), ["build-obj", sources[0], "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${object}`]);
-}
 
 /** How the browser's wasm is built: optimized for size, with lambda sets specialized. For this
  * site it is the smallest of the three, compressed, and about as fast as the others; `just site`
@@ -377,7 +367,7 @@ export function build({ log = console.error, compare = false, dev = false } = {}
 async function buildUnlocked({ log, compare, dev }) {
 	const started = performance.now();
 	prepare({ dev });
-	host();
+	buildWebHost();
 	mkdirSync(out, { recursive: true });
 	wasm(join(client, "main.roc"), appWasm, dev ? ["--opt=dev"] : CLIENT_OPT);
 	buildHost();

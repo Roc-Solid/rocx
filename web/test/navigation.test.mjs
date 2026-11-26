@@ -13,7 +13,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { roc as findRoc, rocxBinary, zig } from "../../server/build.mjs";
+import { roc as findRoc, rocxBinary, buildWebHost } from "../../server/build.mjs";
 import { findChrome, launch } from "./browser.mjs";
 import { serve } from "./serve.mjs";
 import { Runtime } from "../runtime.js";
@@ -40,8 +40,7 @@ function run(command, args) {
  * each <NoHydration>) and the browser's wasm. */
 if (!skip) {
 	run(rocxBinary(), ["build", join(here, "nav"), "--client", join(out, "nav-client")]);
-	mkdirSync(join(web, "platform", "targets", "wasm32"), { recursive: true });
-	run(zig(), ["build-obj", join(web, "host", "host.zig"), "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", `-femit-bin=${join(web, "platform", "targets", "wasm32", "host.wasm")}`]);
+	buildWebHost();
 	run(roc, ["build", "--target=wasm32", "--opt=dev", `--output=${join(out, "nav-server.wasm")}`, join(here, "nav", "nav_server.roc")]);
 	run(roc, ["build", "--target=wasm32", "--opt=size", `--output=${join(out, "nav.wasm")}`, join(out, "nav-client", "main.roc")]);
 }

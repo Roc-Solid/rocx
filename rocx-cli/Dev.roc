@@ -849,30 +849,9 @@ Dev := [].{
 			Err(CantStart(why)) => Err(Failed("rocx dev: ${what}: ${why}"))
 		}
 
-	## The browser's host (Zig), built once, and again when its Zig changes.
+	## The browser's host (Rust), built once, and again when its Rust changes (Hosts.web_host!).
 	web_host! : Tools => Try({}, [Failed(Str)])
-	web_host! = |tools| {
-		object = Fs.join([tools.rocx, "web", "platform", "targets", "wasm32", "host.wasm"])
-		host = Fs.join([tools.rocx, "web", "host", "host.zig"])
-		sources = [host, Fs.join([tools.rocx, "web", "host", "roc_platform_abi.zig"])]
-		built = File.modified!(object)
-		if built > 0 and Dev.not_newer!(sources, built) {
-			return Ok({})
-		}
-		Fs.make_dirs!(Fs.dirname(object))
-		Dev.quiet!(Cmd.new(tools.zig).args(["build-obj", host, "-target", "wasm32-freestanding", "-O", "ReleaseSmall", "-fcompiler-rt", "-femit-bin=${object}"]), "the browser's host")
-	}
-
-	## Whether none of the files changed after `time` (nanoseconds since the epoch).
-	not_newer! : List(Str), U64 => Bool
-	not_newer! = |files, time| {
-		for file in files {
-			if File.modified!(file) > time {
-				return Bool.False
-			}
-		}
-		Bool.True
-	}
+	web_host! = |tools| Hosts.web_host!(tools.rocx, tools.zig)
 
 	## Milliseconds as seconds, with two decimals (`0.35`).
 	seconds : U64 -> Str

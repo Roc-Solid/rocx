@@ -2,8 +2,8 @@
 # platform (server/, native, in a Rust host), and the docs site (site/), which is written in rocx
 # and runs on them.
 
-# The toolchain is pinned: Roc's new compiler changes fast, and the glue the host is built
-# with (web/host/roc_platform_abi.zig) must match the compiler that links against it.
+# The toolchain is pinned: Roc's new compiler changes fast, and the glue the hosts are built
+# with (web/host/src/roc_platform_abi.rs, among them) must match the compiler that links against it.
 roc_nightly := "nightly-2026-11-18-a520eed"
 roc_commit := "a520eeda6c3745f2543fcdd0fb836d3d1336c5ac"
 zig_version := "0.17.1"
@@ -86,8 +86,9 @@ setup:
         cp -R .tools/roc-src/src/glue/src .tools/roc-src/src/glue/platform .tools/glue/
         rm -rf .tools/roc-src
     fi
-    # The server platform's host (server/host) is Rust: the system's cargo and rustc when both are
-    # rust_minimum or newer, else rustup's rust_version, kept in .tools, not on PATH.
+    # The hosts (server/host, cli/host, and web/host for wasm32) are Rust: the system's cargo and
+    # rustc when both are rust_minimum or newer, else rustup's rust_version, kept in .tools, not on
+    # PATH, with its wasm32 target.
     system_rust() {
         IFS=. read -r least_major least_minor <<< "{{ rust_minimum }}"
         for tool in cargo rustc; do
@@ -98,12 +99,19 @@ setup:
     }
     if system_rust; then
         echo "Rust $(rustc --version | awk '{ print $2 }'): the system's, $(command -v cargo)"
+        if [ ! -d "$(rustc --print sysroot)/lib/rustlib/wasm32-unknown-unknown" ]; then
+            if command -v rustup >/dev/null; then
+                rustup target add wasm32-unknown-unknown
+            else
+                echo "warning: the system's Rust has no wasm32-unknown-unknown target, which the browser's host (web/host) is built for" >&2
+            fi
+        fi
     elif [ ! -x .tools/rust/cargo/bin/cargo ]; then
         mkdir -p .tools/download
         curl -fsSL -o .tools/download/rustup-init "https://static.rust-lang.org/rustup/dist/$rust_os/rustup-init"
         echo "$(curl -fsSL "https://static.rust-lang.org/rustup/dist/$rust_os/rustup-init.sha256" | cut -d' ' -f1)  .tools/download/rustup-init" | shasum -a 256 -c -
         chmod +x .tools/download/rustup-init
-        RUSTUP_HOME="$PWD/.tools/rust/rustup" CARGO_HOME="$PWD/.tools/rust/cargo" .tools/download/rustup-init -y --no-modify-path --profile minimal --default-toolchain {{ rust_version }}
+        RUSTUP_HOME="$PWD/.tools/rust/rustup" CARGO_HOME="$PWD/.tools/rust/cargo" .tools/download/rustup-init -y --no-modify-path --profile minimal --default-toolchain {{ rust_version }} --target wasm32-unknown-unknown
     fi
     rm -rf .tools/download
     commit={{ roc_fork_commit }}
@@ -486,18 +494,11 @@ examples *names: server-host web-host
 server-host:
     ROC={{ roc }} node -e 'import("./server/build.mjs").then((build) => build.buildHost())'
 
-# The browser's host (web/host, Zig), which every app's wasm is linked with, as `rocx dev` and
-# site/build.mjs build it: web/platform/targets/wasm32/host.wasm, when it isn't there or its Zig is
-# newer (`just test`'s web tests build it again anyway).
+# The browser's host (web/host, Rust), which every app's wasm is linked with, as `rocx dev` and
+# site/build.mjs build it: web/platform/targets/wasm32/host.wasm, when it isn't there or its Rust is
+# newer (cargo's library for wasm32, made the object Roc links by `zig wasm-ld -r`).
 web-host:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    object=web/platform/targets/wasm32/host.wasm
-    if [ -f "$object" ] && [ ! web/host/host.zig -nt "$object" ] && [ ! web/host/roc_platform_abi.zig -nt "$object" ]; then
-        exit 0
-    fi
-    mkdir -p "$(dirname "$object")"
-    "{{ zig }}" build-obj web/host/host.zig -target wasm32-freestanding -O ReleaseSmall -fcompiler-rt -femit-bin="$object"
+    node -e 'import("./server/build.mjs").then((build) => build.buildWebHost())'
 
 # The quick half of `examples` (every one, or those named): `rocx check` (rocx build with the
 # browser's copy in examples/<name>/build/client, then both programs type-checked with reports at
@@ -546,11 +547,11 @@ js-bench *args:
 example-shots *names:
     ROC={{ roc }} node site/example-shots.mjs {{ names }}
 
-# Regenerates the platforms' glue after a change to a header: web/host/roc_platform_abi.zig,
+# Regenerates the platforms' glue after a change to a header: web/host/src/roc_platform_abi.rs,
 # server/host/src/roc_platform_abi.rs, cli/host/src/roc_platform_abi.rs (rocx's platform) and
-# native/core/src/roc_platform_abi.rs (the web platform's native host, D-063's spike).
+# native/core/src/roc_platform_abi.rs (the web platform's native host, D-063).
 glue:
-    {{ roc }} glue .tools/glue/src/ZigGlue.roc web/host/ web/platform/main.roc
+    {{ roc }} glue .tools/glue/src/RustGlue.roc web/host/src/ web/platform/main.roc
     {{ roc }} glue .tools/glue/src/RustGlue.roc server/host/src/ server/platform/main.roc
     {{ roc }} glue .tools/glue/src/RustGlue.roc cli/host/src/ cli/platform/main.roc
     {{ roc }} glue .tools/glue/src/RustGlue.roc native/core/src/ web/platform/main.roc

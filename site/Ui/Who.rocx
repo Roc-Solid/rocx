@@ -1,6 +1,6 @@
 import pf.Html
 
-## Who does a step, as a badge: `kind` is `server`, `browser`, `js`, `zig`, `roc` or `build`, each
+## Who does a step, as a badge: `kind` is `server`, `browser`, `js`, `rust`, `roc` or `build`, each
 ## its colour; what is inside is what it says.
 Who := [].{
 	view : { kind : Str, children : List(Html) } -> Html
@@ -9,7 +9,7 @@ Who := [].{
 	<story name="Every kind">
 		<p>
 			<Who kind="server">server</Who> <Who kind="browser">browser</Who> <Who kind="js">JavaScript</Who>
-			<Who kind="zig">Zig</Who> <Who kind="roc">Roc</Who> <Who kind="build">rocx build</Who>
+			<Who kind="rust">Rust</Who> <Who kind="roc">Roc</Who> <Who kind="build">rocx build</Who>
 		</p>
 	</story>
 
@@ -31,7 +31,7 @@ Who := [].{
 			color: var(--warn);
 		}
 
-		.zig,
+		.rust,
 		.server {
 			background: var(--good-soft);
 			color: var(--good);

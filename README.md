@@ -97,8 +97,9 @@ in `.rocx-version` (commit it) and reaches the platform through `.rocx`, a link 
 To work on Roc Solid itself, or before the first release:
 
 - macOS or Linux, with `git`, `curl` and [`just`](https://github.com/casey/just).
-- Zig 0.17.1 and Rust 1.85 or newer. If the ones on your PATH (from Nix, say) match, they are
-  used; otherwise `just setup` downloads them into `.tools/`.
+- Zig 0.17.1 and Rust 1.85 or newer, with Rust's `wasm32-unknown-unknown` target. If the ones on
+  your PATH (from Nix, say) match, they are used; otherwise `just setup` downloads them into
+  `.tools/`.
 - Roc: Roc Solid builds with a fork of Roc's pinned nightly that carries the compiler fixes rocx
   needs. `just setup` builds it from a local clone of the fork (`~/roc-fork`, or `$ROC_FORK`), or,
   without one, downloads it prebuilt from this repository's releases (macOS on Apple silicon,
@@ -992,7 +993,7 @@ format, plugins and routes.
 `server/README.md` has every module's API, and the docs' [platform pages](https://roc-solid.github.io/platform)
 and [reference](https://roc-solid.github.io/platform/reference) cover each part.
 
-**The browser platform** (`web/`). The app's page is one wasm module. A Zig host passes each of
+**The browser platform** (`web/`). The app's page is one wasm module. A Rust host passes each of
 Roc's effects to `web/runtime.js`, which keeps the graph of signals, memos and computations,
 hydrates the document from the server's HTML and answers, runs holes again when what they read
 changes, and sends requests. `web/README.md` explains how.
@@ -1008,7 +1009,7 @@ browser runtime's engine. See `spike/native-apps/README.md` and `examples/pomodo
 | `rocx-cli/` | rocx itself, in Roc on the CLI platform: the command (`main.roc`), the transpiler (`Transpile.roc`), scoped styles (`Styles.roc`), routing (`Routes.roc`), the build (`Build.roc`) and its warning when the browser's copy reaches server-only code (`ServerOnly.roc`), stories, error remapping (`Remap.roc`), `rocx fmt`, `rocx dev` (`Dev.roc`; `SiteDev.roc` for `just dev`), `rocx check --sql` (`CheckSql.roc`), and the docs site's generated modules (`Site.roc`, `SiteSources.roc`, `SiteReference.roc`). Built into `bin/rocx`. `rocx-cli/rocx.mjs` lets the JavaScript tests call its functions by name (`rocx internal`) |
 | `cli/` | The command-line platform rocx runs on: its Roc modules (`cli/platform`: output, files, commands, a watched directory tree, signals, and `Events.next!`, the one wait) and its Rust host (`cli/host`); see its README |
 | `server/` | The server platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`); see `server/README.md` |
-| `web/` | The browser platform: the modules components are written with (`Html`, `Solid`, `Store`, `Router`, …) and HTTP's (`Server`, `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server platform shares; its Zig host; `runtime.js` and `start.js`; see `web/README.md` |
+| `web/` | The browser platform: the modules components are written with (`Html`, `Solid`, `Store`, `Router`, …) and HTTP's (`Server`, `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server platform shares; its Rust host; `runtime.js` and `start.js`; see `web/README.md` |
 | `packages/` | The ecosystem. Each package has a README, a `PROPOSALS.md` of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees |
 | `packages/charts` | Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: the arithmetic in plain Roc (scales, round ticks, SVG paths, in `Dec`), the components copied into each app |
 | `packages/forms` | Zod-like schemas: one for the page and the endpoint, issues shown in place, `LiveForm` |

@@ -16,7 +16,7 @@ Arch := [].{
 		<Arch
 			left={[<ArchBox kind="roc" name={[<code>server/</code>, <>: native</>]}><p>Roc compiled to machine code, in a Rust host.</p></ArchBox>]}
 			wire="HTTP"
-			right={[<ArchBox kind="wasm" name={[<code>web/</code>, <>: wasm</>]}><p>The components, compiled to WebAssembly with a Zig host.</p></ArchBox>]}
+			right={[<ArchBox kind="wasm" name={[<code>web/</code>, <>: wasm</>]}><p>The components, compiled to WebAssembly with a Rust host.</p></ArchBox>]}
 		/>
 	</story>
 
@@ -26,7 +26,7 @@ Arch := [].{
 			wire="ids and strings"
 			right={[
 				<ArchBox kind="wasm" label="One wasm module">
-					<ArchBox kind="zig" name={[<code>web/host/host.zig</code>]}><p>Zig: Roc's memory, and the effects.</p></ArchBox>
+					<ArchBox kind="rust" name={[<code>web/host</code>]}><p>Rust: Roc's memory, and the effects.</p></ArchBox>
 					<ArchBox kind="roc" name={[<>The app</>]}><p>Roc: the components.</p></ArchBox>
 				</ArchBox>,
 			]}

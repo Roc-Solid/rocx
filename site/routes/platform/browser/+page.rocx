@@ -15,7 +15,7 @@ import ../../../Ui/ArchBox
 
 meta = {
 	title: "The browser",
-	description: "The Roc Solid browser platform: an app's pages compiled to WebAssembly, a Zig host inside it, and a JavaScript runtime that hydrates the page the server sent, runs holes again when signals change, and navigates without reloading. With the sizes and timings this build measured.",
+	description: "The Roc Solid browser platform: an app's pages compiled to WebAssembly, a Rust host inside it, and a JavaScript runtime that hydrates the page the server sent, runs holes again when signals change, and navigates without reloading. With the sizes and timings this build measured.",
 	toc: [
 		{ id: "parts", label: "The parts" },
 		{ id: "modules", label: "What components can use" },
@@ -46,7 +46,7 @@ view! = |_| {
 		<NoHydration>
 			<PageHero
 				eyebrow="The platform · the browser"
-				title="The components in WebAssembly, a Zig host, and a page of JavaScript"
+				title="The components in WebAssembly, a Rust host, and a page of JavaScript"
 			>
 				The browser's half of an app is the same components the server renders: every page, with its
 				layouts, compiled to one WebAssembly module. Your Roc decides what each hole shows and what each
@@ -70,8 +70,8 @@ view! = |_| {
 				wire="ids and strings"
 				right={[
 					<ArchBox kind="wasm" label="One wasm module">
-						<ArchBox kind="zig" name={[<code>web/host/host.zig</code>]}>
-							<p>Zig, inside the wasm: Roc's memory, and each of the platform's effects passed on to the runtime.</p>
+						<ArchBox kind="rust" name={[<code>web/host</code>]}>
+							<p>Rust, inside the wasm: Roc's memory, and each of the platform's effects passed on to the runtime.</p>
 						</ArchBox>
 						<ArchBox kind="roc" name={[<>{"The app, on "}</>, <code>web/platform</code>]}>
 							<p>

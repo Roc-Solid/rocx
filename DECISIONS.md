@@ -5284,3 +5284,53 @@ app's code for words (`Html.on_point`), so a feature used only through a package
 would need its tag never to be decided off.
 
 **Reversible:** yes: Static.shake! is one call; without it runtime.js ships whole and minified.
+
+## D-090 The browser's host is Rust
+
+**Status.** Built (2026-11-26), the user's go: after the wasm-engine spike (`spike/wasm-engine/
+REPORT.md`, branch `spike/wasm-engine`), the step of the two that makes the hosts one language, before
+the one that moves the reactive graph into the wasm.
+
+**Context.** The browser's host (`web/host/host.zig`, 1,083 lines) was the only Zig among rocx's own
+code: the server's, the CLI's and the phone's hosts are Rust (`server/host`, `cli/host`,
+`native/core`). And `native/core`, which answers the same platform's hosted functions on the phone,
+could share none of it: it has no tracking of what a run that unwinds held, so there such a run leaks
+it (`native/core/src/roc.rs`). Zig stays where it was: it compiles the hosts' C for Linux, builds the
+Roc fork, and links.
+
+**Decision.** `web/host` is a Rust crate with no std (`#![no_std]`, with `alloc`), a static library
+for `wasm32-unknown-unknown`, which `zig wasm-ld -r --whole-archive` makes the relocatable object Roc
+links each app's wasm with (`web/platform/targets/wasm32/host.wasm`), as before. Rust's own linker
+isn't used: Nix's Rust has no `rust-lld`, and Zig is in the toolchain anyway. It does what host.zig
+did, for the same runtime.js (its 69 imports and 13 exports unchanged):
+
+- `src/brk.rs`: Zig's allocator for wasm (`std.heap.BrkAllocator`), ported, so memory behaves as it
+  did: slots of a power of two, each size's from its own 64 KiB pages, a freed slot kept on its
+  size's list. It is the crate's global allocator too.
+- `src/track.rs`: Roc's memory, each allocation with the host's header (its number, its length), and
+  the frames, notes, bitmap and reclaiming that free what a run that unwound held.
+- `src/lib.rs`: the hosted functions, the exports, and a panic handler that tells the runtime
+  (`js_crashed`).
+- `src/roc_platform_abi.rs`: RustGlue's, from `web/platform/main.roc`: the same file as
+  `native/core`'s.
+
+A string the runtime answers with is written straight into the Roc string's bytes (`js_take` into
+its allocation), not into a buffer copied after. The host is built when its Rust is newer than the
+object, by `server/build.mjs`'s `buildWebHost` (the tests, the site) and `rocx-cli/Hosts.roc`'s
+`web_host!` (`rocx dev`, `rocx build --static`, a release), and by `just web-host`; `just glue`
+writes its glue. `just setup` and CI's toolchain add Rust's `wasm32-unknown-unknown` target.
+
+**Measured** (the keyed benchmark's page, Zig's host against Rust's, 2026-11-26): app.wasm 133,091
+bytes raw and 39,569 with brotli against 134,083 and 39,712 (0.7% and 0.4% more). Creating 1,000 rows,
+10,000, updating, swapping, appending: within each other's noise (two interleaved rounds of 15 each:
+25.7 and 26.4 ms against 24.4 and 25.5 for 1,000 rows; 290 and 285 against 288 and 289 for 10,000).
+web/test's platform suite passed whole on the first run.
+
+**Why.** The project's own code in two languages, Rust and Roc (with the runtime's JavaScript), and
+the way to code the browser's host and the phone's share: the allocation tracking first, which would
+end native/core's leak, and more if the reactive graph moves into the wasm (the spike's other step).
+
+**Costs.** Rust's wasm32 target, to install (rustup adds it; Nix's Rust has it). Rust 1.85's features
+only, as for the other hosts.
+
+**Reversible:** yes: host.zig is in git's history, and runtime.js didn't change.

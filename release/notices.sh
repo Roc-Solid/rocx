@@ -2,9 +2,9 @@
 # NOTICES for a release of rocx, on stdout: the licenses of what its binaries are built from, past
 # the repository's own LICENSE. The Rust crates in the server's host and the CLI's (each crate
 # linked in for the targets a release has, with its license files; a text met before is named, not
-# repeated), Rust's standard library, musl and LLVM's libunwind (the Linux targets' C runtime),
-# Zig's compiler-rt (in host.wasm), and the Roc compiler (bin/roc: its LICENSE and legal_details,
-# from the nightly the fork is of).
+# repeated), Rust's standard library (its core and alloc in host.wasm too), musl and LLVM's
+# libunwind (the Linux targets' C runtime), Zig (which compiles the hosts' C for Linux), and the Roc
+# compiler (bin/roc: its LICENSE and legal_details, from the nightly the fork is of).
 #
 # Needs cargo (the crates are fetched for those targets, so the network once), jq, and the
 # toolchain `just setup` puts in .tools. What it can't find it says on stderr, and exits 1 after
@@ -103,7 +103,8 @@ while read -r name version; do
 done < "$tmp/crates.sorted"
 
 rule "Rust's standard library"
-echo "Linked into the hosts and bin/rocx: MIT OR Apache-2.0, with parts under the licenses below"
+echo "Linked into the hosts (host.wasm: its core, alloc and compiler_builtins) and bin/rocx: MIT OR"
+echo "Apache-2.0, with parts under the licenses below"
 echo "(LLVM's libunwind: Apache-2.0 WITH LLVM-exception; Unicode's data: Unicode-3.0)."
 echo
 licenses="$(rustc --print sysroot)/share/doc/rust/licenses"
@@ -119,7 +120,7 @@ lib_dir=$( (zig env 2>/dev/null || "${ZIG:-.tools/zig/zig}" env) | sed -n -e 's/
 if [ -n "$lib_dir" ] && [ -f "$lib_dir/libc/musl/COPYRIGHT" ]; then text "musl, COPYRIGHT" "$lib_dir/libc/musl/COPYRIGHT"; else miss "no musl COPYRIGHT (Zig's lib/libc/musl)"; fi
 
 rule "Zig"
-echo "host.wasm is built by Zig, with its compiler-rt, and Zig compiles the hosts' C for Linux:"
+echo "Zig compiles the hosts' C for Linux, and its wasm-ld makes host.wasm from Rust's library for it:"
 echo
 zig_license=""
 for candidate in "$lib_dir/../../LICENSE" "$lib_dir/../LICENSE" .tools/zig/LICENSE; do

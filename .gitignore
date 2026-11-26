@@ -32,6 +32,7 @@ web/test/build/
 # The CLI platform's (which rocx is built on) and the server platform's builds: the Rust hosts, and
 # the libraries Roc links apps against
 cli/host/target/
+web/host/target/
 cli/platform/targets/
 server/host/target/
 server/platform/targets/

@@ -215,6 +215,41 @@ Hosts := [].{
 		Ok({})
 	}
 
+	## The browser's host (web/host, Rust with no std), built when its Rust is newer than the object
+	## Roc links each app's wasm with (web/platform/targets/wasm32/host.wasm): cargo's static library
+	## for wasm32, made that object by `zig wasm-ld -r`, every object in it kept (Roc's link takes
+	## what the app uses), as server/build.mjs's buildWebHost does. An installed version has no host's
+	## Rust, only the object.
+	web_host! : Str, Str => Try({}, [Failed(Str)])
+	web_host! = |rocx, zig| {
+		host_dir = Fs.join([rocx, "web", "host"])
+		object = Fs.join([rocx, "web", "platform", "targets", "wasm32", "host.wasm"])
+		if !File.is_dir!(host_dir) {
+			if File.exists!(object) {
+				return Ok({})
+			}
+			return Err(Failed("no browser host in ${rocx}: no web/host, and no web/platform/targets/wasm32/host.wasm"))
+		}
+		if Hosts.not_newer!(host_dir, File.modified!(object)) {
+			return Ok({})
+		}
+		triple = "wasm32-unknown-unknown"
+		sysroot = Text.trim(Hosts.run!(Hosts.rust_env!(Cmd.new("rustc").args(["--print", "sysroot"]), rocx, Bool.False), "rustc --print sysroot")?)
+		if !File.is_dir!(Fs.join([sysroot, "lib", "rustlib", triple])) {
+			_ = Hosts.run!(Hosts.rust_env!(Cmd.new("rustup").args(["target", "add", triple]), rocx, Bool.False), "rustup target add ${triple}")?
+		}
+		_ = Hosts.run!(Hosts.rust_env!(Cmd.new("cargo").args(["build", "--release", "--target", triple]).cwd(host_dir), rocx, Bool.False), "cargo build --release --target ${triple} (web/host)")?
+		Fs.make_dirs!(Fs.dirname(object))
+		# Whole or not at all: another build may be linking against it right now.
+		partial = "${object}.${Env.pid!({}).to_str()}.tmp"
+		library = Fs.join([host_dir, "target", triple, "release", "librocx_web_host.a"])
+		_ = Hosts.run!(Cmd.new(zig).args(["wasm-ld", "-r", "--whole-archive", library, "-o", partial]), "zig wasm-ld -r (web/host)")?
+		match File.rename!(partial, object) {
+			Ok({}) => Ok({})
+			Err(CantRename(why)) => Err(Failed(why))
+		}
+	}
+
 	## Whether nothing under `dir` (but its build's `target/`) changed after `time` (nanoseconds since
 	## the epoch; 0, never built, is always older).
 	not_newer! : Str, U64 => Bool

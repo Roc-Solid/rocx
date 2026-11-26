@@ -243,6 +243,29 @@ function buildRustHost(hostDir, targetsDir, library, target) {
 	}
 }
 
+const webHostDir = join(root, "web", "host");
+
+/** The browser's host (web/host, Rust with no std): cargo's static library for wasm32, made the
+ * relocatable object Roc links each app's wasm with (web/platform/targets/wasm32/host.wasm) by
+ * `zig wasm-ld -r`, every object in it kept (Roc's link takes what the app uses). Built when its Rust
+ * is newer than the object; rocx's own builds do the same (rocx-cli/Hosts.roc's web_host!). */
+export function buildWebHost() {
+	const object = join(root, "web", "platform", "targets", "wasm32", "host.wasm");
+	const sources = ["Cargo.toml", "build.rs", ...readdirSync(join(webHostDir, "src")).map((name) => join("src", name))].map((name) => join(webHostDir, name));
+	if (existsSync(object) && sources.every((source) => statSync(source).mtimeMs <= statSync(object).mtimeMs)) return object;
+	const env = rustEnv();
+	const triple = "wasm32-unknown-unknown";
+	const sysroot = run("rustc", ["--print", "sysroot"], { env }).stdout.trim();
+	if (!existsSync(join(sysroot, "lib", "rustlib", triple))) run("rustup", ["target", "add", triple], { env });
+	run("cargo", ["build", "--release", "--target", triple], { cwd: webHostDir, env });
+	mkdirSync(dirname(object), { recursive: true });
+	// Whole or not at all: another build may be linking against it right now.
+	const partial = `${object}.${process.pid}.tmp`;
+	run(zig(), ["wasm-ld", "-r", "--whole-archive", join(webHostDir, "target", triple, "release", "librocx_web_host.a"), "-o", partial]);
+	renameSync(partial, object);
+	return object;
+}
+
 /** The unit tests of a host module that uses only Rust's standard library (`kv.rs`), compiled on
  * their own (`rustc --test` into `out`) and run: the host's crate defines `main` for Roc, so `cargo
  * test` can't run them. The server's host's, or another's (`host`: cli/host). Its status and what it
