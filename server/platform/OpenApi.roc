@@ -70,14 +70,16 @@ OpenApi := [].{
 		"\"text/event-stream\":{\"itemSchema\":{\"oneOf\":[${each},${end}]}}"
 	}
 
-	## A method at a path (`"get"`): what its handler's comment says, its body's contents (`sent`;
-	## `""` for none: a GET's, a DELETE's) and its answer's contents (`answer`, `events`).
-	operation : Str, Str, Str, List(Str) -> Str
-	operation = |verb, doc, taken, contents| {
+	## A method at a path (`"get"`): its summary (its handler's comment's first sentence, which
+	## Swagger UI and Scalar list it by), what its handler's comment says, its body's contents
+	## (`sent`; `""` for none: a GET's, a DELETE's) and its answer's contents (`answer`, `events`).
+	operation : Str, Str, Str, Str, List(Str) -> Str
+	operation = |verb, summary, doc, taken, contents| {
+		summed_up = if (summary.is_empty()) "" else "\"summary\":${Json.to_str(summary)},"
 		described_as = if (doc.is_empty()) "" else "\"description\":${Json.to_str(doc)},"
 		request = if (taken.is_empty()) "" else "\"requestBody\":{\"required\":true,\"content\":{${taken}}},"
 		refused = "\"default\":{\"description\":\"Refused: its status, and why, as text (400 for a body it can't read); a form's issues (422) as JSON; or the handler's own answer (a redirect)\",\"content\":{\"text/plain\":{\"schema\":{\"type\":\"string\"}},\"application/json\":{}}}"
-		"${Json.to_str(verb)}:{${described_as}${request}\"responses\":{\"200\":{\"description\":\"OK\",\"content\":{${Str.join_with(contents, ",")}}},${refused}}}"
+		"${Json.to_str(verb)}:{${summed_up}${described_as}${request}\"responses\":{\"200\":{\"description\":\"OK\",\"content\":{${Str.join_with(contents, ",")}}},${refused}}}"
 	}
 
 	## A path as OpenAPI writes it (`/api/count/{to}`), its params, and its methods (`operation`).
@@ -610,9 +612,9 @@ expect {
 
 ## A document: its paths, their params, their methods.
 expect {
-	shouting = OpenApi.operation("post", "What it is sent, \"shouted\".", OpenApi.sent(shout, []), [OpenApi.answer(shout, [])])
+	shouting = OpenApi.operation("post", "Shouted.", "What it is sent, \"shouted\".", OpenApi.sent(shout, []), [OpenApi.answer(shout, [])])
 	got = OpenApi.document("app", [OpenApi.path("/shout/{word}", ["word"], [shouting])])
-	got.starts_with("{\"openapi\":\"3.2.0\",\"info\":{\"title\":\"app\",\"version\":\"0\"},\"paths\":{\"/shout/{word}\":{\"parameters\":[{\"name\":\"word\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"post\":{\"description\":\"What it is sent, \\\"shouted\\\".\",\"requestBody\":{\"required\":true,")
+	got.starts_with("{\"openapi\":\"3.2.0\",\"info\":{\"title\":\"app\",\"version\":\"0\"},\"paths\":{\"/shout/{word}\":{\"parameters\":[{\"name\":\"word\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"post\":{\"summary\":\"Shouted.\",\"description\":\"What it is sent, \\\"shouted\\\".\",\"requestBody\":{\"required\":true,")
 }
 
 ## The document and its page: only what `serving` says, and only by GET. (A response can hold a

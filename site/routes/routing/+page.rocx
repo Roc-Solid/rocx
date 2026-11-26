@@ -472,7 +472,10 @@ view! = |_|
 			<p>
 				An app can serve an OpenAPI document (3.2) of its endpoints, for a client generator or for people
 				exploring the API. It lists each path and its params (a <a href="#params">typed param</a> with its
-				type's schema), each method with the doc comment above its handler, and the JSON Schemas of what
+				type's schema), each method with the doc comment above its handler (its first sentence the
+				summary that Swagger UI and Scalar list the method by, without the method and path the comment
+				may start with: <code>## POST /api/shout: what it is sent, shouted.</code> is <em>What it is
+				sent, shouted.</em>), and the JSON Schemas of what
 				each endpoint is sent and answers. A schema is the handler's
 				type as the compiler has it: this site's <code>{"GET /api/shout/{word}"}</code> answers
 				<code>{"{ word : Str, shouted : Str, bytes : U64 }"}</code>, and its document says so. The endpoints

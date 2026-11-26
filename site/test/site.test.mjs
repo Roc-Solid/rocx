@@ -463,6 +463,7 @@ test("endpoints: GET /openapi.json is their OpenAPI document, each schema its ty
 	assert.deepEqual(events[0].properties.data.contentSchema.required, ["count", "of", "square"], "each event's data");
 	assert.deepEqual(events[1].properties.event, { const: "end" });
 	assert.match(doc.paths["/api/shout"].post.description, /what it is sent, shouted/, "the handler's comment");
+	assert.equal(doc.paths["/api/shout"].post.summary, "What it is sent, shouted.", "its first sentence, the summary Swagger UI and Scalar list it by");
 	assert.equal((await fetch(`${site.url}/openapi.json`, { method: "DELETE" })).status, 405);
 	// The site serves a page to read it in too (`Page(Swagger)`): Swagger UI, pinned and checked, the
 	// document beside it, and no validator.

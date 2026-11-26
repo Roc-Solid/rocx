@@ -248,9 +248,9 @@ view! = |_|
 						Lists an app's routes: each method and path, the file that answers it, the middleware
 						that runs around it, outermost first
 						(<a href={"${Paths.routing}#middleware"}>what runs, in what order</a>), and the first
-						sentence of the route's <code>##</code> comment: an endpoint's is what its OpenAPI
-						operation says, without the method and path it may start with; a page's is its file's
-						first comment. <code>--server</code> lists only the endpoints, and <code>--client</code>
+						sentence of the route's <code>##</code> comment: an endpoint's is its OpenAPI summary
+						(the comment above its handler, without the method and path it may start with), cut
+						short; a page's is its file's first comment. <code>--server</code> lists only the endpoints, and <code>--client</code>
 						only the pages (the error page too).
 					</p>
 				</div>

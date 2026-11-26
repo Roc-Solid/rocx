@@ -859,10 +859,12 @@ Every channel a tab subscribes to shares one stream, `/rocx/live`. See `server/R
 docs' [live page](https://roc-solid.github.io/platform/live).
 
 **OpenAPI.** An app can serve its endpoints' OpenAPI 3.2 document, which rocx writes as
-`Api.openapi`: each path and its params, each method with its handler's doc comment, and the JSON
-Schemas of what it is sent and answers, from the handlers' types (written or inferred). It is off
-unless `App.program` says otherwise: `openapi: Document` serves `GET /openapi.json`, and
-`Page(Swagger)` or `Page(Scalar)` also serves `GET /openapi.html`, the document in Swagger UI or
+`Api.openapi`: each path and its params, each method with its handler's doc comment (its first
+sentence, without the method and path it may start with, is the summary Swagger UI and Scalar list
+it by; `rocx routes` shows the same), and the JSON Schemas of what it is sent and answers, from the
+handlers' types (written or inferred). It is off unless `App.program` says otherwise: `openapi:
+Document` serves `GET /openapi.json`, and `Page(Swagger)` or `Page(Scalar)` also serves `GET
+/openapi.html`, the document in Swagger UI or
 Scalar (pinned on jsDelivr and checked against its hash). How, without reflection: a type's parser
 works with any format, and the platform's `OpenApi` is a format that reads nothing and writes the
 schema of each shape it is asked to read. A body a form can send is listed as a form's too

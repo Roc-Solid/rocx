@@ -2199,7 +2199,8 @@ Routes := [].{
 	open_api_document : Table, List(Source), List(Str), Str -> List(Str)
 	open_api_document = |table, sources, tags, title| {
 		types = Routes.param_types(table, sources)
-		operation = |verb, doc, body, contents| "OpenApi.operation(${Text.roc_string(verb)}, ${Text.roc_string(doc)}, ${body}, [${Str.join_with(contents, ", ")}])"
+		# Each method's comment, its first sentence its summary (what Swagger UI and Scalar list it by).
+		operation = |verb, doc, body, contents| "OpenApi.operation(${Text.roc_string(verb)}, ${Text.roc_string(Routes.summary(doc))}, ${Text.roc_string(doc)}, ${body}, [${Str.join_with(contents, ", ")}])"
 		documented = table.paths.keep_if(
 			|at|
 				match at.server {
@@ -3568,20 +3569,23 @@ Routes := [].{
 	brief_width : U64
 	brief_width = 72
 
-	## A comment in brief, as `rocx routes` shows it: its first sentence (of an endpoint's, what
-	## OpenAPI describes it with), on one line; without the method and path it starts with, which
-	## `rocx routes` shows beside it (`GET /hello: a greeting, as JSON.` is `A greeting, as JSON.`); a
-	## capital first; cut at a space, with `…`, past `brief_width` characters.
-	brief : Str -> Str
-	brief = |doc| {
+	## A comment's first sentence, as an endpoint's OpenAPI `summary` has it: on one line; without
+	## the method and path it starts with, which the document (and `rocx routes`) shows beside it
+	## (`GET /hello: a greeting, as JSON.` is `A greeting, as JSON.`); a capital first.
+	summary : Str -> Str
+	summary = |doc| {
 		paragraph = Str.join_with(Text.lines(doc.split_on("\n\n").first() ?? "").map(Text.trim).keep_if(|line| !line.is_empty()), " ")
 		bytes = paragraph.to_utf8()
 		sentence = Text.cut(bytes, 0, Routes.sentence_end(bytes))
 		said = Routes.unrouted(sentence).to_utf8()
 		first = Text.at(said, 0)
-		capital = if (Text.is_lower(first)) Str.from_utf8_lossy([first - 32].concat(said.drop_first(1))) else Str.from_utf8_lossy(said)
-		Routes.cut_to(capital, Routes.brief_width)
+		if (Text.is_lower(first)) Str.from_utf8_lossy([first - 32].concat(said.drop_first(1))) else Str.from_utf8_lossy(said)
 	}
+
+	## A comment in brief, as `rocx routes` shows it: its `summary`, cut at a space, with `…`, past
+	## `brief_width` characters.
+	brief : Str -> Str
+	brief = |doc| Routes.cut_to(Routes.summary(doc), Routes.brief_width)
 
 	## Where the first sentence of `bytes` ends: after the first `.` before a space (or the end) that
 	## isn't in code (`` ` ``) or brackets; else at the end.
@@ -4033,5 +4037,6 @@ expect Routes.brief("GET /members returns who you are.") == "GET /members return
 expect Routes.brief("The page at /: rendered by the server.\n\n- A list") == "The page at /: rendered by the server."
 expect Routes.brief("A list,\nand a form.") == "A list, and a form."
 expect Routes.brief("") == ""
+expect Routes.summary("POST /notes: a new note, its title (1 to 200 characters), its body in Markdown, and its tags.") == "A new note, its title (1 to 200 characters), its body in Markdown, and its tags."
 expect Routes.brief("One of your notes, whole: its Markdown, tags, and whether it is pinned or archived, as the API gives it.") == "One of your notes, whole: its Markdown, tags, and whether it is pinned…"
 expect Text.length(Routes.brief("word ".repeat(40))) <= Routes.brief_width

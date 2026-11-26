@@ -258,8 +258,10 @@ test("routes: Api.openapi, the endpoints' OpenAPI document, which App.program se
 	const api = apiModule(table, { sources, tags: ["Gone", "Red"], title: "blog" });
 	assert.match(api, /^import pf\.OpenApi$/m);
 	assert.match(api, /\topenapi : Str\n\topenapi = \{\n\t\ttags = \[\n\t\t\t"Gone", "Red",\n\t\t\]\n\t\tOpenApi\.document\("blog", \[/);
-	assert.match(api, /\t\t\tOpenApi\.path\("\/live", \[\], \[\n\t\t\t\tOpenApi\.operation\("get", "The count\.\\n\\nEach tick, as it comes\.", "", \[OpenApi\.answer\(Api\.get_live\(\{\}\), tags\), OpenApi\.events\(Api\.events_live\(\{\}\), tags\)\]\),\n\t\t\t\]\),/, "get! and events! are one GET");
-	assert.match(api, /\t\t\tOpenApi\.path\("\/blog\/\{slug\}", \["slug"\], \[\n\t\t\t\tOpenApi\.operation\("put", "The post, \\"edited\\": \\\$\{not code\}\.", OpenApi\.sent\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\), \[OpenApi\.answer\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\)\]\),\n\t\t\t\tOpenApi\.operation\("delete", "", "", \[OpenApi\.answer\(Api\.delete_blog_slug\(\{ slug: "" \}\), tags\)\]\),/);
+	assert.match(api, /\t\t\tOpenApi\.path\("\/live", \[\], \[\n\t\t\t\tOpenApi\.operation\("get", "The count\.", "The count\.\\n\\nEach tick, as it comes\.", "", \[OpenApi\.answer\(Api\.get_live\(\{\}\), tags\), OpenApi\.events\(Api\.events_live\(\{\}\), tags\)\]\),\n\t\t\t\]\),/, "get! and events! are one GET");
+	assert.match(api, /\t\t\tOpenApi\.path\("\/blog\/\{slug\}", \["slug"\], \[\n\t\t\t\tOpenApi\.operation\("put", "The post, \\"edited\\": \\\$\{not code\}\.", "The post, \\"edited\\": \\\$\{not code\}\.", OpenApi\.sent\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\), \[OpenApi\.answer\(Api\.put_blog_slug\(\{ slug: "" \}\), tags\)\]\),\n\t\t\t\tOpenApi\.operation\("delete", "", "", "", \[OpenApi\.answer\(Api\.delete_blog_slug\(\{ slug: "" \}\), tags\)\]\),/);
+	const routed = new Map([...sources, ["live/+server.roc", { ...sources.get("live/+server.roc"), docs: { "get!": "GET /live: the count, as it is now. It changes.", "events!": "Each tick." } }]]);
+	assert.match(apiModule(table, { sources: routed }), /OpenApi\.operation\("get", "The count, as it is now\.", "GET \/live: the count, as it is now\. It changes\.\\n\\nEach tick\.", /, "the summary: the comment's first sentence, without the method and path it starts with; the description, the whole comment");
 	assert.doesNotMatch(apiModule(table, { sources, client: true }), /OpenApi|openapi/, "the browser's copy has no document");
 	const routes = routesModule(table, { sources });
 	assert.doesNotMatch(routes, /openapi/, "the router doesn't serve it: App.program does, if the app says")
@@ -1083,7 +1085,7 @@ test("typed path params (D-092): the types handlers give a path's params are Api
 	assert.match(api, /\tdelete_notes_id_tags_tag : \{ id : I64, tag : \[Work, Home\] \} -> /);
 	assert.match(api, /"\/notes\/\$\{Server\.encode_param\(params\.id\)\}\/tags\/\$\{Server\.encode_param\(params\.tag\)\}"/);
 	assert.match(api, /\tget_tags_tag : \{ tag : Str \} -> Endpoint\(context, \{\}, Str\)\n\tget_tags_tag = \|params\| Endpoint\.remote\("GET", "\/tags\/\$\{Server\.encode_segment\(params\.tag\)\}"\)/, "a Str param as before");
-	assert.match(api, /OpenApi\.typed_path\("\/notes\/\{id\}", Api\.get_notes_id, tags, \[\n\t+OpenApi\.operation\("get", "", "", \[OpenApi\.answer\(Api\.get_notes_id\(\{ id: 0 \}\), tags\)\]\),/, "its params' schemas from their types; a value of each to name the endpoint with");
+	assert.match(api, /OpenApi\.typed_path\("\/notes\/\{id\}", Api\.get_notes_id, tags, \[\n\t+OpenApi\.operation\("get", "", "", "", \[OpenApi\.answer\(Api\.get_notes_id\(\{ id: 0 \}\), tags\)\]\),/, "its params' schemas from their types; a value of each to name the endpoint with");
 	assert.match(api, /Api\.delete_notes_id_tags_tag\(\{ id: 0, tag: Work \}\)/);
 	assert.match(api, /OpenApi\.path\("\/tags\/\{tag\}", \["tag"\], \[/);
 

@@ -35,7 +35,8 @@ rocx changes. Write the app's own notes outside that block.
   before saying a change is done. `rocx check --sql` checks the SQL against the app's engine.
 - `rocx test`: the app's `expect`s. HTTP and browser tests use packages/testing.
 - `rocx fmt <paths>`: formats `.roc` and `.rocx` files; `--check` only reports.
-- `rocx routes .`: every route with its methods and the middleware around it.
+- `rocx routes`: every route with its methods, the middleware around it and its comment's first
+  sentence; `--server` lists only the endpoints, `--client` only the pages.
 - `rocx build`: the release in `dist/`; `--image` a container image; `--static` plain files.
 - `rocx generate`: writes `Generated/` and the browser's copy without building, for editors.
 - `rocx agents`: rewrites the rocx block in AGENTS.md (this guide's summary).
@@ -77,6 +78,8 @@ post! : { request : Server.Request, params : {}, context : Gate.Member, body : {
   `Err(Answer(response))`.
 - `body` is read from JSON or from a form's fields by its type; `post_body = …` in the route file
   names rules that check it (packages/forms), refused with the issues before the handler runs.
+- The `##` comment above a handler is its OpenAPI description, and its first sentence its summary
+  (what `rocx routes` shows too): start it with what the endpoint does, `## POST /notes: a new note.`
 - `respond!` answers every method by hand (an MCP server, a proxy): reach for it only when the
   methods above can't say it, since it gives up the contract and rocx's 405.
 - Code that calls an endpoint on the server (a job, an MCP tool, another route) sends its contract,
