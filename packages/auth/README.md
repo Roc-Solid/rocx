@@ -345,7 +345,11 @@ Auth.sign_out_route! : Server.Request => Server.Response
 The provider routes read the path's `params` too (`respond! = |{ request, params, .. }| …`). Each
 file imports `auth.Auth` and the app's module (`import ../../../Accounts` from
 `routes/auth/link/`). These are how one signs in, so no folder they are in may turn a signed-out
-request away: keep them out of a group whose middleware is `Auth.required`.
+request away: keep them out of a group whose middleware is `Auth.required`. Write them as
+`respond!`, not `post!`: the browser's runtime sends a form to a `post!` endpoint itself (D-095) and
+moves to where it is sent in place, while a sign-in should be a plain form post, the page after it
+loaded whole with the new session (a `respond!` beside a page, `routes/auth/dev/` with the dev
+sign-in's page, answers the form's POST, and the page a browser's GET).
 
 A sign-in that fails goes to the app's sign-in page with why, and where it was going (`&then=`):
 
