@@ -29,6 +29,7 @@ Middleware(given, handed) :: { run : Server.Request, given, (Server.Request, han
 
 	## No middleware: every request handed on as it came, with the context it came with. What an app
 	## gives a plugin whose routes anyone may reach (`Stripe.plugin({ …, middleware: Middleware.none({}) })`).
+	## Nothing of the app's runs then: with `cross_site: Allowed`, not even its own form check.
 	none : {} -> Middleware(context, context)
 	none = |{}| { run: |request, context, next!| next!(request, context) }
 

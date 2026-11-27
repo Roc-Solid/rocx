@@ -1491,7 +1491,11 @@ would have to), and because a sensitive page (the jobs page, the OpenAPI documen
 every endpoint takes) should never be public because an option was left out. `Middleware.none({})`
 says "nothing" out loud. Each package's `at` (`webhook_at` for Stripe) puts its routes elsewhere
 when two would meet; the server refuses to start while they do. The platform's cross-site check
-(`cross_site`) is still around every request, plugins' too.
+(`cross_site: Refused`, the default) is still around every request, plugins' too. An app that says
+`cross_site: Allowed` and checks forms in its own root middleware loses that check on a plugin's
+routes unless it passes that part to the plugin: `Middleware.none({})` there leaves a plugin's
+POSTs (`/auth/sign-out`, say) unchecked. Split the root into what every request needs (the log,
+one origin, the form check) and the gate, and give plugins the first.
 
 ### Checks at start
 

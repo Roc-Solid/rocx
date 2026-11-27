@@ -85,7 +85,8 @@ Auth.Options(context, ctx) := {
 `middleware` is what the plugin's endpoints are behind, which the app must say (D-114: an app's `routes/+middleware.roc` isn't around a plugin's routes).
 They are how one signs in, so nothing there may send a signed-out request away: give the app's
 middleware that only adds headers or logs (`Middlewares.default`, as `rocx new` does), or
-`Middleware.none({})`.
+`Middleware.none({})`. An app with `cross_site: Allowed` that checks forms in its own middleware
+gives the plugin that check too: its POSTs (`<at>/sign-out`, `<at>/link`, `<at>/code`) are forms.
 
 Without `admit!`, nobody signs in by a link, a provider or the dev sign-in: an app that checks a
 password of its own, or lets people pick who they are, starts sessions with `Auth.sign_in!` and

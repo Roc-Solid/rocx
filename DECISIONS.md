@@ -6779,7 +6779,10 @@ Defaults were meant for the plugins anyone may reach, but a field default may no
 `context` (the compiler refuses it: "default constrains a type parameter"), so every plugin with
 routes requires it.
 
-**Costs.** Every app lists a `middleware` for each plugin with routes, `Middleware.none({})` where
+**Costs.** An app with `cross_site: Allowed` that checks forms in its own root loses that check
+on a plugin's routes it gives `Middleware.none({})`: it splits its root and passes the ungated part
+(the private app did: its auth plugin is behind its log, one-origin redirect and form check).
+Every app lists a `middleware` for each plugin with routes, `Middleware.none({})` where
 none is wanted. A root middleware that logs or adds headers no longer reaches a plugin's routes
 unless the app passes it; an app whose root mixes headers and a gate must split them to pass one
 without the other. The examples pass their `Middlewares.default`, which only adds headers, logs or

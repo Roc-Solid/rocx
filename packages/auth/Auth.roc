@@ -83,7 +83,8 @@ Auth := [].{
 	## - `middleware`: what the plugin's endpoints are behind (D-114), which the app must say: not its
 	##   `routes/+middleware.roc`, which isn't around a plugin's routes. They are how one signs in, so
 	##   nothing there may send a signed-out request away: `Middleware.none({})`, or the app's own that
-	##   only logs or adds headers (`Middlewares.default`, if it gates nothing).
+	##   only logs or adds headers (`Middlewares.default`, if it gates nothing). With `cross_site:
+	##   Allowed`, give it the app's own form check too: its POSTs are forms.
 	## - `at`: where the plugin's endpoints are (`/auth`).
 	## - `sign_in`: the app's sign-in page, where a signed-out request (`required`) and a sign-in
 	##   that failed go (`/sign-in`).
