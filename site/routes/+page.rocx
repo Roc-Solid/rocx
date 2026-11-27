@@ -35,8 +35,8 @@ view! = |_| {
 						title="from the database to the browser"
 						centered
 						actions={[
-							<Button href="#start" primary>Get started</Button>,
-							<Button href={Paths.rocx}>Read the guide</Button>,
+							<Button href="#start" primary bare>Get started</Button>,
+							<Button href={Paths.rocx} bare>Read the guide</Button>,
 						]}
 					>
 					</PageHero>

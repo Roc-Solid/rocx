@@ -1,12 +1,15 @@
 import pf.Html
 
 ## A link that looks like a button: the way to somewhere the page means you to go. `primary` for the
-## one it most means (cyan); the others are quiet surfaces. Put several in `<Actions>`. With `submit`,
-## it is a form's button instead, which sends the form it is in.
+## one it most means (cyan); the others are quiet surfaces. `bare` for a link's look instead: its text
+## and an arrow (down to a place on the page, on to another page), no surface, as the front page's
+## hero has them. Put several in `<Actions>`. With `submit`, it is a form's button instead, which
+## sends the form it is in.
 Button := [].{
 	Props := {
 		href : Str ?? "",
 		primary : Bool ?? Bool.False,
+		bare : Bool ?? Bool.False,
 		submit : Bool ?? Bool.False,
 		children : List(Html),
 	}
@@ -16,7 +19,7 @@ Button := [].{
 		if (props.submit)
 			<button class="button" class:primary={props.primary} type="submit">{...props.children}</button>
 		else
-			<a class="button" class:primary={props.primary} href={props.href}>{...props.children}</a>
+			<a class="button" class:primary={props.primary} class:bare={props.bare} href={props.href}>{...props.children}</a>
 
 	<story name="Primary">
 		<Button href="#" primary>Read the guide</Button>
@@ -24,6 +27,13 @@ Button := [].{
 
 	<story name="Secondary">
 		<Button href="#">See it run</Button>
+	</story>
+
+	<story name="Bare">
+		<p>
+			<Button href="#" primary bare>Get started</Button>
+			<Button href="/rocx" bare>Read the guide</Button>
+		</p>
 	</story>
 
 	<story name="A form's">
@@ -59,6 +69,53 @@ Button := [].{
 		.primary:hover {
 			background: var(--accent-strong);
 			box-shadow: var(--glow);
+		}
+
+		/* Bare: the text, a little larger, and its arrow, which moves the way it points on a hover. */
+		.bare,
+		.bare:hover {
+			margin: 0 var(--space-3);
+			padding: var(--space-1) 0;
+			background: none;
+			box-shadow: none;
+		}
+
+		.bare {
+			color: var(--text-muted);
+			font-size: var(--size-lg);
+			transition: color 0.15s, text-shadow 0.15s;
+		}
+
+		.bare:hover {
+			color: var(--text);
+		}
+
+		.bare.primary {
+			color: var(--accent);
+		}
+
+		.bare.primary:hover {
+			color: var(--accent);
+			text-shadow: var(--glow-text);
+		}
+
+		.bare::after {
+			content: "→";
+			content: "→" / "";
+			transition: translate 0.15s;
+		}
+
+		.bare[href^="#"]::after {
+			content: "↓";
+			content: "↓" / "";
+		}
+
+		.bare:hover::after {
+			translate: 0.2rem 0;
+		}
+
+		.bare[href^="#"]:hover::after {
+			translate: 0 0.2rem;
 		}
 	</style>
 }
