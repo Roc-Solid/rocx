@@ -381,7 +381,11 @@ view! = |_|
 				The catalog lists every story down the side, which folds away (<kbd>S</kbd>); <kbd>/</kbd>
 				searches it, and <kbd>↑</kbd> and <kbd>↓</kbd> step through it. The story you pick shows in a
 				frame, with the line it is written at, and can fill the window (<kbd>F</kbd>, and
-				<kbd>Esc</kbd> to come back). A component's name shows all its stories side by side. Each story
+				<kbd>Esc</kbd> to come back). A component's name shows all its stories side by side. A story the
+				browser hasn't shown yet has a dot beside it, and so do its component and its part, so one just
+				written stands out: <kbd>N</kbd> opens the next, and searching for <code>new</code> lists them.
+				The side's parts and components fold, and its edge drags it wider; the browser keeps what it
+				has seen, what is folded and the width from one visit to the next. Each story
 				is the app's page at its own path (<code>/__rocx/stories/…</code>), rendered in the root layout
 				and hydrated, so it works as it would in the app; a layout can tell it is a story by its path
 				(this site shows a story with nothing around it). An app with no pages has nowhere to show one,

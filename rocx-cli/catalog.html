@@ -10,6 +10,7 @@
 	--bg: #f4f4f7; --side: #fbfbfd; --panel: #ffffff; --ink: #18171f; --muted: #66636f; --faint: #9a97a6;
 	--rule: #e6e5ec; --hover: #efeef4; --accent: #7c5cff; --accent-ink: #5a3fd6; --accent-soft: #efeaff;
 	--shadow: 0 1px 2px rgb(20 18 30 / 0.06), 0 6px 24px rgb(20 18 30 / 0.06);
+	--new: #d6339f; --new-ink: #a5197a; --new-soft: #fde7f5;
 	--sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 	--mono: ui-monospace, "SF Mono", Menlo, monospace;
 	font: 13.5px/1.45 var(--sans);
@@ -21,6 +22,7 @@
 		--bg: #0d0d12; --side: #111117; --panel: #16161e; --ink: #ecebf3; --muted: #a09eaf; --faint: #6d6b7e;
 		--rule: #23232d; --hover: #1c1c25; --accent: #a99bff; --accent-ink: #c9c0ff; --accent-soft: rgb(169 155 255 / 0.14);
 		--shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 30px rgb(0 0 0 / 0.35);
+		--new: #ff6fd0; --new-ink: #ff9fe0; --new-soft: rgb(255 111 208 / 0.13);
 	}
 }
 /* Each kind's colour, the site's neon where it reads: components violet (the site's --violet, the
@@ -30,7 +32,7 @@
 	[data-kind="draft"] { --accent: #ffd447; --accent-ink: #ffe27d; --accent-soft: rgb(255 212 71 / 0.12); }
 }
 * { box-sizing: border-box; }
-body { margin: 0; height: 100vh; display: grid; grid-template-columns: 16.5rem minmax(0, 1fr); overflow: hidden; }
+body { margin: 0; height: 100vh; display: grid; grid-template-columns: min(var(--side-width, 16.5rem), 60vw) minmax(0, 1fr); overflow: hidden; }
 body.folded { grid-template-columns: minmax(0, 1fr); }
 body.folded aside { display: none; }
 button { font: inherit; color: inherit; }
@@ -39,7 +41,14 @@ kbd { display: inline-grid; place-items: center; min-width: 1.35em; padding: 0 0
 .icon:hover { background: var(--hover); color: var(--ink); }
 .icon.on { background: var(--accent-soft); color: var(--accent-ink); }
 
-aside { display: flex; flex-direction: column; min-height: 0; background: var(--side); border-right: 1px solid var(--rule); }
+aside { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--side); border-right: 1px solid var(--rule); }
+/* The side's edge, which drags it wider or narrower. */
+.grip { position: absolute; top: 0; right: -5px; bottom: 0; z-index: 3; width: 9px; cursor: col-resize; touch-action: none; }
+.grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 3px; background: transparent; transition: background 0.15s 0.1s; }
+.grip:hover::after, .grip:focus-visible::after, body.resizing .grip::after { background: var(--accent); }
+.grip:focus-visible { outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe { pointer-events: none; }
 .brand { display: flex; align-items: center; gap: 0.6rem; padding: 0.9rem 0.75rem 0.9rem 1rem; }
 .logo { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 8px; background: linear-gradient(135deg, var(--accent), #e05bd8); color: white; }
 .brand-text { flex: 1; min-width: 0; line-height: 1.2; }
@@ -49,22 +58,45 @@ aside { display: flex; flex-direction: column; min-height: 0; background: var(--
 .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font: inherit; }
 .search input::-webkit-search-cancel-button { display: none; }
+/* Stories this browser hasn't shown yet: a dot beside each, and a line above the list. */
+.dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--new); }
+.news { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: 0 0.75rem 0.5rem; padding: 0.2rem; border-radius: 8px; background: var(--new-soft); }
+.news[hidden] { display: none; }
+.news button { display: inline-flex; align-items: center; gap: 0.45rem; height: 1.6rem; padding: 0 0.5rem; border: 0; border-radius: 6px; background: none; color: var(--new-ink); font-weight: 600; cursor: pointer; }
+.news button:hover { background: var(--panel); }
+.news .seen { color: var(--muted); font-size: 12px; font-weight: 500; }
+.news .seen:hover { color: var(--ink); }
+.fresh { display: inline-flex; flex: none; align-items: center; height: 1.3rem; padding: 0 0.45rem; border-radius: 999px; background: var(--new-soft); color: var(--new-ink); font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 nav { flex: 1; overflow: auto; padding: 0 0.5rem 1rem; }
 .part + .part { margin-top: 0.6rem; border-top: 1px solid var(--rule); }
-.part-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.6rem; padding: 0.7rem 0.5rem 0.5rem; background: var(--side); }
+.part-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.7rem 0.35rem 0.5rem 0.5rem; border: 0; background: var(--side); text-align: left; cursor: pointer; }
+.part-head[aria-disabled="true"] { cursor: default; }
 .mark { display: grid; flex: none; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 7px; background: var(--accent-soft); color: var(--accent); }
 .part-name { flex: 1; min-width: 0; line-height: 1.3; }
 .part-name strong { display: block; color: var(--accent-ink); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .part-name small { display: block; overflow: hidden; color: var(--faint); font: 11px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .part-head .count { min-width: 1.5rem; padding: 0 0.4rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); text-align: center; }
-.component { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.6rem 0.3rem 0.5rem; border-radius: 7px; color: var(--ink); font-weight: 600; text-decoration: none; }
+/* A part's or a component's fold: a chevron, turned when it is folded, gone while a search shows
+   every match. */
+.chevron { display: grid; flex: none; place-items: center; width: 1.25rem; height: 1.25rem; color: var(--faint); }
+.chevron svg { width: 13px; height: 13px; transition: transform 0.15s; }
+[aria-expanded="false"] > .chevron svg, .toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.part-head:hover .chevron { color: var(--ink); }
+.part-head[aria-disabled="true"] .chevron { visibility: hidden; }
+.toggle { display: grid; flex: none; place-items: center; width: 1.25rem; height: 1.25rem; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--faint); cursor: pointer; }
+.toggle:hover { background: var(--panel); color: var(--ink); }
+.toggle svg { width: 12px; height: 12px; transition: transform 0.15s; }
+.toggle[aria-disabled="true"] { visibility: hidden; }
+.component { display: flex; align-items: center; gap: 0.1rem; padding-left: 0.15rem; border-radius: 7px; }
 .component:hover { background: var(--hover); }
-.component.on { background: var(--accent-soft); color: var(--accent-ink); }
-.component > svg { color: var(--accent); flex: none; }
-.component .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.component.on { background: var(--accent-soft); }
+.component .open { display: flex; flex: 1; align-items: center; gap: 0.5rem; min-width: 0; padding: 0.3rem 0.6rem 0.3rem 0.25rem; color: var(--ink); font-weight: 600; text-decoration: none; }
+.component.on .open { color: var(--accent-ink); }
+.component .open > svg { color: var(--accent); flex: none; }
+.name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .count { color: var(--faint); font: 500 11px var(--mono); }
-.stories { margin: 0.1rem 0 0.35rem 1.05rem; padding: 0 0 0 0.6rem; border-left: 1px solid var(--rule); list-style: none; }
-.stories a { display: block; margin: 1px 0; padding: 0.28rem 0.6rem; border-radius: 6px; color: var(--muted); text-decoration: none; }
+.stories { margin: 0.1rem 0 0.35rem 0.75rem; padding: 0 0 0 0.6rem; border-left: 1px solid var(--rule); list-style: none; }
+.stories a { display: flex; align-items: center; gap: 0.5rem; margin: 1px 0; padding: 0.28rem 0.6rem; border-radius: 6px; color: var(--muted); text-decoration: none; }
 .stories a:hover { background: var(--hover); color: var(--ink); }
 .stories a.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 .none { margin: 1.5rem 0.75rem; color: var(--faint); }
@@ -80,6 +112,7 @@ main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .crumbs a.of:hover { color: var(--ink); text-decoration: underline; }
 .crumbs .sep { color: var(--faint); }
 .crumbs strong { font-size: 14px; }
+.crumbs .fresh { align-self: center; }
 .where { overflow: hidden; text-overflow: ellipsis; color: var(--faint); font: 12px var(--mono); text-decoration: none; white-space: nowrap; }
 a.where:hover { color: var(--accent-ink); text-decoration: underline; }
 .spacer { flex: 1; }
@@ -92,6 +125,7 @@ a.where:hover { color: var(--accent-ink); text-decoration: underline; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(26rem, 1fr)); gap: 1rem; align-items: start; }
 .cell { border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
 .cell header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.45rem 0.6rem 0.45rem 0.85rem; border-bottom: 1px solid var(--rule); }
+.cell header > span { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 .cell header a { color: var(--ink); font-weight: 600; text-decoration: none; }
 .cell header a:hover { color: var(--accent-ink); }
 .cell .line { color: var(--faint); font: 11.5px var(--mono); }
@@ -112,15 +146,20 @@ body.full .exit { display: inline-flex; }
 </style>
 </head>
 <body>
-<aside aria-label="Stories">
+<aside aria-label="Stories" id="side">
 	<div class="brand">
 		<span class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></svg></span>
 		<span class="brand-text"><strong>Stories</strong><small>@@TITLE@@</small></span>
 		<button class="icon" id="fold" title="Hide the side (S)" aria-label="Hide the side"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
 	</div>
 	<label class="search"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="find" placeholder="Find a story" aria-label="Find a story"><kbd>/</kbd></label>
+	<div class="news" id="news" hidden>
+		<button class="next" id="next-new" title="Open the next story you haven't seen (N)"><span class="dot"></span><span id="new-count"></span></button>
+		<button class="seen" id="seen-all" title="Take every story's dot away">Mark all seen</button>
+	</div>
 	<nav id="list"></nav>
-	<div class="keys"><span><kbd>↑↓</kbd> move</span><span><kbd>F</kbd> full screen</span><span><kbd>S</kbd> side</span></div>
+	<div class="keys"><span><kbd>↑↓</kbd> move</span><span><kbd>N</kbd> next new</span><span><kbd>F</kbd> full screen</span><span><kbd>S</kbd> side</span></div>
+	<div class="grip" id="grip" role="separator" aria-orientation="vertical" aria-label="The side's width" aria-valuemin="180" aria-valuemax="640" tabindex="0" title="Drag to widen; double-click to put it back"></div>
 </aside>
 <main>
 	<div class="bar" id="bar"></div>
@@ -130,7 +169,7 @@ body.full .exit { display: inline-flex; }
 <script>
 const STORIES = @@DATA@@;
 const BASE = "/__rocx/stories";
-const ICONS = {"panel":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M9 4v16\"/></svg>","search":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg>","expand":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4\"/></svg>","shrink":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4\"/></svg>","component":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 3 20 7.5v9L12 21l-8-4.5v-9Z\"/><path d=\"m4 7.5 8 4.5 8-4.5M12 12v9\"/></svg>","draft":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M3 9h18M9 21V9\"/></svg>","book":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z\"/><path d=\"M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5\"/></svg>"};
+const ICONS = {"chevron":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg>","panel":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M9 4v16\"/></svg>","search":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg>","expand":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4\"/></svg>","shrink":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4\"/></svg>","component":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 3 20 7.5v9L12 21l-8-4.5v-9Z\"/><path d=\"m4 7.5 8 4.5 8-4.5M12 12v9\"/></svg>","draft":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M3 9h18M9 21V9\"/></svg>","book":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z\"/><path d=\"M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5\"/></svg>"};
 const $ = (tag, attrs = {}, ...children) => {
 	const node = document.createElement(tag);
 	for (const [key, value] of Object.entries(attrs)) key.startsWith("on") ? node.addEventListener(key.slice(2), value) : node.setAttribute(key, value);
@@ -164,35 +203,120 @@ function set(name, on) {
 	if (name === "folded") show();
 	if (name === "full" && !on) document.getElementById("stage").focus();
 }
+// What this browser keeps for the app from one visit to the next (its own, beside another app's on
+// the same port): the stories it has shown, the side's folded parts, and the side's width.
+const APP = document.querySelector(".brand-text small").textContent;
+const keyOf = (name) => "rocx-stories:" + APP + ":" + name;
+function kept(name, otherwise) {
+	try {
+		return JSON.parse(localStorage.getItem(keyOf(name))) ?? otherwise;
+	} catch {
+		return otherwise;
+	}
+}
+function keep(name, value) {
+	try {
+		if (value === null) localStorage.removeItem(keyOf(name));
+		else localStorage.setItem(keyOf(name), JSON.stringify(value));
+	} catch {}
+}
+// A story is new until this browser has shown it, alone or side by side. What this visit showed
+// for the first time, the stage still says is new while the visit lasts.
+const seen = new Set(kept("seen", []));
+const firstSeen = new Set();
+const isNew = (story) => !seen.has(story.id);
+function see(stories, first = true) {
+	const unseen = stories.filter(isNew);
+	if (!unseen.length) return;
+	for (const story of unseen) {
+		seen.add(story.id);
+		if (first) firstSeen.add(story.id);
+	}
+	// Another tab's too, so neither takes away what the other saw.
+	for (const id of kept("seen", [])) seen.add(id);
+	keep("seen", [...seen]);
+}
+const dot = (title = "New: not seen yet") => $("span", { class: "dot", role: "img", "aria-label": "new", title });
+const fresh = (story) => (firstSeen.has(story.id) ? [$("span", { class: "fresh", title: "Seen for the first time" }, "New")] : []);
+// The next story not seen yet, after the one shown, in the side's order.
+function nextNew() {
+	const now = picked();
+	const at = STORIES.indexOf(now.story ?? now.side?.at(-1));
+	const story = [...STORIES.slice(at + 1), ...STORIES.slice(0, at + 1)].find(isNew);
+	if (story) location.hash = story.id;
+}
+// The side's folded parts: a kind's ("kind:draft"), or a component's (its file#name).
+const shut = new Set(kept("shut", []));
+const searching = () => document.getElementById("find").value.trim() !== "";
+function fold(key) {
+	if (searching()) return;
+	if (!shut.delete(key)) shut.add(key);
+	keep("shut", [...shut]);
+	list();
+	document.querySelector(`#list [data-key="${CSS.escape(key)}"]`)?.focus();
+}
+// What is opened is never folded away: going to a story unfolds its part and its component.
+function reveal() {
+	const now = picked();
+	const story = now.story ?? now.side?.[0];
+	if (!story) return;
+	const kind = shut.delete("kind:" + story.kind);
+	const group = Boolean(now.story) && shut.delete(componentKey(story));
+	if (kind || group) keep("shut", [...shut]);
+}
 function list() {
 	const find = document.getElementById("find").value.trim().toLowerCase();
 	const nav = document.getElementById("list");
 	const now = picked();
+	// A search shows every match, folded or not; "new" finds the stories not seen yet.
+	const open = (key) => Boolean(find) || !shut.has(key);
+	const matches = (story, kind) => (story.file + " " + story.component + " " + story.name + " " + kind.one + (isNew(story) ? " new" : "")).toLowerCase().includes(find);
 	nav.replaceChildren();
 	for (const kind of KINDS) {
-		const shown = STORIES.filter((story) => story.kind === kind.kind && (!find || (story.file + " " + story.component + " " + story.name + " " + kind.one).toLowerCase().includes(find)));
+		const shown = STORIES.filter((story) => story.kind === kind.kind && (!find || matches(story, kind)));
 		if (!shown.length) continue;
+		const partKey = "kind:" + kind.kind;
+		const unseen = shown.filter(isNew).length;
 		const part = $("section", { class: "part", "data-kind": kind.kind, "aria-label": kind.label });
-		part.append($("div", { class: "part-head", title: kind.about }, $("span", { class: "mark" }, svg(kind.kind)), $("span", { class: "part-name" }, $("strong", {}, kind.label), $("small", {}, kind.hint)), $("span", { class: "count" }, String(shown.length))));
-		let group = null;
-		let stories = null;
-		for (const story of shown) {
-			if (componentKey(story) !== group) {
-				group = componentKey(story);
-				const key = group;
-				const many = groupOf(key).length;
-				const sideOn = Boolean(now.side) && componentKey(now.side[0]) === key;
-				// The component's name opens its stories side by side; with one story, that story.
-				const href = "#" + (many > 1 ? "side/" + key : story.id);
-				part.append($("a", { class: "component" + (sideOn ? " on" : ""), href, title: story.file + (many > 1 ? ": its stories side by side" : ": its story") }, svg(kind.kind), $("span", { class: "name" }, story.component), $("span", { class: "count" }, String(many))));
-				stories = $("ul", { class: "stories" });
-				part.append(stories);
+		const head = $(
+			"button",
+			{ class: "part-head", title: kind.about, "data-key": partKey, "aria-expanded": String(open(partKey)), onclick: () => fold(partKey) },
+			$("span", { class: "mark" }, svg(kind.kind)),
+			$("span", { class: "part-name" }, $("strong", {}, kind.label), $("small", {}, kind.hint)),
+			...(unseen ? [dot(unseen + " new")] : []),
+			$("span", { class: "count" }, String(shown.length)),
+			$("span", { class: "chevron" }, svg("chevron")),
+		);
+		if (find) head.setAttribute("aria-disabled", "true");
+		part.append(head);
+		if (open(partKey)) {
+			let group = null;
+			let stories = null;
+			for (const story of shown) {
+				if (componentKey(story) !== group) {
+					group = componentKey(story);
+					const key = group;
+					const all = groupOf(key);
+					const many = all.length;
+					const sideOn = Boolean(now.side) && componentKey(now.side[0]) === key;
+					// The component's name opens its stories side by side; with one story, that story.
+					const href = "#" + (many > 1 ? "side/" + key : story.id);
+					const toggle = $("button", { class: "toggle", "data-key": key, "aria-expanded": String(open(key)), "aria-label": (open(key) ? "Fold " : "Unfold ") + story.component, title: open(key) ? "Fold" : "Unfold", onclick: () => fold(key) }, svg("chevron"));
+					if (find) toggle.setAttribute("aria-disabled", "true");
+					const link = $("a", { class: "open", href, title: story.file + (many > 1 ? ": its stories side by side" : ": its story") }, svg(kind.kind), $("span", { class: "name" }, story.component), ...(all.some(isNew) ? [dot(all.filter(isNew).length + " new")] : []), $("span", { class: "count" }, String(many)));
+					part.append($("div", { class: "component" + (sideOn ? " on" : "") }, toggle, link));
+					stories = $("ul", { class: "stories" });
+					if (open(key)) part.append(stories);
+				}
+				stories.append($("li", {}, $("a", { href: "#" + story.id, class: now.story === story ? "on" : "", title: story.name }, $("span", { class: "name" }, story.name), ...(isNew(story) ? [dot()] : []))));
 			}
-			stories.append($("li", {}, $("a", { href: "#" + story.id, class: now.story === story ? "on" : "" }, story.name)));
 		}
 		nav.append(part);
 	}
 	if (!nav.children.length) nav.append($("p", { class: "none" }, STORIES.length ? "No story matches." : "No stories yet."));
+	const unseen = STORIES.filter(isNew).length;
+	document.getElementById("news").hidden = unseen === 0;
+	document.getElementById("new-count").textContent = unseen + " new";
 }
 // The bar: what is open (its kind, the bar in that kind's colour; its component and name), where it
 // is written, and what to do with it.
@@ -217,7 +341,9 @@ function keysIn(frame) {
 function show() {
 	const stage = document.getElementById("stage");
 	const now = picked();
+	see(now.side ?? (now.story ? [now.story] : []));
 	list();
+	document.querySelector("#list a.on, #list .component.on")?.scrollIntoView({ block: "nearest" });
 	if (!STORIES.length) {
 		bar(null, [$("strong", {}, "Stories")], $("span"), []);
 		const empty = $("div", { class: "empty" }, $("p", {}, "No stories yet. Write one in a component's block, beside its definitions:"));
@@ -233,7 +359,7 @@ function show() {
 			const frame = $("iframe", { src: BASE + "/" + story.id, title: story.name });
 			frame.addEventListener("load", () => fit(frame));
 			keysIn(frame);
-			grid.append($("section", { class: "cell" }, $("header", {}, $("a", { href: "#" + story.id }, story.name), $("span", { class: "line" }, ":" + story.line)), frame));
+			grid.append($("section", { class: "cell" }, $("header", {}, $("span", {}, $("a", { href: "#" + story.id }, story.name), ...fresh(story)), $("span", { class: "line" }, ":" + story.line)), frame));
 		}
 		stage.replaceChildren(grid);
 		return;
@@ -243,7 +369,7 @@ function show() {
 	const of = many ? $("a", { class: "of", href: "#side/" + componentKey(story), title: "Its stories side by side" }, story.component) : $("span", { class: "of" }, story.component);
 	bar(
 		story,
-		[of, $("span", { class: "sep" }, "/"), $("strong", {}, story.name)],
+		[of, $("span", { class: "sep" }, "/"), $("strong", {}, story.name), ...fresh(story)],
 		$("a", { class: "where", href: "vscode://file/" + story.path + ":" + story.line, title: "Open it in the editor" }, story.file + ":" + story.line),
 		[],
 	);
@@ -260,12 +386,57 @@ function fit(frame) {
 	} catch {}
 	frame.style.height = Math.min(tall || 400, 900) + "px";
 }
+// The side's width: its edge drags it (or ← and → with the edge focused), a double click puts it
+// back, and the width is kept. The frames take no pointer while it drags, so a drag over one goes on.
+const grip = document.getElementById("grip");
+const side = document.getElementById("side");
+const NARROWEST = 180;
+function widen(width) {
+	const widest = Math.max(NARROWEST, Math.min(640, innerWidth * 0.6));
+	const px = Math.round(Math.min(Math.max(width, NARROWEST), widest));
+	document.body.style.setProperty("--side-width", px + "px");
+	grip.setAttribute("aria-valuenow", String(px));
+	return px;
+}
+if (typeof kept("width", null) === "number") widen(kept("width", null));
+grip.addEventListener("pointerdown", (event) => {
+	if (event.button !== 0) return;
+	event.preventDefault();
+	grip.setPointerCapture(event.pointerId);
+	document.body.classList.add("resizing");
+	const left = side.getBoundingClientRect().left;
+	let width = null;
+	const move = (moved) => {
+		width = widen(moved.clientX - left);
+	};
+	const done = () => {
+		grip.removeEventListener("pointermove", move);
+		grip.removeEventListener("pointerup", done);
+		grip.removeEventListener("pointercancel", done);
+		document.body.classList.remove("resizing");
+		if (width !== null) keep("width", width);
+	};
+	grip.addEventListener("pointermove", move);
+	grip.addEventListener("pointerup", done);
+	grip.addEventListener("pointercancel", done);
+});
+grip.addEventListener("dblclick", () => {
+	document.body.style.removeProperty("--side-width");
+	keep("width", null);
+	grip.setAttribute("aria-valuenow", String(Math.round(side.getBoundingClientRect().width)));
+});
+grip.addEventListener("keydown", (event) => {
+	if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+	event.preventDefault();
+	keep("width", widen(side.getBoundingClientRect().width + (event.key === "ArrowRight" ? 16 : -16)));
+});
 function keys(event) {
 	const typing = event.target?.closest?.("input, textarea, select, [contenteditable]");
 	if (event.key === "Escape" && document.body.classList.contains("full")) set("full", false);
 	else if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
 	else if (event.key === "f") set("full", !document.body.classList.contains("full"));
 	else if (event.key === "s") set("folded", !document.body.classList.contains("folded"));
+	else if (event.key === "n") nextNew();
 	else if (event.key === "/") {
 		if (document.body.classList.contains("folded")) set("folded", false);
 		document.getElementById("find").focus();
@@ -283,11 +454,26 @@ document.getElementById("find").addEventListener("keydown", (event) => {
 	if (event.key === "Escape") event.target.blur();
 	if (event.key === "Enter") document.querySelector("#list a")?.click();
 });
+document.getElementById("next-new").addEventListener("click", nextNew);
+document.getElementById("seen-all").addEventListener("click", () => {
+	see(STORIES, false);
+	list();
+});
+// Another tab of the catalog saw a story: this one takes its dot away too.
+addEventListener("storage", (event) => {
+	if (event.key !== keyOf("seen")) return;
+	for (const id of kept("seen", [])) seen.add(id);
+	list();
+});
 document.getElementById("stage").tabIndex = -1;
 addEventListener("keydown", keys);
-addEventListener("hashchange", show);
+addEventListener("hashchange", () => {
+	reveal();
+	show();
+});
 document.body.classList.toggle("full", state("full"));
 document.body.classList.toggle("folded", state("folded"));
+reveal();
 show();
 </script>
 </body>

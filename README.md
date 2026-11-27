@@ -307,8 +307,11 @@ Callout := [].{
 Each story becomes a definition in its place (`story_tip! = |{}| …`), so every build type-checks it
 against the component. Only a dev build (`rocx dev`, `rocx build --dev`, `just dev`) serves them: a
 catalog at `/__rocx/stories`, with every story listed down the side and the one you pick in a frame
-that can fill the window. A story is rendered as the app's own page at its path, inside the root
-layout, and hydrated. It can tell it is a story by its path (`/__rocx/stories/…`).
+that can fill the window. A story the browser hasn't shown yet is marked new (a dot beside it, its
+component and its part), and `N` opens the next one. The side's parts and components fold, and its
+edge drags it wider. The browser keeps what it has seen, what is folded and the width. A story is
+rendered as the app's own page at its path, inside the root layout, and hydrated. It can tell it is
+a story by its path (`/__rocx/stories/…`).
 
 An app's `stories/` directory holds modules of stories alone, such as drafts of a page side by side.
 Only a dev build includes it, so nothing in it is published (`site/stories/Landing.rocx` holds the

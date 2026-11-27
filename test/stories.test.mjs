@@ -1,12 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { build } from "../rocx-cli/rocx.mjs";
 import { rootModule, routesModule, routeTable } from "../rocx-cli/rocx.mjs";
 import { catalogHtml, storyIds } from "../rocx-cli/rocx.mjs";
 import { RocxError, transpileModule } from "../rocx-cli/rocx.mjs";
+import { findChrome, launch } from "../web/test/browser.mjs";
 
 const CALLOUT = `import pf.Html
 import pf.Router
@@ -96,6 +98,101 @@ test("stories: the catalog is a page of its own, with the stories it is given, d
 		{ id: "Ui/Callout/tip", file: "Ui/Callout.rocx", component: "Callout", name: "</script> tip", line: 6, kind: "component", path: "/app/Ui/Callout.rocx" },
 	]);
 	assert.equal(html.match(/<\/script>/g).length, 1, "a name can't end the script");
+});
+
+test("stories: the catalog marks the stories this browser hasn't shown as new, folds the side's parts and widens it, and keeps all three", { skip: !findChrome() && "no Chromium (set CHROME)" }, async () => {
+	const html = catalogHtml(
+		[
+			{ id: "stories/Landing/today", file: "stories/Landing.rocx", component: "Landing", name: "Today", line: 5 },
+			{ id: "Ui/Callout/tip", file: "Ui/Callout.rocx", component: "Callout", name: "Tip", line: 6 },
+			{ id: "Ui/Callout/warning", file: "Ui/Callout.rocx", component: "Callout", name: "Warning", line: 10 },
+			{ id: "Ui/Badge/label", file: "Ui/Badge.rocx", component: "Badge", name: "Label", line: 4 },
+		],
+		{ title: "site", root: "/app" },
+	);
+	const server = createServer((request, response) => {
+		response.setHeader("content-type", "text/html; charset=utf-8");
+		response.end(request.url === "/__rocx/stories" ? html : `<!doctype html><title>${request.url}</title><p>a story</p>`);
+	});
+	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const url = `http://127.0.0.1:${server.address().port}/__rocx/stories`;
+	const browser = await launch();
+	try {
+		const page = await browser.page();
+		const dots = () => page.eval(`[...document.querySelectorAll("#list .stories .dot")].map((dot) => dot.closest("a").textContent)`);
+		const news = () => page.eval(`document.getElementById("news").hidden ? null : document.getElementById("new-count").textContent`);
+		await page.goto(url);
+		// The first visit shows the first story, so it is seen; the rest are new, and so are the
+		// parts and components that hold them.
+		assert.deepEqual(await dots(), ["Tip", "Warning", "Label"]);
+		assert.equal(await news(), "3 new");
+		assert.deepEqual(await page.eval(`[...document.querySelectorAll(".part-head")].map((head) => head.querySelector(".dot")?.title ?? null)`), [null, "3 new"], "Components has three; Drafts none");
+		assert.deepEqual(await page.eval(`[...document.querySelectorAll("#list .component")].filter((row) => row.querySelector(".dot")).map((row) => row.querySelector(".open .name").textContent)`), ["Callout", "Badge"]);
+		// N opens the next new one; it is seen, and its bar says it is new to this visit.
+		await page.press("n");
+		await page.wait(`location.hash === "#Ui/Callout/tip" && document.querySelector("#list .stories a.on")?.textContent === "Tip"`);
+		assert.deepEqual(await dots(), ["Warning", "Label"]);
+		assert.equal(await page.eval(`document.querySelector(".bar .fresh")?.textContent`), "New");
+		// Side by side, each of a component's stories is seen; the one seen first here says so.
+		await page.goto(`${url}#side/Ui/Callout.rocx%23Callout`);
+		await page.wait(`document.querySelectorAll(".cell").length === 2`);
+		const cells = () => page.eval(`[...document.querySelectorAll(".cell")].map((cell) => [cell.querySelector("header a").textContent, Boolean(cell.querySelector(".fresh"))])`);
+		assert.deepEqual(await cells(), [["Tip", true], ["Warning", true]], "both seen for the first time in this visit");
+		assert.deepEqual(await dots(), ["Label"]);
+		// A reload is a new visit: both were seen in the last, so neither is new.
+		await page.eval("window.before = true");
+		await page.send("Page.reload");
+		await page.wait(`!window.before && document.readyState === "complete" && document.querySelectorAll(".cell").length === 2`);
+		assert.deepEqual(await cells(), [["Tip", false], ["Warning", false]]);
+		assert.deepEqual(await dots(), ["Label"]);
+		// Searching for "new" finds what hasn't been seen.
+		await page.type("#find", "new");
+		assert.deepEqual(await page.eval(`[...document.querySelectorAll("#list .stories a")].map((a) => a.textContent)`), ["Label"]);
+		await page.eval(`(() => { const find = document.getElementById("find"); find.value = ""; find.dispatchEvent(new Event("input")); })()`);
+		// Mark all seen: no dots, and a reload has none either.
+		await page.click("#seen-all");
+		assert.deepEqual([await dots(), await news()], [[], null]);
+		await page.goto(url);
+		assert.deepEqual([await dots(), await news()], [[], null], "what is seen is kept");
+
+		// Folding: the Components part, then (unfolded) a component; each kept, and opening a story
+		// in one unfolds it.
+		const listed = () => page.eval(`[...document.querySelectorAll("#list .stories a, #list .component .open .name")].map((node) => node.textContent)`);
+		assert.deepEqual(await listed(), ["Landing", "Today", "Callout", "Tip", "Warning", "Badge", "Label"]);
+		await page.click('.part[data-kind="component"] .part-head');
+		assert.deepEqual(await listed(), ["Landing", "Today"]);
+		assert.equal(await page.eval(`document.querySelector('.part[data-kind="component"] .part-head').getAttribute("aria-expanded")`), "false");
+		await page.goto(url);
+		assert.deepEqual(await listed(), ["Landing", "Today"], "a folded part is kept");
+		await page.type("#find", "warn");
+		assert.deepEqual(await listed(), ["Callout", "Warning"], "a search shows every match, folded or not");
+		await page.eval(`(() => { const find = document.getElementById("find"); find.value = ""; find.dispatchEvent(new Event("input")); })()`);
+		await page.click('.part[data-kind="component"] .part-head');
+		await page.click('#list [data-key="Ui/Callout.rocx#Callout"]');
+		assert.deepEqual(await listed(), ["Landing", "Today", "Callout", "Badge", "Label"]);
+		await page.goto(url);
+		assert.deepEqual(await listed(), ["Landing", "Today", "Callout", "Badge", "Label"], "a folded component is kept");
+		await page.goto(`${url}#Ui/Callout/warning`);
+		await page.wait(`document.querySelector("#list .stories a.on")?.textContent === "Warning"`);
+		assert.deepEqual(await listed(), ["Landing", "Today", "Callout", "Tip", "Warning", "Badge", "Label"], "a story opened is never folded away");
+
+		// The side's edge drags it wider; the width is kept; a double click puts it back.
+		const width = () => page.eval(`Math.round(document.getElementById("side").getBoundingClientRect().width)`);
+		const before = await width();
+		const grip = await page.center("#grip");
+		await page.send("Input.dispatchMouseEvent", { type: "mousePressed", x: grip.x, y: grip.y, button: "left", buttons: 1, clickCount: 1 });
+		for (const step of [40, 80, 120]) await page.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: grip.x + step, y: grip.y, button: "left", buttons: 1 });
+		await page.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: grip.x + 120, y: grip.y, button: "left", buttons: 0, clickCount: 1 });
+		assert.ok(Math.abs((await width()) - (before + 120)) <= 2, `dragged from ${before} to ${await width()}`);
+		await page.goto(url);
+		assert.ok(Math.abs((await width()) - (before + 120)) <= 2, "the width is kept");
+		await page.eval(`document.getElementById("grip").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }))`);
+		assert.equal(await width(), before);
+		assert.deepEqual(page.errors, [], "the catalog threw nothing");
+	} finally {
+		await browser.close();
+		server.close();
+	}
 });
 
 test("stories: a dev build's Routes answers them: the catalog, and each story, the app's page, which Root renders in the root layout; another build's has none", () => {
