@@ -1,6 +1,9 @@
-# Design: client-side navigation (D-040, Proposed)
+# Design: client-side navigation (D-040, built)
 
-> A design spike, 2026-11-22, on master at 2ca6936. Nothing here is built. It assumes D-037 (the
+> Built since 2026-11-23 (D-040), and changed since by D-095 and D-117 to D-124: where this design
+> and the code differ, the code, `web/README.md` and DECISIONS.md are right.
+>
+> A design spike, 2026-11-22, on master at 2ca6936. Nothing here was built then. It assumes D-037 (the
 > typed `Api` contract) has landed, and phase 2 needs D-039 (value props patched in place). The
 > one measurement it rests on is in `README.md` beside it (`measure.mjs`).
 
@@ -280,7 +283,7 @@ document didn't carry throws.
 ### 4.3 Kept layouts and pages
 
 `Root` renders route levels: the root layout, each layout below it, then the page. Each level is
-a keyed part (Solid 2.0's keyed `<Show>`, which `web/README.md` lists as not there yet: a part made
+a keyed part (Solid 2.0's keyed `<Show>`, built since D-053: a part made
 anew, with a new owner, when its key changes):
 
 - **A layout's key** is its file and its own params (the ones its directory names:
@@ -399,8 +402,9 @@ where the browser has it (Firefox only in its newest releases) and `prefers-redu
 
 ### 6.1 History
 
-- A navigation pushes an entry (`pushState`); `replace`, a redirect and `<Navigate>` replace the
-  current one. Each entry's state is the runtime's: `{ rocx: { key } }`, a random key.
+- A navigation pushes an entry (`pushState`); `replace` and `<Navigate>` replace the current one.
+  A redirect's last address is the entry's: no entry for the address that redirected (as a browser
+  does), and a submission's redirect pushes one, as a plain post's does. Each entry's state is the runtime's: `{ rocx: { key } }`, a random key.
 - Back and forward (`popstate`) navigate as a click does, to the entry's URL, without pushing.
   A hash-only change (the browser's own, §3.1) is passed over.
 - Solid Router's `state` option (a value stored with the entry) isn't offered: Roc has no value
@@ -525,9 +529,10 @@ open! = || Board.card_in_query(Router.location!({}).query)      # tracked, not a
 
 - A `method="post"` form to an endpoint a component reads the submission of is sent with `fetch`,
   as now (D-018), on whatever page it is.
-- Any other post form is the browser's, as now: it posts, the endpoint answers a flash and a 303,
-  and the page loads. It stays so: an endpoint that answers a form without the runtime is already
-  written for it, and a page that wants the submission reads it.
+- Any other post form to one of the app's endpoints is sent with `fetch` too since D-095, as the
+  browser would post it since D-118 (`x-rocx-in-place`): answered as a plain form (a flash and a
+  303), the runtime follows the redirect in place, keeping the page it comes back to (D-119). A form
+  to a path no endpoint has, or marked `data-rocx-reload` (D-124), is the browser's.
 - **A GET form** (`<form action="/search">`, the browser's query from its fields) is a navigation
   to that URL, in place by §3's rules (phase 2), as SvelteKit's are: a search box needs nothing of
   the app's.

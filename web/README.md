@@ -720,7 +720,13 @@ a form with `fetch` when the form (D-095):
 - wasn't prevented by a handler (an `on:submit` handler prevents it).
 
 So whether a form goes with `fetch` doesn't depend on whether a component reads its submissions,
-but how it goes does (D-118). One a component reads (`use_submission!`, `use_submissions!`,
+but how it goes does (D-118). One that succeeded (a result, or a redirect that isn't a refusal
+coming back) is emptied, its fields their own values again, as the page a plain post comes back to
+has it and SvelteKit's are (D-122), unless it, or what is around it, says `data-rocx-keep`; and
+`field!` is "" after a result, so an input bound to it starts empty too. A form nothing reads whose
+answer the browser would show as a page (a crash's 500, a middleware's refusal, no answer at all) is
+shown where the form is (D-121): the nearest `<Errored>` around it shows its fallback (the app's
+error page, around the page, at the least), given `POST /notes: 500: …` and a retry. One a component reads (`use_submission!`, `use_submissions!`,
 `use_action!` of its endpoint) goes as the runtime's, for its result or refusal, as below. One nothing
 reads goes as the browser would post it (`accept: text/html`, no `x-rocx-submission`), with
 `x-rocx-in-place: 1`: the endpoint answers it as a plain form (its result or refusal flashed back to
@@ -965,7 +971,10 @@ text against it.
 ### `<NoHydration>`
 
 `<NoHydration>` (Solid's name; `Html.no_hydration`) is markup only the server renders: prose,
-listings, anything that never changes in the browser.
+listings, anything that never changes in the browser. One whose markup read an endpoint as the
+server rendered it opens with `<!--nohydration:read-->` (D-120): after a form's result, the runtime
+takes such regions again from the page's document (`refreshRegionsFromServer`), as no read of the
+browser's runs them; a page whose regions read nothing asks for nothing.
 
 - **On the server**, what is inside renders as anywhere else, every hole run once, but as static
   markup between `<!--nohydration-->` and `<!--/nohydration-->`, with no comments of its own
@@ -1081,7 +1090,9 @@ A click navigates in place (`clicked`, `linkOf`) when all of these hold:
 - not just to another hash on this page.
 
 `<html data-rocx-navigation="off">` turns it off. `"explicit"` limits it to links with
-`data-rocx-link`. A GET form to one of the app's pages (`gotForm`) is a navigation to its URL with
+`data-rocx-link`. `data-rocx-reload` on a link, a form, a form's button or an element around them
+leaves that one to the browser (D-124, SvelteKit's `data-sveltekit-reload`; `"off"` takes it back
+for what is inside). A GET form to one of the app's pages (`gotForm`) is a navigation to its URL with
 its fields as the query, by a link's rules.
 
 ### Links say where the page is (D-086)

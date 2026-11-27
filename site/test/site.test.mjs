@@ -1013,7 +1013,7 @@ test("admin: its page shows the package's own pages, rendered with the page into
 	const html = await (await fetch(`${site.url}/ecosystem/admin`)).text();
 	assert.match(await (await fetch(`${site.url}/ecosystem`)).text(), /<ul class="page-cards[ "](?:(?!<\/ul>)[\s\S])*href="\/ecosystem\/admin"/, "a card on the ecosystem's overview");
 	// All of it is the server's: nothing on the page hydrates, so it costs the wasm nothing.
-	assert.deepEqual(html.split(/<!--nohydration-->[\s\S]*?<!--\/nohydration-->/).join("").match(/<iframe|<figure|<table/g), null, "every frame, listing and table is inside a <NoHydration>");
+	assert.deepEqual(html.split(/<!--nohydration(?::read)?-->[\s\S]*?<!--\/nohydration-->/).join("").match(/<iframe|<figure|<table/g), null, "every frame, listing and table is inside a <NoHydration>");
 	const frames = [...html.matchAll(/<iframe\s[^>]*>/g)].map(([tag]) => tag);
 	assert.equal(frames.length, 2, "the list of books, and a book's form");
 	const decoded = (text) => text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
@@ -1640,7 +1640,7 @@ test("the static build for GitHub Pages: files alone, under /rocx/, every page h
 /** `html` with `change` made to what is outside its `<NoHydration>`s (inside them, it is as it is). */
 function outsideRegions(html, change) {
 	return html
-		.split(/(<!--nohydration-->[\s\S]*?<!--\/nohydration-->)/)
+		.split(/(<!--nohydration(?::read)?-->[\s\S]*?<!--\/nohydration-->)/)
 		.map((part, i) => (i % 2 ? part : change(part)))
 		.join("");
 }

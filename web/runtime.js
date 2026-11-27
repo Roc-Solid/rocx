@@ -328,6 +328,12 @@ function removeRange(range) {
 	}
 }
 
+/** Whether a comment's text opens a `<NoHydration>` region: `nohydration`, or `nohydration:read` for
+ * one whose markup read an endpoint as the server rendered it (D-120). */
+function isRegionStart(data) {
+	return data === "nohydration" || data === "nohydration:read";
+}
+
 /**
  * The server's `<NoHydration>` regions under `root`, in the page's order, each taken out with its
  * comments (a fragment): rendering `root`'s part again, each placeholder takes the next, so the
@@ -337,7 +343,7 @@ function removeRange(range) {
 function serverRegions(root) {
 	const starts = [];
 	const walker = root.ownerDocument.createTreeWalker(root, 128 /* NodeFilter.SHOW_COMMENT */);
-	for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.data === "nohydration") starts.push(node);
+	for (let node = walker.nextNode(); node; node = walker.nextNode()) if (isRegionStart(node.data)) starts.push(node);
 	return starts
 		.map((start) => {
 			let end = start.nextSibling;
@@ -649,7 +655,7 @@ function regionRanges(doc) {
 	const ranges = [];
 	const walker = doc.createTreeWalker(doc.documentElement ?? doc, 128 /* NodeFilter.SHOW_COMMENT */);
 	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-		if (node.data !== "nohydration") continue;
+		if (!isRegionStart(node.data)) continue;
 		let end = node.nextSibling;
 		while (end && !(end.nodeType === 8 && end.data === "/nohydration")) end = end.nextSibling;
 		if (end) ranges.push({ start: node, end });
@@ -1973,6 +1979,8 @@ export class Runtime {
 		const submitter = event.submitter ?? null;
 		const of = (name, attribute) => (submitter?.hasAttribute(attribute) ? submitter.getAttribute(attribute) : form.getAttribute(name)) ?? "";
 		if (of("method", "formmethod").toLowerCase() !== "post") return;
+		// The browser's, where the app says so (D-124): `data-rocx-reload` on it, its button, or above.
+		if (Runtime.reloads(submitter) || Runtime.reloads(form)) return;
 		const enctype = of("enctype", "formenctype").toLowerCase();
 		if (enctype === "text/plain") return;
 		// Into another tab or frame: fetch has nowhere to show the answer.
@@ -1989,8 +1997,8 @@ export class Runtime {
 		const input = [url.search.slice(1), own].filter(Boolean).join("&");
 		// Nothing on the page reads its submissions: answered as a plain form, in place (D-118).
 		const plain = !this.actions.has(key);
-		if (enctype === "multipart/form-data") this.submit(key, url.href, { body: data, input, json: false, plain });
-		else this.submit(key, url.href, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(data).toString(), input, json: false, plain });
+		if (enctype === "multipart/form-data") this.submit(key, url.href, { body: data, input, json: false, plain, form });
+		else this.submit(key, url.href, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(data).toString(), input, json: false, plain, form });
 	}
 
 	/** What a form posting to `url` is kept under, its submissions' key: the endpoint a component
@@ -2068,9 +2076,11 @@ export class Runtime {
 	 * server's data and the submission's end changes at once. A redirect of the endpoint's own
 	 * (`x-rocx-redirect`), or one fetch followed (middleware's), is where the browser goes.
 	 */
-	submit(key, href, { method = "POST", headers = {}, body, input, json, plain = false }) {
+	submit(key, href, { method = "POST", headers = {}, body, input, json, plain = false, form = null }) {
 		const source = this.submissionOf(key);
-		const entry = { id: ++ids, state: "pending", input, json, status: 0, body: "" };
+		// The form it came from, if a form sent it: emptied once it succeeds (D-122), its failure shown
+		// around it (D-121).
+		const entry = { id: ++ids, state: "pending", input, json, status: 0, body: "", form };
 		// What it sent, to send again (`retry!`).
 		entry.request = { href, method, headers, body, plain };
 		source.list.push(entry);
@@ -2120,6 +2130,9 @@ export class Runtime {
 					// came back with is what it said.
 					const finish = () => {
 						done(200, "");
+						// Succeeded: its form empty again (D-122), unless the page it came back to says it was
+						// refused (a plain form's flash).
+						if (!(plain && Runtime.flashStatus(this.flash) >= 400)) Runtime.emptied(entry.form);
 						if (plain) {
 							source.list = source.list.filter((each) => each !== entry);
 							this.submissionsChanged(source);
@@ -2143,8 +2156,20 @@ export class Runtime {
 				}
 				const said = await response.text();
 				this.notify("submitted", { url: key, input, id: entry.id, status: response.status, body: said, ms: performance.now() - asked });
-				if (response.status === 200) this.revalidate(() => done(200, said), Runtime.revalidating(response.headers.get("x-rocx-revalidate")));
-				else {
+				if (response.status === 200) {
+					this.revalidate(() => {
+						done(200, said);
+						// Succeeded: its form empty again (D-122); the server's `<NoHydration>` regions, which no
+						// read reruns, as the page's document has them now (D-120).
+						Runtime.emptied(entry.form);
+						this.refreshRegionsFromServer();
+					}, Runtime.revalidating(response.headers.get("x-rocx-revalidate")));
+				} else if (plain) {
+					// A plain form's answer that isn't where to go (a crash, a middleware's refusal): what the
+					// browser would show as a page, shown where the form is (D-121).
+					this.failAround(entry.form, `${method} ${key}: ${response.status}: ${said}`);
+					done(response.status, said);
+				} else {
 					this.unread(method, key, response.status, said);
 					done(response.status, said);
 				}
@@ -2152,10 +2177,66 @@ export class Runtime {
 			(error) => {
 				const why = `${method} ${key}: ${error?.message ?? error}`;
 				this.notify("submitted", { url: key, input, id: entry.id, error: why, ms: performance.now() - asked });
-				this.unread(method, key, 0, error?.message ?? String(error));
+				// No answer: a plain form's shown where the form is, as the browser would show it (D-121).
+				if (plain) this.failAround(entry.form, why);
+				else this.unread(method, key, 0, error?.message ?? String(error));
 				done(0, why);
 			},
 		);
+	}
+
+	/** Whether `element` (a link, a form, a form's button) is the browser's, as the app says: its own
+	 * `data-rocx-reload`, or the nearest above it, but `data-rocx-reload="off"` (D-124), as
+	 * SvelteKit's `data-sveltekit-reload`. */
+	static reloads(element) {
+		const marked = element?.closest?.("[data-rocx-reload]");
+		return !!marked && marked.getAttribute("data-rocx-reload") !== "off";
+	}
+
+	/** A form the runtime sent, emptied once it succeeded (D-122), as the page a plain post comes back
+	 * to has it, and as SvelteKit's `use:enhance` does: not one marked `data-rocx-keep` (on it or
+	 * above it), nor one gone from the page. */
+	static emptied(form) {
+		if (form?.isConnected && !form.closest("[data-rocx-keep]")) form.reset();
+	}
+
+	/** The status a flash says (`Server.flash!`'s, as a page's document carries it): 0 for none. */
+	static flashStatus(flash) {
+		try {
+			return JSON.parse(flash || "null")?.status ?? 0;
+		} catch {
+			return 0;
+		}
+	}
+
+	/** What failed, shown where `node` is (D-121): the nearest `<Errored>` around it shows its fallback,
+	 * given `problem` and a retry, as one shows a read that failed (the app's error page, around the
+	 * page, at the least). With none on the page, the console says so. */
+	failAround(node, problem) {
+		const inside = (boundary) => {
+			const { start, end } = boundary.range;
+			return !!node && start.isConnected && (start.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 && (end.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+		};
+		let nearest = null;
+		for (const boundary of this.boundaries.values()) {
+			if (boundary.failed !== null || !inside(boundary)) continue;
+			if (!nearest || (nearest.range.start.compareDocumentPosition(boundary.range.start) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) nearest = boundary;
+		}
+		if (nearest) nearest.fail(problem);
+		else console.error(`rocx: ${problem}, and no <Errored> on the page is around the form to show it`);
+	}
+
+	/** The server's `<NoHydration>` regions, as the page's document has them now (D-120): after a
+	 * result, when one of them read an endpoint as the server rendered it (`<!--nohydration:read-->`:
+	 * the browser has no copy of what is inside, so no read of its runs again). Quietly: one that
+	 * fails leaves them as they were. */
+	async refreshRegionsFromServer() {
+		if (!regionRanges(document).some((range) => range.start.data === "nohydration:read")) return;
+		try {
+			const fetched = await this.pageFor(new URL(location.href), {});
+			const doc = this.appDocument(fetched);
+			if (doc) this.refreshRegions(doc);
+		} catch {}
 	}
 
 	/** A submission refused, or with no answer, that no component asks for (D-095: a form to one of
@@ -2559,6 +2640,7 @@ export class Runtime {
 		if (target && target !== "_self") return null;
 		const mode = document.documentElement.getAttribute("data-rocx-navigation");
 		if (mode === "off" || (mode === "explicit" && !anchor.hasAttribute("data-rocx-link"))) return null;
+		if (Runtime.reloads(anchor)) return null;
 		const url = new URL(href, document.baseURI);
 		if (!this.ours(url) || Runtime.samePage(url)) return null;
 		return { anchor, url };
@@ -3601,6 +3683,8 @@ export class Runtime {
 			return;
 		}
 		live.forEach((range, at) => {
+			// Whether it read an endpoint (`nohydration:read`, D-120) is the document's, as a load has it.
+			if (range.start.data !== fetched[at].start.data) range.start.data = fetched[at].start.data;
 			const now = inside(range);
 			const then = inside(fetched[at]);
 			if (now.length === then.length && now.every((node, i) => node.isEqualNode(then[i]))) return;
@@ -3648,6 +3732,7 @@ export class Runtime {
 		if (target && target !== "_self") return;
 		const mode = document.documentElement.getAttribute("data-rocx-navigation");
 		if (mode === "off" || (mode === "explicit" && !form.hasAttribute("data-rocx-link"))) return;
+		if (Runtime.reloads(submitter) || Runtime.reloads(form)) return;
 		const url = new URL(of("action", "formaction") || location.href, document.baseURI);
 		const data = new FormData(form, submitter ?? undefined);
 		url.search = new URLSearchParams([...data].map(([name, value]) => [name, typeof value === "string" ? value : value.name])).toString();
@@ -5593,7 +5678,7 @@ export class Runtime {
 				return;
 			case "nh":
 				// The server's, left as it is: never built, adopted or patched.
-				cursor.comment("nohydration");
+				cursor.take((at) => at.nodeType === 8 && isRegionStart(at.data), "<!--nohydration-->");
 				cursor.node = cursor.closing("nohydration").nextSibling;
 				return;
 			case "listen":
@@ -6442,7 +6527,10 @@ export class Runtime {
 				if (scope.region || scope.rcdata) return all(node.c);
 				if (this.regions) {
 					if (!this.regions.length) throw new Error("rocx: the app renders more <NoHydration>s than the page has");
-					return `<!--nohydration-->${this.regions.shift()}<!--/nohydration-->`;
+					// The page's region as it has it, its mark too (`:read`, D-120).
+					const region = this.regions.shift();
+					const [mark, inside] = typeof region === "string" ? ["", region] : [region.read ? ":read" : "", region.html];
+					return `<!--nohydration${mark}-->${inside}<!--/nohydration-->`;
 				}
 				const inner = { ...scope, region: true };
 				return `<!--nohydration-->${node.c.map((child) => this.serverHtml(child, owner, inner)).join("")}<!--/nohydration-->`;
@@ -6545,9 +6633,11 @@ export class Runtime {
 		}
 	}
 
-	/** What a page has inside each `<NoHydration>`, in order: for `renderToString({ regions })`. */
+	/** What a page has inside each `<NoHydration>`, in order: for `renderToString({ regions })`. A
+	 * region whose markup read an endpoint as the server rendered it (`<!--nohydration:read-->`,
+	 * D-120) is `{ read: true, html }`, so it is rendered with its mark. */
 	static regionsOf(html) {
-		return [...html.matchAll(/<!--nohydration-->([\s\S]*?)<!--\/nohydration-->/g)].map((match) => match[1]);
+		return [...html.matchAll(/<!--nohydration(:read)?-->([\s\S]*?)<!--\/nohydration-->/g)].map((match) => (match[1] ? { read: true, html: match[2] } : match[2]));
 	}
 
 	/** `renderToString`'s render: the page for `path`, as HTML, and its answers. */

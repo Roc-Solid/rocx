@@ -45,11 +45,22 @@ Submission(arg, result) :: { url : Str, form : List({ name : Str, value : Str })
 			Err(NoInput) => Err(NoInput)
 		}
 
-	## A field as it was typed (`FormData.get`): "" with no submission, no such field, or for an
-	## action's (its arg isn't a form's fields: `input!` reads it).
+	## A field as it was typed (`FormData.get`), to put back in its input after a refusal: "" after a
+	## result (D-122: the form starts empty again, as the page a plain post comes back to has it, and
+	## as SvelteKit's does; `input!` still says what was sent), with no submission, no such field, or
+	## for an action's (its arg isn't a form's fields: `input!` reads it).
 	field! : Submission(arg, result), Str => Str
-	field! = |submission, name|
-		match sent_of(latest!(submission)) {
+	field! = |submission, name| {
+		state = latest!(submission)
+		succeeded =
+			match state {
+				Done(_, 200, _) => Bool.True
+				_ => Bool.False
+			}
+		if succeeded {
+			return ""
+		}
+		match sent_of(state) {
 			Ok(Form(body)) =>
 				match Server.form_fields(body).find_first(|field| field.name == name) {
 					Ok(found) => found.value
@@ -58,6 +69,7 @@ Submission(arg, result) :: { url : Str, form : List({ name : Str, value : Str })
 			Ok(Json(_)) => ""
 			Err(NoInput) => ""
 		}
+	}
 
 	## The endpoint's result, once it is in. `Err(NoResult)` before, without one, or after a refusal.
 	result! : Submission(arg, result) => Try(result, [NoResult]) where [result.Json.Parseable([InvalidJson(Str)])]

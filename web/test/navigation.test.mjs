@@ -127,13 +127,16 @@ async function navSite({ base = "/" } = {}) {
 	cpSync(join(out, "nav.wasm"), join(files, "app.wasm"));
 	// The links stay where they are as the page scrolls, so a click on one doesn't scroll it.
 	writeFileSync(join(dir, base, "nav.css"), "nav { position: fixed; top: 0; right: 0; width: 12em; font-size: 8px } .tall { height: 3000px } .progress.on { height: 2px; background: blue }");
-	const site = { asked: [], posted: [], rules: {}, held: {}, live: liveServer(), base, dir: join(dir, base) };
+	const site = { asked: [], posted: [], rules: {}, held: {}, live: liveServer(), base, dir: join(dir, base), regionsRead: false, renders: 0 };
 	// Who is here, as the server says it to a request: the `who` cookie a submission's redirect sets
 	// (D-117), "nobody" without one. A page's document carries it as the layout's answer.
 	const whoOf = (request) => /(?:^|; )who=([^;]*)/.exec(request?.headers?.cookie ?? "")?.[1] ?? "nobody";
 	site.render = (target, request = null) => {
 		const answers = ANSWERS.map((each) => (each[0] === "GET /api/say/who" ? [each[0], each[1], JSON.stringify(said(`who is ${whoOf(request)}`))] : each));
-		const rendered = server.renderToString({ path: target, answers }).html;
+		let rendered = server.renderToString({ path: target, answers }).html;
+		// The layout's region as one that read the server's data (D-120: `<!--nohydration:read-->`), what
+		// it says changing with each render.
+		if (site.regionsRead) rendered = rendered.replace("<!--nohydration-->", "<!--nohydration:read-->").replace('<p class="note">', `<p class="note">(${++site.renders}) `);
 		return { status: server.status, html: underBase(rendered, base) };
 	};
 	const unbased = (path) => (base === "/" ? path : path === base.slice(0, -1) ? "/" : path.startsWith(base) ? `/${path.slice(base.length)}` : null);
@@ -165,6 +168,8 @@ async function navSite({ base = "/" } = {}) {
 			// plain form, back to the page it came from with a flash (its result or refusal), or the
 			// endpoint's own redirect; given back to the runtime as `x-rocx-redirect` (`Endpoint.for_runtime`).
 			if (inPlace) {
+				// A crash: the server's 500, no flash, nowhere to go (D-121).
+				if (note === "crash") return { status: 500, headers: { "content-type": "text/plain" }, body: "the notes broke" };
 				const back = new URL(request.headers.referer ?? `http://x${base}`);
 				return { status: 200, headers: { "x-rocx-redirect": note === "away" ? "/a" : `${back.pathname}${back.search}` }, body: "" };
 			}
@@ -1068,6 +1073,76 @@ test("a form to one of the app's endpoints that nothing on the page reads is pos
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(other.errors, []);
 		await other.close();
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("a form the server fails on shows it where the form is, in the page's <Errored> (D-121); a form or a link marked data-rocx-reload is the browser's (D-124); a form that succeeded is emptied, but one marked data-rocx-keep (D-122)", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/notes");
+		// Succeeded: what was typed gives way to the form's own values again.
+		await tab.eval("document.querySelector('.fine input').value = 'typed'");
+		await tab.click(".fine button");
+		await until(() => site.posted.length === 1);
+		await tab.wait("document.querySelector('.fine input').value === 'fine'");
+		// data-rocx-keep: what was typed stays.
+		await tab.eval("document.querySelector('.keep input').value = 'still typed'");
+		await tab.click(".keep button");
+		await until(() => site.posted.length === 2);
+		await tab.wait("window.ready.runtime.navigation === null && [...window.ready.runtime.submissions.values()].every((source) => source.list.every((entry) => entry.state !== 'pending'))");
+		assert.equal(await tab.eval("document.querySelector('.keep input').value"), "still typed");
+		// The server fails: its 500 shown where the form is, as the browser would show it.
+		await tab.click(".crash button");
+		await until(() => site.posted.length === 3);
+		await tab.wait("document.querySelector('.error .problem')?.textContent.includes('the notes broke')");
+		assert.match(await tab.eval("document.querySelector('.error .problem').textContent"), /^POST \/notes: 500: the notes broke$/);
+		assert.equal(await kept(tab), true, "no load");
+		// data-rocx-reload: the browser posts it, and loads what it answers.
+		const other = await open(site, "/notes");
+		await other.click(".reloaded button");
+		await until(() => site.posted.some((each) => each.body === "note=reloaded"));
+		assert.deepEqual(site.posted.find((each) => each.body === "note=reloaded"), { url: "/notes", body: "note=reloaded", submission: null, inPlace: null });
+		// And a link so marked: loaded.
+		const linked = await open(site, "/");
+		site.asked.length = 0;
+		await linked.click(".to-a-reload");
+		await linked.wait("location.pathname === '/a' && document.querySelector('.a h1') !== null", 5000);
+		assert.equal(await kept(linked), false, "a load");
+		assert.deepEqual(site.documents(), ["load /a"]);
+		assert.deepEqual(tab.errors, []);
+		await other.close();
+		await linked.close();
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
+test("a result refreshes the page's <NoHydration> regions that read the server's data (<!--nohydration:read-->, D-120) from its document; one that read nothing isn't asked for", { skip }, async () => {
+	const site = await navSite();
+	try {
+		site.regionsRead = true;
+		const tab = await open(site, "/");
+		assert.match(await tab.eval("document.querySelector('.note').textContent"), /^\(\d+\) The layout's note, for Home$/);
+		const before = await tab.eval("document.querySelector('.note').textContent");
+		site.asked.length = 0;
+		await tab.click(".poke");
+		await tab.wait(`document.querySelector('.note').textContent !== ${JSON.stringify(before)}`);
+		assert.deepEqual(site.documents(), ["navigate /"], "the page's document, for its regions");
+		assert.equal(await kept(tab), true, "in place");
+		// A region of static markup: nothing asked.
+		site.regionsRead = false;
+		const plain = await open(site, "/");
+		site.asked.length = 0;
+		await plain.click(".poke");
+		await until(() => site.asked.some(({ url }) => url === "/api/poke"));
+		await sleep(300);
+		assert.deepEqual(site.documents(), [], "no document for a region that read nothing");
+		assert.deepEqual(tab.errors, []);
+		await plain.close();
 		await tab.close();
 	} finally {
 		await site.close();

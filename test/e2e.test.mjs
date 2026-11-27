@@ -299,7 +299,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.match(member.html, /<p class="who"><!--x-->Welcome, Ada<!--\/x--><\/p>/, "its endpoint, read as the page renders, answered by its route behind its directory's middleware, in-process");
 		const carried = JSON.parse(/<script type="application\/json" class="rocx-answers">(.*?)<\/script>/s.exec(member.html)[1]);
 		assert.deepEqual(carried, [["GET /members", "", JSON.stringify({ status: 200, body: JSON.stringify("Welcome, Ada") })]], "and recorded, once, though read twice");
-		assert.match(member.html, /<!--nohydration--><p class="again">Welcome, Ada, said once<\/p><!--\/nohydration-->/, "read inside a <NoHydration> too: the browser never reads it there");
+		assert.match(member.html, /<!--nohydration:read--><p class="again">Welcome, Ada, said once<\/p><!--\/nohydration-->/, "read inside a <NoHydration> too (so marked, D-120): the browser never reads it there");
 		// A component's story is the app's page: Root renders it in the root layout, with the front
 		// page's meta; the catalog lists every story; one that isn't there is 404.
 		const catalog = await get("/__rocx/stories");

@@ -1008,18 +1008,21 @@ view! = |_|
 				<code>pending!()</code>, <code>input!()</code> (what was typed, as the endpoint reads it),
 				<code>field!(name)</code>, <code>result!()</code> and <code>error!()</code>, with
 				<code>clear!()</code> and <code>retry!()</code> for a handler. The runtime sends every form that posts
-				to one of the app's endpoints with <code>fetch</code>, and the page stays, whether anything asks
-				for its submission or not: its result reads the page's data again, and a redirect is followed. A
-				refusal shows only where the page reads it, so read the submission of every form that can be
-				refused; one refused that nothing reads, the browser's console tells you about.
+				to one of the app's endpoints with <code>fetch</code>, and only the page changes. A form whose
+				submission a component reads gets its result or refusal for it; its result reads the page's data
+				again, and a redirect is followed. A form nothing reads is answered as a plain form, and the
+				runtime goes where that answer goes, in place: back to the page with the flash (its refusal or its
+				result), or to the endpoint's redirect. A form that succeeded starts empty again
+				(<code>data-rocx-keep</code> keeps what was typed), and one the server fails on shows the failure
+				in the nearest <code>{"<Errored>"}</code> around it.
 			</p>
 			<Code title={"${Sources.components_form.file}, in part"} source={Sources.components_form.rocx} numbers={Bool.False} />
 			<p>
 				Without the runtime (before it loads, or with JavaScript off), the form posts as any HTML form does.
 				The endpoint then sends the browser back to the page it came from with a <em>flash</em>: what was
 				typed, and the result or the refusal, kept on the server for a minute under an id in a cookie. The
-				page's submission is then the flash, so the page shows the same thing either way, and hydrates as
-				the server rendered it. <code>{"Server.flash!({})"}</code> reads the flash directly:
+				page's submission is then the flash, so the page shows what it shows with the runtime, and
+				hydrates as the server rendered it. <code>{"Server.flash!({})"}</code> reads the flash directly:
 				<code>{"Ok({ url, fields, status, body })"}</code>, or <code>Err(NoFlash)</code>. The endpoint's side,
 				and redirects: <a href={"${Paths.calls}#forms"}>forms</a>, on the server page.
 			</p>

@@ -6,7 +6,8 @@ meta = { title: "Notes", look: "notes" }
 ## Forms that post, none of whose submissions any component reads (D-095, D-118: each answered as a
 ## plain form, in place): to this path's endpoint (said well, said with a redirect, refused), to an
 ## item's (a path with a param), into a frame, and to a path no endpoint has. What the server says
-## of the notes.
+## of the notes. And one the server fails on (D-121), one the browser posts (`data-rocx-reload`,
+## D-124), and one that keeps what was typed (`data-rocx-keep`, D-122).
 view! = |_|
 	<section class="notes">
 		<h1>Notes</h1>
@@ -31,6 +32,18 @@ view! = |_|
 		<form class="framed" method="post" action="/notes" target="sink">
 			<input name="note" value="framed" />
 			<button type="submit">Add, into the frame</button>
+		</form>
+		<form class="crash" method="post" action="/notes">
+			<input name="note" value="crash" />
+			<button type="submit">Add, and the server fails</button>
+		</form>
+		<form class="reloaded" method="post" action="/notes" data-rocx-reload>
+			<input name="note" value="reloaded" />
+			<button type="submit">Add, the browser's way</button>
+		</form>
+		<form class="keep" method="post" action="/notes" data-rocx-keep>
+			<input name="note" value="keep" />
+			<button type="submit">Add, keeping what was typed</button>
 		</form>
 		<form class="elsewhere" method="post" action="/nowhere">
 			<input name="note" value="nowhere" />

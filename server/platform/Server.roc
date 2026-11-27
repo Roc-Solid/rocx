@@ -194,7 +194,9 @@ Server := [].{
 	##   milliseconds since the epoch (`Expires`, the session's own end, say). 0 leaves either out;
 	##   with neither, the cookie ends when the browser does.
 	## - `secure`: sent over HTTPS only (`Secure`). A `__Host-` or `__Secure-` cookie, or one that is
-	##   `SameSite=None`, is dropped by the browser without it.
+	##   `SameSite=None`, is dropped by the browser without it. The server platform makes every cookie
+	##   `Secure` anyway when the app's public URL is HTTPS (D-123: `secure_cookies`), so leaving it
+	##   off is for development over HTTP.
 	## - `http_only`: out of reach of the page's scripts (`HttpOnly`).
 	## - `same_site`: whether a request another site starts carries it: `Lax` (following a link to
 	##   here, yes; a form or a script, no), `Strict` (never), `None` (always: it needs `secure`).
@@ -230,6 +232,15 @@ Server := [].{
 	## closes: `set_cookie` with `cookie_defaults`.
 	with_cookie : Response, Str, Str -> Response
 	with_cookie = |answer, name, value| Server.set_cookie(answer, name, value, Server.cookie_defaults)
+
+	## The answer, every cookie it sets `Secure` (sent back over HTTPS alone): those that say so
+	## already as they are. The server platform answers every request through it when the app's public
+	## URL is HTTPS (D-123), as SvelteKit makes its cookies `secure` but on `http://localhost`.
+	secure_cookies : Response -> Response
+	secure_cookies = |answer| {
+		says_secure = |value| value.split_on(";").any(|part| part.trim().with_ascii_lowercased() == "secure")
+		{ ..answer, headers: answer.headers.map(|line| if (line.name.with_ascii_lowercased() == "set-cookie" and !says_secure(line.value)) { name: line.name, value: "${line.value}; Secure" } else line) }
+	}
 
 	## The answer, removing the cookie `name`.
 	without_cookie : Response, Str -> Response
@@ -699,6 +710,8 @@ expect {
 expect Server.form_json("name=Ada+Lovelace&plan=a%26b&empty=") == "{\"name\":\"Ada Lovelace\",\"plan\":\"a&b\",\"empty\":\"\"}"
 expect Server.changes(Server.from_http("DELETE", "/", "", [])) and !Server.changes(Server.from_host("/", ""))
 expect Server.with_cookie(Server.redirect("/members"), "member", "Ada L").headers == [{ name: "location", value: "/members" }, { name: "set-cookie", value: "member=Ada%20L; Path=/; HttpOnly; SameSite=Lax" }]
+expect Server.secure_cookies(Server.with_cookie(Server.redirect("/members"), "member", "Ada")).headers == [{ name: "location", value: "/members" }, { name: "set-cookie", value: "member=Ada; Path=/; HttpOnly; SameSite=Lax; Secure" }]
+expect Server.secure_cookies(Server.set_cookie(Server.redirect("/"), "s", "t", { ..Server.cookie_defaults, secure: Bool.True })).headers == [{ name: "location", value: "/" }, { name: "set-cookie", value: "s=t; Path=/; Secure; HttpOnly; SameSite=Lax" }]
 expect Server.without_cookie(Server.redirect("/"), "member").headers == [{ name: "location", value: "/" }, { name: "set-cookie", value: "member=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" }]
 expect Server.set_cookie(Server.redirect("/"), "__Host-session", "t/1", { ..Server.cookie_defaults, secure: Bool.True, max_age_s: 30 * 86_400 }).headers == [{ name: "location", value: "/" }, { name: "set-cookie", value: "__Host-session=t%2F1; Path=/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax" }]
 expect Server.set_cookie(Server.redirect("/"), "org", "7", { max_age_s: 0, expires_ms: 784111777000, secure: Bool.False, http_only: Bool.False, same_site: Strict, path: "", domain: "example.com" }).headers == [{ name: "location", value: "/" }, { name: "set-cookie", value: "org=7; Domain=example.com; Expires=Sun, 06 Nov 1994 08:49:37 GMT; SameSite=Strict" }]

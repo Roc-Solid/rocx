@@ -28,6 +28,7 @@ view! = |{ meta, children, .. }|
 					<a class="to-a-replace" href={Paths.a} replace>A, replacing</a>
 					<a class="to-a-noscroll" href={Paths.a} noscroll>A, kept scroll</a>
 					<a class="to-a-off" href={Paths.a} data-rocx-preload="off">A, never prefetched</a>
+					<a class="to-a-reload" href={Paths.a} data-rocx-reload>A, loaded</a>
 					<a class="to-guarded" href={Paths.guarded}>Guarded</a>
 					<a class="to-editor" href={Paths.editor}>Editor</a>
 					<a class="to-blank" href={Paths.a} target="_blank">A, new tab</a>

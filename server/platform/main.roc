@@ -317,8 +317,11 @@ respond_for_host! = |given, boxed| {
 			Ok(early) => (early.answer!)({ ..request, route: early.path })
 			Err(NotEarly) => (program.respond!)(request, context)
 		}
-	# A redirect answering the browser's runtime comes back as one it can read (D-118).
-	answer = Server.for_host(Endpoint.for_runtime(request, answered))
+	# A redirect answering the browser's runtime comes back as one it can read (D-118); every cookie
+	# `Secure` when the app's public URL is HTTPS (D-123).
+	runtime_read = Endpoint.for_runtime(request, answered)
+	secured = if (Env.public_url!({}).starts_with("https://")) Server.secure_cookies(runtime_read) else runtime_read
+	answer = Server.for_host(secured)
 	view! = answer.page
 	{
 		status: answer.status,

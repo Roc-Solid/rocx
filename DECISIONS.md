@@ -5756,7 +5756,9 @@ function (`own_writes!`) on each host.
 
 ## D-095 A form to an endpoint is always sent with `fetch`
 
-**Status.** Built (2026-11-26). Changed by D-118: one nothing on the page reads is answered as a
+**Status.** Built (2026-11-26). (Its context says SolidStart sends every form to an action with
+`fetch`: only a form bound to an action, and never one to a plain URL; D-118 answers the
+difference.) Changed by D-118: one nothing on the page reads is answered as a
 plain form, and followed in place, instead of its refusal going to the console alone.
 
 **Context.** With the runtime, a `<form method="post" action={Endpoint.url_of(e)}>` went with
@@ -6950,5 +6952,91 @@ refresh; Solid keeps it across revalidation.
 
 **Costs.** A kept computation whose answer changed runs again on a navigation that isn't a
 submission's too: what it shows follows the server, as it would after a load.
+
+**Reversible:** yes.
+
+## D-120 A `<NoHydration>` that read the server's data follows a form's result
+
+**Status.** Built (2026-11-27), from an audit against Solid and SvelteKit, on the user's go.
+
+**Context.** A form's result reads the page's reads again (`revalidate`), but what is inside a
+`<NoHydration>` the browser has no copy of: a region that read an endpoint as the server rendered it
+(a listing beside the form, the journal's masthead) stayed as it was until the page loaded again.
+SvelteKit's `use:enhance` refreshes everything after an action; Solid re-renders what read the data.
+
+**Decision.** The server marks a region whose markup read an endpoint: `<!--nohydration:read-->`
+(signals.rs counts the GETs a region makes). After a form's result, a page with such a region asks
+for its document and takes the regions from it (`refreshRegionsFromServer`). A page whose regions
+read nothing (prose) asks for nothing. The browser build, rendering against a page, keeps a
+region's mark (`regionsOf` gives `{ read, html }` for one).
+
+**Why.** Correct where it matters, free where it doesn't: most regions are static.
+
+**Costs.** One document more after a result, on a page with a region that read data.
+
+**Reversible:** yes.
+
+## D-121 A form nothing reads that fails shows it where the form is
+
+**Status.** Built (2026-11-27), from the audit, on the user's go.
+
+**Context.** Since D-118, a form nothing on the page reads is answered as a plain form; one whose
+answer isn't where to go (a crash's 500, a middleware's refusal, no answer at all) left the page as
+it was, the console alone saying so. Without the runtime, the browser shows that answer as a page;
+SvelteKit's `use:enhance` shows the nearest error page.
+
+**Decision.** The runtime shows it in the nearest `<Errored>` around the form: its fallback, given
+`POST /notes: 500: …` and a retry (the app's error page, around the page, at the least). With no
+`<Errored>` around it, the console says so.
+
+**Why.** A failure isn't silent, and it shows where the app shows failures.
+
+**Reversible:** yes.
+
+## D-122 A form that succeeded starts empty again
+
+**Status.** Built (2026-11-27), from the audit, on the user's go.
+
+**Context.** A form the runtime sent kept what was typed after it succeeded, and `field!` gave the
+sent value whatever the answer, so `value={submission.field!("name")}` filled an add form again
+after its add: an invitation to add twice. The page a plain post comes back to has the form empty;
+SvelteKit's `use:enhance` resets a form after its success.
+
+**Decision.** A form the runtime sent is reset once it succeeded (a result, or a redirect that isn't
+a refusal coming back in a plain form's flash), unless it, or what is around it, says
+`data-rocx-keep`. `Submission.field!` is "" after a result; it gives what was typed after a refusal,
+to put it back. `input!` still says what was sent.
+
+**Why.** The form after a success is the form before one, with JavaScript or without it.
+
+**Reversible:** yes.
+
+## D-123 Behind HTTPS, every cookie is `Secure`
+
+**Status.** Built (2026-11-27), from the audit, on the user's go.
+
+**Context.** `Server.cookie_defaults` isn't `Secure` (D-007, for development over HTTP), and only
+packages/auth set it per request: an app's own `Server.with_cookie` went over plain HTTP too in
+production. SvelteKit's cookies are `secure` but on `http://localhost`.
+
+**Decision.** When the app's public URL is HTTPS (`--public-url`, `PUBLIC_URL`), the server platform
+makes every cookie an answer sets `Secure` as it sends it (`Server.secure_cookies`); one that says so
+already is as it is. The default stays as it was, for development over HTTP.
+
+**Why.** Safe in production with nothing to remember, and `http://localhost` works as it is.
+
+**Reversible:** yes.
+
+## D-124 `data-rocx-reload` leaves a link or a form to the browser
+
+**Status.** Built (2026-11-27), from the audit, on the user's go.
+
+**Context.** A link or a form that should load the page whole (a sign-out that must drop every
+state, a form to a page of another build) had no way to say so but `<html data-rocx-navigation>`,
+for every link of the app. SvelteKit has `data-sveltekit-reload` on an element and what is inside it.
+
+**Decision.** `data-rocx-reload` on a link, a form, a form's button, or an element around them,
+leaves that one to the browser: a load, or a plain post. `data-rocx-reload="off"` takes it back for
+what is inside.
 
 **Reversible:** yes.

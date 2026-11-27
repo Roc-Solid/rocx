@@ -22,7 +22,9 @@
 //! A `<NoHydration>` is `<!--nohydration-->…<!--/nohydration-->`, and inside it there are none:
 //! the browser never hydrates what is there, so it needs no markers, and finds the region's end by
 //! the first `<!--/nohydration-->`. A GET read inside one isn't recorded for the page: the browser
-//! never asks it.
+//! never asks it. A region that read one opens with `<!--nohydration:read-->` instead, so the
+//! browser knows it shows the server's data, and takes it again from the page's document after a
+//! form's result (D-120).
 
 use crate::abi::{RocErasedCallable as Callable, RocStr};
 use crate::hosted::{self, Asked};
@@ -136,6 +138,9 @@ struct Render {
     frames: Vec<Frame>,
     /// The GETs of endpoints the page read (`GET <url>`, "", `{"status":…,"body":…}`), each once.
     recorded: Vec<[String; 3]>,
+    /// How many GETs of endpoints a `<NoHydration>` read so far: a region that read one is marked
+    /// (`<!--nohydration:read-->`, D-120).
+    region_reads: u64,
     /// Each GET of an endpoint the page made (`GET <url>`), and its answer: asked again, it is
     /// answered from here, so a URL is asked once a render.
     fetched: HashMap<String, String>,
@@ -556,7 +561,12 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                 return children(node, scope);
             }
             let inner = Scope { region: true, ..scope.clone() };
-            Ok(format!("<!--nohydration-->{}<!--/nohydration-->", children(node, &inner)?))
+            let before = with(|render| render.region_reads).unwrap_or(0);
+            let rendered = children(node, &inner)?;
+            // Marked when what is inside read an endpoint (D-120): the server's data, which the browser
+            // takes again from the page's document after a form's result.
+            let read = with(|render| render.region_reads).unwrap_or(0) > before;
+            Ok(format!("<!--nohydration{}-->{}<!--/nohydration-->", if read { ":read" } else { "" }, rendered))
         }
         // `<Document>`, `<Window>`: handlers on the document or the window, in the browser; nothing on
         // the page. In a <NoHydration> they would never run.
@@ -1283,6 +1293,9 @@ pub extern "C" fn roc_fetch(method: RocStr, url: RocStr, headers: RocStr, body: 
             with(|render| {
                 render.fetched.entry(label.clone()).or_insert_with(|| json.clone());
                 let region = render.frames.last().is_some_and(|frame| frame.scope.region);
+                if region {
+                    render.region_reads += 1;
+                }
                 if !region && !render.recorded.iter().any(|[name, input, _]| *name == label && input.is_empty()) {
                     render.recorded.push([label, String::new(), json.clone()]);
                 }

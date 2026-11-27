@@ -720,7 +720,10 @@ Server.with_cookie(answer, "member", name)               # set_cookie with cooki
   when empty).
 
 `Server.cookie_defaults` is `Path=/`, `HttpOnly`, `SameSite=Lax`, this host only, until the browser
-closes, over HTTP too. A `__Host-` cookie needs `secure`, `path: "/"` and no domain, and
+closes, over HTTP too. Behind a public URL of HTTPS (`--public-url`, `PUBLIC_URL`), the platform makes
+every cookie an answer sets `Secure` as it sends it (D-123, `Server.secure_cookies`; SvelteKit's
+cookies are `secure` but on `http://localhost`), so a deployed app's are sent back over HTTPS alone
+with nothing to remember, and development over `http://localhost` works as it is. A `__Host-` cookie needs `secure`, `path: "/"` and no domain, and
 `SameSite=None` needs `secure`: browsers drop cookies that break these rules. Give `clear_cookie`
 the path, domain and `secure` the cookie was set with. Values are `%XX`-encoded, and
 `Server.cookie(request, name)` decodes them. These functions are shared with the browser platform

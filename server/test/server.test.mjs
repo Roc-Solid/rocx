@@ -3196,6 +3196,23 @@ test("cookies: Set-Cookie as each option says; with_cookie and without_cookie as
 	]);
 });
 
+test("cookies: behind a public URL of HTTPS, every cookie the server sets is Secure, those that say so already as they are (D-123)", { skip }, async () => {
+	const secured = await start(["--public-url", "https://status.example.com"], app);
+	try {
+		const answer = await fetch(`${secured.url}/cookies`, { redirect: "manual" });
+		assert.deepEqual(answer.headers.getSetCookie(), [
+			"plain=a%20b%3Bc; Path=/; HttpOnly; SameSite=Lax; Secure",
+			"__Host-session=token; Path=/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax",
+			`until=1; Path=/; Expires=${new Date(1_795_000_000_000).toUTCString()}; SameSite=Strict; Secure`,
+			"shared=x; Path=/docs; Domain=example.com; Secure; HttpOnly; SameSite=None",
+			"__Host-session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax",
+			"plain=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure",
+		]);
+	} finally {
+		await secured.stop();
+	}
+});
+
 // ---- roc-pg ----
 
 test("roc-pg, a Postgres client in Roc, works on the platform's Tcp and Random: a query checked when the app was built", { skip: skipDb }, async (t) => {
@@ -4025,10 +4042,10 @@ test("pages of components: a name markup can't have is never written (D-079): a 
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
 
-test("pages of components: a <NoHydration> is static markup between its markers, with none inside; what it reads isn't recorded; a handler inside is refused", { skip }, async () => {
+test("pages of components: a <NoHydration> is static markup between its markers, with none inside; what it reads isn't recorded, and marks it (nohydration:read, D-120); a handler inside is refused", { skip }, async () => {
 	assert.equal(
 		await text("/page-region"),
-		`<!doctype html><html><body><p class="count"><!--x-->3<!--/x--></p><!--nohydration--><p>3 &amp; QUIET</p>many<ul><li>ada</li><li>grace</li></ul><i>nothing above provides Probe.missing: render this under its provider</i><b>made once</b>nested<!--/nohydration--><p class="loud"><!--x-->PAGE<!--/x--></p>${scripts(JSON.stringify([carried("/probe/shout/page", 200, '"PAGE"')]))}</body></html>`,
+		`<!doctype html><html><body><p class="count"><!--x-->3<!--/x--></p><!--nohydration:read--><p>3 &amp; QUIET</p>many<ul><li>ada</li><li>grace</li></ul><i>nothing above provides Probe.missing: render this under its provider</i><b>made once</b>nested<!--/nohydration--><p class="loud"><!--x-->PAGE<!--/x--></p>${scripts(JSON.stringify([carried("/probe/shout/page", 200, '"PAGE"')]))}</body></html>`,
 	);
 	const refused = await get("/page-region-handler");
 	assert.equal(refused.status, 500);
