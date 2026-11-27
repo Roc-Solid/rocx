@@ -8,7 +8,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Kv: values in memory",
-	description: "Kv on the Roc Solid server platform: typed values kept by key in the server's memory, with a time to live and atomic operations (increment, add, take, swap, capped lists), for rate limits, caches and one-time tokens.",
+	description: "Kv on the Roc Solid server platform: typed values by key in the server's memory, with a time to live and atomic operations, for rate limits, caches and one-time tokens.",
 	toc: [
 		{ id: "counting", label: "Counting: a rate limit" },
 		{ id: "once", label: "Once: a sign-in's state" },
@@ -23,26 +23,26 @@ view! = |_|
 				eyebrow="The platform · Kv"
 				title="Values in memory, by key"
 			>
-				<code>Kv</code> keeps values by key in the server's memory, for as long as you say, or until the
-				server stops. Nothing is written to disk, so a restart forgets them all. Use it for what is cheap
-				to lose and read on many requests: a rate limit's counts, a cache, a one-time token. A value is
-				any type JSON can encode, and is read back as the type its reader asks for.
+				<code>Kv</code> keeps values by key in the server's memory, for as long as you say or until the
+				server stops. Nothing goes to disk: a restart forgets everything. Use it for what is cheap to lose
+				and read on many requests: rate-limit counts, a cache, a one-time token. A value is any type JSON
+				can encode, read back as the type its reader asks for.
 			</PageHero>
 
 			<Heading id="counting">Counting: a rate limit</Heading>
 			<Code title={"${Sources.platform_kv_limit.file}, in part"} source={Sources.platform_kv_limit.rocx} numbers={Bool.False} />
 			<p>
-				<code>Kv.increment!</code> counts every request, atomically: two requests at once both count. A
-				new counter's time to live starts when it is made and isn't moved by later increments, so it
-				counts in windows: here, one minute from an address's first try.
+				<code>Kv.increment!</code> counts atomically: two requests at once both count. A counter's time to
+				live starts when it is made and later increments don't move it, so it counts in windows: here, one
+				minute from an address's first try.
 			</p>
 
 			<Heading id="once">Once: a sign-in's state</Heading>
 			<Code title={"${Sources.platform_kv_once.file}, in part"} source={Sources.platform_kv_once.rocx} numbers={Bool.False} />
 			<p>
 				<code>Kv.take!</code> returns a value and forgets it in one step. The state another site sends back
-				completes one sign-in, and a second use of the same state finds nothing. Of two requests taking
-				the same key at once, one gets the value and the other <code>NotFound</code>.
+				completes one sign-in; a second use finds nothing. Of two requests taking one key at once, one gets
+				the value, the other <code>NotFound</code>.
 			</p>
 
 			<Heading id="operations">The operations</Heading>
@@ -53,25 +53,24 @@ view! = |_|
 			<ul>
 				<li>
 					<code>{"Kv.set!(key, value, { ttl_ms })"}</code> keeps a value, replacing what was there.
-					<code>Kv.get!(key)</code> reads it: <code>NotFound</code> when there is none or it expired,
-					<code>BadValue(why)</code> when it isn't the type asked for. <code>Kv.delete!(key)</code> forgets
-					it.
+					<code>Kv.get!(key)</code> reads it: <code>NotFound</code> if missing or expired,
+					<code>BadValue(why)</code> if it isn't the type asked for. <code>Kv.delete!(key)</code> forgets it.
 				</li>
 				<li>
-					<code>Kv.increment!(key, by, opts)</code> adds to an integer, starting from 0, and returns the new
-					value: counts and rate limits.
+					<code>Kv.increment!(key, by, opts)</code> adds to an integer (from 0) and returns the new value:
+					counts and rate limits.
 				</li>
 				<li>
-					<code>Kv.add!(key, value, opts)</code> keeps a value only if nothing is there, and answers
-					<code>Exists</code> otherwise. Of two requests adding one key, one wins: a claim, or a request
-					seen once (an idempotency key).
+					<code>Kv.add!(key, value, opts)</code> keeps a value only if the key is empty, else answers
+					<code>Exists</code>. Of two requests adding one key, one wins: a claim, or a request seen once (an
+					idempotency key).
 				</li>
 				<li><code>Kv.take!(key)</code> reads a value and forgets it: a one-time token.</li>
 				<li>
 					<code>Kv.swap!(key, was, value, opts)</code> replaces a value only if it is still
-					<code>was</code>, and answers <code>Changed</code> otherwise. To update a value from what it was
-					(a tally, a list of overrides), read it, swap, and on <code>Changed</code> read again and retry,
-					so two updates at once never lose one.
+					<code>was</code>, else answers <code>Changed</code>. To update a value from its old one (a tally, a
+					list of overrides), read, swap, and on <code>Changed</code> read again and retry, so concurrent
+					updates never lose one.
 				</li>
 				<li>
 					<code>{"Kv.push!(key, value, { keep })"}</code> puts a value at the front of a capped list,
@@ -80,19 +79,19 @@ view! = |_|
 			</ul>
 			<p>
 				The store holds 64 MiB (<code>--kv-max-mb</code>, or <code>KV_MAX_MB</code>); past that, the least
-				recently used values go, so a cache can't grow without end. By convention, a key names its owner
-				first (<code>login:…</code>, <code>email:mailbox</code>), so a package's keys never meet an app's.
-				Since an app runs as one server, there is one store, and no network between your code and it.
+				recently used values go, so a cache can't grow without end. By convention, a key starts with its
+				owner (<code>login:…</code>, <code>email:mailbox</code>), so a package's keys never meet an app's.
+				An app runs as one server, so there is one store, with no network between it and your code.
 			</p>
 			<p>
-				What must outlive a restart belongs in a table (<a href={Paths.platform_database}>the database</a>)
-				or an <a href={Paths.platform_actors}>actor</a>. Rooms, topics, channels, values in memory, actors,
-				tables and jobs, side by side: <a href={"${Paths.platform_live}#which"}>which to use</a>.
+				What must survive a restart belongs in a table (<a href={Paths.platform_database}>the database</a>)
+				or an <a href={Paths.platform_actors}>actor</a>. Every kind of state, side by side:
+				<a href={"${Paths.platform_live}#which"}>which to use</a>.
 			</p>
 			<Callout kind="tip" title="Tested">
 				<p>
-					The platform's tests let a value expire, count 200 increments at once, cap a list, and go past
-					the limit to see the least recently used values go.
+					The platform's tests let a value expire, count 200 increments at once, cap a list, and pass the
+					limit to see the least recently used values go.
 				</p>
 			</Callout>
 		</NoHydration>

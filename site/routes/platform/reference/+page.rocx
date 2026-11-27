@@ -7,7 +7,7 @@ import ../../../Generated/Paths
 
 meta = {
 	title: "Platform reference",
-	description: "Every module the Roc Solid server platform exposes, and every effect in each: its type and what it does, read from the platform's own source.",
+	description: "Every module the Roc Solid server platform exposes, and every effect in each: its type and what it does, read from the platform's source.",
 	toc: PlatformReference.toc,
 }
 
@@ -18,19 +18,17 @@ view! = |_|
 				eyebrow="The platform · reference"
 				title="Platform reference"
 			>
-				Every module the server platform exposes, and every effect in each: its type, and what it does.
-				The build reads all of it from the modules themselves (their types, and the <code>##</code> doc
-				comments above them), so this page says what the code says, and a new effect appears here as soon
-				as it exists.
+				Every module the server platform exposes, and every effect in each: its type and what it does. The
+				build reads it all from the modules' types and <code>##</code> doc comments, so this page says what
+				the code says, and a new effect appears as soon as it exists.
 			</PageHero>
 			<p>
-				{PlatformReference.module_count.to_str()} modules, {PlatformReference.effect_count.to_str()} effects, and {PlatformReference.function_count.to_str()} pure functions,
-				listed under each module. An <strong>effect</strong> is a function whose name ends in
-				<code>!</code>: it does something (reads the database, sends a request, makes a signal), so it can
-				be called only from another effect. Pure functions only compute; each module lists them in a
-				folded section. A module marked <span class="shared">browser too</span> belongs to the browser platform as
-				well (<code>web/platform</code>, copied into the server's by the build): the same code on either
-				side. For the effects at work, with examples, see the guides: <a href={Paths.platform_server}>the
+				{PlatformReference.module_count.to_str()} modules, {PlatformReference.effect_count.to_str()} effects and {PlatformReference.function_count.to_str()} pure functions.
+				An <strong>effect</strong> is a function whose name ends in <code>!</code>: it does something (reads
+				the database, sends a request, makes a signal), so only another effect can call it. Pure functions
+				only compute; each module folds them away. A module marked <span class="shared">browser too</span>
+				is the browser platform's as well (<code>web/platform</code>, copied into the server's by the
+				build). For effects at work, with examples, see the guides: <a href={Paths.platform_server}>the
 				server</a>, <a href={Paths.platform_http}>HTTP</a>, <a href={Paths.platform_database}>the
 				database</a>, <a href={Paths.platform_live}>live and channels</a>,
 				<a href={Paths.platform_actors}>actors</a>, <a href={Paths.platform_kv}>Kv</a>,

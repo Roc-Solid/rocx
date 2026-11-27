@@ -7,7 +7,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Crypto",
-	description: "The Roc Solid server platform's crypto: secure random bytes, AES-GCM and P-256 (key pairs, ECDH, ES256) from the host, with the crypto package's SHA-256, HMAC, HKDF, Base64, Base32, Hex and SHA-1 (for authenticator apps' codes), for tokens, signed links, sealed secrets and Web Push.",
+	description: "Crypto on the Roc Solid server platform: secure random bytes, AES-GCM and P-256 from the host; SHA-256, HMAC, HKDF, Base64, Base32, Hex and SHA-1 (for TOTP) from the crypto package. For tokens, signed links, sealed secrets and Web Push.",
 	toc: [
 		{ id: "tokens", label: "Tokens, and their digests" },
 		{ id: "links", label: "Signed links" },
@@ -24,36 +24,33 @@ view! = |_|
 				eyebrow="The platform · crypto"
 				title="Secrets, and what to do with them"
 			>
-				Three things most apps need: tokens nobody can guess (and stored so a leaked table is useless),
-				links that can't be forged, and secrets stored encrypted. Secure random bytes, AES-GCM and the
-				elliptic curve P-256 come from the host. The rest of the crypto is plain Roc, checked against
-				published test vectors, in
-				<a href={Paths.ecosystem_crypto}><code>packages/crypto</code></a>. The secrets themselves come from
-				the app's <a href={Paths.platform_settings}>environment</a>.
+				Most apps need unguessable tokens (stored so a leaked table is useless), unforgeable links, and
+				secrets stored encrypted. Secure random bytes, AES-GCM and the elliptic curve P-256 come from the
+				host. The rest is plain Roc in <a href={Paths.ecosystem_crypto}><code>packages/crypto</code></a>,
+				checked against published test vectors. The secrets come from the app's
+				<a href={Paths.platform_settings}>environment</a>.
 			</PageHero>
 			<p>
-				The samples are from <code>server/test/app/Samples.roc</code>, which the platform's tests compile
-				and run. It names the crypto package beside the platform in its header
-				(<code>crypto: "../packages/crypto/main.roc"</code>) and imports <code>crypto.Hmac</code> and the
-				rest from it.
+				The samples are from <code>server/test/app/Samples.roc</code>, compiled and run by the platform's
+				tests. Its header names the crypto package (<code>crypto: "../packages/crypto/main.roc"</code>), and
+				it imports <code>crypto.Hmac</code> and the rest from it.
 			</p>
 
 			<Heading id="tokens">Tokens, and their digests</Heading>
 			<Code title={"${Sources.platform_tokens.file}, in part"} source={Sources.platform_tokens.rocx} numbers={Bool.False} />
 			<p>
 				<code>Random.bytes!(count)</code> is the operating system's secure randomness (through
-				<code>ring</code>). If the system has none to give, the call crashes rather than make a key from
-				anything weaker. A sign-in link's token is 32 random bytes. The database keeps only its SHA-256
-				digest, so a copy of the table signs no one in.
+				<code>ring</code>). If the system has none, the call crashes rather than make a key from anything
+				weaker. A sign-in link's token is 32 random bytes; the database keeps only its SHA-256 digest, so a
+				copy of the table signs no one in.
 			</p>
 
 			<Heading id="links">Signed links</Heading>
 			<Code title={"${Sources.platform_links.file}, in part"} source={Sources.platform_links.rocx} numbers={Bool.False} />
 			<p>
-				The app derives a key for signing links from its <code>APP_SECRET</code> with HKDF, so that key
-				serves this one purpose alone, then signs what the link says with HMAC-SHA256. To check a link,
-				<code>Hmac.verify_sha256</code> compares signatures in constant time, so how long it takes doesn't
-				tell a forger how much of a signature was right.
+				The app derives a link-signing key from its <code>APP_SECRET</code> with HKDF, so the key serves this
+				one purpose, then signs the link with HMAC-SHA256. <code>Hmac.verify_sha256</code> checks a link in
+				constant time, so its timing doesn't tell a forger how much of a signature was right.
 			</p>
 
 			<Heading id="sealed">Sealed secrets</Heading>
@@ -61,45 +58,46 @@ view! = |_|
 			<p>
 				<code>AesGcm.seal!(key, plaintext)</code> encrypts with AES-256-GCM under a 32-byte key
 				(<code>BadKey</code> otherwise), with a fresh random 12-byte nonce each time. It returns the nonce,
-				the ciphertext and the 16-byte tag, one after another: Web Crypto's output with the nonce in front,
-				so either side can open what the other sealed. <code>AesGcm.open!</code> answers
-				<code>Forged</code> for anything changed, or sealed under another key.
+				ciphertext and 16-byte tag, in that order: Web Crypto's output with the nonce in front, so either
+				side can open what the other sealed. <code>AesGcm.open!</code> answers <code>Forged</code> for
+				anything changed or sealed under another key.
 			</p>
 
 			<Heading id="p256">P-256: ES256 and ECDH</Heading>
 			<Code title={"${Sources.platform_es256.file}, in part"} source={Sources.platform_es256.rocx} numbers={Bool.False} />
 			<p>
-				<code>P256</code> is the elliptic curve P-256 (secp256r1), as much of it as
-				<a href={Paths.ecosystem_push}>Web Push</a> needs. A public key is an uncompressed point, 65 bytes
-				(<code>4</code>, then <code>x</code> and <code>y</code>), and a private key its 32-byte scalar: the
-				raw forms browsers, Web Crypto and <code>web-push generate-vapid-keys</code> use, in base64url.
+				<code>P256</code> is the elliptic curve P-256 (secp256r1), as much as
+				<a href={Paths.ecosystem_push}>Web Push</a> needs. A public key is an uncompressed 65-byte point
+				(<code>4</code>, then <code>x</code> and <code>y</code>); a private key is its 32-byte scalar. These
+				are the raw forms browsers, Web Crypto and <code>web-push generate-vapid-keys</code> use, in
+				base64url.
 			</p>
 			<ul>
 				<li>
-					<code>{"P256.generate!({})"}</code> makes a new key pair from the operating system's random bytes:
-					<code>{"{ public_key, private_key }"}</code>, 65 and 32 bytes, which <code>sign!</code> signs
-					with. The push plugin makes its VAPID keys with it under <code>--dev</code>. Keep a private key in
-					the server's environment, never in the app's code.
+					<code>{"P256.generate!({})"}</code> makes a key pair from the operating system's random bytes:
+					<code>{"{ public_key, private_key }"}</code>, 65 and 32 bytes, for <code>sign!</code>. The push
+					plugin makes its VAPID keys with it under <code>--dev</code>. Keep a private key in the server's
+					environment, never in the app's code.
 				</li>
 				<li>
 					<code>P256.sign!(private_key, public_key, message)</code> is an ES256 signature (ECDSA on P-256
-					over SHA-256): 64 bytes, <code>r</code> then <code>s</code>, as a JWT carries it. Each signature
-					is different, since ECDSA draws a random number, and each verifies. It answers <code>BadKey</code>
-					unless the two keys are a pair, so signing once also checks a pair from the environment.
+					over SHA-256): 64 bytes, <code>r</code> then <code>s</code>, as a JWT carries it. ECDSA draws a
+					random number, so each signature differs, and each verifies. It answers <code>BadKey</code> unless
+					the keys are a pair, so one signing also checks a pair from the environment.
 				</li>
 				<li>
-					<code>P256.ecdh!(peer)</code> makes a key pair for this one call, agrees a secret with
-					<code>peer</code>'s public key, and forgets the private key: it answers the new public key, for the
-					other side, and the 32-byte shared secret, which only the holder of <code>peer</code>'s private key
-					can compute too. Derive keys from the secret with HKDF; never use it as a key. Web Push encrypts
-					each message this way (RFC 8291). It answers <code>BadKey</code> unless <code>peer</code> is a point
-					on the curve.
+					<code>P256.ecdh!(peer)</code> makes a key pair for this call, agrees a secret with
+					<code>peer</code>'s public key, and forgets the private key. It answers the new public key (for the
+					other side) and the 32-byte shared secret, which only the holder of <code>peer</code>'s private key
+					can also compute. Derive keys from the secret with HKDF; never use it as a key. Web Push encrypts
+					each message this way (RFC 8291). It answers <code>BadKey</code> unless <code>peer</code> is on the
+					curve.
 				</li>
 				<li>
-					<code>AesGcm.seal_with_nonce!(key, nonce, plaintext)</code> is AES-GCM with a 12-byte nonce of the
-					caller's, for a protocol that derives its own: AES-128 under a 16-byte key (Web Push's
+					<code>AesGcm.seal_with_nonce!(key, nonce, plaintext)</code> is AES-GCM with the caller's 12-byte
+					nonce, for protocols that derive their own: AES-128 under a 16-byte key (Web Push's
 					<code>aes128gcm</code>, RFC 8188), AES-256 under a 32-byte one. It answers the ciphertext, then the
-					tag. A nonce used twice under one key gives the key away, so anything else should use
+					tag. A nonce used twice under one key gives the key away, so otherwise use
 					<code>AesGcm.seal!</code>, which draws one.
 				</li>
 			</ul>
@@ -122,13 +120,12 @@ view! = |_|
 			</table>
 			<p>
 				<code>AesGcm</code>, <code>P256</code> and <code>Random</code> are the platform's, done by the host
-				(<code>ring</code>). The rest belong to
-				<a href={Paths.ecosystem_crypto}>the crypto package</a>: pure Roc with no effects, so they run
-				anywhere, including a page in the browser and <code>expect</code> tests. They are checked against
-				the test vectors of NIST, RFC 2202, RFC 4231, RFC 4648 and RFC 5869; <code>Sha256</code> wraps
-				Roc's builtin <code>Crypto.SHA256</code>. Decoding is strict: only the alphabet, no spaces,
-				padding left out or exactly right, and the last character's unused bits zero (Hex and Base32 take
-				either case, as a person types a secret).
+				(<code>ring</code>). The rest are <a href={Paths.ecosystem_crypto}>the crypto package</a>'s: pure Roc
+				without effects, so they run anywhere, a browser page and <code>expect</code> tests included. They
+				are checked against the test vectors of NIST, RFC 2202, RFC 4231, RFC 4648 and RFC 5869;
+				<code>Sha256</code> wraps Roc's builtin <code>Crypto.SHA256</code>. Decoding is strict: only the
+				alphabet, no spaces, padding absent or exact, and the last character's unused bits zero (Hex and
+				Base32 take either case, as people type secrets).
 			</p>
 		</NoHydration>
 	</>

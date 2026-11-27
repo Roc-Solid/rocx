@@ -7,7 +7,7 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Settings",
-	description: "The Roc Solid server platform's settings: environment variables (Env.var!), where the app is (Env.public_url!), the app's context made once at start from them, and Env.dev! for what only a developer's machine should do.",
+	description: "Settings on the Roc Solid server platform: environment variables (Env.var!), the app's public URL (Env.public_url!), the app's context made once at start, and Env.dev! for what only a developer's machine should do.",
 	toc: [
 		{ id: "env", label: "Settings: Env" },
 		{ id: "context", label: "Read once: the app's context" },
@@ -22,55 +22,53 @@ view! = |_|
 				eyebrow="The platform · settings"
 				title="Settings from the environment"
 			>
-				An app's secrets, and whatever differs from one machine to the next, come from its environment
-				variables, as in a twelve-factor app. This page shows how to read them, where the app is reachable,
-				and how to do something only on a developer's machine. What an app does with its secrets (signing
-				links, sealing what it stores) is on the <a href={Paths.platform_crypto}>crypto</a> page.
+				Secrets, and whatever differs between machines, come from environment variables, as in a
+				twelve-factor app. This page covers reading them, the app's public URL, and doing something only on
+				a developer's machine. Using secrets (signing links, sealing data) is on the
+				<a href={Paths.platform_crypto}>crypto</a> page.
 			</PageHero>
 
 			<Heading id="env">Settings: Env</Heading>
 			<Code title={"${Sources.platform_settings.file}, in part"} source={Sources.platform_settings.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<code>Env.var!(name)</code> reads one of the server's environment variables: <code>Ok(value)</code>,
-					or <code>Err(NotFound)</code>. It works the same in a request, a job or a schedule, so a secret is
-					read where the code that needs it is.
+					<code>Env.var!(name)</code> reads a server environment variable: <code>Ok(value)</code> or
+					<code>Err(NotFound)</code>. It works the same in a request, a job or a schedule, so read a secret
+					where you need it.
 				</li>
 				<li>
-					The file <code>--env-file</code> names is read into the server's environment as it starts, before
-					anything else: <code>ANTHROPIC_API_KEY=sk-ant-…</code> there is read by <code>Env.var!</code>, and
-					by every plugin, as if the shell had exported it. <code>rocx dev</code> names the <code>.env</code>
-					in the folder it runs in. Without the flag no file is read, so a test's server, CI's and
-					production's have only the environment they were given. A variable the environment already has
-					keeps its value. Lines are <code>NAME=value</code> (or <code>export NAME=value</code>), with
-					<code>#</code> comments and quoted values; a line that isn't one stops the server, saying which.
-					The log names what it set, never a value. Keep the file out of git.
+					The file <code>--env-file</code> names is read into the server's environment at start, before
+					anything else: <code>Env.var!</code> and every plugin see its
+					<code>ANTHROPIC_API_KEY=sk-ant-…</code> as if the shell had exported it. <code>rocx dev</code> names
+					the <code>.env</code> in its folder. Without the flag no file is read, so test, CI and production
+					servers have only the environment they were given. A variable already in the environment keeps
+					its value. Lines are <code>NAME=value</code> (or <code>export NAME=value</code>), with
+					<code>#</code> comments and quoted values; any other line stops the server, saying which. The log
+					names what it set, never a value. Keep the file out of git.
 				</li>
 				<li>
 					<code>Env.public_url!({"{}"})</code> is where the app is, for a link in an email or another
-					server's callback: <code>--public-url</code> (or <code>PUBLIC_URL</code>) when the server was
-					started with one, such as the proxy in front of it (<code>https://status.example.com</code>).
-					Otherwise it is where the server listens, with the port it bound (including the one the system
-					picked for <code>--port 0</code>). It is never taken from a request's <code>Host</code> header,
-					which whoever asks can write.
+					server's callback: <code>--public-url</code> (or <code>PUBLIC_URL</code>) if given, such as the
+					proxy in front (<code>https://status.example.com</code>). Otherwise, where the server listens, with
+					the port it bound (even one picked for <code>--port 0</code>). Never a request's <code>Host</code>
+					header, which anyone can write.
 				</li>
 			</ul>
 			<p>
-				The platform's own settings are its flags, each with an environment variable:
-				<code>DATABASE_URL</code>, <code>PORT</code>, <code>MAX_BODY</code> and the rest
-				(<a href={"${Paths.platform_server}#running"}>running it</a>). A package's settings are read by the
-				app, or by its plugin: <code>STORAGE_URL</code> for <a href={Paths.ecosystem_storage}>the storage
-				package</a>, <code>SMTP_URL</code> for <a href={Paths.ecosystem_email}>email</a>. A plugin that
-				needs a variable says so, and the server won't start without it.
+				The platform's own settings are flags, each with an environment variable: <code>DATABASE_URL</code>,
+				<code>PORT</code>, <code>MAX_BODY</code> and the rest (<a href={"${Paths.platform_server}#running"}>running
+				it</a>). A package's settings are read by the app or its plugin: <code>STORAGE_URL</code> for
+				<a href={Paths.ecosystem_storage}>the storage package</a>, <code>SMTP_URL</code> for
+				<a href={Paths.ecosystem_email}>email</a>. A plugin that needs a variable says so, and the server
+				won't start without it.
 			</p>
 
 			<Heading id="context">Read once: the app's context</Heading>
 			<p>
-				A setting every request needs, and that never changes while the server runs, is best read once.
-				The app's <code>init!</code> runs when the server starts (after the migrations, so it may also read
-				the database) and makes the app's <strong>context</strong>. The host keeps it, and gives it to every
-				request's middleware, every actor's turn and every plugin's call. If <code>init!</code> returns an
-				<code>Err</code>, the server stops with that message:
+				Read a setting every request needs, and that never changes, once. The app's <code>init!</code> runs
+				at start (after the migrations, so it may read the database) and makes the app's
+				<strong>context</strong>. The host gives it to every request's middleware, actor turn and plugin
+				call. If <code>init!</code> returns an <code>Err</code>, the server stops with that message:
 			</p>
 			<Code
 				title="main.roc"
@@ -78,24 +76,24 @@ view! = |_|
 				numbers={Bool.False}
 			/>
 			<p>
-				<code>init!</code> is given the text of the file named by <code>--context-file</code> (empty
-				without one): a way to hand the app facts at start that aren't environment variables. This site
-				keeps its build's facts that way. How middleware passes the context on to pages and endpoints is
-				on the <a href={"${Paths.routing}#middleware"}>routing</a> page.
+				<code>init!</code> gets the text of the <code>--context-file</code> (empty without one): a way to
+				hand the app facts at start that aren't environment variables. This site passes its build's facts
+				that way. How middleware hands the context to pages and endpoints is on the
+				<a href={"${Paths.routing}#middleware"}>routing</a> page.
 			</p>
 
 			<Heading id="dev">Only while developing</Heading>
 			<p>
-				<code>Env.dev!({"{}"})</code> says whether the server was started with <code>--dev</code>, as
+				<code>Env.dev!({"{}"})</code> says whether the server runs with <code>--dev</code>, as
 				<code>rocx dev</code> and <code>just dev</code> start it. Use it for what only a developer's machine
 				should do, like the "sign in as anyone" shortcut above. Under <code>--dev</code> the server also
-				reloads open pages when it restarts, shows a crash's reason in the answer, and, with the email
-				plugin and no <code>SMTP_URL</code>, keeps the email it would send and shows it at
-				<code>/__rocx/mail</code> (<a href={"${Paths.ecosystem_email}#mailbox"}>the dev mailbox</a>).
-				<code>Env.debug!({"{}"})</code> says whether it was started with <code>--debug</code>, as tests start
-				it: the email plugin keeps mail for the tests to read then too. With neither flag, as a deployed
-				server runs, a server with the email plugin and no <code>SMTP_URL</code> doesn't start, rather
-				than lose the email; nor does one whose app or plugins have tables and no database.
+				reloads open pages on restart, shows a crash's reason in the answer, and, with the email plugin and
+				no <code>SMTP_URL</code>, keeps outgoing email at <code>/__rocx/mail</code>
+				(<a href={"${Paths.ecosystem_email}#mailbox"}>the dev mailbox</a>). <code>Env.debug!({"{}"})</code>
+				says whether it runs with <code>--debug</code>, as tests start it; the email plugin keeps mail for
+				the tests then too. With neither flag, as deployed, a server with the email plugin and no
+				<code>SMTP_URL</code> won't start rather than lose email; nor will one whose app or plugins have
+				tables but no database.
 			</p>
 		</NoHydration>
 	</>

@@ -15,7 +15,7 @@ import ../../Generated/Paths
 ## (`ExampleApps`, from site/example-apps.json); the words, site/AppNotes.roc's.
 meta = {
 	title: "Examples",
-	description: "The example apps in the Roc Solid repository, each whole and small enough to read: where to start, how to run one, what each shows, what its browser half weighs, and how fast the server answers.",
+	description: "The example apps in the Roc Solid repository, each whole and small enough to read: where to start, how to run one, what each shows and weighs, and how fast the server answers.",
 	toc: [{ id: "start", label: "Where to start" }, { id: "glance", label: "At a glance" }, { id: "measured", label: "How they're measured" }],
 }
 
@@ -27,33 +27,32 @@ view! = |_|
 				title="Whole apps, each one small enough to read"
 			>
 				Each example is a real app in the repository's <code>examples/</code> directory, built with Roc
-				Solid from the database to the browser. Read one to see how the pieces fit together in an app
-				rather than a snippet. Each has a README that tours it and points to the file that shows each
-				feature, and a page here with its numbers and, for most, screenshots. All but hello have tests of
-				their own.
+				Solid from the database to the browser: the pieces fitting together, not a snippet. Each has a
+				README that tours it and points to the file behind each feature, and a page here with its numbers
+				and, for most, screenshots. All but hello have their own tests.
 			</PageHero>
 
 			<Heading id="start">Where to start</Heading>
 			<p>
-				Start with <a href={Paths.examples_hello}>hello</a>: one page with a button that counts, and one
-				endpoint. It is the app that <a href={"${Paths.root}#start"}>Getting started</a> makes. Then read
-				<a href={Paths.examples_tasks}>Tasks</a>, which is written to be read first: file routing, a
-				middleware, a database, pages that read endpoints, forms that work without JavaScript, and
-				optimistic updates, done the plain way, with comments that say why each piece is where it is.
-				After that, pick the app that shows what you need: the table below says what each one is.
+				Start with <a href={Paths.examples_hello}>hello</a>: one page with a counting button, and one
+				endpoint. It's the app <a href={"${Paths.root}#start"}>Getting started</a> makes. Then read
+				<a href={Paths.examples_tasks}>Tasks</a>, written to be read first: file routing, middleware, a
+				database, pages that read endpoints, forms that work without JavaScript, and optimistic updates,
+				done the plain way, with comments on why each piece is where it is. Then pick the app that shows
+				what you need from the table below.
 			</p>
 			<p>
-				To run one, set up the repository first (<code>just setup</code>), then start the app from its own
-				directory, so a database file lands beside it. <code>rocx dev</code> builds it, serves it at
-				http://localhost:8080 and builds it again each time you save. <code>just examples</code> builds,
-				checks and tests an app the way the repository's checks do.
+				To run one, set up the repository (<code>just setup</code>), then start the app from its own
+				directory, so its database file lands beside it. <code>rocx dev</code> builds it, serves it at
+				http://localhost:8080 and rebuilds on save. <code>just examples</code> builds, checks and tests an
+				app as the repository's checks do.
 			</p>
 			<Code source={"cd examples/tasks && ../../bin/rocx dev   # http://localhost:8080\njust examples tasks                      # build, check and test it"} numbers={Bool.False} plain />
 
 			<Heading id="glance">At a glance</Heading>
 			<p>
-				Each app, what it is, and what it is made of. The wasm column is the app's browser half, the
-				part every visitor downloads; an app of endpoints alone has none. A name links to the app's page.
+				The wasm column is the app's browser half, which every visitor downloads; an app of endpoints alone
+				has none. A name links to the app's page.
 			</p>
 			<Stats
 				stats={[
@@ -82,23 +81,22 @@ view! = |_|
 			<Heading id="measured">How they're measured</Heading>
 			<p>
 				{"Measured on ${ExampleApps.measured.date}, at commit "}<code>{ExampleApps.measured.commit}</code>{", with the compiler "}<code>{ExampleApps.measured.roc}</code>{", on an ${ExampleApps.measured.machine}. "}
-				<code>just example-apps</code> builds each app's browser half again: <code>rocx build --client</code>,
-				then the wasm with <code>--opt=size</code>, as <code>just examples</code> builds it. It compresses the
-				wasm as this site measures its own (gzip at level 9, brotli at quality 11). Then it counts what the
-				app is made of: pages, endpoints, its own lines of Roc (blank lines left out, and neither what
-				<code>rocx build</code> writes nor its tests), expects and node tests.
+				<code>just example-apps</code> rebuilds each app's browser half (<code>rocx build --client</code>,
+				then the wasm with <code>--opt=size</code>, as <code>just examples</code> does) and compresses it as
+				this site measures its own (gzip level 9, brotli quality 11). Then it counts pages, endpoints, the
+				app's own lines of Roc (no blank lines, nothing <code>rocx build</code> writes, no tests), expects
+				and node tests.
 			</p>
 			<p>
-				<code>just example-apps --bench</code> runs <a href={Paths.examples_echo}>echo</a>'s server benchmark
-				again, and <code>just example-shots</code> takes the screenshots. How the browser's runtime does
-				beside other frameworks is on <a href={Paths.examples_js_framework_benchmark}>js-framework-benchmark</a>'s
-				page. This site's build only reads what they
-				wrote and measures nothing itself, because a dozen wasm builds take minutes.
+				<code>just example-apps --bench</code> reruns <a href={Paths.examples_echo}>echo</a>'s server
+				benchmark, and <code>just example-shots</code> takes the screenshots. This site's build only reads
+				what they wrote, since a dozen wasm builds take minutes. How the browser's runtime compares with
+				other frameworks: <a href={Paths.examples_js_framework_benchmark}>js-framework-benchmark</a>.
 			</p>
 			<p>
-				The sizes are what a browser downloads when the files come compressed. The Roc Solid server sends
-				files as they are, so in production a CDN or a proxy that compresses them (as GitHub Pages does for
-				this site) is what gets them down to these sizes.
+				The sizes are what a browser downloads compressed. The Roc Solid server sends files as they are, so
+				in production a CDN or a compressing proxy (GitHub Pages, for this site) gets them down to these
+				sizes.
 			</p>
 		</NoHydration>
 	</>
