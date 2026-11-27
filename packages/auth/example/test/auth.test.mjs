@@ -53,6 +53,21 @@ post! = |{ request, body, .. }|
 	}
 `;
 
+/** The route the roles test adds: a user's grants forgotten (`Roles.forget!`), as an app that deletes a person would. */
+const forgetRoute = `import pf.Server
+import pf.Endpoint
+import auth.Roles
+
+## POST /test/forget: every grant of \`user\`'s forgotten. Written by packages/auth's tests into the
+## app they build; the example has none.
+post! : { request : Server.Request, params : {}, context : {}, body : { user : Str } } => Try({ forgotten : U64 }, Endpoint.Refusal)
+post! = |{ body, .. }|
+	match Roles.forget!(body.user) {
+		Ok(count) => Ok({ forgotten: count })
+		Err(DbErr(why)) => Err(Status(503, why))
+	}
+`;
+
 const base64url = (text) => Buffer.from(text).toString("base64url");
 
 /**
@@ -131,6 +146,8 @@ function app(database, fake) {
 	writeFileSync(join(dir, "routes", "test", "as", "+server.roc"), asRoute);
 	mkdirSync(join(dir, "routes", "test", "switch"), { recursive: true });
 	writeFileSync(join(dir, "routes", "test", "switch", "+server.roc"), switchRoute);
+	mkdirSync(join(dir, "routes", "test", "forget"), { recursive: true });
+	writeFileSync(join(dir, "routes", "test", "forget", "+server.roc"), forgetRoute);
 	return dir;
 }
 
@@ -355,6 +372,82 @@ for (const database of databases) {
 			assert.equal((await boss.read("/me")).user, calId);
 			await db.query("update auth_sessions set acting_until = 0 where acting_as is not null");
 			assert.equal((await boss.read("/me")).user, bossId, "back to the admin once its time is up");
+		});
+
+		/** The status of GET /pro for `client`: 200 while they hold Pro, 403 otherwise. */
+		const pro = async (client) => (await client.request("/pro", { headers: { accept: "application/json" } })).status;
+
+		test("roles (D-127): an admin gives Pro as a gift, for good or for days, and ends it; a trial once; Pro from either; every grant kept, and forgotten with the user", async () => {
+			const boss = await signedIn("boss@example.com");
+			const bossId = (await boss.read("/me")).user;
+			const dee = await signedIn("dee@example.com");
+			const deeId = (await dee.read("/me")).user;
+			const day = 24 * 60 * 60 * 1000;
+			assert.equal(await pro(dee), 403, "no Pro yet");
+			assert.deepEqual(await dee.read("/roles"), { pro: false, grants: [] });
+			assert.equal((await dee.json("/roles/grant", { email: "dee@example.com", days: 0, note: "" })).status, 403, "only an admin gives one");
+
+			// A gift for good: Pro, and the grant as of! reads it.
+			assert.equal((await boss.json("/roles/grant", { email: "dee@example.com", days: 0, note: "a friend" })).status, 200);
+			assert.equal(await pro(dee), 200);
+			const gifted = await dee.read("/roles");
+			assert.equal(gifted.pro, true);
+			assert.deepEqual(gifted.grants.map(({ since_ms, ...grant }) => grant), [{ role: "pro", via: "gift", by: bossId, ends_ms: 0, note: "a friend", state: "current", revoked_by: "" }]);
+			const kept = await db.query(`select role, via, granted_by from auth_roles where user_id = '${deeId}'`);
+			assert.deepEqual(kept.map((row) => ({ ...row })), [{ role: '"Pro"', via: '"Gift"', granted_by: bossId }], "each tag kept as its JSON");
+
+			// A trial too, once; the gift ended, the trial keeps Pro; the trial runs out.
+			const trial = await dee.json("/trial", {});
+			assert.equal(trial.status, 200, trial.text);
+			assert.equal((await dee.json("/trial", {})).status, 409, "a trial once");
+			assert.deepEqual(await (await boss.json("/roles/revoke", { email: "dee@example.com" })).json(), { revoked: true });
+			assert.deepEqual(await (await boss.json("/roles/revoke", { email: "dee@example.com" })).json(), { revoked: false }, "none lasts now");
+			assert.equal(await pro(dee), 200, "the trial still holds it");
+			await db.query(`update auth_roles set ends_at = 1 where user_id = '${deeId}' and via = '"Trial"'`);
+			assert.equal(await pro(dee), 403, "the trial ran out");
+			assert.equal((await dee.json("/trial", {})).status, 409, "and doesn't come again");
+			const ended = (await dee.read("/roles")).grants;
+			assert.deepEqual(ended.map((grant) => [grant.via, grant.state, grant.revoked_by]).sort(), [["gift", "revoked", bossId], ["trial", "ended", ""]]);
+
+			// A gift again, for 30 days: a new grant (the last one ended); then for 60, while it lasts: the same one, its end moved.
+			const before = Date.now();
+			await boss.json("/roles/grant", { email: "dee@example.com", days: 30, note: "" });
+			assert.equal(await pro(dee), 200);
+			let grants = (await dee.read("/roles")).grants;
+			assert.equal(grants.length, 3);
+			assert.equal(grants[0].state, "current");
+			assert.ok(grants[0].ends_ms >= before + 30 * day && grants[0].ends_ms <= Date.now() + 30 * day, String(grants[0].ends_ms));
+			await boss.json("/roles/grant", { email: "dee@example.com", days: 60, note: "longer" });
+			grants = (await dee.read("/roles")).grants;
+			assert.equal(grants.length, 3, "the same grant, longer");
+			assert.deepEqual([grants[0].note, grants[0].ends_ms >= before + 60 * day], ["longer", true]);
+
+			// A grant that ran out and is given again starts a row of its own.
+			await db.query(`update auth_roles set ends_at = 1 where user_id = '${deeId}' and via = '"Gift"' and closed_at is null`);
+			await boss.json("/roles/grant", { email: "dee@example.com", days: 0, note: "" });
+			grants = (await dee.read("/roles")).grants;
+			assert.deepEqual([grants.length, grants[0].via, grants[0].state, grants[0].ends_ms], [4, "gift", "current", 0], "the newest first: a gift for good");
+			assert.deepEqual(grants.map((grant) => grant.state).sort(), ["current", "ended", "ended", "revoked"]);
+		});
+
+		test("roles: grants at once open one grant; an admin acting as someone sees their Pro; forget! leaves no grant", async () => {
+			const boss = await signedIn("boss@example.com");
+			const eve = await signedIn("eve@example.com");
+			const eveId = (await eve.read("/me")).user;
+			const answers = await Promise.all(Array.from({ length: 8 }, (_, n) => boss.json("/roles/grant", { email: "eve@example.com", days: n + 1, note: `grant ${n}` })));
+			assert.deepEqual(answers.map((answer) => answer.status), Array(8).fill(200), answers.map((answer) => answer.text).join(" "));
+			const open = await db.query(`select count(*) as open from auth_roles where user_id = '${eveId}' and closed_at is null`);
+			assert.equal(Number(open[0].open), 1, "one grant, whichever came last");
+			assert.equal(await pro(eve), 200);
+			// Impersonating: the routes see the user acted as, roles too.
+			assert.equal(await pro(boss), 403, "the admin holds none");
+			await boss.json("/impersonate", { email: "eve@example.com" });
+			assert.equal(await pro(boss), 200, "acting as eve, eve's Pro");
+			await boss.json("/impersonate/stop", {});
+			// Forgotten with the user.
+			assert.deepEqual(await (await boss.json("/test/forget", { user: eveId })).json(), { forgotten: 1 });
+			assert.equal(await pro(eve), 403);
+			assert.deepEqual(await eve.read("/roles"), { pro: false, grants: [] });
 		});
 
 		test("signing out ends the session: its cookie gone, and the old cookie signs no one in", async () => {

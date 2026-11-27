@@ -272,4 +272,47 @@ AuthStore := [].{
 	## Ends the sign-in waiting by `id`: how many ended (0 or 1).
 	end_waiting! : Str => Try(U64, [DbErr(Str), ..others])
 	end_waiting! = |id| Db.run!("delete from auth_waiting where id = $1", [Text(id)])
+
+	# ---- Roles (D-127, `Roles`): the app's tags kept as their JSON ----
+
+	## A grant's row: its role and reason (the app's tags, as JSON), who gave it and when, until when
+	## (`Null`: for good), its note, and once it stopped being the open one, when, and who revoked
+	## it (`Null` when it ran out).
+	RoleRow : { id : Str, role : Str, via : Str, granted_by : Str, granted_at : I64, ends_at : Db.Nullable(I64), note : Str, closed_at : Db.Nullable(I64), revoked_by : Db.Nullable(Str) }
+
+	## `user` holds `role` because of `via` (each its JSON), given `by`, until `ends` (`Null`: for
+	## good). The open row for the three (`auth_roles_open`), if it lasts at `now`, gets the new end,
+	## `by` and note; one that ran out is closed first (at its end), and a row opened, `id` its id.
+	## Each is one statement, so two grants at once can't open two rows: the second changes the row
+	## the first opened. Run it in a transaction, so the two go together (`Roles.grant!` does).
+	grant_role! : { id : Str, user : Str, role : Str, via : Str, by : Str, now : I64, ends : Db.Value, note : Str } => Try({}, [DbErr(Str), ..others])
+	grant_role! = |grant| {
+		_ = Db.run!("update auth_roles set closed_at = ends_at where user_id = $1 and role = $2 and via = $3 and closed_at is null and ends_at is not null and ends_at <= $4", [Text(grant.user), Text(grant.role), Text(grant.via), Int(grant.now)])?
+		_ = Db.run!(
+			"insert into auth_roles (id, user_id, role, via, granted_by, granted_at, ends_at, note) values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict (user_id, role, via) where closed_at is null do update set ends_at = excluded.ends_at, granted_by = excluded.granted_by, note = excluded.note",
+			[Text(grant.id), Text(grant.user), Text(grant.role), Text(grant.via), Text(grant.by), Int(grant.now), grant.ends, Text(grant.note)],
+		)?
+		Ok({})
+	}
+
+	## Ends `user`'s grant of `role` because of `via` at `now`, `by` whoever ends it, if it lasts
+	## then (one that ran out stays as it ended): how many ended (0 or 1).
+	revoke_role! : { user : Str, role : Str, via : Str, by : Str, now : I64 } => Try(U64, [DbErr(Str), ..others])
+	revoke_role! = |revoked| Db.run!("update auth_roles set closed_at = $5, revoked_by = $4 where user_id = $1 and role = $2 and via = $3 and closed_at is null and (ends_at is null or ends_at > $5)", [Text(revoked.user), Text(revoked.role), Text(revoked.via), Text(revoked.by), Int(revoked.now)])
+
+	## Whether `user` holds `role` (its JSON) at `now`, for any reason.
+	holds_role! : Str, Str, I64 => Try(Bool, [DbErr(Str), BadRow(Str), ..others])
+	holds_role! = |user, role, now| {
+		rows : List({ id : Str })
+		rows = Db.all!("select id from auth_roles where user_id = $1 and role = $2 and closed_at is null and (ends_at is null or ends_at > $3) limit 1", [Text(user), Text(role), Int(now)])?
+		Ok(!rows.is_empty())
+	}
+
+	## Every grant `user` has had, the latest given first.
+	roles_of! : Str => Try(List(AuthStore.RoleRow), [DbErr(Str), BadRow(Str), ..others])
+	roles_of! = |user| Db.all!("select id, role, via, granted_by, granted_at, ends_at, note, closed_at, revoked_by from auth_roles where user_id = $1 order by granted_at desc, id", [Text(user)])
+
+	## Forgets every grant `user` has had (the user is gone): how many.
+	forget_roles! : Str => Try(U64, [DbErr(Str), ..others])
+	forget_roles! = |user| Db.run!("delete from auth_roles where user_id = $1", [Text(user)])
 }

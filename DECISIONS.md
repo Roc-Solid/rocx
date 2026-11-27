@@ -7230,3 +7230,64 @@ was 93 commits further on, and the fixes go upstream as PRs against main.
   covers it).
 
 **Reversible:** yes: the pin back to 4674b5973d and the glue with it.
+
+## D-127 Roles: what a user holds and why, in packages/auth
+
+**Status.** Built (2026-11-27).
+
+**Context.** An app that sells a subscription also gives it away: to its own people, to a friend,
+for a trial without a card. packages/stripe says who has paid (`subscribed!`, `paid_for!`), but a
+gift isn't a payment, and an app that asked "paid, or given?" everywhere would ask it differently in
+each place. packages/auth knew who someone is and nothing of what they may do: who is an admin was
+each app's own list (`ADMIN_EMAILS`), checked before `impersonate!`.
+
+**Options.**
+1. A package of its own for plans: what a user is on, from payments, trials and grants.
+2. Grants in packages/stripe, so `subscribed!` says yes for a gift too.
+3. Roles in packages/auth: what a user holds, granted and revoked, with the reason it is held.
+
+**Decision.** 3, as a module of its own, `Roles` (the package's `revoke!` already ends a session).
+
+- **The app's own tags.** A role is one of the app's tags (`[Pro, Admin]`), and so is the reason
+  it is held (`via: [Paid, Trial, Gift]`), so a misspelt one is the compiler's to catch. The table
+  keeps each as its JSON (`"Pro"`), through Roc's `Json`, as actors keep their state.
+- **One record to give one**: `grant!({ user, role, via, by, ends, note })`, `ends : [Never,
+  At(ms)]` (for good unless it says), `revoke!({ user, role, via, by })`, `has!(user, role)`,
+  `of!(user)`, `forget!(user)`.
+- **A grant for each reason.** A user holds a role while any of their grants of it lasts, one grant
+  for each reason: a subscription that ends never takes away a gift, and a gift isn't cut short by a
+  payment. `by` says who acted (an admin's id, `"stripe"`, `"trial"`) and is no part of which grant
+  it is, so an admin ends another admin's gift.
+- **Granting again moves the end.** While a grant lasts, granting it again changes its end (sooner
+  or later), its `by` and its note in place: a row is one unbroken stretch, so a payment that grants
+  until the next period's end each month keeps one row. The open grant for a user, role and reason
+  is a partial unique index (`closed_at is null`), and the grant an upsert on it, so two grants at
+  once give one, on SQLite and on Postgres; one whose end has come is closed first (at its end), and
+  a new one starts.
+- **A history, never deleted** but by `forget!` (the app deletes the user): a grant that ran out
+  or was revoked stays, with when and by whom, for `of!` to show and for the app to ask (a trial
+  had already).
+- **Payments are the app's to turn into grants**, by reading the payment's state, not each event:
+  with packages/stripe, a function that reads the user's subscription and grants `via: Paid` until
+  its period's end (and a few days for the card's retries), or revokes it once it has ended, run
+  for every event about the user and now and then for everyone who pays. Events that come twice or
+  out of order change nothing; one missed is made up.
+- **Tested:** the example (SQLite and Postgres): an admin's gift for good and for days, refused to
+  others, kept as JSON; a trial once, refused after it ran out; a gift revoked while a trial keeps
+  the role; a grant given again moving its end, one that ran out starting anew; eight grants at once
+  giving one open grant; impersonation seeing the user's roles; `forget!`. Roles' `state` by
+  `expect`s.
+- **Docs:** packages/auth's README (Roles, the tables, Status) and PROPOSALS (6: seats an
+  organization pays for, a gate, an admin's page, Turso), the example's `main.roc`, the site's auth
+  page.
+
+**Why.** "May this person do this?" is asked where the session is, and the answer has more than one
+source: who paid, who is trying it, who was given it. Keeping the reason with each grant is what
+lets the sources not step on each other, and the history is what answers "why did I lose it?" and
+"had a trial already?". The other names for it (entitlements, plans) describe the same rows.
+
+**Costs.** A query each `has!` (one indexed row). A tag renamed in the app leaves its old grants
+unread: `of!` leaves them out (said on the log) and `has!` doesn't count them until the rows are
+updated. The partial index and the upsert on it are untried on Turso.
+
+**Reversible:** yes: the module and its table go; an app's grants are its rows.

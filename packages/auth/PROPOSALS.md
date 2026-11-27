@@ -54,6 +54,18 @@ and nested transactions (D-076). And one more the user asked for: impersonation
 - **A session that says how it signed in** (`Session.second_factor : Bool`): a user who turns it on
   keeps the sessions they had; an admin's route could ask for a session that passed a code.
 
+## 6. Roles' next steps (D-127 built the first)
+
+- **Seats an organization pays for**: a reason with a value (`via: Seat(org)`), granted by the
+  org's owners, and at most so many at once. The count and the grant must be one step (two owners
+  at once can't both take the last seat): a row for the org that each grant changes first, so they
+  take turns on every database, and the count read from the grants after it.
+- **A gate in the package** (`Roles.required(role, refusal)`), if apps write the same
+  `required_with` step.
+- **An admin's page** (packages/admin, as its jobs page): a user's grants, given and ended there.
+- **Roles on Turso**: the open grant is a partial unique index and an upsert on it; not tried on
+  Turso yet.
+
 ## Open questions
 
 None now. (Whether `rocx new` should list `Guard.rate_limit` on its sign-in endpoint was the last:

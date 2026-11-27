@@ -17,6 +17,7 @@ import "migrations/0001_auth.sql" as table : Str
 import "migrations/0002_impersonation.sql" as impersonation : Str
 import "migrations/0003_two_factor.sql" as two_factor_tables : Str
 import "migrations/0004_two_factor_misses.sql" as two_factor_misses : Str
+import "migrations/0005_roles.sql" as roles_table : Str
 
 ## Sign-in for Roc Solid apps (D-072): by a link mailed to an address, or at a provider (Google,
 ## GitHub, any OpenID Connect one); sessions kept as their token's hash in the app's database;
@@ -166,7 +167,7 @@ Auth := [].{
 		settings = settings_of(options)
 		{
 			name: "auth",
-			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }, { name: "0004_two_factor_misses", sql: two_factor_misses }],
+			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }, { name: "0004_two_factor_misses", sql: two_factor_misses }, { name: "0005_roles", sql: roles_table }],
 			starts: [
 				|_context| {
 					Plugin.keep!("auth:settings", Json.to_str(settings))

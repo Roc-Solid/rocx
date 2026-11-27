@@ -4,6 +4,7 @@ import pf.Random
 import pf.Time
 import crypto.Base64
 import auth.Auth
+import auth.Roles
 
 ## The app's people, and who gets in (`admit!`, which the auth routes ask at every sign-in).
 Accounts := [].{
@@ -49,6 +50,62 @@ Accounts := [].{
 			Ok(Found(user)) => (Env.var!("ADMIN_EMAILS") ?? "").split_on(",").map(|each| each.trim().with_ascii_lowercased()).contains(user.email)
 			_ => Bool.False
 		}
+
+	## What a user may hold (packages/auth's `Roles`, D-127): Pro, which the `/pro` page asks for.
+	Role : [Pro]
+
+	## Why they hold it: an admin's gift (`/roles/grant`), or the trial anyone may start once
+	## (`/trial`).
+	Via : [Gift, Trial]
+
+	## How long a trial lasts: two weeks.
+	trial_ms : I64
+	trial_ms = 14 * 24 * 60 * 60 * 1000
+
+	## A grant as the routes answer it: its role and reason by name, who gave it and when, when it
+	## ends (0: never), its note, and where it stands (`current`, `ended`, or `revoked` and by whom).
+	Shown : { role : Str, via : Str, by : Str, since_ms : I64, ends_ms : I64, note : Str, state : Str, revoked_by : Str }
+
+	## Every grant user `id` has had, the latest given first, as the routes show them.
+	grants! : Str => Try(List(Accounts.Shown), [DbErr(Str), BadRow(Str)])
+	grants! = |id| {
+		held : List(Roles.Held(Accounts.Role, Accounts.Via))
+		held = Roles.of!(id)?
+		Ok(
+			held.map(
+				|grant| {
+					role: (
+						match grant.role {
+							Pro => "pro"
+						}
+					),
+					via: (
+						match grant.via {
+							Gift => "gift"
+							Trial => "trial"
+						}
+					),
+					by: grant.by,
+					since_ms: grant.since_ms,
+					ends_ms: Roles.ends_ms(grant.ends),
+					note: grant.note,
+					state: (
+						match grant.state {
+							Current => "current"
+							Ended => "ended"
+							Revoked(_) => "revoked"
+						}
+					),
+					revoked_by: (
+						match grant.state {
+							Revoked(revoked) => revoked.by
+							_ => ""
+						}
+					),
+				},
+			),
+		)
+	}
 
 	## The user with address `email`, if there is one.
 	by_email! : Str => Try([Found(Accounts.User), Missing], [DbErr(Str), BadRow(Str)])

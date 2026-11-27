@@ -8,7 +8,7 @@ import ../../../Generated/Sources
 import ../../../Generated/Paths
 
 ## The auth package, a plugin: the package's example app file by file, how signing in goes (a mailed
-## link, a provider, the dev sign-in), who gets in, sessions and the middleware, two-factor sign-in,
+## link, a provider, the dev sign-in), who gets in, sessions and the middleware, roles, two-factor sign-in,
 ## the providers, what a failed sign-in says, the tables, safety, and what comes next. Static:
 ## signing in needs a server.
 meta = {
@@ -20,6 +20,7 @@ meta = {
 		{ id: "admit", label: "Who gets in" },
 		{ id: "sessions", label: "Sessions and middleware" },
 		{ id: "impersonation", label: "Impersonation" },
+		{ id: "roles", label: "Roles" },
 		{ id: "two-factor", label: "Two-factor sign-in" },
 		{ id: "providers", label: "Providers" },
 		{ id: "failed", label: "When it fails" },
@@ -196,6 +197,40 @@ view! = |_|
 				<li>No two-factor code is asked of an admin acting as someone: nobody signs in.</li>
 			</ul>
 
+			<Heading id="roles">Roles</Heading>
+			<p>
+				What a user holds, and why: Pro because they pay, because they are on a trial, or because an admin
+				gave it. A role is one of your own tags, and so is the reason, so a misspelt one doesn't compile.
+				<code>Roles</code> is a module of the package (<code>import auth.Roles</code>); its table comes with
+				the plugin.
+			</p>
+			<Code title="Roles" source={"Role : [Pro, Admin]           # your own tags\nVia : [Paid, Trial, Gift]     # why someone holds one\n\nRoles.grant!({ user, role: Pro, via: Gift, by: admin })                          # for good\nRoles.grant!({ user, role: Pro, via: Paid, by: \"stripe\", ends: At(period_end) })\nRoles.revoke!({ user, role: Pro, via: Gift, by: admin })\nRoles.has!(user, Pro)                                                            # Bool\nRoles.of!(user)                                                                  # every grant, past ones too\nRoles.forget!(user)                                                              # the user is gone"} numbers={Bool.False} />
+			<ul>
+				<li>
+					Someone holds a role while any of their grants of it lasts, one grant for each reason: a
+					subscription that ends never takes away a gift, and a gift isn't cut short by a payment.
+				</li>
+				<li>
+					Granting again while a grant lasts moves its end, so a payment that grants until the next period's
+					end each month stays one grant. Two grants at once give one.
+				</li>
+				<li>
+					Nothing is deleted but by <code>forget!</code>: grants that ran out or were revoked stay, so
+					<code>of!</code> can show what ended when and who ended it, and you can tell someone had a trial
+					already (the example's <code>/trial</code> does).
+				</li>
+				<li>
+					You decide who may grant before calling it, as with impersonation; each grant and revoke is logged.
+					<code>has!</code> says no when the database can't be read, so what it guards stays shut.
+				</li>
+				<li>
+					Paid roles come from your payments: with <a href={Paths.ecosystem_stripe}>Stripe</a>, a function that
+					reads the user's subscription and grants Pro until its period's end, or revokes it once it ended, run
+					for every event about them. It reads the state, not the event, so events that come twice or out of
+					order change nothing.
+				</li>
+			</ul>
+
 			<Heading id="two-factor">Two-factor sign-in</Heading>
 			<p>
 				With <code>two_factor: Bool.True</code> in the plugin's options, users may turn on two-factor
@@ -320,7 +355,8 @@ view! = |_|
 				<code>auth_sessions</code>, <code>auth_links</code> (links on their way),
 				<code>auth_identities</code> (which of your users each identity signed in as), and for two-factor
 				<code>auth_two_factor</code> (sealed secrets), <code>auth_recovery_codes</code> (their hashes) and
-				<code>auth_waiting</code> (sign-ins waiting for a code). Your users stay in your own table; the
+				<code>auth_waiting</code> (sign-ins waiting for a code), and <code>auth_roles</code> (every grant,
+				past ones too). Your users stay in your own table; the
 				package knows them only by the id <code>admit!</code> gives.
 			</p>
 

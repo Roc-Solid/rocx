@@ -2,7 +2,8 @@
 
 Sign-in for Roc Solid apps, as a plugin (D-072): by a link mailed to an address, or at a provider
 (Google, GitHub, any OpenID Connect one), and for those who turn it on, a code from an authenticator
-app after that (two-factor sign-in, D-081). Sessions are kept in the app's database (Postgres,
+app after that (two-factor sign-in, D-081). What a user holds, and why, is `Roles` (D-127): the
+app's own tags, granted, revoked and kept as a history. Sessions are kept in the app's database (Postgres,
 SQLite or Turso), as their token's hash. Middleware hands the signed-in user on to the routes.
 
 The package has no pages and no routes of its own. Its steps (a mailed link, a provider and back,
@@ -225,6 +226,66 @@ record who did what, and to guard what only the person themselves may change (th
 address, their two-factor sign-in). An admin acting as someone isn't asked for their code: no one
 signs in.
 
+## Roles
+
+What a user holds, and why (D-127): a role is one of the app's own tags, and so is the reason it is
+held, so a misspelt one is the compiler's to catch. `Roles` is a module of its own (`import
+auth.Roles`); its table comes with the plugin.
+
+```roc
+Role : [Pro, Admin]              # the app's
+Via : [Paid, Trial, Gift]        # why someone holds one
+
+Roles.grant!({ user, role: Pro, via: Gift, by: admin })                          # for good
+Roles.grant!({ user, role: Pro, via: Paid, by: "stripe", ends: At(period_end) })
+Roles.revoke!({ user, role: Pro, via: Gift, by: admin })                          # Bool: one lasted
+Roles.has!(user, Pro)                                                            # Bool
+Roles.of!(user)                                                                  # every grant, past ones too
+Roles.forget!(user)                                                              # the user is gone
+```
+
+```roc
+Roles.Grant(role, via) := { user : Str, role : role, via : via, by : Str, ends : Roles.Ends ?? Never, note : Str ?? "" }
+Roles.Ends : [Never, At(I64)]
+Roles.Held(role, via) : { role : role, via : via, by : Str, since_ms : I64, ends : Roles.Ends, note : Str, state : Roles.State }
+Roles.State : [Current, Ended, Revoked({ at_ms : I64, by : Str })]
+
+Roles.grant! : Roles.Grant(role, via) => Try({}, [DbErr(Str), ..])
+Roles.revoke! : { user : Str, role : role, via : via, by : Str } => Try(Bool, [DbErr(Str), ..])
+Roles.has! : Str, role => Bool
+Roles.of! : Str => Try(List(Roles.Held(role, via)), [DbErr(Str), BadRow(Str), ..])
+Roles.forget! : Str => Try(U64, [DbErr(Str), ..])
+```
+
+- **A grant for each reason.** A user holds a role while any of their grants of it lasts, and
+  there is one grant for each reason: a subscription that ends (`via: Paid`, revoked) never takes
+  away a gift, and a gift isn't cut short by a payment. `revoke!` ends the grant for the reason it
+  names, whoever gave it.
+- **Granting again while a grant lasts changes its end** (sooner or later), its `by` and its note,
+  in place: a row is one unbroken stretch, so a payment that grants until the next period's end
+  each month keeps one row. A grant whose end has come is over; granting after it starts a new one.
+  Two grants at once give one grant (one statement takes the open row, on SQLite and on Postgres).
+- **Nothing is deleted but by `forget!`.** A grant that ran out or was revoked stays, for `of!` to
+  show (what ended when, and who ended it) and for the app to ask: the example's `/trial` refuses
+  someone whose grants include a trial. `forget!` is for the app's deleting of a user.
+- **`by` is who acted**: an admin's id, or what gave it (`"stripe"`, `"trial"`). Who may grant or
+  revoke is the app's to decide before it calls, as with `impersonate!`; each is on the log (`auth:
+  role granted`, `auth: role revoked`, with the user, the role and reason as JSON, and `by`).
+- **`has!` is a no** when the database can't be read (and an error on the log), so what it guards
+  stays shut. It reads the user it is given: give it a session's `user` for what the routes show
+  (while an admin impersonates someone, theirs), and `real_user` for what only an admin may do.
+- **The tags are kept as their JSON** (`"Pro"`): a tag
+  renamed in the app leaves its old grants unread, so `of!` leaves them out (said on the log) and
+  `has!` doesn't count them. Rename by updating the rows, as any stored value's.
+- **A gate** is the app's middleware: `Auth.required_with` with `Roles.has!` in its step, answering
+  anyone else as the app likes (a 403, the pricing page). The example asks in its `/pro` route.
+
+Paid roles are the app's to write from its payments: with packages/stripe, a function that reads the
+user's subscription (`Stripe.subscription!`) and grants `via: Paid` until its period's end (a few days
+more, for the card's retries) or revokes it once it has ended, run from `on_event!` for every event
+about that user, and now and then for everyone who pays. It reads the state, not the event, so events
+that come twice or out of order change nothing, and a missed one is made up.
+
 ## Two-factor sign-in
 
 With `two_factor: Bool.True`, a user may turn on two-factor sign-in: from then on, each of their
@@ -399,8 +460,8 @@ a field of the query (`then`, `email`); the code page uses it too.
 
 ## The tables
 
-`auth/0001_auth`, `auth/0002_impersonation`, `auth/0003_two_factor` and
-`auth/0004_two_factor_misses`, the same on SQLite and on
+`auth/0001_auth`, `auth/0002_impersonation`, `auth/0003_two_factor`,
+`auth/0004_two_factor_misses` and `auth/0005_roles`, the same on SQLite and on
 Postgres (times are milliseconds, given by the package):
 
 - `auth_sessions`: `id` (the token's hash), `user_id`, `created_at`, `expires_at`, and while
@@ -411,7 +472,10 @@ Postgres (times are milliseconds, given by the package):
   code), `last_step` (the last 30-second step a code was used at), `created_at`, `misses` (wrong
   codes in a row) and `missed_at` (the last);
 - `auth_recovery_codes`: `user_id`, `id` (the code's SHA-256), `created_at`;
-- `auth_waiting`: `id` (the token's hash), `user_id`, `return_to`, `attempts`, `expires_at`.
+- `auth_waiting`: `id` (the token's hash), `user_id`, `return_to`, `attempts`, `expires_at`;
+- `auth_roles` (`Roles`): `id`, `user_id`, `role` and `via` (the app's tags, as JSON),
+  `granted_by`, `granted_at`, `ends_at` (null: for good), `note`, `closed_at` (null on the one open
+  grant for a user, role and reason: a unique index), `revoked_by` (null unless revoked).
 
 Expired sessions, links and waiting sign-ins are swept as sessions start.
 
@@ -447,8 +511,8 @@ Expired sessions, links and waiting sign-ins are swept as sessions start.
 
 ## Status
 
-Built and tested (D-072, D-077, D-081): links, the link page, Google, GitHub, OpenID Connect, the
+Built and tested (D-072, D-077, D-081, D-127): links, the link page, Google, GitHub, OpenID Connect, the
 dev sign-in, sessions, the middleware, impersonation, two-factor sign-in with an authenticator app
-and recovery codes. Not yet: passwords (they need a slow hash, Argon2, from the host), passkeys (a
+and recovery codes, roles. Not yet: passwords (they need a slow hash, Argon2, from the host), passkeys (a
 P-256 signature verified, by the host), discovery of a provider's endpoints from its issuer.
 PROPOSALS.md has them.
