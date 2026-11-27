@@ -7,9 +7,10 @@ import Logo
 ## in the site's gradient (`title`, or `heading` when it has markup in it), what it is about (what is
 ## inside), and the ways on (`actions`, `<Button>`s). `centered` for the front page, where the line is
 ## bigger and everything is in the middle. The front page also has a `mark`, the site's logo: the
-## eyebrow is then a name in the gradient, the line goes just under it, smaller and plain, and the logo
-## below them both. With nothing inside, there's no paragraph. A string is text wherever it goes, so
-## markup in either line is passed as markup, never inside a string.
+## eyebrow is then a name in the gradient, the line goes just under it, smaller and plain, the two one
+## heading that reads as a sentence (the name, then the line), and the logo below them both. With
+## nothing inside, there's no paragraph. A string is text wherever it goes, so markup in either line is
+## passed as markup, never inside a string.
 PageHero := [].{
 	Props := {
 		eyebrow : Str ?? "",
@@ -24,9 +25,10 @@ PageHero := [].{
 
 	view : Props -> Html
 	view = |props| {
-		line = <h1>{...if (props.heading.is_empty()) [Html.text(props.title)] else props.heading}</h1>
+		words = if (props.heading.is_empty()) [Html.text(props.title)] else props.heading
+		line = <h1>{...words}</h1>
 		<section class="hero" class:centered={props.centered}>
-			{if (props.mark.is_empty()) <p class="eyebrow">{...if (props.kicker.is_empty()) [Html.text(props.eyebrow)] else props.kicker}</p> else <div class="mark"><div class="named">{if (props.eyebrow == "") <></> else <p class="name">{props.eyebrow}</p>}{line}</div>{...props.mark}</div>}
+			{if (props.mark.is_empty()) <p class="eyebrow">{...if (props.kicker.is_empty()) [Html.text(props.eyebrow)] else props.kicker}</p> else <div class="mark"><h1 class="named">{if (props.eyebrow == "") <></> else <span class="name">{props.eyebrow}</span>} <span class="line">{...words}</span></h1>{...props.mark}</div>}
 			{if (props.mark.is_empty()) line}
 			{if (props.children.is_empty()) <></> else <p class="lede">{...props.children}</p>}
 			{if (props.actions.is_empty()) <></> else <Actions centered={props.centered}>{...props.actions}</Actions>}
@@ -48,7 +50,7 @@ PageHero := [].{
 		<PageHero
 			eyebrow="Roc Solid"
 			mark={[<Logo />]}
-			title="Roc, from the database to the browser."
+			title="from the database to the browser"
 			centered
 			actions={[<Button href="#" primary>Read the guide</Button>, <Button href="#">See it run</Button>]}
 		>
@@ -93,15 +95,26 @@ PageHero := [].{
 			gap: var(--space-4);
 		}
 
-		/* With a mark: the name, and the line just under it, close together; the logo below them. */
-		.named {
+		/* With a mark: one heading, the name and the line just under it, close together; the logo
+		   below them. Not the gradient of a page's line (below): the name has its own. */
+		.hero h1.named {
 			display: flex;
 			flex-direction: column;
 			align-items: start;
 			gap: var(--space-2);
+			width: auto;
+			max-width: none;
+			margin: 0;
+			background: none;
+			-webkit-background-clip: border-box;
+			background-clip: border-box;
+			color: var(--text);
+			font-size: inherit;
+			letter-spacing: normal;
+			line-height: normal;
 		}
 
-		.centered .named {
+		.centered h1.named {
 			align-items: center;
 		}
 
@@ -119,11 +132,8 @@ PageHero := [].{
 			line-height: 1.05;
 		}
 
-		.hero .named h1 {
+		.line {
 			max-width: 34rem;
-			margin: 0;
-			background: none;
-			color: var(--text);
 			font-size: clamp(1.2rem, 2.6vw, 1.7rem);
 			font-weight: 600;
 			letter-spacing: -0.015em;

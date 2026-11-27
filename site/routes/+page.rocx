@@ -27,19 +27,28 @@ view! = |_| {
 	facts = Facts.facts!({})
 	<>
 		<NoHydration>
-			<PageHero
-				eyebrow="Roc Solid"
-				mark={[<Logo />]}
-				title="Roc, from the database to the browser."
-				centered
-				actions={[
-					<Button href="#start" primary>Get started</Button>,
-					<Button href={Paths.rocx}>Read the guide</Button>,
-					<Button href={Paths.platform_}>The platform</Button>,
-					<Button href={Paths.showcase}>Play Snake, watch the birds</Button>,
-				]}
-			>
-			</PageHero>
+			<div class="first-screen">
+				<div class="first-screen-hero">
+					<PageHero
+						eyebrow="Roc Solid"
+						mark={[<Logo />]}
+						title="from the database to the browser"
+						centered
+						actions={[
+							<Button href="#start" primary>Get started</Button>,
+							<Button href={Paths.rocx}>Read the guide</Button>,
+							<Button href={Paths.platform_}>The platform</Button>,
+							<Button href={Paths.showcase}>Play Snake, watch the birds</Button>,
+						]}
+					>
+					</PageHero>
+				</div>
+				<aside class="used-by" aria-label="Used by">
+					<p class="used-by-label">Used by</p>
+					<a class="used-by-site" href="https://publish.cogni.center">publish.cogni.center</a>
+					<p class="used-by-aside">…and that's the whole list. A new framework in a new language: what did you expect?</p>
+				</aside>
+			</div>
 		</NoHydration>
 		<Specimen file="Counter.rocx" code={[<NoHydration><Code source={Sources.home_update.rocx} numbers={Bool.False} /></NoHydration>]}>
 			<div data-demo="counter"><Counter start_value={3} /></div>
@@ -250,6 +259,75 @@ view! = |_| {
 }
 
 <style>
+	/* The first screen: the hero in the middle of it, and who uses Roc Solid at its foot. As tall as
+	   the window under the bar, less the page's own padding above it; taller when it must be. */
+	.first-screen {
+		display: flex;
+		flex-direction: column;
+		min-height: calc(100svh - var(--bar) - var(--space-7));
+	}
+
+	.first-screen-hero {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		justify-content: center;
+	}
+
+	/* Centred in the screen, the hero needs no more room above it than below. */
+	.first-screen-hero :global(.hero) {
+		padding: var(--space-6) 0;
+	}
+
+	/* Who uses it: quiet, under a short rule, the one site in mono, and a word about the list. */
+	.used-by {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--space-1);
+		padding: var(--space-5) 0 var(--space-4);
+		text-align: center;
+	}
+
+	.used-by::before {
+		content: "";
+		width: 4rem;
+		height: 1px;
+		margin-bottom: var(--space-4);
+		background: var(--gradient);
+		opacity: 0.6;
+	}
+
+	.used-by-label {
+		margin: 0;
+		color: var(--text-faint);
+		font-size: var(--size-2xs);
+		font-weight: 600;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+	}
+
+	.used-by-site {
+		color: var(--text-muted);
+		font: 600 var(--size-md) var(--mono);
+		text-decoration: none;
+		transition: color 0.15s;
+	}
+
+	.used-by-site:hover,
+	.used-by-site:focus-visible {
+		color: var(--accent);
+	}
+
+	.used-by-aside {
+		max-width: 40rem;
+		margin: var(--space-1) 0 0;
+		color: var(--text-faint);
+		font-size: var(--size-xs);
+		font-style: italic;
+		text-wrap: balance;
+	}
+
 	/* From a file to the page: the file and the Roc it becomes on one row, and under them the two
 	   builds it goes into, side by side. Never more than two blocks in a row. */
 	.pipeline {
