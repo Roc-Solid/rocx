@@ -29,11 +29,16 @@ Look := [].{
 		{ name: "referrer-policy", value: "same-origin" },
 	]
 
-	## The sidebar: a brand (`name`, a `note` under it, a link `home`), the navigation's links
-	## (`Look.nav_link`, `Look.nav_label`) and a line at its foot.
+	## The sidebar: a brand (Roc Solid's mark, `Look.brand_mark`, then `name`, a `note` under it, a link
+	## `home`), the navigation's links (`Look.nav_link`, `Look.nav_label`) and a line at its foot.
 	side : { name : Str, note : Str, home : Str, nav : Str, foot : Str } -> Str
 	side = |{ name, note, home, nav, foot }|
-		"<aside class=\"side\"><a class=\"brand\" href=\"${escape(home)}\"><span class=\"mark\" aria-hidden=\"true\"><span></span></span><span><strong>${escape(name)}</strong><small>${escape(note)}</small></span></a><nav class=\"side-nav\" aria-label=\"${escape(name)}\">${nav}</nav><p class=\"side-foot\">${foot}</p></aside>"
+		"<aside class=\"side\"><a class=\"brand\" href=\"${escape(home)}\">${brand_mark}<span><strong>${escape(name)}</strong><small>${escape(note)}</small></span></a><nav class=\"side-nav\" aria-label=\"${escape(name)}\">${nav}</nav><p class=\"side-foot\">${foot}</p></aside>"
+
+	## Roc Solid's mark (the docs site's Logo, "Perch": a bird of folded paper on a slab), in its
+	## inks, a thin line of the sidebar's colour keeping its parts apart; for the reader's eyes only.
+	brand_mark : Str
+	brand_mark = "<svg class=\"mark\" viewBox=\"0 0 64 64\" aria-hidden=\"true\"><rect class=\"mark-bird\" x=\"29\" y=\"40\" width=\"2.6\" height=\"9\"/><rect class=\"mark-bird\" x=\"35\" y=\"39\" width=\"2.6\" height=\"10\"/><polygon class=\"mark-bird\" points=\"5,35 22,30 28,42 8,45\"/><polygon class=\"mark-shade\" points=\"22,30 38,18 44,24 38,41 28,42\"/><polygon class=\"mark-bird\" points=\"44,24 51,21 47,31 38,41\"/><polygon class=\"mark-bird\" points=\"38,18 45,10 51,12 51,21 44,24\"/><polygon class=\"mark-beak\" points=\"51,12 60,16.5 51,21\"/><polygon class=\"mark-wing\" points=\"19,32 43,25 31,37\"/><polygon class=\"mark-shade\" points=\"10,49 54,49 58,58 6,58\"/></svg>"
 
 	## A link in the sidebar: where it goes, its icon (`Look.icon`'s name, or "" for a dot of
 	## `tone`), its label (HTML), a count ("" for none), and whether it is the page shown.
@@ -156,10 +161,8 @@ Look := [].{
 				".side{position:sticky;top:0;height:100vh;overflow:auto;display:flex;flex-direction:column;border-right:1px solid var(--line);background:var(--side)}",
 				".brand{display:flex;align-items:center;gap:12px;min-height:84px;padding:18px 20px;border-bottom:1px solid var(--line)}",
 				".brand strong,.brand small{display:block}.brand strong{font-size:14px;letter-spacing:-.01em}.brand small{color:var(--muted);font-size:13px}",
-				".mark{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--accent);border-radius:50%;flex:none}",
-				".mark::before,.mark span{grid-area:1/1;content:\"\";border-radius:50%}",
-				".mark::before{width:15px;height:15px;border:1px solid color-mix(in srgb,var(--accent) 65%,transparent)}",
-				".mark span{width:5px;height:5px;background:var(--accent);box-shadow:0 0 10px var(--accent)}",
+				".mark{flex:none;width:32px;height:32px;overflow:visible}.mark polygon{stroke:var(--side);stroke-width:1.5;stroke-linejoin:round}",
+				".mark-wing{fill:#2ee8ff}.mark-bird{fill:#a99bff}.mark-beak{fill:#ff4fd0}.mark-shade{fill:#7c38f5}",
 				".side-nav{display:grid;gap:2px;padding:14px 10px}",
 				".side-nav a{display:flex;align-items:center;gap:10px;min-height:36px;padding:0 10px;border:1px solid transparent;border-radius:8px;color:var(--muted)}",
 				".side-nav a:hover{background:color-mix(in srgb,var(--text) 5%,transparent);color:var(--text)}",
@@ -360,6 +363,7 @@ own =
 expect Look.escape("<a href=\"x\">'&") == "&lt;a href=&quot;x&quot;&gt;&#39;&amp;"
 expect Look.document("A <b>", "", "<p>hi</p>").contains("<title>A &lt;b&gt;</title>") and Look.document("A", "", "").contains("<div class=\"shell bare\"><main>")
 expect Look.document("A", Look.side({ name: "Db", note: "", home: "/db", nav: "", foot: "" }), "").contains("<div class=\"shell\"><aside class=\"side\"><a class=\"brand\" href=\"/db\">")
+expect Look.side({ name: "Db", note: "", home: "/db", nav: "", foot: "" }).contains("<a class=\"brand\" href=\"/db\"><svg class=\"mark\"")
 expect Look.back_link({ label: "", href: "" }) == ""
 expect Look.back_link({ label: "Acme <Status>", href: "/admin?a=1&b=2" }).starts_with("<a class=\"back\" href=\"/admin?a=1&amp;b=2\"><svg") and Look.back_link({ label: "Acme <Status>", href: "/admin" }).ends_with("<span class=\"label\">Acme &lt;Status&gt;</span></a>")
 expect Look.nav_link({ href: "/db?table=a&b", icon: "", tone: "good", label: "A", count: "", on: Bool.True }) == "<a href=\"/db?table=a&amp;b\" aria-current=\"page\"><i class=\"dot tone-good\"></i><span class=\"label\">A</span></a>"
