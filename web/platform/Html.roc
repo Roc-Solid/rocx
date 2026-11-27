@@ -1075,6 +1075,8 @@ static_attributes = |tag, attrs| {
 				Literal("class", value) => { ..state, classes: state.classes.append(value) }
 				Value("style", value) => { ..state, styles: state.styles.append(value) }
 				Literal("style", value) => { ..state, styles: state.styles.append(value) }
+				Optional("class", value) => if (value.is_empty()) state else { ..state, classes: state.classes.append(value) }
+				Optional("style", value) => if (value.is_empty()) state else { ..state, styles: state.styles.append(value) }
 				Value(name, value) => { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }
 				Literal(name, value) => { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }
 				Optional(name, value) => if (value.is_empty()) state else { ..state, others: state.others.append("${name}=\"${escape(safe_value(tag, name, value))}\"") }

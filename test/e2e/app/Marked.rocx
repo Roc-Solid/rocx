@@ -1,0 +1,13 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## A button whose `class` is computed beside `class:name`s, its `style` beside a `style:name`: the
+## server writes one `class` and one `style` (D-112), so the browser has nothing to patch as it
+## hydrates; a click changes them, neither part dropping the other.
+Marked := [].{
+	view! : {} => Html
+	view! = |{}| {
+		(lit!, set_lit!) = create_signal!(Bool.True)
+		<button class={if lit!() "marked lit" else "marked"} class:on={lit!()} class:off={!lit!()} type="button" style="font-weight: 700" style:--level={if lit!() "1" else "0"} on:click={|| set_lit!(!lit!())}>Marked</button>
+	}
+}

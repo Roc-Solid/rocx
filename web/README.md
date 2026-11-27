@@ -213,6 +213,12 @@ Attributes are arrays, their kind first:
 | `k`, `ko` | `Html.key`, `Html.key_of` |
 | `tr`, `tro` | `Html.transition`, `Html.transition_of` |
 
+An element's own `class` (`v`, `o`, `vo`, `oo`) and its `class:name`s (`ci`, `co`) are one `class`
+attribute, in the markup's order, wherever it is written (signals.rs, `renderToString`,
+`Html.to_str`) and as the runtime builds and patches it: a computed class's new value keeps the
+`class:name`s that are on, and a `class:name` keeps the computed value (D-112). The same for
+`style` and its `style:name`s (`sv`, `so`).
+
 Data can't write code into a page. Text and attribute values are escaped wherever markup is
 written as HTML (the server, `Html.to_str`, `renderToString`), and the runtime sets them as text.
 A URL attribute (`href`, `src`, `action`…) whose scheme isn't `http`, `https`, `mailto` or `tel`
@@ -919,12 +925,23 @@ hydrating that asks the server for anything the page didn't carry throws.
   script). It also passes over the whitespace the HTML parser drops before `<html>` and `<head>`
   or moves into `<body>` from after `</body>`, and over the empty `<head>` it makes for a document
   that has none.
-- A page that doesn't match (a browser extension added a node; the parser repaired the markup)
-  gets a warning, and `<body>`'s children are rendered again from the same answers, the host's
-  elements kept. `<head>` is left alone, since rendering it again would run its scripts again and
-  flash its styles; its computations are bound to it if it matches, or to an unseen copy if not.
-- With `{ strict: true }` a mismatch throws instead. `start.js` passes it when the page set
-  `window.rocxStrict = true` before it ran (the tests do).
+- It passes over an element it doesn't expect straight in `<html>`, `<head>` or `<body>`, where a
+  browser extension puts its own (a password manager's popup, a grammar checker's, a dark theme's
+  style) before the runtime hydrates (D-112). The element stays where it is.
+- A page that doesn't match otherwise (the parser repaired the markup; an extension's node inside
+  the app's own elements) gets a warning, and `<body>`'s children are rendered again from the same
+  answers. What isn't the app's stays: the host's elements, the elements hydrating passed over,
+  and any element after the host's last (the bootstrap, the last the server writes). `<head>` is
+  left alone, since rendering it again would run its scripts again and flash its styles; its
+  computations are bound to it if it matches, or to an unseen copy if not.
+- A mismatch says what it found and where: `expected <circle>, found <rect> in body > svg.dot`.
+  The warning gives the console the node itself, to inspect, and the document gets a
+  `rocx:mismatch` event (`detail: { message, node }`) for an app's error reporting
+  (packages/posthog's page script sends it).
+- With `{ strict: true }` a mismatch throws instead, and nothing is passed over. `start.js` passes it
+  when the page set `window.rocxStrict = true` before it ran (the tests do), or when the browser's
+  `localStorage` has `rocx:strict` set to `"1"`: `localStorage.setItem("rocx:strict", "1")` in
+  the console, then a reload, to look into a page in one's own browser.
 
 **RCDATA.** Inside `<title>` and `<textarea>` the HTML parser reads everything as text, comments
 too. So the server writes their holes without comments. Hydrating builds the element's text anew

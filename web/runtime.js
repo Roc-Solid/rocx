@@ -351,7 +351,41 @@ function serverRegions(root) {
 const inRegion = (tag, event) => `rocx: <${tag} on:${event}> is inside <NoHydration>, which the browser never hydrates, so its handler would never run: render what has it outside <NoHydration>`;
 
 /** What hydration found that the server's DOM doesn't match. */
-class Mismatch extends Error {}
+class Mismatch extends Error {
+	/** `found`: the node that isn't what the app renders (null: nothing was there). */
+	constructor(message, found = null) {
+		super(message);
+		this.found = found;
+	}
+}
+
+/** A node as a mismatch names it: `<div#id.class>` (its scoped-style classes left out),
+ * `<!--show-->`, `text` (what it says isn't told: a page's text is its visitor's), or `nothing`. */
+function named(node) {
+	if (!node) return "nothing";
+	if (node.nodeType === 1) {
+		const id = node.id ? `#${node.id}` : "";
+		const classes = words(node.getAttribute("class") ?? "").filter((name) => !name.startsWith("rx-")).slice(0, 3);
+		return `<${node.localName}${id}${classes.map((name) => `.${name}`).join("")}>`;
+	}
+	if (node.nodeType === 3) return "text";
+	if (node.nodeType === 8) return `<!--${node.data.slice(0, 40)}-->`;
+	if (node.nodeType === 10) return "<!doctype>";
+	return node.nodeName;
+}
+
+/** Where `element` is in the page, ` in body > main > ul.rows` (its last six levels), or nothing. */
+function placed(element) {
+	const path = [];
+	for (let at = element; at?.nodeType === 1 && at.localName !== "html" && path.length < 6; at = at.parentNode) path.unshift(named(at).slice(1, -1));
+	return path.length ? ` in ${path.join(" > ")}` : "";
+}
+
+/** Elements hydrating passed over (D-112): an extension's, straight in `<html>`, `<head>` or
+ * `<body>`, left there when `<body>` is rendered again (`renderBody`). */
+const foreignNodes = new WeakSet();
+/** Whether hydrating passes over such elements: not when hydrating strictly (`hydrateDocument`). */
+let foreignKept = true;
 
 /**
  * Computations waiting to run (or effects whose apply is due), taken oldest first (by id): a set,
@@ -416,6 +450,13 @@ const hosts = (node) => node.nodeType === 1 && node.hasAttribute("data-rocx");
 
 /** Text that is only HTML's whitespace, which the parser drops or moves around `<html>`. */
 const blank = (text) => /^[\t\n\f\r ]*$/.test(text);
+/** A `class`'s names. */
+const words = (text) => text.split(/[\t\n\f\r ]+/).filter(Boolean);
+/** Whether `attrs` give an element's `class` (`name`), or its `style`, `class:name`s
+ * (`style:name`s) beside a value of its own: one attribute, then, written whole. */
+const joined = (attrs, name) => attrs.some(([kind]) => (name === "class" ? kind === "ci" || kind === "co" : name === "style" && (kind === "sv" || kind === "so")));
+/** Whether `attrs` compute the element's `name` (`class={…}`). */
+const computedOf = (attrs, name) => attrs.some(([kind, named]) => named === name && (kind === "vo" || kind === "oo"));
 
 /**
  * Walks the server's DOM, a node at a time, the children of `parent`. It passes over the host's own
@@ -439,18 +480,51 @@ class Cursor {
 	get top() {
 		return this.parent?.nodeType === 9 || (this.parent !== null && this.parent === this.parent.ownerDocument?.documentElement);
 	}
-	/** Whether all that is left is whitespace (the parser puts what follows `</body>` in it). */
-	blankToEnd() {
-		for (let node = this.node; node; node = node.nextSibling) if (!hosts(node) && !(node.nodeType === 3 && blank(node.data))) return false;
-		return true;
+	/**
+	 * Whether elements the app doesn't render may be here, passed over and left where they are
+	 * (D-112): straight in the document's `<html>`, `<head>` or `<body>`, where a browser extension
+	 * puts its own (a password manager's popup, a grammar checker's, a dark theme's style) before
+	 * the app hydrates. Not when hydrating strictly (the tests'), where the page is exactly what the
+	 * server sent.
+	 */
+	get foreign() {
+		const parent = this.parent;
+		const doc = parent?.ownerDocument;
+		return foreignKept && !this.rebuild && !!doc && (parent === doc.body || parent === doc.head || parent === doc.documentElement);
+	}
+	/** Where elements may be passed over (`foreign`): to the first node `check` takes, if there is
+	 * one after elements only; else it stays where it is. */
+	passForeign(check) {
+		if (!this.foreign) return;
+		let at = this.node;
+		while (at && at.nodeType === 1 && !check(at)) at = at.nextSibling;
+		if (!at || !check(at)) return;
+		for (let node = this.node; node !== at; node = node.nextSibling) foreignNodes.add(node);
+		this.node = at;
+	}
+	/** What is left from here that the app doesn't render (null: nothing). The host's elements are
+	 * passed over; whitespace where `blankToo` (at the top: the parser puts what follows `</body>` in
+	 * it); and where elements may be (`foreign`), elements, and whitespace beside them. */
+	left(blankToo) {
+		const foreign = this.foreign;
+		for (let node = this.node; node; node = node.nextSibling) {
+			if (hosts(node) || ((blankToo || foreign) && node.nodeType === 3 && blank(node.data))) continue;
+			if (foreign && node.nodeType === 1) {
+				foreignNodes.add(node);
+				continue;
+			}
+			return node;
+		}
+		return null;
 	}
 	take(check, what) {
 		// The document's doctype, where the markup doesn't take it: the host writes one when the
 		// markup begins with none (or with a hole's comment, its own doctype then inside).
 		if (this.parent?.nodeType === 9 && this.node?.nodeType === 10 && !check(this.node)) this.node = this.node.nextSibling;
 		if (this.rebuild) while (this.node && !check(this.node)) this.node = this.node.nextSibling;
+		if (this.node && !check(this.node)) this.passForeign(check);
 		const node = this.node;
-		if (!node || !check(node)) throw new Mismatch(`expected ${what}, found ${node ? node.nodeName : "nothing"}`);
+		if (!node || !check(node)) throw new Mismatch(`expected ${what}, found ${named(node)}${placed(this.parent)}`, node);
 		this.node = node.nextSibling;
 		return node;
 	}
@@ -474,7 +548,8 @@ class Cursor {
 		throw new Mismatch(`no <!--/${label}-->`);
 	}
 	end(end) {
-		if (this.node !== end) throw new Mismatch(`expected the end of a range, found ${this.node?.nodeName ?? "nothing"}`);
+		if (this.node !== end) this.passForeign((node) => node === end);
+		if (this.node !== end) throw new Mismatch(`expected the end of a range, found ${named(this.node)}${placed(this.parent)}`, this.node);
 	}
 }
 
@@ -1115,6 +1190,13 @@ export class Runtime {
 		/** Each element's style holes' values, as Roc gave them (`style:--x={…}`): an element the
 		 * runtime makes writes its `style` as the server does (`inOrder`), not as the CSSOM would. */
 		this.rawStyles = new WeakMap();
+		/** An element's computed `class` (`class={…}`) and `style` beside `class:name`s and
+		 * `style:name`s, the value each last had, and whether each `class:name` is on: its `class`
+		 * and `style` written whole from them (`wholeClass`, `wholeStyle`), as the server writes
+		 * them, so neither part drops the other. */
+		this.computedClasses = new WeakMap();
+		this.computedStyles = new WeakMap();
+		this.classToggles = new WeakMap();
 		/** Elements whose in-transition plays once what this flush changes is on the page. */
 		this.entering = [];
 		/** The `<Title>`s there are, by the computation of each one's hole: `{ seq, title }`, the
@@ -3712,6 +3794,39 @@ export class Runtime {
 				target.value = value;
 				return;
 			}
+			// A computed `class` beside `class:name`s, each `class:name`, and a computed `style` beside
+			// `style:name`s: the element's whole attribute, written as the server writes it.
+			if (computation.attrs && (kind === "class" || ((kind === "attr" || kind === "optional") && (name === "class" || name === "style")))) {
+				if (kind === "class") {
+					let toggles = this.classToggles.get(target);
+					if (!toggles) this.classToggles.set(target, (toggles = new Map()));
+					toggles.set(name, value);
+					const computed = computedOf(computation.attrs, "class");
+					// Beside a computed `class` that has run: the whole attribute. Else itself, turned on
+					// where the server writes it; before the computed `class` has run (written after it),
+					// that orders it.
+					if (computed && this.computedClasses.has(target)) return this.writeWhole(target, "class", this.wholeClass(target, computation.attrs), kind, name);
+					if (target.classList.contains(name) === value) return;
+					this.stats.patches++;
+					this.notify("patch", { kind, name, node: target });
+					target.classList.toggle(name, value);
+					if (value && !computed) this.writeWhole(target, "class", this.wholeClass(target, computation.attrs));
+					return;
+				}
+				if (name === "class") {
+					const old = this.computedClasses.get(target) ?? "";
+					this.computedClasses.set(target, value);
+					return this.writeWhole(target, "class", this.wholeClass(target, computation.attrs, old), kind, name);
+				}
+				this.computedStyles.set(target, value);
+				return this.writeWhole(target, "style", this.wholeStyle(target, computation.attrs), kind, name);
+			}
+			// A style hole's value, as Roc gave it, whether or not it changed (`wholeStyle`).
+			if (kind === "style") {
+				let raw = this.rawStyles.get(target);
+				if (!raw) this.rawStyles.set(target, (raw = new Map()));
+				raw.set(name, value);
+			}
 			const now =
 				kind === "text"
 					? target.data
@@ -3738,16 +3853,8 @@ export class Runtime {
 				if (name === "value" && "value" in target) target.value = value;
 			}
 			else if (kind === "optional") value === "" ? target.removeAttribute(name) : target.setAttribute(name, value);
-			else if (kind === "style") {
-				let raw = this.rawStyles.get(target);
-				if (!raw) this.rawStyles.set(target, (raw = new Map()));
-				raw.set(name, value);
-				value === "" ? target.style.removeProperty(name) : target.style.setProperty(name, value);
-			}
-			else if (kind === "class") {
-				target.classList.toggle(name, value);
-				if (value && computation.attrs) Runtime.classInOrder(target, computation.attrs);
-			}
+			else if (kind === "style") value === "" ? target.style.removeProperty(name) : target.style.setProperty(name, value);
+			else if (kind === "class") target.classList.toggle(name, value);
 			else {
 				target.toggleAttribute(name, value);
 				if (name in target) target[name] = value;
@@ -4981,13 +5088,13 @@ export class Runtime {
 		// Its classes in one `class`, first, as the server writes them.
 		const classes = [];
 		for (const [kind, name, value] of node.a) {
-			if (kind === "v" && name === "class") classes.push(value);
+			if (name === "class" && (kind === "v" || (kind === "o" && value !== ""))) classes.push(value);
 			else if (kind === "ci" && value) classes.push(name);
 		}
 		if (classes.length) element.setAttribute("class", classes.join(" "));
 		for (const [kind, name, value] of node.a) {
 			if (kind === "v" && name !== "class") element.setAttribute(name, this.written(name, value));
-			else if (kind === "o" && value !== "") element.setAttribute(name, this.written(name, value));
+			else if (kind === "o" && value !== "" && name !== "class") element.setAttribute(name, this.written(name, value));
 			else if (kind === "f") element.toggleAttribute(name, value);
 			else if (kind === "sv" && value) element.style.setProperty(name, value);
 		}
@@ -5072,17 +5179,17 @@ export class Runtime {
 	/** A skeleton's element given its other attributes (`own`; `node.a` all of them, in the markup's
 	 * order): what `element` does with them, the ones written in the file already on it. */
 	fill(element, node, own, owner, scope) {
-		if (own.some(([kind, name]) => kind === "ci" || (kind === "v" && name === "class"))) {
+		if (own.some(([kind, name]) => kind === "ci" || ((kind === "v" || kind === "o") && name === "class"))) {
 			const classes = [];
 			for (const [kind, name, value] of node.a) {
-				if (kind === "v" && name === "class") classes.push(value);
+				if (name === "class" && (kind === "v" || (kind === "o" && value !== ""))) classes.push(value);
 				else if (kind === "ci" && value) classes.push(name);
 			}
 			if (classes.length) element.setAttribute("class", classes.join(" "));
 		}
 		for (const [kind, name, value] of own) {
 			if (kind === "v" && name !== "class") element.setAttribute(name, this.written(name, value));
-			else if (kind === "o" && value !== "") element.setAttribute(name, this.written(name, value));
+			else if (kind === "o" && value !== "" && name !== "class") element.setAttribute(name, this.written(name, value));
 			else if (kind === "f") element.toggleAttribute(name, value);
 			else if (kind === "sv" && value) element.style.setProperty(name, value);
 		}
@@ -5095,41 +5202,66 @@ export class Runtime {
 	 * (signals.rs's): its classes in the markup's order, a `class:name` that holds among the static
 	 * ones where it is written; its static style, then each `style:name`'s `name: value`, in the
 	 * markup's order, joined by `; `, not reserialized by the CSSOM (`--x: 1;`, `3.6e+06px`). */
-	/** An element's classes in the order the server writes them (its markup's: a static `class`, and
-	 * each `class:name` that is on, where it is written), any others (a page script's) after them:
-	 * so an element a navigation kept, whose class a hole turned on, is the element a load renders
-	 * (D-040), not the class added at the end. */
-	static classInOrder(element, attrs) {
+	/** An element's `class` as the server writes it (signals.rs's), in its markup's order: its own
+	 * `class` (written, or computed: the value it last had; an optional one when it isn't ""), each
+	 * `class:name` that is on; then any
+	 * others (a page script's), so an element a navigation kept, whose class a hole turned on, is the
+	 * element a load renders (D-040), not the class added at the end. `old` is the computed `class`'s
+	 * value before this one: its names aren't another's. */
+	wholeClass(element, attrs, old = "") {
+		const toggles = this.classToggles.get(element);
 		const ordered = [];
+		const ours = new Set(words(old));
 		for (const [kind, name, value] of attrs) {
-			if (kind === "v" && name === "class") ordered.push(...value.split(/\s+/).filter(Boolean));
-			else if ((kind === "ci" && value) || (kind === "co" && element.classList.contains(name))) ordered.push(name);
+			if (name === "class" && (kind === "v" || kind === "o" || kind === "vo" || kind === "oo")) {
+				const own = kind === "v" || kind === "o" ? value : (this.computedClasses.get(element) ?? "");
+				for (const word of words(own)) ours.add(word);
+				if (kind === "v" || kind === "vo" || own !== "") ordered.push(own);
+			} else if (kind === "ci" || kind === "co") {
+				ours.add(name);
+				if (kind === "ci" ? value : (toggles?.get(name) ?? element.classList.contains(name))) ordered.push(name);
+			}
 		}
-		const others = [...element.classList].filter((name) => !ordered.includes(name));
-		const written = [...ordered, ...others].join(" ");
-		if (element.getAttribute("class") !== written) element.setAttribute("class", written);
+		return [...ordered, ...[...element.classList].filter((name) => !ours.has(name))].join(" ");
+	}
+
+	/** An element's `style` as the server writes it, in its markup's order: its own `style` (written,
+	 * or computed: the value it last had), then each `style:name`'s `name: value`, as Roc gave it,
+	 * joined by `; `, not reserialized by the CSSOM (`--x: 1;`, `3.6e+06px`). A `style:name` that
+	 * hasn't run yet has the element's value. */
+	wholeStyle(element, attrs) {
+		const raw = this.rawStyles.get(element);
+		const parts = [];
+		for (const [kind, name, value] of attrs) {
+			if (kind === "v" && name === "style") parts.push(value);
+			else if (name === "style" && (kind === "o" || kind === "vo" || kind === "oo")) {
+				const own = kind === "o" ? value : (this.computedStyles.get(element) ?? "");
+				if (kind === "vo" || own !== "") parts.push(own);
+			} else if (kind === "sv" && value) parts.push(`${name}: ${value}`);
+			else if (kind === "so") {
+				// One that hasn't run yet (hydrating, written after the computed style): the page's.
+				const held = raw?.has(name) ? raw.get(name) : element.style.getPropertyValue(name).trim();
+				if (held) parts.push(`${name}: ${held}`);
+			}
+		}
+		return parts.join("; ");
+	}
+
+	/** Writes an element's `class` or `style` whole (`attribute`; none when it is ""), unless it is
+	 * already: a patch of the hole `kind` `name`'s. */
+	writeWhole(element, attribute, whole, kind, name) {
+		if ((element.getAttribute(attribute) ?? "") === whole) return;
+		if (kind) {
+			this.stats.patches++;
+			this.notify("patch", { kind, name, node: element });
+		}
+		if (whole === "") element.removeAttribute(attribute);
+		else element.setAttribute(attribute, whole);
 	}
 
 	styled(element, node) {
-		if (node.a.some(([kind]) => kind === "co")) {
-			const classes = [];
-			for (const [kind, name, value] of node.a) {
-				if (kind === "v" && name === "class") classes.push(value);
-				else if ((kind === "ci" && value) || (kind === "co" && element.classList.contains(name))) classes.push(name);
-			}
-			if (classes.length) element.setAttribute("class", classes.join(" "));
-			else element.removeAttribute("class");
-		}
-		if (!node.a.some(([kind]) => kind === "sv" || kind === "so")) return;
-		const raw = this.rawStyles.get(element);
-		const parts = [];
-		for (const [kind, name, value] of node.a) {
-			if (kind === "v" && name === "style") parts.push(value);
-			else if (kind === "sv" && value) parts.push(`${name}: ${value}`);
-			else if (kind === "so" && raw?.get(name)) parts.push(`${name}: ${raw.get(name)}`);
-		}
-		if (parts.length) element.setAttribute("style", parts.join("; "));
-		else element.removeAttribute("style");
+		if (node.a.some(([kind]) => kind === "co")) this.writeWhole(element, "class", this.wholeClass(element, node.a));
+		if (node.a.some(([kind]) => kind === "sv" || kind === "so")) this.writeWhole(element, "style", this.wholeStyle(element, node.a));
 	}
 
 	/**
@@ -5306,7 +5438,8 @@ export class Runtime {
 				if (cursor.rebuild && node.tag === "body") return this.renderBody(element, node, owner, inner);
 				const inside = new Cursor(element.firstChild, element, cursor.rebuild && element === element.ownerDocument.documentElement);
 				for (const child of node.c) this.adopt(child, owner, inner, inside);
-				if (inside.node && !inside.rebuild && !(node.tag === "body" && cursor.top && inside.blankToEnd())) throw new Mismatch(`<${node.tag}> has more than the server's markup says`);
+				const left = inside.node && !inside.rebuild ? inside.left(node.tag === "body" && cursor.top) : null;
+				if (left) throw new Mismatch(`<${node.tag}> has more than the server's markup says: ${named(left)}${placed(element)}`, left);
 				return;
 			}
 			case "loading": {
@@ -5414,12 +5547,13 @@ export class Runtime {
 		const end = [...container.childNodes].find((node) => node.nodeType === 8 && node.data === "/app");
 		this.root = new Computation(this, { kind: "root", owner: null, scope: {}, target: { start, end } });
 		this.root.adopting = true;
+		foreignKept = !strict;
 		try {
 			if (!start || !end) throw new Mismatch("no <!--app--> in the page");
 			this.run(this.root);
 		} catch (error) {
 			if (!(error instanceof Mismatch)) throw error;
-			console.warn(`rocx: the page isn't what the app renders (${error.message}); rendering it again`);
+			this.mismatched(error, "rendering it again");
 			this.dispose(this.root);
 			// Rendering again, the server's answers are still the ones to read, and its regions stay.
 			this.answers = seeded;
@@ -5431,6 +5565,18 @@ export class Runtime {
 		this.answers.clear();
 		this.hydrating = null;
 		if (strict && hydrating.asked.length) throw Runtime.askedAgain(hydrating.asked);
+	}
+
+	/**
+	 * Says that the page isn't what the app renders (D-112): on the console, with the node that isn't
+	 * (inspectable there, even once rendering again took it out of the page), and as `rocx:mismatch`
+	 * on the document, `{ message, node }`, for an app's error reporting to send (packages/posthog's
+	 * page script does). Elements an extension put straight in `<html>`, `<head>` or `<body>` aren't
+	 * a mismatch: hydrating passes over them (`Cursor.foreign`).
+	 */
+	mismatched(error, then) {
+		console.warn(`rocx: the page isn't what the app renders (${error.message}); ${then}`, ...(error.found ? [error.found] : []));
+		globalThis.document?.dispatchEvent(new CustomEvent("rocx:mismatch", { bubbles: true, detail: { message: error.message, node: error.found } }));
 	}
 
 	/** What strict hydration throws when hydrating asked the server for what the page didn't carry. */
@@ -5461,6 +5607,7 @@ export class Runtime {
 		this.root.adopting = true;
 		const hydrating = (this.hydrating = { asked: [] });
 		const askedAgain = () => Runtime.askedAgain(hydrating.asked);
+		foreignKept = !strict;
 		try {
 			this.run(this.root);
 			if (strict && hydrating.asked.length) throw askedAgain();
@@ -5469,7 +5616,7 @@ export class Runtime {
 			this.dispose(this.root);
 			if (strict && hydrating.asked.length) throw askedAgain();
 			if (strict) throw new Error(`rocx: the page isn't what the app renders (${error.message})`);
-			console.warn(`rocx: the page isn't what the app renders (${error.message}); rendering <body> again`);
+			this.mismatched(error, "rendering <body> again");
 			// Rendering again, the server's answers are still the ones to read.
 			this.answers = seeded;
 			this.root = root();
@@ -5509,10 +5656,11 @@ export class Runtime {
 		try {
 			const cursor = new Cursor(head.firstChild, head);
 			for (const child of node.c) this.adopt(child, part, scope, cursor);
-			if (cursor.node) throw new Mismatch("<head> has more than the server's markup says");
+			const left = cursor.node && cursor.left(false);
+			if (left) throw new Mismatch(`<head> has more than the server's markup says: ${named(left)}`, left);
 		} catch (error) {
 			if (!(error instanceof Mismatch)) throw error;
-			console.warn(`rocx: <head> isn't what the app renders either (${error.message}); it stays as the server sent it`);
+			console.warn(`rocx: <head> isn't what the app renders either (${error.message}); it stays as the server sent it`, ...(error.found ? [error.found] : []));
 			this.dispose(part);
 			const unseen = new Computation(this, { kind: "boundary", owner, scope });
 			const copy = document.createDocumentFragment();
@@ -5520,8 +5668,10 @@ export class Runtime {
 		}
 	}
 
-	/** Rendering a page again: `<body>`'s children made anew; the host's elements (`[data-rocx]`) and
-	 * the server's `<NoHydration>` regions stay. */
+	/** Rendering a page again: `<body>`'s children made anew. What isn't the app's stays: the host's
+	 * elements (`[data-rocx]`), the server's `<NoHydration>` regions, and an extension's elements
+	 * (D-112): one hydrating passed over, and any after the host's last element (start.js's script,
+	 * the last the server writes), which only a script puts there. */
 	renderBody(body, node, owner, scope) {
 		// A navigation's: the fetched document's regions.
 		const fragment = this.keepingRegions(this.arriving?.body ?? body, () => {
@@ -5529,7 +5679,9 @@ export class Runtime {
 			for (const child of node.c) made.append(this.build(child, owner, scope));
 			return made;
 		});
-		body.replaceChildren(fragment, ...[...body.childNodes].filter(hosts));
+		const children = [...body.childNodes];
+		const last = children.findLastIndex(hosts);
+		body.replaceChildren(fragment, ...children.filter((child, at) => hosts(child) || foreignNodes.has(child) || (last >= 0 && at > last && child.nodeType === 1)));
 	}
 
 	/** Binds an element's computed attributes and handlers (made, or found when hydrating). */
@@ -5549,9 +5701,10 @@ export class Runtime {
 			if (kind === "vo" || kind === "fo" || kind === "co" || kind === "oo" || kind === "so") {
 				const computed = { vo: "attr", fo: "flag", co: "class", oo: "optional", so: "style" }[kind];
 				const computation = new Computation(this, { kind: computed, runner: this.kept.get(value), owner, scope, target: element, name });
-				// A class's: the element's attributes, so a class it turns on later goes where the server
-				// writes it (`classInOrder`).
-				if (kind === "co") computation.attrs = node.a;
+				// A class's, and a computed `class` or `style` beside `class:name`s or `style:name`s: the
+				// element's attributes, so its `class` (`style`) is written whole, as the server writes it
+				// (`wholeClass`, `wholeStyle`).
+				if (kind === "co" || ((kind === "vo" || kind === "oo") && joined(node.a, name))) computation.attrs = node.a;
 				// One that read nothing that changes (a prop given a constant) is static: nothing keeps it.
 				if (this.isStatic(computation, this.run(computation))) this.forget(computation, owner);
 			} else if (kind === "on" || kind === "onp") {
@@ -6215,7 +6368,12 @@ export class Runtime {
 					if (scope.region && (kind === "on" || kind === "onp" || kind === "onk" || kind === "frame" || kind === "view" || kind === "pt" || kind === "dd" || kind === "ddo")) throw new Error(inRegion(node.tag, name));
 					if (kind === "v" && name === "class") classes.push(value);
 					else if (kind === "v" && name === "style") styles.push(value);
-					else if (kind === "v") {
+					// An own `class` (`style`) that may be empty, or computed: in the one attribute, with
+					// the `class:name`s (`style:name`s) beside it.
+					else if ((name === "class" || name === "style") && (kind === "o" || kind === "vo" || kind === "oo")) {
+						const own = kind === "o" ? value : JSON.parse(this.once(value, owner, scope));
+						if (own !== "" || kind === "vo") (name === "class" ? classes : styles).push(own);
+					} else if (kind === "v") {
 						if (name === "href") href = value;
 						attributes.push(`${name}="${escape(value)}"`);
 					} else if (kind === "o" && value !== "") {

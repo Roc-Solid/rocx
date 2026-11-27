@@ -7,7 +7,9 @@ import pf.Solid exposing [create_signal!, create_effect!]
 ## one that passes the rest of its props on (`{...rest}`, D-052);
 ## and a `.map` whose rows are made once (untracked). Then what an `if` shows, and fallbacks, made
 ## when they show, with value props in them. And a property of an element's style from data,
-## computed (`style:color`), and one whose value would load something, dropped.
+## computed (`style:color`), and one whose value would load something, dropped. And a computed `class`
+## beside a `class:name`, and a `style` beside a `style:name`, on an element the server renders and on
+## one an `if` makes in the browser: one `class`, one `style`, neither part dropping the other.
 Props := [].{
 	view! : {} => Html
 	view! = |{}| {
@@ -45,6 +47,10 @@ Props := [].{
 				}}
 			</p>
 			<p class="painted" style:color={if (word!() == "one") "rgb(200, 0, 0)" else "rgb(0, 0, 200)"} style:background-image={"url(/x.png)"}>Painted</p>
+			<p class={if open!() "marked open" else "marked"} class:shut={!open!()} style="font-weight: 700" style:--level={if open!() "1" else "0"}>Marked</p>
+			{if open!() {
+				<p class={if open!() "built open" else "built"} class:on={open!()} style="font-weight: 700" style:--level={if open!() "1" else "0"}>Built</p>
+			}}
 			<p class="listed">
 				{...entries!().map_with_index(|entry, i| <span key={i} class="item">{entry}</span>)}
 				{if (entries!().is_empty()) <Shows label={"none, ${word!()}"} />}

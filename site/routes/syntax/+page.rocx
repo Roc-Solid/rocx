@@ -135,7 +135,7 @@ view! = |_|
 						<tr><td><code>name</code></td><td>A boolean attribute that is always on, such as <code>required</code>.</td></tr>
 						<tr><td><code>{"name?={bool}"}</code></td><td>A boolean attribute, there while the <code>Bool</code> is true: <code>{"disabled?={busy}"}</code>.</td></tr>
 						<tr><td><code>{"name??={str}"}</code></td><td>Left out while the string is empty, as Svelte leaves out an undefined one.</td></tr>
-						<tr><td><code>{"class:name={bool}"}</code></td><td>Adds the class while the <code>Bool</code> is true. Every class on the element ends up in one <code>class</code> attribute.</td></tr>
+						<tr><td><code>{"class:name={bool}"}</code></td><td>Adds the class while the <code>Bool</code> is true. Every class on the element, a computed <code>{"class={…}"}</code>'s too, ends up in one <code>class</code> attribute.</td></tr>
 						<tr><td><code>{"style:--name={str}"}</code></td><td>Sets a CSS custom property, for the stylesheet to use.</td></tr>
 						<tr><td><code>{"style:color={str}"}</code></td><td>Sets one CSS property. Its name is letters and dashes.</td></tr>
 						<tr><td><code>{"style=\"…\""}</code></td><td>A static style, which the <code>style:</code> attributes join.</td></tr>

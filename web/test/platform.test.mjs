@@ -470,6 +470,7 @@ test("props: a value prop is a getter (D-039): the component is made once and ke
 	assert.ok(html.includes(`<li data-id="a">${label("Ada")} <span class="first">Ada</span></li>`));
 	assert.ok(html.includes(`<p class="passed"><span class="passing">${label("one")}</span></p>`), "props passed on ({...rest}, D-052); a class given a constant, static");
 	assert.match(html, /<p class="painted" style="color: rgb\(200, 0, 0\)">Painted<\/p>/, "a style property from data, its url() dropped");
+	assert.ok(html.includes(`<p class="marked shut" style="font-weight: 700; --level: 0">Marked</p>`), "a computed class with a class:name beside it, a style with a style:name: one attribute each");
 	assert.ok(html.includes(`<p class="toggled"><!--show-->${label("no one")}<!--/show--></p>`), "an if's other branch, made as it shows");
 	assert.ok(html.includes(`<p class="listed"><!--for--><!--fallback--><!--/fallback--><!--/for--> <!--show-->${label("none, one")}<!--/show--></p>`), "a .map's empty state, an if beside its rows, made as it shows");
 	const dir = mkdtempSync(join(tmpdir(), "rocx-props-"));
@@ -492,6 +493,9 @@ window.hydrated = true;
 		const detail = () => tab.eval(`["span.first", "span.joined", "span.seen", "button.say"].map((p) => document.querySelector(".detail " + p).textContent)`);
 		await tab.wait(`document.querySelector(".detail .seen").textContent === "one"`);
 		assert.deepEqual(await shown(), ["one 0", "one 0", "one 0", "one 0", "Ada 0", "Bo 0", "one 0"]);
+		// A computed class beside a class:name, a style beside a style:name: [class, weight, --level].
+		const marks = () => tab.eval(`["p.marked", "p.built"].map((p) => { const e = document.querySelector(p); return e && [e.getAttribute("class"), getComputedStyle(e).fontWeight, e.style.getPropertyValue("--level").trim()]; })`);
+		assert.deepEqual(await marks(), [["marked shut", "700", "0"], null]);
 		const painted = () => tab.eval("getComputedStyle(document.querySelector('p.painted')).color");
 		assert.equal(await painted(), "rgb(200, 0, 0)");
 		for (const button of ["p.hole button", "p.once button", "p.getter button", "p.shown button", "li[data-id=a] button", "p.passed button"]) await tab.click(button);
@@ -521,10 +525,12 @@ window.hydrated = true;
 		assert.equal(await part("p.toggled"), "no two 0", "the fallback, its label patched where it is read");
 		await tab.click(".toggle");
 		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "two 0"`);
+		assert.deepEqual(await marks(), [["marked open", "700", "1"], ["built open on", "700", "1"]], "patched, the class:name turned off kept off; made in the browser, its class:name kept beside the computed class, its style:name beside the style");
 		await tab.click(".again");
 		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "three 0"`);
 		await tab.click(".toggle");
 		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "no three 0"`);
+		assert.deepEqual(await marks(), [["marked shut", "700", "0"], null], "the class:name on again, beside the computed class's new value");
 		await tab.click(".toggle");
 		await tab.wait(`document.querySelector("p.toggled").textContent.trim() === "three 0"`);
 		await tab.click("p.toggled button");
@@ -2055,7 +2061,7 @@ test("a document: <NoHydration> is the server's alone: the browser's copy and wa
 
 /** Before start.js (`[data-rocx]`, so hydrating passes over it): the server's nodes, noted, and
  * `rocx:ready` heard. */
-const NOTE = `<script data-rocx>window.before = { h1: document.querySelector("h1"), at: document.querySelector(".at"), said: document.querySelector(".said"), title: document.querySelector("title"), style: document.querySelector("head style"), prose: document.querySelector(".prose"), once: document.querySelector(".once") }; document.addEventListener("rocx:ready", (event) => { window.ready = event.detail; });</script>`;
+const NOTE = `<script data-rocx>window.before = { h1: document.querySelector("h1"), at: document.querySelector(".at"), said: document.querySelector(".said"), title: document.querySelector("title"), style: document.querySelector("head style"), prose: document.querySelector(".prose"), once: document.querySelector(".once") }; document.addEventListener("rocx:ready", (event) => { window.ready = event.detail; }); document.addEventListener("rocx:mismatch", (event) => { (window.mismatches ??= []).push([event.detail.message, event.detail.node?.localName ?? null]); });</script>`;
 
 /** The document, as the server renders it for `target`, with NOTE before start.js, `after` after it
  * (where the dev reload script goes), and `tamper` applied. */
@@ -2143,24 +2149,32 @@ test("a document: start.js hydrates it without asking, the server's nodes kept, 
 				assert.deepEqual(tab.errors, []);
 			}
 			assert.ok(asked.includes("/rocx/start.js") && asked.includes("/rocx/runtime.js") && asked.includes("/rocx/app.wasm"), asked.join(", "));
-			// The same script, not marked as the host's: the app doesn't render it, so it is a mismatch.
+			// The same script, not marked as the host's: the app doesn't render it, but an element straight in
+			// <body> may be an extension's (D-112), so it is passed over and stays; strictly, it is a mismatch.
 			const other = await browser.page();
 			await other.goto(`${site.url}/unmarked`);
 			await other.wait("window.ready", 3000);
-			assert.deepEqual(warnings(other), ["rocx: the page isn't what the app renders (<body> has more than the server's markup says); rendering <body> again"]);
+			assert.deepEqual(warnings(other), []);
+			assert.equal(await other.eval("window.reloads === true && window.ready.runtime.stats.patches === 0 && window.before.h1 === document.querySelector('h1')"), true, "hydrated, the script kept");
+			const strict = await strictTab();
+			await strict.goto(`${site.url}/unmarked`);
+			for (let i = 0; i < 100 && !strict.errors.length; i++) await sleep(30);
+			assert.match(strict.errors[0] ?? "", /rocx: the page isn't what the app renders \(<body> has more than the server's markup says: <script> in body\.page\)/);
 		},
 	);
 });
 
-test("a document: one that isn't what the app renders is rendered again, <body> only, with a warning; strictly, it throws", { skip }, async () => {
-	const extension = (html) => html.replace("<h1>", '<div class="extension"></div><h1>');
-	const inHead = (html) => html.replace("</head>", '<style class="extension"></style></head>');
+test("a document: an extension's elements straight in <html>, <head> and <body> are passed over and stay (D-112); one that isn't what the app renders is rendered again, <body> only, with a warning naming the node and a rocx:mismatch event, the extension's elements kept; strictly, it throws", { skip }, async () => {
+	const extension = (html) => html.replace("<h1>", '<div class="extension"></div><h1>').replace("</body>", "<protonpass-root-1f2e></protonpass-root-1f2e></body>");
+	const inHead = (html) => html.replace("</head>", '<style class="extension"></style></head>').replace("<head>", '<head><style class="darkreader"></style>');
+	const broken = (html) => extension(html).replace("<circle", "<rect");
 	await withDocument(
 		{
 			pages: {
 				"/": (render) => documentPage(render, "/"),
-				"/tampered": (render) => documentPage(render, "/tampered", { tamper: extension }),
+				"/extension": (render) => documentPage(render, "/extension", { tamper: extension }),
 				"/head": (render) => documentPage(render, "/head", { tamper: inHead }),
+				"/broken": (render) => documentPage(render, "/broken", { tamper: broken }),
 			},
 		},
 		async ({ site, calls }) => {
@@ -2168,12 +2182,36 @@ test("a document: one that isn't what the app renders is rendered again, <body> 
 			await clean.goto(`${site.url}/`);
 			await clean.wait("window.ready", 3000);
 			const live = await clean.eval("window.ready.runtime.live()");
+			// An extension's elements in <body>, before the app's and after the host's: passed over, kept.
+			const added = await browser.page();
+			await added.goto(`${site.url}/extension`);
+			await added.wait("window.ready", 3000);
+			assert.deepEqual(added.console, [], "no mismatch");
+			assert.deepEqual(added.errors, []);
+			assert.equal(await added.eval("Boolean(document.querySelector('body > .extension') && document.querySelector('body > protonpass-root-1f2e')) && window.before.h1 === document.querySelector('h1') && window.ready.runtime.stats.patches"), 0, "hydrated: the server's nodes kept, nothing patched, the extension's elements where they were");
+			assert.equal(await added.eval("window.mismatches ?? null"), null);
+			await added.click(".count");
+			await added.wait("document.querySelector('.count').textContent === 'Clicked 1 times'");
+			// In <head>: the same.
+			const head = await browser.page();
+			await head.goto(`${site.url}/head`);
+			await head.wait("window.ready", 3000);
+			assert.deepEqual(head.console, []);
+			assert.equal(await head.eval("Boolean(document.querySelector('head .extension') && document.querySelector('head style.darkreader')) && window.before.h1 === document.querySelector('h1') && window.before.title === document.querySelector('title') && window.ran"), 1, "hydrated, <head> as it was");
+			await head.click(".count");
+			await head.wait("document.querySelector('.count').textContent === 'Clicked 1 times'");
+			assert.deepEqual(head.errors, []);
+			// A page that isn't what the app renders, inside the app's own element: <body> rendered again,
+			// said with the node that isn't, and told as rocx:mismatch; the extension's elements stay.
 			const tab = await browser.page();
-			await tab.goto(`${site.url}/tampered`);
+			await tab.goto(`${site.url}/broken`);
 			await tab.wait("window.ready", 3000);
-			assert.deepEqual(warnings(tab), ["rocx: the page isn't what the app renders (expected <h1>, found DIV); rendering <body> again"]);
+			const message = "expected <circle>, found <rect> in body.page > svg.dot";
+			assert.deepEqual(warnings(tab), [`rocx: the page isn't what the app renders (${message}); rendering <body> again rect`], "the node, given to the console (Chromium describes it)");
+			assert.deepEqual(await tab.eval("window.mismatches"), [[message, "rect"]], "rocx:mismatch, with the node");
 			assert.deepEqual(tab.errors, []);
-			assert.equal(await tab.eval("document.querySelector('.extension')"), null, "<body> is the app's again");
+			assert.equal(await tab.eval("document.querySelectorAll('body > .extension').length + document.querySelectorAll('body > protonpass-root-1f2e').length"), 2, "the extension's elements stay: the one hydrating passed over, and the one after the host's last");
+			assert.equal(await tab.eval("document.querySelector('svg.dot circle')?.namespaceURI"), "http://www.w3.org/2000/svg", "made anew, inside an <svg>: in its namespace");
 			assert.equal(await tab.eval("window.before.h1.isConnected || window.before.h1 === document.querySelector('h1')"), false, "rendered anew");
 			assert.equal(await tab.eval("window.before.prose === document.querySelector('.prose') && window.before.once === document.querySelector('.once') && document.querySelector('.prose').previousSibling.data"), "nohydration", "but the <NoHydration> is the server's, its nodes kept, in their markers");
 			assert.equal(await tab.eval("document.querySelectorAll('.prose').length + document.querySelectorAll('.aside').length"), 2, "once");
@@ -2182,31 +2220,23 @@ test("a document: one that isn't what the app renders is rendered again, <body> 
 			assert.equal(await tab.eval("document.querySelectorAll('body > script[data-rocx]').length"), 2, "the host's scripts stay");
 			assert.equal(await tab.eval("document.querySelector('.said').textContent"), "Said: hello");
 			assert.deepEqual(calls, [], "rendered again from the server's answers");
-			assert.equal(await tab.eval("document.querySelector('.at').textContent"), "/tampered ? ");
-			assert.equal(await tab.eval("document.querySelector('circle').namespaceURI"), "http://www.w3.org/2000/svg", "made inside an <svg>: in its namespace");
+			assert.equal(await tab.eval("document.querySelector('.at').textContent"), "/broken ? ");
 			assert.equal(await tab.eval("window.ready.runtime.live()"), live, "what the first try made is let go of");
 			await tab.click(".count");
 			await tab.wait("document.querySelector('.count').textContent === 'Clicked 1 times'");
-			// An extension's node in <head>: <body> rendered again, and <head> stays as it is.
-			const head = await browser.page();
-			await head.goto(`${site.url}/head`);
-			await head.wait("window.ready", 3000);
-			assert.deepEqual(warnings(head), [
-				"rocx: the page isn't what the app renders (<head> has more than the server's markup says); rendering <body> again",
-				"rocx: <head> isn't what the app renders either (<head> has more than the server's markup says); it stays as the server sent it",
-			]);
-			assert.equal(await head.eval("Boolean(document.querySelector('head .extension')) && window.before.title === document.querySelector('title') && window.ran"), 1, "<head> left alone");
-			await head.click(".count");
-			await head.wait("document.querySelector('.count').textContent === 'Clicked 1 times'");
-			assert.deepEqual(head.errors, []);
-			// Strictly, the same tampering throws, and nothing is rendered again.
-			const strict = await strictTab();
-			await strict.goto(`${site.url}/tampered`);
-			for (let i = 0; i < 100 && !strict.errors.length; i++) await sleep(30);
-			assert.equal(strict.errors.length, 1);
-			assert.match(strict.errors[0], /rocx: the page isn't what the app renders \(expected <h1>, found DIV\)/);
-			assert.deepEqual(warnings(strict), []);
-			assert.equal(await strict.eval("Boolean(document.querySelector('.extension')) && window.before.h1 === document.querySelector('h1') && (window.ready ?? null)"), null, "nothing rendered again; not ready");
+			// Strictly, an extension's element throws, and nothing is rendered again.
+			for (const [path, error] of [
+				["/extension", "expected <h1>, found <div.extension> in body.page"],
+				["/head", "expected <meta>, found <style.darkreader> in head"],
+			]) {
+				const strict = await strictTab();
+				await strict.goto(`${site.url}${path}`);
+				for (let i = 0; i < 100 && !strict.errors.length; i++) await sleep(30);
+				assert.equal(strict.errors.length, 1, path);
+				assert.ok(strict.errors[0].includes(`rocx: the page isn't what the app renders (${error})`), strict.errors[0]);
+				assert.deepEqual(warnings(strict), []);
+				assert.equal(await strict.eval("window.before.h1 === document.querySelector('h1') && (window.ready ?? null)"), null, `${path}: nothing rendered again; not ready`);
+			}
 		},
 	);
 });

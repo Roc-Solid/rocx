@@ -609,6 +609,14 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                     "on" | "onp" | "onk" | "frame" | "view" if scope.region => return Err(Stop::Crashed(in_region(tag, name))),
                     "v" if name == "class" => classes.push(shown(part(2))),
                     "v" if name == "style" => styles.push(shown(part(2))),
+                    // An own `class` (`style`) that may be empty, or computed: in the one attribute,
+                    // with the `class:name`s (`style:name`s) beside it, not a second one.
+                    "o" | "vo" | "oo" if name == "class" || name == "style" => {
+                        let own = if kind == "o" { shown(part(2)) } else { shown(&parse(&once(part(2), scope, None)?)?) };
+                        if kind == "vo" || !own.is_empty() {
+                            if name == "class" { classes.push(own) } else { styles.push(own) }
+                        }
+                    }
                     "v" => {
                         let value = shown(part(2));
                         if name == "href" {

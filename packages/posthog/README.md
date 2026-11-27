@@ -13,6 +13,7 @@ It reports four kinds of error:
 | An error the app dealt with but wants seen | `PostHog.capture!(message, fields)` | `Error` | yes |
 | A job that failed for good | the jobs plugin's `on_failed!: PostHog.job_failed!` | `JobFailed` | no |
 | An error nothing caught in a browser, or a rejected promise | the page's script, `/rocx-errors.js` | the error's own (`TypeError`) | no |
+| A page that wasn't what the app renders, so the browser rendered `<body>` again (the runtime's `rocx:mismatch`) | the page's script, `/rocx-errors.js` | `HydrationMismatch` | no |
 
 Each error is kept in the server's memory (`Kv`). A loop sends what has been kept every 10 seconds,
 and once more as the server stops, each error as an `$exception` event to PostHog's batch endpoint.

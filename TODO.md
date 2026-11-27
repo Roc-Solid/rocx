@@ -260,6 +260,15 @@ When an item lands, delete its line here in the same commit.
   new stream's `channel opened` (the async writer's) can be later: `['channel opened', 'channel
   closed']` against three (seen once in a full run with Postgres on 2026-11-24; passes alone). Wait
   for the second `channel opened` too.
+- **The multipart test's upload over the body's limit flakes** (`server/test/server.test.mjs`,
+  "endpoints: a form with files"): the server answers 413 and closes while fetch is still writing
+  the 17 MiB, and fetch fails with `EPIPE` instead of reading the 413 (1 run in 3 alone, on
+  2026-11-27). The server could read (and drop) the rest of a body it refuses, up to a bound, before
+  it closes; or the test could send its body in one write it can't lose, or accept either.
+- **"calls taking turns on two Roc threads" flakes under load** (`server/test/server.test.mjs`):
+  a fetch fails with `connect ECONNRESET` (1 run in 5 alone, on master as on a branch, with the
+  load average about 20, on 2026-11-27): a burst of connections over the listen backlog, likely.
+  Retry a connect that was reset, or open the connections in smaller bursts.
 - **The channels "an open stream holds no thread" test hangs under load**
   (`server/test/server.test.mjs`, 40 streams on `--roc-threads 2`): twice on 2026-11-25 it never
   finished (12 minutes, the server idle), once in a full run just after `just check` (load 11 to

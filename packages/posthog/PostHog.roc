@@ -300,14 +300,15 @@ browser! = |request|
 	}
 
 ## The page's script (`GET <at>.js`, in a layout: `<script src="/rocx-errors.js" defer></script>`):
-## an error nothing caught, and a promise nothing caught the rejection of, sent where the script
-## came from without `.js`; ten a page at most.
+## an error nothing caught, a promise nothing caught the rejection of, and a page that wasn't what
+## the app renders (the runtime's `rocx:mismatch`, D-112), sent where the script came from without
+## `.js`; ten a page at most.
 script : {} -> Server.Response
 script = |{}|
 	Server.response(
 		200,
 		[{ name: "content-type", value: "text/javascript; charset=utf-8" }, { name: "cache-control", value: "public, max-age=3600" }],
-		"(()=>{const src=document.currentScript.src;const at=src.slice(0,src.lastIndexOf(\".js\"));let left=10;const send=(kind,message,stack)=>{if(left<=0)return;left-=1;const body=JSON.stringify({kind:String(kind||\"Error\"),message:String(message??\"\").slice(0,1000),stack:String(stack??\"\").slice(0,4000),page:location.pathname});if(!navigator.sendBeacon?.(at,new Blob([body],{type:\"application/json\"})))fetch(at,{method:\"POST\",body,headers:{\"content-type\":\"application/json\"},keepalive:true}).catch(()=>{})};addEventListener(\"error\",(e)=>send(e.error?.name,e.error?.message??e.message,e.error?.stack));addEventListener(\"unhandledrejection\",(e)=>send(e.reason?.name??\"UnhandledRejection\",e.reason?.message??e.reason,e.reason?.stack))})();\n",
+		"(()=>{const src=document.currentScript.src;const at=src.slice(0,src.lastIndexOf(\".js\"));let left=10;const send=(kind,message,stack)=>{if(left<=0)return;left-=1;const body=JSON.stringify({kind:String(kind||\"Error\"),message:String(message??\"\").slice(0,1000),stack:String(stack??\"\").slice(0,4000),page:location.pathname});if(!navigator.sendBeacon?.(at,new Blob([body],{type:\"application/json\"})))fetch(at,{method:\"POST\",body,headers:{\"content-type\":\"application/json\"},keepalive:true}).catch(()=>{})};addEventListener(\"error\",(e)=>send(e.error?.name,e.error?.message??e.message,e.error?.stack));addEventListener(\"unhandledrejection\",(e)=>send(e.reason?.name??\"UnhandledRejection\",e.reason?.message??e.reason,e.reason?.stack));document.addEventListener(\"rocx:mismatch\",(e)=>send(\"HydrationMismatch\",e.detail?.message,\"\"))})();\n",
 	)
 
 ## The loop that sends what was kept, every `interval_ms`, until the server stops (and then once

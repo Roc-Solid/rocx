@@ -203,11 +203,15 @@ view! = |_| {
 					not over the network.
 				</li>
 				<li>
-					<Who kind="js">JavaScript</Who> If the page's markup isn't what its components make (a browser
-					extension added a node, or the HTML parser moved a <code>{"<div>"}</code> out of a
-					<code>{"<p>"}</code>), the runtime warns, and renders <code>{"<body>"}</code>'s children again from
-					the same answers. It leaves <code>{"<head>"}</code> alone: rendering it again would run its
-					scripts again and flash its styles.
+					<Who kind="js">JavaScript</Who> An element a browser extension put straight in
+					<code>{"<body>"}</code> or <code>{"<head>"}</code> (a password manager's popup, a dark theme's style)
+					is passed over, and stays. If the page's markup isn't what its components make otherwise (the HTML
+					parser moved a <code>{"<div>"}</code> out of a <code>{"<p>"}</code>), the runtime warns, naming the
+					node and where it is, tells the page (a <code>rocx:mismatch</code> event, for error reporting), and
+					renders <code>{"<body>"}</code>'s children again from the same answers. It leaves
+					<code>{"<head>"}</code> alone: rendering it again would run its scripts again and flash its styles.
+					To look into one in your own browser, <code>{"localStorage.setItem(\"rocx:strict\", \"1\")"}</code>
+					makes the next load throw at the mismatch instead.
 				</li>
 				<li>
 					<Who kind="js">JavaScript</Who> The bootstrap tells the page it is done (a

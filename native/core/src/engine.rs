@@ -421,6 +421,9 @@ pub struct Engine {
     listeners: HashMap<NodeId, Vec<Listener>>,
     /// What an `<input>` shows now (its `value` property), once it was typed in or patched.
     pub values: HashMap<NodeId, String>,
+    /// What an element's computed `class` (`class={…}`) last was: a new one keeps the `class:name`s
+    /// that are on beside it (`whole_class`).
+    classes: HashMap<NodeId, String>,
     timers: HashMap<u64, Timer>,
     titles: HashMap<u64, (u64, String)>,
     title_seqs: u64,
@@ -503,6 +506,7 @@ pub fn init(origin: String, path: String) {
             readers: HashSet::default(),
             listeners: HashMap::default(),
             values: HashMap::default(),
+            classes: HashMap::default(),
             timers: HashMap::default(),
             titles: HashMap::default(),
             title_seqs: 0,
@@ -1070,6 +1074,19 @@ fn patch(engine: &mut Engine, kind: CompKind, node: NodeId, name: &str, value: &
                 engine.dom.set_text(node, &text);
             }
         }
+        // A computed `class`: the `class:name`s that are on beside it stay.
+        CompKind::Attr | CompKind::Optional if name == "class" => {
+            let old = engine.classes.insert(node, text.clone()).unwrap_or_default();
+            let now = engine.dom.attr(node, "class");
+            let whole = whole_class(now.unwrap_or(""), &old, &text);
+            if whole.is_empty() && kind == CompKind::Optional {
+                if now.is_some() {
+                    engine.dom.remove_attr(node, "class");
+                }
+            } else if now != Some(whole.as_str()) {
+                engine.dom.set_attr(node, "class", &whole);
+            }
+        }
         CompKind::Attr => {
             if name == "value" {
                 // What a field shows is its property once someone has typed in it.
@@ -1100,6 +1117,18 @@ fn patch(engine: &mut Engine, kind: CompKind, node: NodeId, name: &str, value: &
         }
         _ => {}
     }
+}
+
+/// An element's `class` when its computed one becomes `new` (it was `old`): `new`'s names, then the
+/// ones it has now that weren't `old`'s (`class:name`s that are on, static ones), as they are.
+fn whole_class(now: &str, old: &str, new: &str) -> String {
+    let mut names: Vec<&str> = new.split_whitespace().collect();
+    for name in now.split_whitespace() {
+        if !old.split_whitespace().any(|was| was == name) && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names.join(" ")
 }
 
 /// What failed in a computation: a memo fails, an effect with an error handler is told, anything
@@ -1742,6 +1771,7 @@ fn settle_for(id: u64, entries: Vec<Value>) {
             for node in engine.dom.free_inside(range) {
                 engine.listeners.remove(&node);
                 engine.values.remove(&node);
+                engine.classes.remove(&node);
             }
         });
     } else {
@@ -1855,6 +1885,7 @@ fn drop_row(list: u64, key: &str) {
         for node in engine.dom.free_range(row.range) {
             engine.listeners.remove(&node);
             engine.values.remove(&node);
+            engine.classes.remove(&node);
         }
     });
 }
@@ -2386,13 +2417,14 @@ fn element_of(tag: &str, attrs: &[&Vec<Value>], owner: Option<u64>, scope: &Scop
 /// it already, a template's written ones): set, bound and computed (runtime.js's `fill`).
 fn fill(element: NodeId, all: &[&Vec<Value>], own: &[&Vec<Value>], owner: Option<u64>, scope: &Scope) {
     with(|engine| {
-        if own.iter().any(|attr| text_at(attr, 0) == "ci" || (text_at(attr, 0) == "v" && text_at(attr, 1) == "class")) {
+        if own.iter().any(|attr| text_at(attr, 0) == "ci" || (matches!(text_at(attr, 0), "v" | "o") && text_at(attr, 1) == "class")) {
             let mut classes = Vec::new();
             for attr in all {
                 let kind = text_at(attr, 0);
                 let name = text_at(attr, 1);
                 match kind {
                     "v" if name == "class" => classes.push(text_at(attr, 2).to_string()),
+                    "o" if name == "class" && !text_at(attr, 2).is_empty() => classes.push(text_at(attr, 2).to_string()),
                     "ci" if attr.get(2).and_then(Value::as_bool) == Some(true) => classes.push(name.to_string()),
                     _ => {}
                 }
@@ -2406,7 +2438,7 @@ fn fill(element: NodeId, all: &[&Vec<Value>], own: &[&Vec<Value>], owner: Option
             let name = text_at(attr, 1);
             match kind {
                 "v" if name != "class" => engine.dom.set_attr(element, name, text_at(attr, 2)),
-                "o" if !text_at(attr, 2).is_empty() => engine.dom.set_attr(element, name, text_at(attr, 2)),
+                "o" if name != "class" && !text_at(attr, 2).is_empty() => engine.dom.set_attr(element, name, text_at(attr, 2)),
                 "f" if attr.get(2).and_then(Value::as_bool) == Some(true) => engine.dom.set_attr(element, name, ""),
                 "sv" if !text_at(attr, 2).is_empty() => engine.dom.set_style(element, name, text_at(attr, 2)),
                 _ => {}
@@ -3561,6 +3593,16 @@ pub fn warn(key: &str, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_computed_class_keeps_the_class_names_on_beside_it() {
+        // First run: the static `class:name`s fill wrote stay.
+        assert_eq!(whole_class("dashed", "", "tile big"), "tile big dashed");
+        // A new value: the old one's names go, a `class:name` that is on stays.
+        assert_eq!(whole_class("dot waiting on", "dot waiting", "dot out"), "dot out on");
+        assert_eq!(whole_class("dot waiting", "dot waiting", "dot waiting"), "dot waiting");
+        assert_eq!(whole_class("a on", "a", ""), "on");
+    }
 
     #[test]
     fn a_form_is_an_endpoints_by_its_path() {

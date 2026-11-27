@@ -107,6 +107,7 @@ test("a page's script, and the errors it sends", async () => {
 	assert.equal(script.status, 200);
 	assert.match(script.headers.get("content-type"), /javascript/);
 	assert.match(script.text, /sendBeacon/);
+	assert.match(script.text, /"rocx:mismatch",\(e\)=>send\("HydrationMismatch"/, "a page that isn't what the app renders is sent too");
 
 	const page = app.client();
 	const sent = await page.json("/rocx-errors", { kind: "TypeError", message: "x.map is not a function", stack: "TypeError: x.map is not a function\n    at render (app.js:3:9)", page: "/posts/12" });

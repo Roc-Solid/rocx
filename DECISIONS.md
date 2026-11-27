@@ -6624,3 +6624,80 @@ pretty line by its upper-case level reads lower case now. The app's own plugin i
 
 **Reversible:** yes: the links field and the host's listing go, the level back upper case, the
 plugin lines back at info.
+
+## D-112 Hydrating passes over an extension's elements; a mismatch names its node
+
+**Status.** Built (2026-11-27).
+
+**Context.** A hosted app (signed in) warned on every first load: `the page isn't what the app
+renders (<body> has more than the server's markup says); rendering <body> again`. The server and
+the browser agreed: headless Chromium and Gecko hydrated the page cleanly, the visitor's
+extensions too, signed out. The cause was a password manager's (Proton Pass's) content script: on
+a page with fields it adds its own element to `<body>` (`<protonpass-root-…>`), and adds it again
+if it is taken out. It runs at `document_end`, so it is there before the runtime, which waits for
+the wasm, hydrates. Hydrating took any node it didn't render for a mismatch, and rendering
+`<body>` again took the extension's element out, with everything the server rendered. Grammar
+checkers and dark themes do the same in `<body>` and `<head>`. The warning didn't say which node:
+by the time devtools opened, rendering again had removed it. And rendering `<body>` in the browser
+showed a second bug: a computed `class={…}` beside `class:name={…}` lost its value when the
+runtime built the element (`styled` wrote the static class and the `class:name`s only), so a board
+whose dots are placed by their class drew them in a heap. The servers wrote such an element two
+`class` attributes (the `class:name`s', then the computed one), the parser keeping the first. A
+computed `style` from Html's functions (`Html.attr_of("style", …)`; a `.rocx` file's `style` is
+static) beside `style:name`s had the same two faults.
+
+**Options.**
+1. As it was: an extension's node is a mismatch, and `<body>` rendered again.
+2. Pass over what the app doesn't render anywhere.
+3. Pass over elements straight in `<html>`, `<head>` or `<body>`, where extensions put theirs (React
+   19 does the same; Solid's hydration never visits a node it didn't render), and keep them when
+   `<body>` is rendered again; inside the app's own elements a mismatch stays a mismatch. Not when
+   hydrating strictly.
+
+**Decision.** 3.
+
+- **Passed over:** an element hydrating doesn't expect, straight in the document's `<html>`,
+  `<head>` or `<body>`, when what the app renders comes after it (`Cursor.passForeign`), or is
+  all that is left (`Cursor.left`). It stays where it is.
+- **Kept:** rendering `<body>` again (after a mismatch, or a navigation that renders it) keeps the
+  host's elements, the elements hydrating passed over, and any element after the host's last (the
+  bootstrap script, the last the server writes), which only a script puts there.
+- **Strictly** (`{ strict: true }`: the tests'), nothing is passed over, so an app's tests still
+  see a page that isn't what the server sent. A browser can ask for it too:
+  `localStorage.setItem("rocx:strict", "1")`, read by start.js, to look into a page in one's own
+  browser, where it throws with a stack instead of rendering again.
+- **Named:** a mismatch says what it found and where (`expected <circle>, found <rect> in body >
+  svg.dot`; `<body> has more than the server's markup says: <protonpass-root-1f2e> in body`). The
+  warning gives the console the node itself, and the document gets `rocx:mismatch`
+  (`{ message, node }`) for an app's error reporting. packages/posthog's page script sends it
+  (`HydrationMismatch`). A text node is named `text`, not quoted: what a page says is its visitor's.
+- **One `class`, one `style`:** an element's own `class` (static, optional or computed) and its
+  `class:name`s are one attribute in the markup's order, in every writer (signals.rs, the
+  runtime's `renderToString`, `Html.to_str`) and in the runtime as it builds and patches
+  (`wholeClass`: a computed class's new value keeps the `class:name`s that are on, and a
+  `class:name` keeps the computed value). The same for `style` and `style:name`s
+  (`wholeStyle`). The phone's engine (native/core) keeps the `class:name`s too.
+
+- **Docs:** the platform's README (hydrating a document; attributes), the docs' browser page, the
+  syntax page, packages/posthog's README, start.js's and the runtime's comments.
+- **Tested:** web/test's document tests: an extension's elements in `<body>` (before the app's,
+  after the host's) and in `<head>` hydrate with nothing patched and stay; a mismatch inside an
+  `<svg>` renders `<body>` again with the warning, the node and `rocx:mismatch`, the extension's
+  elements kept; strictly, each throws, naming the node; an unmarked script in `<body>` is
+  passed over, and strictly is a mismatch. Props: a computed class beside a
+  `class:name`, and a style beside a `style:name`, hydrated and made in the browser, patched both
+  ways. test/e2e: the native server writes one `class` and one `style` for them, the browser
+  patches nothing as it hydrates, and a click changes them. native/core: `whole_class`. packages/posthog: the script
+  sends `rocx:mismatch`.
+
+**Why.** Extensions are part of the browser a page meets; a page shouldn't be built again, losing
+the server's nodes and the extension's, because one added a node beside the app. A mismatch that
+remains should be found where it happens: named, inspectable, and reported from visitors'
+browsers.
+
+**Costs.** A real difference straight in `<body>` (the server rendering an element the browser's
+app doesn't, before the ones it does) is passed over in visitors' browsers, the server's element
+left unbound; strict hydration in an app's tests catches it. An extension's element inside the
+app's own elements is still a mismatch.
+
+**Reversible:** yes: `foreignKept = false` makes every hydration exact again.

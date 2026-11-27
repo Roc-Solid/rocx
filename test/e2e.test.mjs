@@ -247,7 +247,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		const home = await get("/");
 		assert.equal(home.status, 200);
 		assert.equal(home.app, "e2e", "the app's default middleware ran");
-		assert.match(home.html, /^<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>Home<\/title> <link rel="stylesheet" href="\/rocx\/styles-[0-9a-f]{16}\.css"><\/head> <body><nav>.*<span class="badge">e2e<\/span><\/nav> <main><!--errored--><!--show--><section class="home"><h1>Home<\/h1> <span class="badge">pure<\/span> <button class="count" type="button">Clicked <!--x-->1<!--\/x--><\/button> <!--nohydration--><aside class="note">Prose the browser never hydrates, with a <span class="badge">badge<\/span> in it\.<\/aside><!--\/nohydration--><\/section><!--\/show--><!--\/errored--><\/main> <footer class="at"><!--x-->\/<!--\/x--><\/footer><script type="application\/json" class="rocx-answers">\[\]<\/script><script type="module" data-rocx data-build="([0-9a-f]{8})" src="\/rocx\/start\.js"><\/script><\/body><\/html>$/, "where it is, a hole that follows navigations (D-040); the page a level, a keyed part (<!--show-->) inside the root layout's <Errored>; the bootstrap with the build's id");
+		assert.match(home.html, /^<!doctype html> <html lang="en"><head><meta charset="utf-8"> <title>Home<\/title> <link rel="stylesheet" href="\/rocx\/styles-[0-9a-f]{16}\.css"><\/head> <body><nav>.*<span class="badge">e2e<\/span><\/nav> <main><!--errored--><!--show--><section class="home"><h1>Home<\/h1> <span class="badge">pure<\/span> <button class="count" type="button">Clicked <!--x-->1<!--\/x--><\/button> <button class="marked lit on" type="button" style="font-weight: 700; --level: 1">Marked<\/button> <!--nohydration--><aside class="note">Prose the browser never hydrates, with a <span class="badge">badge<\/span> in it\.<\/aside><!--\/nohydration--><\/section><!--\/show--><!--\/errored--><\/main> <footer class="at"><!--x-->\/<!--\/x--><\/footer><script type="application\/json" class="rocx-answers">\[\]<\/script><script type="module" data-rocx data-build="([0-9a-f]{8})" src="\/rocx\/start\.js"><\/script><\/body><\/html>$/, "where it is, a hole that follows navigations (D-040); the page a level, a keyed part (<!--show-->) inside the root layout's <Errored>; a computed class beside class:names, a style beside a style:name, one attribute each (D-112); the bootstrap with the build's id");
 		assert.equal(/^<!doctype html>.*data-build="([0-9a-f]{8})"/.exec(home.html)[1], /^\tbuild = "([0-9a-f]{8})"$/m.exec(readFileSync(join(dir, "Generated", "Root.roc"), "utf8"))[1], "the build's id, as rocx build wrote it in Root");
 		const post = await get("/posts/hello");
 		assert.match(post.html, /<head><meta charset="utf-8"> <title data-rocx>Post hello<\/title><title>A post<\/title> <link rel="stylesheet" href="\/rocx\/styles-[0-9a-f]{16}\.css"><meta data-rocx name="description" content="hello"><\/head>.*<main><!--errored--><!--show--><div class="posts" data-slug="hello"><!--show--><article class="post"><!--x--><!--\/x--> <!--x--><!--\/x--> <h1>Post hello<\/h1> <a href="\/posts\/other">/, "its param, in the page (a getter, D-039, given what doesn't change: static, D-052) and its layout (its own, D-040: under [slug]), each a level; the root layout's <Errored> around both; the page's <Title> first in <head>, before the layout's; its <Meta> before </head> (D-054)");
@@ -353,6 +353,16 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 			assert.equal(await tab.eval(check), true, path);
 			assert.deepEqual((await asked(tab)).sort(), [...loads].sort(), `${path}: nothing asked of the server`);
 			assert.equal(await tab.eval("document.querySelector('footer.at').textContent"), path, "where it is, as the browser sees it");
+			if (path === "/") {
+				assert.equal(await tab.eval("window.ready.runtime.stats.patches"), 0, "the server's page is what the browser renders: a computed class beside class:names too (D-112)");
+				const marked = () => tab.eval("[document.querySelector('.marked').getAttribute('class'), getComputedStyle(document.querySelector('.marked')).fontWeight, document.querySelector('.marked').style.getPropertyValue('--level').trim()]");
+				await tab.click(".marked");
+				await tab.wait("document.querySelector('.marked').classList.contains('off')");
+				assert.deepEqual(await marked(), ["marked off", "700", "0"], "the computed class changed and the class:names turned, one attribute; the style:name beside the style");
+				await tab.click(".marked");
+				await tab.wait("document.querySelector('.marked').classList.contains('on')");
+				assert.deepEqual(await marked(), ["marked lit on", "700", "1"]);
+			}
 			if (path === "/" || path === "/posts/hello" || path.startsWith("/__rocx/stories/")) {
 				const before = await tab.eval("document.querySelector('.count').textContent");
 				await tab.click(".count");
