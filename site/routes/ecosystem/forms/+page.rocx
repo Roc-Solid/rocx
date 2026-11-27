@@ -44,30 +44,31 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/forms</code>]}
 				title="Forms: the rules written once, checked in the browser and at the endpoint"
 			>
-				Write a form's rules once, in Roc, much as zod does for TypeScript. The browser checks each field
-				as it is typed, and the endpoint the form posts to runs the very same code: it reads the post into a
-				typed record, or refuses it with the same issues. The rules go past what a type can say: lengths,
-				patterns, email addresses, ranges, choices, days, and checks across fields.
+				Write a form's rules once, in Roc, as zod does for TypeScript. The browser checks each field as it is
+				typed; the endpoint runs the same code, reading the post into a typed record or refusing it with the
+				same issues. The rules go past what a type can say: lengths, patterns, email addresses, ranges,
+				choices, days, and checks across fields.
 			</PageHero>
 
 			<Heading id="install">Installing it</Heading>
 			<p>
-				Name the package in your app's header, <code>main.roc</code>. <code>rocx build</code> gives the
-				browser's half of the app the same packages, so this is the only place you name it. Forms is not a
-				<a href={"${Paths.platform_server}#plugins"}>plugin</a>: there is nothing to add to
-				<code>App.program</code>.
+				Name the package in your app's header, <code>main.roc</code>; <code>rocx build</code> gives the
+				browser's half the same packages, so you name it only here. Forms isn't a
+				<a href={"${Paths.platform_server}#plugins"}>plugin</a>,
+				so <code>App.program</code> needs nothing.
 			</p>
 			<Code source={"app [program] { forms: \"../packages/forms/main.roc\", pf: platform \"…\" }"} numbers={Bool.False} />
 			<p>
-				Then <code>import forms.Form</code> wherever you write a schema, and
-				<code>import forms.LiveForm</code> and the field components in a <code>.rocx</code> file.
+				Then <code>import forms.Form</code> where you write a schema, and <code>import forms.LiveForm</code>
+				and
+				the field components in a <code>.rocx</code> file.
 			</p>
 
 			<Heading id="try">Try it</Heading>
 			<p>
-				Type in a field, then leave it. If what you typed fails a check, the issue shows under the field,
-				and it goes as soon as the field passes. Send shows every issue at once, with a summary above the
-				form that links to each field. Once there are none, the demo shows the record the form reads.
+				Type in a field, then leave it: a failed check shows its issue under the field until the field
+				passes. Send shows every issue at once, with a summary above the form linking to each field. With
+				none left, the demo shows the record the form reads.
 			</p>
 		</NoHydration>
 		<Demo>
@@ -75,39 +76,39 @@ view! = |_|
 		</Demo>
 		<NoHydration>
 			<Note>
-				This site is static files, so the demo sends nothing: it checks in your browser, with the code an
-				endpoint would check it with. In an app, Send posts the form, and the endpoint has the last word.
+				This site is static, so the demo sends nothing: it checks in your browser with the code an endpoint
+				would use. In an app, Send posts the form, and the endpoint has the last word.
 			</Note>
 
 			<Heading id="schema">One schema</Heading>
 			<p>
-				You build a form with Roc's record builder: each field under the name the form posts it as, with
-				its checks, in order. The record's type is what the form reads: here <code>age</code> is an
-				<code>I64</code> and <code>terms</code> a <code>Bool</code>. The two passwords are a small form of
-				their own inside it, so the check that compares them runs whenever both can be read, whatever is
-				wrong elsewhere.
+				Build a form with Roc's record builder: each field under the name it is posted as, with its checks
+				in order. The record's type is what the form reads: here <code>age</code> is an <code>I64</code> and
+				<code>terms</code> a <code>Bool</code>. The two passwords are a small form inside it, so the check
+				comparing them runs whenever both can be read, whatever is wrong elsewhere.
 			</p>
 			<Code title={Sources.forms_schema.file} source={Sources.forms_schema.rocx} />
 			<p>
-				In an app, the schema is a module of its own, which the page and the endpoint both import. The
-				checks are data, so the same schema also tells a browser which attributes to put on each input, and
-				can describe the form as JSON Schema. <code>form.json_schema()</code> gives, as this site is built:
+				In an app, the schema is a module that page and endpoint both import. Its checks are data, so it also
+				gives each input its attributes and describes the form as JSON Schema.
+				<code>form.json_schema()</code>,
+				as this site is built:
 			</p>
 			<Code source={pretty(FormsSignup.form.json_schema(), 2)} plain numbers={Bool.False} />
 
 			<Heading id="endpoint">At the endpoint</Heading>
 			<p>
-				An <a href={"${Paths.routing}#endpoints"}>endpoint</a> reads its body with the same schema. Its
-				route file names the form beside the handler, and the handler's <code>body</code> is the form's
-				record (D-093):
+				An <a href={"${Paths.routing}#endpoints"}>endpoint</a> reads its body with the same schema: its route
+				file names the form beside the handler, whose <code>body</code> is the form's record (D-093):
 			</p>
 			<Code title="routes/signup/+server.roc" source={signup_route} numbers={Bool.False} />
 			<p>
-				The platform reads a form's fields, URL-encoded or multipart, or a JSON object's, with the form, and
-				gives <code>post!</code> the account. What doesn't pass never reaches it: the endpoint refuses it with
-				a <code>422</code> and the issues as JSON (<code>application/json</code>). A box left unticked, which
-				a browser doesn't send at all, is the form's to judge. <code>Generated/Api</code> makes the endpoint
-				so in both copies (<code>{"Endpoint.checked(Endpoint.remote(\"POST\", \"/signup\"), Signup.form)"}</code>), so a
+				The platform reads the fields (URL-encoded, multipart, or a JSON object) with the form and gives
+				<code>post!</code> the account. What doesn't pass never reaches it: the endpoint answers
+				<code>422</code> with the issues as JSON (<code>application/json</code>). An unticked box, which a
+				browser doesn't send at all, is the form's to judge. <code>Generated/Api</code> makes the endpoint so
+				in both copies
+				(<code>{"Endpoint.checked(Endpoint.remote(\"POST\", \"/signup\"), Signup.form)"}</code>), so a
 				page's submission is read with the form too, and <code>/openapi.json</code> documents the body with
 				the form's schema. A handler refuses what only it can check (a name already taken) with
 				<code>Issues.refusal</code>. This site's handler:
@@ -127,48 +128,47 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				A body that passes every check gets the handler's result: <code>{answered!(good_post)}</code>.
-				So does the same as JSON: <code>{answered!(good_json)}</code>. Its body in
+				A body that passes gets the handler's result: <code>{answered!(good_post)}</code>. So does the same
+				as JSON: <code>{answered!(good_json)}</code>. Its body in
 				<code>/openapi.json</code>, the form's schema three ways:
 			</p>
 			<Code source={pretty("{${OpenApi.sent(FormsSignup.signup, [])}}", 2)} plain numbers={Bool.False} />
 
 			<Heading id="page">In the page</Heading>
 			<p>
-				<code>LiveForm</code> holds a form's state in a component: what is typed in each field, which fields
-				you have left, and whether the form was sent. You make it once, as you make a
-				<a href={"${Paths.components}#primitives"}>signal</a>. The package's field components take their
-				attributes from the schema (<code>type="email"</code>, <code>required</code>,
-				<code>maxlength</code>, <code>min</code>) and say when they are invalid
-				(<code>aria-invalid</code>, <code>aria-describedby</code>). This site has no server to post to, so
-				the demo uses a local form, which only the browser reads:
+				<code>LiveForm</code> holds a form's state in a component: what each field holds, which fields you
+				have left, and whether the form was sent. Make it once, like a
+				<a href={"${Paths.components}#primitives"}>signal</a>. The field components take their attributes from
+				the schema (<code>type="email"</code>, <code>required</code>, <code>maxlength</code>,
+				<code>min</code>)
+				and say when they are invalid (<code>aria-invalid</code>, <code>aria-describedby</code>). The demo
+				uses a local form, read only by the browser:
 			</p>
 			<Code title={Sources.forms_demo.file} source={Sources.forms_demo.rocx} />
 			<p>
-				An app's page posts the form to its endpoint instead. Make the live form with
-				<code>LiveForm.of!(Signup.form, Api.post_signup({"{}"}))</code>, and write
+				An app's page posts to its endpoint instead: make the live form with
+				<code>LiveForm.of!(Signup.form, Api.post_signup({"{}"}))</code> and write
 				<code>{"<form method=\"post\" action={live.url()} novalidate>"}</code>, with no
-				<code>on:submit</code>. With the runtime, the form is sent in the background: the page stays and
-				shows the endpoint's issues at their fields. Without it, the browser posts the form, and the page
-				comes back with what was typed and the issues (a
-				<a href={"${Paths.calls}#forms"}>submission</a> read from the flash). Passwords are never written
-				back into the page.
+				<code>on:submit</code>. With the runtime, the form is sent in the background; the page stays and shows
+				the endpoint's issues at their fields. Without it, the browser posts the form, and the page comes
+				back with what was typed (passwords aside) and the issues (a
+				<a href={"${Paths.calls}#forms"}>submission</a> read from the flash).
 			</p>
 			<p>
-				An edit form starts filled in with the record as it is:
+				An edit form starts filled in:
 				<code>{"LiveForm.filled!(TaskForm.editing, save, [(\"title\", task.title), (\"notes\", task.notes)])"}</code>.
-				Any form can start afresh from a handler: <code>live.reset!()</code> puts back what it started
-				with and forgets every issue. The inputs stay where they are, and so does focus (Start again, in
-				the demo). An add form resets once the endpoint has accepted what it sent:
+				From a handler, <code>live.reset!()</code> puts back what the form started with and forgets every
+				issue, keeping the inputs and focus (Start again, in the demo). An add form resets once the endpoint
+				accepts it:
 				<code>{"create_effect!(|| live.accepted!(), |accepted| if (accepted) live.reset!() else {})"}</code>.
 				<a href={Paths.examples_tasks}>examples/tasks</a> does both.
 			</p>
 
 			<Heading id="values">Values and their checks</Heading>
 			<p>
-				Each kind of value takes a list of checks, run in order, and reports everything wrong with the
-				value, not only the first thing. A text check other than <code>Required</code> passes an empty
-				value, as a browser's <code>minlength</code> and <code>pattern</code> do:
+				Each kind of value takes checks, run in order, and reports everything wrong, not just the first. A
+				text check other than <code>Required</code> passes an empty value, as a browser's
+				<code>minlength</code> and <code>pattern</code> do:
 				<code>Value.text([Email])</code> takes <code>""</code> or an address.
 			</p>
 			<TableWrap>
@@ -179,11 +179,15 @@ view! = |_|
 							<td><code>Value.text(checks)</code></td>
 							<td><code>Str</code>, as typed</td>
 							<td>
-								<code>Trim</code>, <code>Lowercase</code>, <code>CollapseSpaces</code> (each changes the text for
-								the checks after it); <code>Required</code>; <code>MinLength(n)</code>, <code>MaxLength(n)</code>
+								<code>Trim</code>, <code>Lowercase</code>, <code>CollapseSpaces</code> (each changes
+								the text for
+								the checks after it); <code>Required</code>; <code>MinLength(n)</code>,
+								<code>MaxLength(n)</code>
 								(characters); <code>Matches(pattern)</code> (the whole text); <code>Email</code> (as
-								<code>{"<input type=\"email\">"}</code> checks one); <code>Url</code> (<code>http</code> or
-								<code>https</code>); <code>OneOf(options)</code>; <code>Secret</code> (a password, never written
+								<code>{"<input type=\"email\">"}</code> checks one); <code>Url</code>
+								(<code>http</code> or
+								<code>https</code>); <code>OneOf(options)</code>; <code>Secret</code> (a password,
+								never written
 								back into a page)
 							</td>
 						</tr>
@@ -196,14 +200,14 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				An empty number, choice or day fails as <code>Required</code>. For anything the checks don't
-				cover, <code>.check(ok, code)</code> adds a check of your own, and <code>.map</code> and
-				<code>.try_map</code> turn the value into another type (a <code>Username</code>, an
-				<code>Isbn</code>), or into an issue.
+				An empty number, choice or day fails as <code>Required</code>. For anything else,
+				<code>.check(ok, code)</code> adds your own check, and <code>.map</code> and <code>.try_map</code>
+				turn
+				the value into another type (a <code>Username</code>, an <code>Isbn</code>) or an issue.
 			</p>
 			<p>
-				A bad pattern crashes where the value is made. Roc computes a top-level value while the app
-				compiles, so in a top-level form a typo in a pattern stops the build instead of reaching a user.
+				A bad pattern crashes where the value is made. Roc computes top-level values at compile time, so a
+				typo in a top-level form's pattern stops the build instead of reaching a user.
 			</p>
 
 			<Heading id="forms">Putting fields together</Heading>
@@ -228,10 +232,9 @@ view! = |_|
 			<Heading id="issues">Issues</Heading>
 			<p>
 				An issue is <code>{"{ field : Str, code : Issues.Code, message : Str }"}</code>: where, what, and the
-				English for it. A code is a plain tag that carries what its message needs, so a translation can
-				match on it, or look it up by its <code>key</code> and <code>params</code>
-				(<a href={Paths.ecosystem_intl}>intl</a> does). Each code, and its English, from the package as this
-				site is built:
+				English. A code is a plain tag carrying what its message needs, so a translation can match on it or
+				look it up by its <code>key</code> and <code>params</code> (as <a href={Paths.ecosystem_intl}>intl</a>
+				does). Each code and its English, from the package as this site is built:
 			</p>
 			<TableWrap>
 				<table id="forms-codes">
@@ -250,11 +253,11 @@ view! = |_|
 
 			<Heading id="regex">Patterns</Heading>
 			<p>
-				Roc has no regular expressions, so the package has an engine written in plain Roc. A pattern
-				compiles once, to a program. A Pike VM runs the program over the text, following every way the
-				pattern could match at once, one step per character, so no pattern and no text can make it slow.
-				The price is that there are no backreferences and no lookaround. The syntax is JavaScript's, so a
-				pattern means the same in an input's <code>pattern</code> attribute: characters and
+				Roc has no regular expressions, so the package has an engine in plain Roc. A pattern compiles once,
+				to a program; a Pike VM runs it over the text, following every possible match at once, one step per
+				character, so no pattern or text can make it slow. The price: no backreferences, no lookaround. The
+				syntax is JavaScript's, so a pattern means the same in an input's <code>pattern</code> attribute:
+				characters and
 				<code>.</code>, classes (<code>[a-z]</code>, <code>[^,]</code>, <code>\d \w \s</code>),
 				<code>^ $ \b</code>, groups, <code>|</code>, and <code>* + ? {"{m,n}"}</code>. Matched as this site
 				is built:
@@ -268,16 +271,16 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The last row is the classic trap. A backtracking engine (JavaScript's, say) tries each of the
-				hundreds of millions of ways to split those a's into groups before it says no. Here it is one step
-				per character. <code>Regex.compile</code> says what is wrong with a pattern, and where;
+				The last row is the classic trap: a backtracking engine (JavaScript's, say) tries hundreds of
+				millions of ways to split those a's into groups before saying no. Here it is one step per character.
+				<code>Regex.compile</code> says what is wrong with a pattern, and where;
 				<code>Regex.must</code> crashes instead, which in a top-level value stops the build.
 			</p>
 
 			<Heading id="components">The components</Heading>
 			<p>
-				<code>rocx build</code> copies the package's components into your app, as it copies the
-				<a href={Paths.ecosystem_charts}>charts</a>: <code>import forms.TextField</code> imports the copy.
+				<code>rocx build</code> copies the components into your app, as it does the
+				<a href={Paths.ecosystem_charts}>charts</a>; <code>import forms.TextField</code> imports the copy.
 			</p>
 			<TableWrap>
 				<table>
@@ -304,32 +307,33 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				Their colours come from the custom properties <code>--form-invalid</code>, <code>--form-border</code>,
-				<code>--form-muted</code> and <code>--form-radius</code>; the demo sets them from this site's tokens.
+				Colours come from <code>--form-invalid</code>, <code>--form-border</code>, <code>--form-muted</code>
+				and
+				<code>--form-radius</code>; the demo sets them from this site's tokens.
 				The <a href="https://github.com/Roc-Solid/rocx/blob/master/packages/forms/README.md">package's
 				README</a> lists every function, and when each issue shows.
 			</p>
 
 			<Heading id="status">Not yet</Heading>
 			<p>
-				Everything above works today. <code>roc test packages/forms/main.roc</code> runs the package's
-				<code>expect</code>s. A few things wait on proposals in <code>packages/forms/PROPOSALS.md</code>:
+				Everything above works today; <code>roc test packages/forms/main.roc</code> runs the package's
+				<code>expect</code>s. Waiting on proposals in <code>packages/forms/PROPOSALS.md</code>:
 			</p>
 			<ul>
 				<li>
-					A refusal with field issues of the platform's own (RFC 9457's problem details). Today it is a
-					<code>422</code> whose body is the issues' JSON, labelled <code>application/json</code>, which
+					The platform's own refusal with field issues (RFC 9457 problem details). Today it is a
+					<code>422</code> with the issues' JSON (<code>application/json</code>), which
 					<code>Issues.from_problem</code> reads back.
 				</li>
 				<li>
-					Holding a send back in the browser when the form has issues. Today it always goes to the
-					endpoint, which refuses it with the same issues.
+					Holding back a send in the browser when the form has issues. Today it always reaches the endpoint,
+					which refuses it with the same issues.
 				</li>
 			</ul>
 			<p>
-				And for now: decimals written with a <code>.</code>; patterns with no flags and no captures;
-				<code>form.parse_body(text)</code>, for a page that has a form's text, reads it URL-encoded only
-				(an endpoint's body is read for the form by the platform, JSON too).
+				And for now: decimals use a <code>.</code>; patterns have no flags or captures;
+				<code>form.parse_body(text)</code> (for a page holding a form's text) reads URL-encoded only (the
+				platform reads an endpoint's body for the form, JSON too).
 			</p>
 			<details>
 				<summary>The demo: <code>{Sources.forms_demo_file.file}</code></summary>
