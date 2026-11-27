@@ -296,7 +296,7 @@ function suite({ engine, name, tag, run, server, home }) {
 			["admin_authors", "admin_books", "any_flavor", "counters", "flaky", "items", "job_log", "lite_only", "nested_marks", "rocx_actor_timers", "rocx_actors", "rocx_jobs", "rocx_migrations", "scratch"].join("\n"),
 		);
 		assert.equal(await server().text("/migrated"), ["0001_tables.sql", "0002_admin.sql", "0003_nested.sql", "jobs/0001_jobs", "lite/0001_lite", "lite/0002_any", "rocx/0001 jobs and actors", "rocx/0002 actor timers"].join("\n"));
-		assert.match(server().logged(), /migrated migration="rocx\/0001 jobs and actors"[\s\S]*migrated migration=jobs\/0001_jobs[\s\S]*migrated migration=lite\/0001_lite[\s\S]*migrated migration=0001_tables.sql/);
+		assert.match(server().logged(), /migrated  migration="rocx\/0001 jobs and actors"[\s\S]*migrated  migration=jobs\/0001_jobs[\s\S]*migrated  migration=lite\/0001_lite[\s\S]*migrated  migration=0001_tables.sql/);
 		const cwd = join(home(), "restarted");
 		const first = await run([], { cwd });
 		await first.stop();
