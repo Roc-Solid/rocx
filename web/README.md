@@ -1100,7 +1100,7 @@ writes) and a submission's redirect (unless the visitor navigated since it was s
 3. **Fetch.** `is_routing!` turns true. `pageFor(url)` fetches the document (`accept: text/html`,
    `x-rocx-navigate: 1`) and reaches the levels' code (`codeOf`; at once, while one wasm holds
    every page). The last 8 pages are cached, and one fetched under 10 s ago is used again
-   (`Runtime.CACHE`, `Runtime.FRESH`). A submission's result empties the cache. A newer
+   (`Runtime.CACHE`, `Runtime.FRESH`). A submission's result, or its redirect, empties the cache. A newer
    navigation aborts this one's fetch if it was its own and for another page.
 4. **Check.** A redirect's address is where the navigation ends (one that only adds a trailing
    slash is the link's). The runtime loads the URL the ordinary way instead (`location.assign`, or

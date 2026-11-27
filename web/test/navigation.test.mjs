@@ -728,6 +728,27 @@ test("prefetch: one older than 10 s (shortened here) is fetched again; a submiss
 	}
 });
 
+test("a submission's redirect empties the cache too: a page fetched before it is asked again", { skip }, async () => {
+	const site = await navSite();
+	try {
+		const tab = await open(site, "/");
+		await tab.eval("window.ready.runtime.constructor.FRESH = 10000");
+		site.asked.length = 0;
+		await hover(tab, ".to-item");
+		await sleep(150);
+		assert.deepEqual(site.documents(), ["preload /items/7"]);
+		await tab.click(".leave");
+		await tab.wait("document.querySelector('.item h1')?.textContent === 'Item 3'");
+		await tab.click(".to-item");
+		await tab.wait("document.querySelector('.item h1')?.textContent === 'Item 7'");
+		assert.deepEqual(site.documents(), ["preload /items/7", "navigate /items/3", "navigate /items/7"], "the data changed: the page prefetched before asked again");
+		assert.deepEqual(tab.errors, []);
+		await tab.close();
+	} finally {
+		await site.close();
+	}
+});
+
 test("prefetch: data-rocx-preload=\"off\" on a link, or on <html> for the app, never; \"viewport\" as the link comes into sight, once", { skip }, async () => {
 	const site = await navSite();
 	try {

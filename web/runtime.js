@@ -2089,6 +2089,9 @@ export class Runtime {
 				const to = response.headers.get("x-rocx-redirect");
 				if (to !== null || response.redirected) {
 					this.notify("submitted", { url: key, input, id: entry.id, status: response.status, redirect: to ?? response.url, ms: performance.now() - asked });
+					// The server's data changed, as with a result (`revalidate`): a page fetched or
+					// prefetched before isn't the page now, the one the redirect goes to included.
+					this.pages?.clear();
 					// In place when it is one of the app's pages (D-040), but not if the visitor went to
 					// another page meanwhile: a form sent from one mustn't move them off the next.
 					if (this.navigations === navigations) this.navigate(to !== null ? this.urlOf(to) : new URL(response.url));
