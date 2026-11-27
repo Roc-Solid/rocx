@@ -1297,7 +1297,7 @@ test("jobs: listed newest first, by state and kind, a page at a time; one read b
 	for (const n of [1, 3]) assert.equal(await post(`/jobs/cancel?key=${run}list${n}`), "1");
 });
 
-test("the jobs page, as a plugin (JobsPage.plugin, packages/admin): behind the app's guard; a link back to the app; the states, the last hour, failures, kinds, schedules and jobs; retry, cancel and run now as forms; one job in a drawer; its stream of changes", { skip: skipDb }, async () => {
+test("the jobs page, as a plugin (JobsPage.plugin, packages/admin): behind the app's guard; a link to the app's own pages, and Back to the app (where the reader came from) at its foot; the states, the last hour, failures, kinds, schedules and jobs; retry, cancel and run now as forms; one job in a drawer; its stream of changes", { skip: skipDb }, async () => {
 	const admin = { "x-admin": "yes" };
 	const page = (query = "", init = {}) => get(`/admin/jobs${query}`, { ...init, headers: { ...admin, ...init.headers }, redirect: "manual" });
 	const form = (fields, headers = {}) => page("", { method: "POST", body: new URLSearchParams(fields).toString(), headers: { "content-type": "application/x-www-form-urlencoded", ...headers } });
@@ -1310,6 +1310,24 @@ test("the jobs page, as a plugin (JobsPage.plugin, packages/admin): behind the a
 	assert.match(html, /<div class="shell" data-events="\/admin\/jobs\?events=1" data-now="\d+">/);
 	assert.match(html, /<nav class="side-nav" aria-label="Jobs"><a class="back" href="\/"><svg[^>]*>.*?<\/svg><span class="label">Acme Tests<\/span><\/a><a href="\/admin\/jobs" aria-current="page">/, "the link back to the app, first in the sidebar (`back`)");
 	assert.match(html, /<a class="metric" href="\/admin\/jobs" aria-current="page"><span class="metric-label">All<\/span><strong>\d+<\/strong><\/a>/);
+	// Back to the app, at the sidebar's foot: from nowhere, its front page.
+	const toApp = (page) => /<div class="side-end"><a class="to-app" href="([^"]*)">/.exec(page)?.[1];
+	assert.equal(toApp(html), "/", "from nowhere, the front page");
+	assert.equal(listed.headers.get("set-cookie"), null, "and nothing remembered");
+	// From a page of the app's own: back there, remembered for the jobs page's other pages (a filter,
+	// a form's redirect back), which come from the jobs page itself.
+	const entered = await page("", { headers: { referer: `${server.url}/flash/page?step=2;b` } });
+	assert.equal(toApp(await entered.text()), "/flash/page?step=2;b");
+	const remembered = entered.headers.get("set-cookie");
+	assert.equal(remembered, "rocx_back=/flash/page?step=2%3Bb; Path=/admin/jobs; HttpOnly; SameSite=Lax");
+	const cookie = remembered.split(";")[0];
+	const filtered = await page("?state=failed", { headers: { referer: `${server.url}/admin/jobs`, cookie } });
+	assert.equal(toApp(await filtered.text()), "/flash/page?step=2%3Bb", "a filter, the same way back");
+	assert.equal(filtered.headers.get("set-cookie"), null);
+	// Another site's link, or an address typed: the front page, what was remembered forgotten.
+	const typed = await page("", { headers: { referer: "https://evil.example/flash/page", cookie } });
+	assert.equal(toApp(await typed.text()), "/");
+	assert.equal(typed.headers.get("set-cookie"), "rocx_back=; Path=/admin/jobs; HttpOnly; SameSite=Lax; Max-Age=0");
 	assert.match(html, /<h2>Finished jobs<\/h2>/, "the last hour");
 	assert.match(html, /<div class="bars" role="img" aria-label="In the last hour: \d+ done, \d+ done after a retry, [1-9]\d* failed">/, "its bars, the jobs that failed above among them, not an error");
 	assert.match(html, /<h2>Failures<\/h2>/, "the latest failures");

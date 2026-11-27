@@ -115,7 +115,7 @@ books = Admin.find(shown_tables, "books") ?? Admin.pair({ name: "books", comment
 
 ## What each page knows: the admin's path, someone who may edit, and a form's token.
 frame : View.Frame
-frame = { mount: AdminRoute.admin.mount, title: AdminRoute.admin.title, tables: shown_tables, access: Edit, token: "3f9c0e7a51d24b8e9a6c2d417b0e85f1", back: AdminRoute.admin.back }
+frame = { mount: AdminRoute.admin.mount, title: AdminRoute.admin.title, tables: shown_tables, access: Edit, token: "3f9c0e7a51d24b8e9a6c2d417b0e85f1", back: AdminRoute.admin.back, to_app: "" }
 
 ## The first page of books, as `Sql.rows` reads them: the listed columns, then the key.
 book_rows : List(Catalog.Row)

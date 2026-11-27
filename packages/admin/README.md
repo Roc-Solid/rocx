@@ -276,6 +276,12 @@ the page fades through, a drawer slides in and out, the stream stays open; none 
 asked for). Without script the page is the same, with a button that refreshes it, and its links
 load whole pages.
 
+Each page's sidebar ends with **Back to the app** (`Look.back_to_app`): to the page of the app's the
+reader came from (this site's `Referer`, outside the page's `mount`), which the page's other pages
+remember (a cookie for `mount`'s path, `rocx_back`, until the browser closes); to the app's front
+page, `/`, when they came from nowhere (an address typed, a bookmark) or from another site. `back`,
+where an app gives it, is a different link: to a place of the app's it names, first in the sidebar.
+
 ## Modules
 
 `AdminPage` is the one module with effects, and they are the ones the route hands it. `JobsPage` and

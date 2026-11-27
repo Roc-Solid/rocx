@@ -343,6 +343,12 @@ view! = |_|
 				share one look. <code>Look</code> has the rules every admin page shares and the helpers that draw
 				them, and <code>AdminHtml</code> builds the server's pages on them.
 			</p>
+			<p>
+				Each of them ends its sidebar with <strong>Back to the app</strong>: to the page of your app's
+				the reader came from, which the page's other pages remember (a cookie for its path, until the
+				browser closes), or to your front page, <code>/</code>, when they came from nowhere (an address
+				typed, a bookmark) or from another site. The stories catalog has it too.
+			</p>
 
 			<Heading id="modules">The modules</Heading>
 			<p>

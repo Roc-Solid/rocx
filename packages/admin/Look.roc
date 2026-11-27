@@ -30,10 +30,42 @@ Look := [].{
 	]
 
 	## The sidebar: a brand (Roc Solid's mark, `Look.brand_mark`, then `name`, a `note` under it, a link
-	## `home`), the navigation's links (`Look.nav_link`, `Look.nav_label`) and a line at its foot.
-	side : { name : Str, note : Str, home : Str, nav : Str, foot : Str } -> Str
-	side = |{ name, note, home, nav, foot }|
-		"<aside class=\"side\"><a class=\"brand\" href=\"${escape(home)}\">${brand_mark}<span><strong>${escape(name)}</strong><small>${escape(note)}</small></span></a><nav class=\"side-nav\" aria-label=\"${escape(name)}\">${nav}</nav><p class=\"side-foot\">${foot}</p></aside>"
+	## `home`), the navigation's links (`Look.nav_link`, `Look.nav_label`) and, at its foot, "Back to
+	## the app" (to `to_app`, as `Look.back_to_app` says; "" for none) and a line (`foot`, HTML; "" for
+	## none).
+	side : { name : Str, note : Str, home : Str, nav : Str, to_app : Str, foot : Str } -> Str
+	side = |{ name, note, home, nav, to_app, foot }| {
+		home_link = if (to_app.is_empty()) "" else "<a class=\"to-app\" href=\"${escape(to_app)}\">${Look.icon("leave")}<span class=\"label\">Back to the app</span></a>"
+		line = if (foot.is_empty()) "" else "<p class=\"side-foot\">${foot}</p>"
+		end = if (home_link.is_empty() and line.is_empty()) "" else "<div class=\"side-end\">${home_link}${line}</div>"
+		"<aside class=\"side\"><a class=\"brand\" href=\"${escape(home)}\">${brand_mark}<span><strong>${escape(name)}</strong><small>${escape(note)}</small></span></a><nav class=\"side-nav\" aria-label=\"${escape(name)}\">${nav}</nav>${end}</aside>"
+	}
+
+	## Where "Back to the app" goes (`Look.side`'s `to_app`) on a page at `mount`, as the request's
+	## headers say, and the headers its answer adds. Come from a page of the app's own (this site's
+	## `Referer`, outside `mount`), it goes back there, and `mount`'s other pages remember it (a cookie
+	## for `mount`'s path, `rocx_back`, until the browser closes); come from one of `mount`'s pages
+	## (another filter, a drawer, a form's redirect back), to the page remembered; come from nowhere
+	## (an address typed, a bookmark) or from another site, to the app's front page, `/`.
+	back_to_app : List({ name : Str, value : Str }), Str -> { href : Str, headers : List({ name : Str, value : Str }) }
+	back_to_app = |asked, mount| {
+		path = cookie_path(mount)
+		kept = cookie_of(asked, back_cookie)
+		match came_from(asked) {
+			Ok(from) =>
+				if within(from, path) {
+					{ href: if (is_local(kept)) kept else "/", headers: [] }
+				} else {
+					{ href: from, headers: [{ name: "set-cookie", value: "${back_cookie}=${cookie_text(from)}; Path=${path}; HttpOnly; SameSite=Lax" }] }
+				}
+			Err(Elsewhere) =>
+				if kept.is_empty() {
+					{ href: "/", headers: [] }
+				} else {
+					{ href: "/", headers: [{ name: "set-cookie", value: "${back_cookie}=; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=0" }] }
+				}
+		}
+	}
 
 	## Roc Solid's mark (the docs site's Logo, "Perch": a bird of folded paper on a slab), in its
 	## inks, a thin line of the sidebar's colour keeping its parts apart; for the reader's eyes only.
@@ -97,6 +129,7 @@ Look := [].{
 				"alert" => "<path d=\"M12 3.5 2.8 19.5h18.4L12 3.5Z\"/><path d=\"M12 10v4.2M12 17h.01\"/>"
 				"check" => "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"m8.5 12.2 2.4 2.4 4.6-5\"/>"
 				"back" => "<path d=\"m14.5 6-6 6 6 6\"/>"
+				"leave" => "<path d=\"m11 18-6-6 6-6\"/><path d=\"M19 12H5\"/>"
 				"next" => "<path d=\"m9.5 6 6 6-6 6\"/>"
 				"mail" => "<rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"2\"/><path d=\"m3.5 7 8.5 6 8.5-6\"/>"
 				"play" => "<path d=\"M8 5.5v13l10-6.5-10-6.5Z\"/>"
@@ -173,7 +206,10 @@ Look := [].{
 				".side-nav .count{font-size:12px;font-variant-numeric:tabular-nums;color:var(--subtle)}",
 				".side-nav .count.tone-bad{color:var(--bad);font-weight:600}",
 				".nav-label{margin:14px 10px 4px;color:var(--subtle);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}",
-				".side-foot{margin:auto 0 0;padding:16px 20px 20px;border-top:1px solid var(--line);color:var(--subtle);font-size:12.5px}",
+				".side-end{margin:auto 0 0;padding:14px 10px 18px;border-top:1px solid var(--line)}",
+				".to-app{display:flex;align-items:center;gap:10px;min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:8px;color:var(--text);font-size:14px}",
+				".to-app:hover{background:color-mix(in srgb,var(--text) 5%,transparent)}.to-app .label{flex:1;min-width:0}",
+				".side-foot{margin:0 10px;color:var(--subtle);font-size:12.5px}.to-app+.side-foot{margin-top:14px}",
 				".dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--tone,var(--neutral));flex:none}",
 				".side-nav .dot{margin:0 4px}",
 				".side-nav a.back{margin-bottom:8px;border-color:var(--line);color:var(--text)}",
@@ -279,7 +315,7 @@ Look := [].{
 		narrower: Str.join_with(
 			[
 				"@media (max-width:1180px){.grid{grid-template-columns:minmax(0,1fr)}.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.metric:nth-child(4){border-left:0}.metric:nth-child(n+4){border-top:1px solid var(--line)}}",
-				"@media (max-width:820px){.shell{grid-template-columns:minmax(0,1fr);align-content:start}.side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}.brand{min-height:0;padding:14px 16px}.side-nav{display:flex;overflow-x:auto;padding:8px 10px}.side-nav a{flex:none}.nav-label,.side-foot{display:none}main{padding:0 16px 40px}.top{min-height:0;flex-wrap:wrap}h1 .meta{display:block;margin:4px 0 0}.stamp{display:none}.facts{grid-template-columns:minmax(0,1fr)}th,td{padding-left:12px;padding-right:12px}}",
+				"@media (max-width:820px){.shell{grid-template-columns:minmax(0,1fr);align-content:start}.side{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}.brand{min-height:0;padding:14px 16px}.side-nav{display:flex;overflow-x:auto;padding:8px 10px}.side-nav a{flex:none}.nav-label,.side-foot{display:none}.side-end{margin:0;padding:0 10px 10px;border-top:0}.to-app{display:inline-flex}main{padding:0 16px 40px}.top{min-height:0;flex-wrap:wrap}h1 .meta{display:block;margin:4px 0 0}.stamp{display:none}.facts{grid-template-columns:minmax(0,1fr)}th,td{padding-left:12px;padding-right:12px}}",
 				"@media (max-width:820px){table.jobs thead{display:none}table.jobs tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 12px;padding:12px 14px;border-bottom:1px solid var(--line)}table.jobs tbody tr:last-child{border-bottom:0}table.jobs td{padding:0;border:0}table.jobs td:nth-child(3),table.jobs td:nth-child(5),table.jobs td.actions:empty{display:none}table.jobs td.job{grid-column:1;grid-row:1;width:auto;max-width:none;min-width:0}table.jobs td:nth-child(2){grid-column:2;grid-row:1;text-align:right;align-self:start}table.jobs td.when{grid-column:1;grid-row:2}table.jobs td.actions{grid-column:2;grid-row:2}}",
 				"@media (prefers-reduced-motion:reduce){*{animation:none!important}}",
 			],
@@ -360,10 +396,97 @@ own =
 		"",
 	)
 
+## The cookie that remembers, for a page's path, the page of the app's own the reader came from
+## (`Look.back_to_app`).
+back_cookie : Str
+back_cookie = "rocx_back"
+
+## The path and query of this site's page a request came from (`Referer`, at the `Host` the
+## request names); `Err(Elsewhere)` without one, or from another site.
+came_from : List({ name : Str, value : Str }) -> Try(Str, [Elsewhere])
+came_from = |asked|
+	match (header_of(asked, "referer"), header_of(asked, "host")) {
+		(Ok(referer), Ok(host)) =>
+			match referer.split_first("://") {
+				Ok({ after, .. }) if after == host => Ok("/")
+				Ok({ after, .. }) if after.starts_with("${host}/") => Ok(after.drop_prefix(host))
+				_ => Err(Elsewhere)
+			}
+		_ => Err(Elsewhere)
+	}
+
+## Whether a page (its path and query) is at `path` or under it.
+within : Str, Str -> Bool
+within = |page, path| {
+	at = match page.split_first("?") {
+		Ok({ before, .. }) => before
+		Err(_) => page
+	}
+	path == "/" or at == path or at.starts_with("${path}/")
+}
+
+## Whether a link is one of this site's paths: a page `back_to_app` remembered, as a cookie may
+## have been written by another hand.
+is_local : Str -> Bool
+is_local = |href| href.starts_with("/") and !href.starts_with("//") and !href.contains("\\")
+
+## A path as a cookie's value: what a value can't hold (a space, `"`, `,`, `;`, `\`, a byte past
+## ASCII) written `%XX`, which a URL reads as the same.
+cookie_text : Str -> Str
+cookie_text = |text| {
+	digit = |n| if (n < 10) '0' + n else 'A' + n - 10
+	Str.from_utf8_lossy(text.to_utf8().fold([], |out, byte| if (byte > 32 and byte < 127 and byte != 34 and byte != 44 and byte != 59 and byte != 92) out.append(byte) else out.concat(['%', digit(byte // 16), digit(byte % 16)])))
+}
+
+## A path as a cookie's `Path`: the characters a header may carry, with no `/` at its end (a cookie
+## for `/admin/jobs/` isn't sent to `/admin/jobs`), `/` if it isn't one.
+cookie_path : Str -> Str
+cookie_path = |mount| {
+	kept = Str.from_utf8_lossy(mount.to_utf8().keep_if(|byte| byte > 32 and byte < 127 and byte != ';' and byte != ','))
+	if (!kept.starts_with("/")) "/" else if (kept != "/" and kept.ends_with("/")) kept.drop_suffix("/") else kept
+}
+
+## A request header's value, its name in any case.
+header_of : List({ name : Str, value : Str }), Str -> Try(Str, [Missing])
+header_of = |headers, wanted|
+	match headers.find_first(|each| each.name.with_ascii_lowercased() == wanted) {
+		Ok(found) => Ok(found.value)
+		Err(_) => Err(Missing)
+	}
+
+## The value of the cookie `name` ("" without one): the first, which is the one for the longest path.
+cookie_of : List({ name : Str, value : Str }), Str -> Str
+cookie_of = |headers, name| {
+	pairs = headers.keep_if(|each| each.name.with_ascii_lowercased() == "cookie").map(|each| each.value.split_on(";")).join()
+	found = pairs.keep_oks(
+		|pair|
+			match pair.trim().split_first("=") {
+				Ok({ before, after }) if before == name => Ok(after)
+				_ => Err(Elsewhere)
+			},
+	)
+	found.first() ?? ""
+}
+
 expect Look.escape("<a href=\"x\">'&") == "&lt;a href=&quot;x&quot;&gt;&#39;&amp;"
 expect Look.document("A <b>", "", "<p>hi</p>").contains("<title>A &lt;b&gt;</title>") and Look.document("A", "", "").contains("<div class=\"shell bare\"><main>")
-expect Look.document("A", Look.side({ name: "Db", note: "", home: "/db", nav: "", foot: "" }), "").contains("<div class=\"shell\"><aside class=\"side\"><a class=\"brand\" href=\"/db\">")
-expect Look.side({ name: "Db", note: "", home: "/db", nav: "", foot: "" }).contains("<a class=\"brand\" href=\"/db\"><svg class=\"mark\"")
+expect Look.document("A", Look.side({ name: "Db", note: "", home: "/db", nav: "", to_app: "", foot: "" }), "").contains("<div class=\"shell\"><aside class=\"side\"><a class=\"brand\" href=\"/db\">")
+expect Look.side({ name: "Db", note: "", home: "/db", nav: "", to_app: "", foot: "" }).contains("<a class=\"brand\" href=\"/db\"><svg class=\"mark\"")
+expect Look.side({ name: "Db", note: "", home: "/db", nav: "", to_app: "", foot: "" }).ends_with("</nav></aside>")
+expect Look.side({ name: "Db", note: "", home: "/db", nav: "", to_app: "/posts?a=1&b=2", foot: "Kept 7 d." }).contains("<div class=\"side-end\"><a class=\"to-app\" href=\"/posts?a=1&amp;b=2\"><svg")
+expect Look.side({ name: "Db", note: "", home: "/db", nav: "", to_app: "/", foot: "Kept 7 d." }).ends_with("<span class=\"label\">Back to the app</span></a><p class=\"side-foot\">Kept 7 d.</p></div></aside>")
+# Back to the app: from a page of the app's own, there, remembered for the page's path.
+expect Look.back_to_app([{ name: "Host", value: "localhost:5173" }, { name: "Referer", value: "http://localhost:5173/posts/7?tab=a;b" }], "/admin/jobs") == { href: "/posts/7?tab=a;b", headers: [{ name: "set-cookie", value: "rocx_back=/posts/7?tab=a%3Bb; Path=/admin/jobs; HttpOnly; SameSite=Lax" }] }
+expect Look.back_to_app([{ name: "host", value: "example.com" }, { name: "referer", value: "https://example.com" }], "/admin/jobs").href == "/"
+# From one of its own pages (a filter, a form's redirect back): the page remembered, nothing sent.
+expect Look.back_to_app([{ name: "host", value: "example.com" }, { name: "referer", value: "https://example.com/admin/jobs?state=failed" }, { name: "cookie", value: "a=1; rocx_back=/posts/7?tab=a%3Bb" }], "/admin/jobs") == { href: "/posts/7?tab=a%3Bb", headers: [] }
+expect Look.back_to_app([{ name: "host", value: "example.com" }, { name: "referer", value: "https://example.com/admin/jobs" }], "/admin/jobs/") == { href: "/", headers: [] }
+expect Look.back_to_app([{ name: "host", value: "example.com" }, { name: "referer", value: "https://example.com/admin/jobs" }, { name: "cookie", value: "rocx_back=//evil.example" }], "/admin/jobs").href == "/"
+# A page beside it whose path starts the same is the app's.
+expect Look.back_to_app([{ name: "host", value: "example.com" }, { name: "referer", value: "https://example.com/admin/jobsite" }], "/admin/jobs").href == "/admin/jobsite"
+# From nowhere, or another site: the front page, what was remembered forgotten.
+expect Look.back_to_app([{ name: "host", value: "example.com" }, { name: "cookie", value: "rocx_back=/posts" }], "/admin/jobs") == { href: "/", headers: [{ name: "set-cookie", value: "rocx_back=; Path=/admin/jobs; HttpOnly; SameSite=Lax; Max-Age=0" }] }
+expect Look.back_to_app([{ name: "host", value: "example.com" }, { name: "referer", value: "https://example.com.evil.example/posts" }], "/admin/jobs") == { href: "/", headers: [] }
 expect Look.back_link({ label: "", href: "" }) == ""
 expect Look.back_link({ label: "Acme <Status>", href: "/admin?a=1&b=2" }).starts_with("<a class=\"back\" href=\"/admin?a=1&amp;b=2\"><svg") and Look.back_link({ label: "Acme <Status>", href: "/admin" }).ends_with("<span class=\"label\">Acme &lt;Status&gt;</span></a>")
 expect Look.nav_link({ href: "/db?table=a&b", icon: "", tone: "good", label: "A", count: "", on: Bool.True }) == "<a href=\"/db?table=a&amp;b\" aria-current=\"page\"><i class=\"dot tone-good\"></i><span class=\"label\">A</span></a>"

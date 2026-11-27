@@ -57,7 +57,7 @@ Mailbox := [].{
 				} else if AdminHtml.asks(request.query, "events") {
 					AdminHtml.changes(["email:mailbox"], "")
 				} else {
-					listed!({})
+					with_app!(request, listed!)
 				}
 			("POST", "/__rocx/mail/clear") =>
 				if Server.same_origin(request) {
@@ -68,12 +68,21 @@ Mailbox := [].{
 				}
 			("GET", path) =>
 				match I64.from_str(path.drop_prefix("/__rocx/mail/")) {
-					Ok(id) => one!(id)
+					Ok(id) => with_app!(request, |to_app| one!(id, to_app))
 					Err(_) => Server.refused(404, "No page at ${path}.")
 				}
 			_ => Server.refused(405, "The mailbox answers GET, and POST /__rocx/mail/clear.")
 		}
 	}
+}
+
+## A page of the mailbox's, drawn with where "Back to the app" goes (`Look.back_to_app`), and with
+## the headers that remember it.
+with_app! : Server.Request, (Str => Server.Response) => Server.Response
+with_app! = |request, draw!| {
+	to_app = Look.back_to_app(request.headers, "/__rocx/mail")
+	answer = draw!(to_app.href)
+	{ ..answer, headers: answer.headers.concat(to_app.headers) }
 }
 
 ## A message kept, with its id.
@@ -103,18 +112,19 @@ json! = |{}|
 		Err(why) => Server.refused(500, why)
 	}
 
-## The mailbox's sidebar: its one list, and how many messages it has.
-mail_side : U64, Bool -> Str
-mail_side = |count, on| {
+## The mailbox's sidebar: its one list, and how many messages it has; at its foot, "Back to the
+## app" (to `to_app`, `Look.back_to_app`'s).
+mail_side : U64, Bool, Str -> Str
+mail_side = |count, on, to_app| {
 	inbox = Look.nav_link({ href: "/__rocx/mail", icon: "mail", tone: "accent", label: "Inbox", count: count.to_str(), on })
-	Look.side({ name: "Mailbox", note: "Mail kept, not sent", home: "/__rocx/mail", nav: inbox, foot: "Under --dev, with no SMTP_URL, the server keeps each email here instead of sending it." })
+	Look.side({ name: "Mailbox", note: "Mail kept, not sent", home: "/__rocx/mail", nav: inbox, to_app, foot: "Under --dev, with no SMTP_URL, the server keeps each email here instead of sending it." })
 }
 
-listed! : {} => Server.Response
-listed! = |{}| {
+listed! : Str => Server.Response
+listed! = |to_app| {
 	now = Time.now_millis!({}).to_i64_wrap()
 	match all!({}) {
-		Err(why) => AdminHtml.page(500, { title: "Mailbox", events: "", now, side: mail_side(0, Bool.True), body: "${Look.header({ eyebrow: "Dev mailbox", title: "Mailbox", actions: "" })}<section class=\"panel\"><p class=\"problem\">${Look.escape(why)}</p></section>" })
+		Err(why) => AdminHtml.page(500, { title: "Mailbox", events: "", now, side: mail_side(0, Bool.True, to_app), body: "${Look.header({ eyebrow: "Dev mailbox", title: "Mailbox", actions: "" })}<section class=\"panel\"><p class=\"problem\">${Look.escape(why)}</p></section>" })
 		Ok(messages) => {
 			rows = messages.fold([], |newest_first, each| newest_first.prepend(each)).map(
 				|each| {
@@ -138,7 +148,7 @@ listed! = |{}| {
 				],
 				"",
 			)
-			AdminHtml.page(200, { title: "Mailbox", events: "/__rocx/mail?events", now, side: mail_side(rows.len(), Bool.True), body })
+			AdminHtml.page(200, { title: "Mailbox", events: "/__rocx/mail?events", now, side: mail_side(rows.len(), Bool.True, to_app), body })
 		}
 	}
 }
@@ -162,15 +172,15 @@ addressed = |message| {
 	"${cc}${bcc}${reply_to}"
 }
 
-one! : I64 => Server.Response
-one! = |id| {
+one! : I64, Str => Server.Response
+one! = |id, to_app| {
 	now = Time.now_millis!({}).to_i64_wrap()
 	back = "<a class=\"btn\" href=\"/__rocx/mail\">${Look.icon("back")}Mailbox</a>"
 	match all!({}) {
-		Err(why) => AdminHtml.page(500, { title: "Mailbox", events: "", now, side: mail_side(0, Bool.False), body: "${Look.header({ eyebrow: "Dev mailbox", title: "Mailbox", actions: back })}<section class=\"panel\"><p class=\"problem\">${Look.escape(why)}</p></section>" })
+		Err(why) => AdminHtml.page(500, { title: "Mailbox", events: "", now, side: mail_side(0, Bool.False, to_app), body: "${Look.header({ eyebrow: "Dev mailbox", title: "Mailbox", actions: back })}<section class=\"panel\"><p class=\"problem\">${Look.escape(why)}</p></section>" })
 		Ok(messages) =>
 			match messages.find_first(|each| each.id == id) {
-				Err(_) => AdminHtml.page(404, { title: "Mailbox", events: "", now, side: mail_side(messages.len(), Bool.False), body: "${Look.header({ eyebrow: "Dev mailbox", title: "No message #${id.to_str()}", actions: back })}<section class=\"panel\">${Look.empty("mail", "No message #${id.to_str()}", "It may have been cleared, or kept more than a week ago.")}</section>" })
+				Err(_) => AdminHtml.page(404, { title: "Mailbox", events: "", now, side: mail_side(messages.len(), Bool.False, to_app), body: "${Look.header({ eyebrow: "Dev mailbox", title: "No message #${id.to_str()}", actions: back })}<section class=\"panel\">${Look.empty("mail", "No message #${id.to_str()}", "It may have been cleared, or kept more than a week ago.")}</section>" })
 				Ok(message) => {
 					subject = if (message.subject.is_empty()) "(no subject)" else message.subject
 					headers = Str.join_with(message.headers.map(|header| "<dt>${Look.escape(header.name)}</dt><dd>${Look.escape(header.value)}</dd>"), "")
@@ -191,7 +201,7 @@ one! = |id| {
 						],
 						"",
 					)
-					AdminHtml.page(200, { title: subject, events: "", now, side: mail_side(messages.len(), Bool.False), body })
+					AdminHtml.page(200, { title: subject, events: "", now, side: mail_side(messages.len(), Bool.False, to_app), body })
 				}
 			}
 	}

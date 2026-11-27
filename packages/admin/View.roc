@@ -14,7 +14,7 @@ View := [].{
 
 	## What every page knows: the admin's path and title, the tables it shows, what the visitor may
 	## do, and the token its forms send back (against cross-site requests).
-	Frame : { mount : Str, title : Str, tables : List(Admin.Shown), access : Admin.Access, token : Str, back : { label : Str, href : Str } }
+	Frame : { mount : Str, title : Str, tables : List(Admin.Shown), access : Admin.Access, token : Str, back : { label : Str, href : Str }, to_app : Str }
 
 	## The sidebar: the admin's name, the link back to the app (`back`, if it has one), a link to
 	## all its tables, then each table (`on`: the page shown, which the sidebar marks), and what the
@@ -30,7 +30,7 @@ View := [].{
 				ReadOnly => "Read only: you may look here, not change anything."
 				Refused => ""
 			}
-		Look.side({ name: frame.title, note: "Tables, in Postgres", home: frame.mount, nav: "${Look.back_link(frame.back)}${overview}${listed}", foot })
+		Look.side({ name: frame.title, note: "Tables, in Postgres", home: frame.mount, nav: "${Look.back_link(frame.back)}${overview}${listed}", to_app: frame.to_app, foot })
 	}
 
 	## The tables, each with about how many rows it has and what it is.
@@ -459,7 +459,7 @@ books = {
 }
 
 frame_of : Admin.Access -> View.Frame
-frame_of = |access| { mount: "/db", title: "Database", tables: [Admin.pair(books, { name: "books", search: ["title"] }), Admin.pair(authors, { name: "authors" }), shelf], access, token: "t0k", back: { label: "", href: "" } }
+frame_of = |access| { mount: "/db", title: "Database", tables: [Admin.pair(books, { name: "books", search: ["title"] }), Admin.pair(authors, { name: "authors" }), shelf], access, token: "t0k", back: { label: "", href: "" }, to_app: "/" }
 
 ## A table of each kind of filter: text, a foreign key, a boolean, an enum and a check (each may be
 ## null, or not), a number, a moment and a day; a hidden column, and one the list doesn't show.

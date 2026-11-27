@@ -103,6 +103,10 @@ nav { flex: 1; overflow: auto; padding: 0 0.5rem 1rem; }
 .stories a:hover { background: var(--hover); color: var(--ink); }
 .stories a.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 .none { margin: 1.5rem 0.75rem; color: var(--faint); }
+/* Back to the page of the app's this tab came from (or its front page), at the side's foot. */
+.to-app { display: flex; align-items: center; gap: 0.5rem; margin: 0 0.75rem 0.6rem; padding: 0 0.6rem; height: 2.1rem; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); color: var(--ink); text-decoration: none; }
+.to-app:hover { background: var(--hover); }
+.to-app svg { color: var(--muted); }
 .keys { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; padding: 0.7rem 1rem; border-top: 1px solid var(--rule); color: var(--faint); font-size: 11.5px; }
 .keys span { display: inline-flex; align-items: center; gap: 0.25rem; }
 
@@ -161,6 +165,7 @@ body.full .exit { display: inline-flex; }
 		<button class="seen" id="seen-all" title="Take every story's dot away">Mark all seen</button>
 	</div>
 	<nav id="list"></nav>
+	<a class="to-app" id="to-app" href="/"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 18-6-6 6-6"/><path d="M19 12H5"/></svg>Back to the app</a>
 	<div class="keys"><span><kbd>↑↓</kbd> move</span><span><kbd>N</kbd> next new</span><span><kbd>F</kbd> full screen</span><span><kbd>S</kbd> side</span></div>
 	<div class="grip" id="grip" role="separator" aria-orientation="vertical" aria-label="The side's width" aria-valuemin="180" aria-valuemax="640" tabindex="0" title="Drag to widen; double-click to put it back"></div>
 </aside>
@@ -200,6 +205,13 @@ function picked() {
 	return { story: STORIES.find((story) => story.id === hash) ?? STORIES[0] };
 }
 const state = (name) => sessionStorage.getItem("rocx-stories-" + name) === "yes";
+// "Back to the app": the page of the app's this tab came from, kept for the tab (a rebuild's reload
+// comes from the catalog itself), or the app's front page.
+{
+	const from = document.referrer ? new URL(document.referrer) : null;
+	if (from && from.origin === location.origin && from.pathname !== BASE && !from.pathname.startsWith(BASE + "/")) sessionStorage.setItem("rocx-stories-back", from.pathname + from.search + from.hash);
+	document.getElementById("to-app").href = sessionStorage.getItem("rocx-stories-back") ?? "/";
+}
 function set(name, on) {
 	sessionStorage.setItem("rocx-stories-" + name, on ? "yes" : "no");
 	document.body.classList.toggle(name, on);

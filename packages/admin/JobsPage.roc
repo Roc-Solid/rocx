@@ -46,7 +46,9 @@ JobsPage := [].{
 			if AdminHtml.asks(request.query, "events") {
 				AdminHtml.changes([Job.changes], "rocx_jobs")
 			} else {
-				shown!(mount, mounted.back, request.query)
+				way_back = Look.back_to_app(request.headers, mount)
+				answer = shown!(mount, { back: mounted.back, to_app: way_back.href }, request.query)
+				{ ..answer, headers: answer.headers.concat(way_back.headers) }
 			}
 		} else {
 			Server.response(405, [{ name: "allow", value: "GET, HEAD, POST" }, { name: "content-type", value: "text/plain; charset=utf-8" }], "The jobs page answers GET and POST.")
@@ -94,8 +96,8 @@ kind_meta = |kinds, name|
 ## The page: how many there are in each state, then the jobs the query picks; with no filter, the
 ## last hour, the latest failures, the kinds and the schedules too; with `?id=`, that job in a
 ## drawer over it.
-shown! : Str, { label : Str, href : Str }, Str => Server.Response
-shown! = |mount, back, query| {
+shown! : Str, { back : { label : Str, href : Str }, to_app : Str }, Str => Server.Response
+shown! = |mount, links, query| {
 	state = AdminHtml.param(query, "state")
 	kind = AdminHtml.param(query, "kind")
 	before = I64.from_str(AdminHtml.param(query, "before")) ?? 0
@@ -113,7 +115,7 @@ shown! = |mount, back, query| {
 	match read {
 		Err(why) => {
 			body = "${Look.header({ eyebrow: "Queue", title: "Jobs", actions: "" })}<section class=\"panel\"><div class=\"callout tone-bad\">${Look.icon("alert")}<div><strong>The queue can't be read</strong><p class=\"problem\">${Look.escape(why)}</p></div></div></section>"
-			side = if (back.href.is_empty()) "" else Look.side({ name: "Jobs", note, home: mount, nav: Look.back_link(back), foot: "" })
+			side = Look.side({ name: "Jobs", note, home: mount, nav: Look.back_link(links.back), to_app: links.to_app, foot: "" })
 			AdminHtml.page(500, { title: "Jobs", events: "", now, side, body })
 		}
 		Ok((counts, rows)) => {
@@ -177,7 +179,7 @@ shown! = |mount, back, query| {
 					Ok(id) => "Job #${id.to_str()} · Jobs"
 					Err(_) => if (kind.is_empty()) titled else "${kind} · Jobs"
 				}
-			AdminHtml.page(opened.status, { title, events: AdminHtml.link(mount, [("events", "1")]), now, side: sidebar(mount, back, note, counts, kinds, keeps, state, kind), body })
+			AdminHtml.page(opened.status, { title, events: AdminHtml.link(mount, [("events", "1")]), now, side: sidebar(mount, links, note, counts, kinds, keeps, state, kind), body })
 		}
 	}
 }
@@ -193,11 +195,12 @@ queue_note = |engine|
 		None => "The queue"
 	}
 
-## The sidebar: the link back to the app (`back`, if it has one), the overview, each state and each
-## kind, with how many jobs each has. `note` is what it says of the queue (`queue_note`); at its
-## foot, how long finished jobs are kept (`keeps`, the plugin's).
-sidebar : Str, { label : Str, href : Str }, Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), { keep_done_ms : U64, keep_failed_ms : U64 }, Str, Str -> Str
-sidebar = |mount, back, note, counts, kinds, keeps, state, kind| {
+## The sidebar: the link to the app's own pages (`back`, if it has one), the overview, each state and
+## each kind, with how many jobs each has. `note` is what it says of the queue (`queue_note`); at
+## its foot, "Back to the app" (to `to_app`, `Look.back_to_app`'s) and how long finished jobs are kept
+## (`keeps`, the plugin's).
+sidebar : Str, { back : { label : Str, href : Str }, to_app : Str }, Str, List({ kind : Str, state : Str, count : U64 }), List(Job.KindInfo), { keep_done_ms : U64, keep_failed_ms : U64 }, Str, Str -> Str
+sidebar = |mount, links, note, counts, kinds, keeps, state, kind| {
 	overview = Look.nav_link({ href: mount, icon: "overview", tone: "accent", label: "Overview", count: "", on: state.is_empty() and kind.is_empty() })
 	by_state = states.map(
 		|each| {
@@ -207,8 +210,8 @@ sidebar = |mount, back, note, counts, kinds, keeps, state, kind| {
 	)
 	by_kind = kind_names(kinds, counts).map(|name| Look.nav_link({ href: AdminHtml.link(mount, [("kind", name)]), icon: "layers", tone: "neutral", label: "<code>${Look.escape(name)}</code>", count: count_of(counts, name, "").to_str(), on: kind == name }))
 	kinds_nav = if (by_kind.is_empty()) "" else "${Look.nav_label("Kinds")}${Str.join_with(by_kind, "")}"
-	nav = "${Look.back_link(back)}${overview}${Look.nav_label("States")}${Str.join_with(by_state, "")}${kinds_nav}"
-	Look.side({ name: "Jobs", note, home: mount, nav, foot: "Times are UTC. Done jobs are kept for ${AdminHtml.span(keeps.keep_done_ms.to_i64_wrap())}, failed and canceled ones for ${AdminHtml.span(keeps.keep_failed_ms.to_i64_wrap())}." })
+	nav = "${Look.back_link(links.back)}${overview}${Look.nav_label("States")}${Str.join_with(by_state, "")}${kinds_nav}"
+	Look.side({ name: "Jobs", note, home: mount, nav, to_app: links.to_app, foot: "Times are UTC. Done jobs are kept for ${AdminHtml.span(keeps.keep_done_ms.to_i64_wrap())}, failed and canceled ones for ${AdminHtml.span(keeps.keep_failed_ms.to_i64_wrap())}." })
 }
 
 ## How many jobs are in each state (of the kind shown), each a link to them.
@@ -642,9 +645,10 @@ expect described("0 0 1 * *") == "monthly, on day 1, at 00:00"
 expect described("0 3 * 1 *") == ""
 
 # The link back to the app, first in the sidebar, when the app gives one.
-expect sidebar("/admin/jobs", { label: "Status", href: "/admin" }, "The queue, in SQLite", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
-expect !sidebar("/admin/jobs", { label: "", href: "" }, "The queue", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("class=\"back\"")
+expect sidebar("/admin/jobs", { back: { label: "Status", href: "/admin" }, to_app: "/" }, "The queue, in SQLite", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("<nav class=\"side-nav\" aria-label=\"Jobs\"><a class=\"back\" href=\"/admin\">")
+expect !sidebar("/admin/jobs", { back: { label: "", href: "" }, to_app: "/" }, "The queue", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("class=\"back\"")
 
 # How long finished jobs are kept, at its foot, as the plugin says.
-expect sidebar("/admin/jobs", { label: "", href: "" }, "The queue", [], [], { keep_done_ms: 3_600_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("Done jobs are kept for 1 h, failed and canceled ones for 30 d.")
-expect sidebar("/admin/jobs", { label: "", href: "" }, "The queue, in SQLite", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("The queue, in SQLite")
+expect sidebar("/admin/jobs", { back: { label: "", href: "" }, to_app: "/" }, "The queue", [], [], { keep_done_ms: 3_600_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("Done jobs are kept for 1 h, failed and canceled ones for 30 d.")
+expect sidebar("/admin/jobs", { back: { label: "", href: "" }, to_app: "/posts" }, "The queue", [], [], { keep_done_ms: 3_600_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("<div class=\"side-end\"><a class=\"to-app\" href=\"/posts\">")
+expect sidebar("/admin/jobs", { back: { label: "", href: "" }, to_app: "/" }, "The queue, in SQLite", [], [], { keep_done_ms: 604_800_000, keep_failed_ms: 2_592_000_000 }, "", "").contains("The queue, in SQLite")
