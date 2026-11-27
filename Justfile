@@ -4,23 +4,26 @@
 
 # The toolchain is pinned: Roc's new compiler changes fast, and the glue the hosts are built
 # with (web/host/src/roc_platform_abi.rs, among them) must match the compiler that links against it.
-roc_nightly := "nightly-2026-11-18-a520eed"
-roc_commit := "a520eeda6c3745f2543fcdd0fb836d3d1336c5ac"
+# roc_commit is upstream's main the fork is on, where `just setup` takes the glue spec from;
+# roc_nightly is the nearest nightly, which `just compiler-bugs` compares against and a release's
+# notices read Roc's license from.
+roc_nightly := "nightly-2026-11-26-890d6c8"
+roc_commit := "bec95b9f4a443ca7e6e33a8a02730db252cc66eb"
 zig_version := "0.17.1"
 # Rust: any 1.85 or newer builds the server's host (edition 2024). The system's, on PATH (e.g. from
 # Nix), when it is; else rustup installs rust_version into .tools/rust.
 rust_minimum := "1.85"
 rust_version := "1.100.0"
 
-# Until the compiler fixes rocx needs are in a nightly, rocx builds with a fork of the nightly's
-# commit that has them: the `rocx` branch of the fork in ~/roc-fork (ROC_FORK names another),
+# Until the compiler fixes rocx needs are upstream, rocx builds with a fork of upstream's main
+# (roc_commit) that has them: roc_fork_commit, in the fork in ~/roc-fork (ROC_FORK names another),
 # local only until they are upstream. `just setup` builds its commit into .tools/roc-fork/<commit>/
 # and links it as .tools/roc-active: the compiler every script uses (`roc` here; site/build.mjs,
 # server/build.mjs and the tests), or, without it, the one ROC names; never the `roc` on PATH,
 # which may lack the fixes. test/compiler-bugs/ has each bug it fixes, and `just compiler-bugs`
 # shows which the nightly still has. The nightly stays in .tools/roc/.
 roc_fork := env_var_or_default("ROC_FORK", env_var("HOME") + "/roc-fork")
-roc_fork_commit := "4674b5973d4cea3875c2d33c6a63c95ff1d26843"
+roc_fork_commit := "2dd60e319d8f71359253e5b600c9cdbff50c95b4"
 # Where there is no fork to build it from (CI's machine, a newcomer's), `just setup` downloads the
 # fork's compiler prebuilt instead: a release of this repository, roc-fork-<the commit's first 10>,
 # the binary alone (not the fork's source), for macOS on Apple silicon and for Linux on arm64 (CI's
@@ -28,9 +31,9 @@ roc_fork_commit := "4674b5973d4cea3875c2d33c6a63c95ff1d26843"
 # roc-fork-linux [arm64|x86_64]` cross-builds Linux's on the machine with the fork; `just
 # publish-roc-fork` uploads what is built and prints the SHA-256s. A release of rocx (`just
 # release-compilers`) carries the same three.
-roc_fork_sha256_macos_apple_silicon := "1753ae2a7b0810b1ff063dd4b15be1e2800d2b48af29545c32b4cf63b954b563"
-roc_fork_sha256_linux_arm64 := "833b8432b2fd23e69830b3b1477c9d54f4d7cb0456668d3ab5f342db45ffaf81"
-roc_fork_sha256_linux_x86_64 := ""
+roc_fork_sha256_macos_apple_silicon := "dde0bdc6b9bcc5ead0725d52289f9b77ec7390c90ff9ef1e25ea7a739b68de92"
+roc_fork_sha256_linux_arm64 := "1f3e251a4c4aee35160fd60f0f63d58d3ba73a88880af8dc041822bfef2537c5"
+roc_fork_sha256_linux_x86_64 := "fc56f6765853ce6ea916ace34f00703ba99fcce3c70efab202805fda239e2515"
 
 # Variables are worked out when a recipe uses them: `just setup` needs no compiler yet.
 set lazy
@@ -228,8 +231,9 @@ publish-roc-fork:
         echo "roc_fork_sha256_$platform := \"$(shasum -a 256 "$tmp/$asset" | cut -d' ' -f1)\""
     done
     if [ ${#assets[@]} -eq 0 ]; then exit 0; fi
+    roc_main={{ roc_commit }}
     title="Roc compiler: rocx's fork at ${commit:0:10}"
-    notes="The Roc compiler rocx builds with, prebuilt for macOS on Apple silicon and Linux on arm64 and x86_64: Roc's {{ roc_nightly }} with the compiler fixes rocx needs until they are upstream, at the fork's commit $commit. \`just setup\` downloads the one for its machine where there is no fork to build it from (CI's machine, a newcomer's), and checks it against the Justfile's roc_fork_sha256_<platform>. The binaries alone: the fork's source isn't published."
+    notes="The Roc compiler rocx builds with, prebuilt for macOS on Apple silicon and Linux on arm64 and x86_64: Roc's main at ${roc_main:0:10} with the compiler fixes rocx needs until they are upstream, at the fork's commit $commit. \`just setup\` downloads the one for its machine where there is no fork to build it from (CI's machine, a newcomer's), and checks it against the Justfile's roc_fork_sha256_<platform>. The binaries alone: the fork's source isn't published."
     if [ "$exists" = 1 ]; then
         gh release upload "$release" "${assets[@]}" --repo Roc-Solid/rocx
         gh release edit "$release" --repo Roc-Solid/rocx --title "$title" --notes "$notes"

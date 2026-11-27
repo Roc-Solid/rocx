@@ -93,15 +93,13 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 			issues.Json.Encodable(e),
 		]
 	checked = |endpoint, rules| {
-		# The crash's words name no endpoint: a reader that captures the endpoint (whose `run` is a
-		# function) segfaults the fork's compiler in boxy_lowering (4674b5973d).
 		read = |fields|
 			match rules.parse(fields) {
 				Ok(arg) => Ok(arg)
 				Err(issues) =>
 					match Json.to_str_try(issues) {
 						Ok(json) => Err(json)
-						Err(_) => crash "a checked endpoint's issues ${Server.unwritable}"
+						Err(_) => crash "${endpoint.method} ${endpoint.url}'s issues ${Server.unwritable}"
 					}
 			}
 		{ ..endpoint, form: Checked({ read: read, schema: rules.json_schema() }) }

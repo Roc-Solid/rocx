@@ -221,6 +221,37 @@ function cliHostStale({ target = nativeTarget() } = {}) {
 function buildRustHost(hostDir, targetsDir, library, target) {
 	const triple = RUST_TARGETS[target];
 	if (!triple) throw new Error(`no host for the target ${target}: one of ${Object.keys(RUST_TARGETS).join(", ")}`);
+	const env = hostEnv(target, triple);
+	run("cargo", ["build", "--release", "--target", triple], { cwd: hostDir, env });
+	const built = join(hostDir, "target", triple, "release", library);
+	const dir = join(targetsDir, target);
+	copyIfChanged(built, join(dir, "libhost.a"));
+	if (target.endsWith("musl")) {
+		const sysroot = run("rustc", ["--print", "sysroot"], { env }).stdout.trim();
+		const crt = join(sysroot, "lib", "rustlib", triple, "lib", "self-contained");
+		for (const file of ["rcrt1.o", "libunwind.a", "libc.a"]) copyIfChanged(join(crt, file), join(dir, file));
+	}
+}
+
+/**
+ * The server's host for `target` with `engines` alone of the database engines beside SQLite
+ * (server/host's cargo features, D-104: [] for SQLite alone, ["turso"], ["postgres"]), in a cargo
+ * target directory of its own, as rocx-cli's Hosts.release_platform! builds it in a clone: the
+ * library's path. A release's bundles carry these (release/hosts.sh), so an installed rocx's
+ * release has the app's engine alone too.
+ */
+export function buildHostEngines({ target, engines }) {
+	const triple = RUST_TARGETS[target];
+	if (!triple) throw new Error(`no host for the target ${target}: one of ${Object.keys(RUST_TARGETS).join(", ")}`);
+	const variant = engines.length === 0 ? "sqlite" : engines.join("-");
+	const targetDir = join(hostDir, "target", `engines-${variant}`);
+	const features = engines.length === 0 ? [] : ["--features", engines.join(",")];
+	run("cargo", ["build", "--release", "--target", triple, "--no-default-features", "--target-dir", targetDir, ...features], { cwd: hostDir, env: hostEnv(target, triple) });
+	return join(targetDir, triple, "release", "librocx_server_host.a");
+}
+
+/** Cargo's environment for a host built for `target` (`triple`): a musl one's C compiled by Zig. */
+function hostEnv(target, triple) {
 	const env = rustEnv({ musl: target.endsWith("musl") });
 	if (target.endsWith("musl")) {
 		// A C compiler for the guard (src/guard.c) and for crates with C in them: Zig's, for any
@@ -237,15 +268,7 @@ function buildRustHost(hostDir, targetsDir, library, target) {
 		env.CARGO_PROFILE_RELEASE_DEBUG = "0";
 		run("rustup", ["target", "add", triple], { env });
 	}
-	run("cargo", ["build", "--release", "--target", triple], { cwd: hostDir, env });
-	const built = join(hostDir, "target", triple, "release", library);
-	const dir = join(targetsDir, target);
-	copyIfChanged(built, join(dir, "libhost.a"));
-	if (target.endsWith("musl")) {
-		const sysroot = run("rustc", ["--print", "sysroot"], { env }).stdout.trim();
-		const crt = join(sysroot, "lib", "rustlib", triple, "lib", "self-contained");
-		for (const file of ["rcrt1.o", "libunwind.a", "libc.a"]) copyIfChanged(join(crt, file), join(dir, file));
-	}
+	return env;
 }
 
 const webHostDir = join(root, "web", "host");

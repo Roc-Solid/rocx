@@ -8,7 +8,7 @@
 ## with the database's URL as its context (`--context-file`), for roc-pg to connect to.
 app [program] {
 	pf: platform "../../platform/main.roc",
-	pg: "https://github.com/niclas-ahden/roc-pg/releases/download/0.5.3/GHArBE4QrXKDpttdxtb8GQWXZWhWSuMBgA73qRoETm8r.tar.zst",
+	pg: "https://github.com/niclas-ahden/roc-pg/releases/download/0.5.4/Gf5P1QxtUx2T4sW4yCsCNNV8hok8MGSsjEnvALAVJ3Yk.tar.zst",
 }
 
 import pf.Random

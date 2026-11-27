@@ -44,17 +44,17 @@ fn host() -> RocHost {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_alloc(length: usize, alignment: usize) -> NonNull<c_void> {
-    abi::DefaultAllocators::roc_alloc(std::ptr::null_mut(), length, alignment)
+    unsafe { abi::DefaultAllocators::roc_alloc(std::ptr::null_mut(), length, alignment) }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_dealloc(ptr: *mut c_void, alignment: usize) {
-    abi::DefaultAllocators::roc_dealloc(std::ptr::null_mut(), ptr, alignment)
+    unsafe { abi::DefaultAllocators::roc_dealloc(std::ptr::null_mut(), ptr, alignment) }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_realloc(ptr: *mut c_void, length: usize, alignment: usize) -> NonNull<c_void> {
-    abi::DefaultAllocators::roc_realloc(std::ptr::null_mut(), ptr, length, alignment)
+    unsafe { abi::DefaultAllocators::roc_realloc(std::ptr::null_mut(), ptr, length, alignment) }
 }
 
 #[unsafe(no_mangle)]

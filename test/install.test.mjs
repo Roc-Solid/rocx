@@ -185,13 +185,16 @@ after(() => {
 	rmSync(work, { recursive: true, force: true });
 });
 
-test("rocx --version: an installed rocx says its VERSION; a clone, its commit", { skip }, () => {
+test("rocx --version: an installed rocx says its VERSION; a clone, its commit; each, the Roc compiler it runs", { skip }, () => {
 	const installed = bare(rocx, ["--version"]);
 	assert.equal(installed.code, 0, installed.said);
-	assert.equal(installed.stdout.trim(), `rocx ${VERSION} test rocx-fork-test`);
+	const [first, second] = installed.stdout.trim().split("\n");
+	assert.equal(first, `rocx ${VERSION} test rocx-fork-test`);
+	assert.match(second, /^roc /);
 	const clone = spawnSync(rocxBinary(), ["--version"], { encoding: "utf8" });
 	assert.equal(clone.status, 0, clone.stderr);
 	assert.match(clone.stdout, /^rocx from a clone at /);
+	assert.match(clone.stdout, /\nroc rocx-fork-[0-9a-f]+ \(.+\)\n/);
 });
 
 test("an app outside the repo, linked to a read-only install: rocx check and rocx test, with no roc and no .tools", { skip }, () => {

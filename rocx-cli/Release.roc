@@ -179,7 +179,19 @@ Release := [].{
 		photos = Release.enhances!(dir)
 		features = if (photos) engines.concat(["images"]) else engines
 		own = Fs.join([root, "server", "platform", "main.roc"])
-		linked = Term.step!(styled, "server host · ${Release.engines_said(engines)}${if (photos) " · photos' copies" else ""}", |{}| Hosts.release_platform!(root, target, features, Hosts.stage_for(root, dir, target)))?
+		# The step is named for the engines linked, which an installed version's bundle may not have
+		# alone (its full host, then).
+		host_step = Term.begin!(styled, "server host")
+		tmp = Env.var!("TMPDIR") ?? "/tmp"
+		linked =
+			match Hosts.release_platform!(root, target, features, Hosts.stage_for(if (tmp.is_empty()) "/tmp" else tmp, dir, target)) {
+				Ok(found) => found
+				Err(failed) => {
+					Term.failed!(host_step)
+					return Err(failed)
+				}
+			}
+		Term.done_named!(host_step, "server host · ${Release.engines_said(linked.engines.keep_if(|engine| engine != "images"))}${if (photos) " · photos' copies" else ""}")
 		# Roc knows a dependency by its real path, whichever way the app reached it (a `.rocx` link).
 		replaced = if (linked.main == own) [] else ["--replace-dep", Fs.real!(own), linked.main]
 		server = Fs.join([work, "server"])

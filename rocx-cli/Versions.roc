@@ -79,6 +79,25 @@ Versions := [].{
 		if (commit.is_empty()) "rocx from a clone at ${home}" else "rocx from a clone at ${commit} (${home})"
 	}
 
+	## The second line of `rocx --version`: the Roc compiler rocx runs here (`Hosts.roc!`'s: an
+	## installed version's own, a clone's `.tools/roc-active`, else $ROC), as its own `roc version`
+	## names it, and where it is; or that there is none.
+	compiler_line! : Try(Str, [Failed(Str)]) => Str
+	compiler_line! = |found|
+		match found {
+			Err(Failed(_)) => "roc: none found (run `just setup` in a clone, or set ROC)"
+			Ok(roc) =>
+				match Cmd.new(roc).arg("version").output!() {
+					Ok(ran) if ran.code == 0 => "roc ${Versions.compiler_name(ran.stdout)} (${roc})"
+					_ => "roc: ${roc} doesn't run"
+				}
+		}
+
+	## A compiler's name in what `roc version` prints (`Roc compiler version rocx-fork-a1714c98de`):
+	## its last word.
+	compiler_name : Str -> Str
+	compiler_name = |said| Text.trim(said).split_on(" ").last() ?? Text.trim(said)
+
 	## The app at `dir`'s `.rocx` made a link to `home` (an installed version, or a clone), unless it
 	## is one already: made when missing, mended when it points elsewhere or at nothing. A `.rocx` that
 	## is a directory of its own is left alone. Whether it made the link.
@@ -345,3 +364,6 @@ expect !Versions.is_version("1.0/2")
 expect !Versions.is_version("")
 expect Versions.app_dir("build", ["--image", "build/app.tar", "--tag", "app:1"]) == "."
 expect Versions.app_dir("build", ["--static", "--out", "site/dist", "site"]) == "site"
+
+expect Versions.compiler_name("Roc compiler version rocx-fork-a1714c98de\n") == "rocx-fork-a1714c98de"
+expect Versions.compiler_name("nightly") == "nightly"

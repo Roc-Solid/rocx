@@ -67,7 +67,7 @@ scales! = |_| Ok("# Scales\n\nWater freezes at 0 °C, 32 °F and 273.15 K.")
 
 boiling! : Dict(Str, Str), Str, {} => Try(List(Resource.Contents), [NotFound, Failed(Str)])
 boiling! = |values, uri, _| {
-	point : Try(Str, [NotFound])
+	point : Try(Str, [NotFound, Failed(Str)])
 	point =
 		match values.get("substance") ?? "" {
 			"water" => Ok("100 °C")

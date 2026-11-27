@@ -6298,10 +6298,11 @@ distroless 59, .NET's chiseled ASP.NET 50.
 - **The platform's own `targets/` stay as they are.** The release links against a copy of the
   platform's modules, with that host in its `targets/<target>/`, put in the platform's place by
   `roc build --replace-dep` (the fork's flag; it knows a dependency by its real path, and replaces it
-  for the packages that name the platform too). The copy is one per app and target, under the host's
-  cargo target directory (`server/host/target/release-platforms/<app>-<hash>-<target>/`, deleted
-  once the server is linked), not in the app, whose files `rocx lint`, `rocx fmt` and editors read (the platform's `Html.source_text`
-  tripped the lint there). A `rocx dev`, a test or another app's build linking against the platform
+  for the packages that name the platform too). The copy is one per app and target, in the
+  system's temporary directory (`$TMPDIR/rocx-release-platforms/<app>-<hash>-<target>/`, deleted
+  once the server is linked): not in the app, whose files `rocx lint`, `rocx fmt` and editors read
+  (the platform's `Html.source_text` tripped the lint there), nor in rocx, which an installed
+  version keeps read-only (the first release's dry run found that). A `rocx dev`, a test or another app's build linking against the platform
   meanwhile is unaffected, so nothing takes a lock.
 - **A musl release's server loses its debug info**: `llvm-strip --strip-debug`, from rustup's
   `llvm-tools` (added when missing, as the musl target is), else `$LLVM_STRIP` or one on PATH; with
@@ -6325,6 +6326,13 @@ without names).
 
 **Costs.** A release can't be pointed at another engine by its URL. The first release of each
 engine's host compiles the host's crates again, in its own target directory (a minute or so).
+
+**Since 2026-11-27, installed versions too.** A release's bundles carry, for each Linux target, the
+host with SQLite alone and with Postgres (`server/platform/engines/<sqlite|postgres>/<target>/
+libhost.a`, built and stripped by release/hosts.sh, copied by release/pack.sh: 39 and 48 MB beside
+the full host's 98); an installed rocx's `release_platform!` stages the one the app names, and links
+its full host when the bundle has none: a Turso app's (Turso's alone is 89 MB, too little smaller to
+carry), a Mac target's release.
 
 **Reversible:** yes: `release_platform!` gives the platform's own main.roc for every engine, and
 the features stay on by default.
@@ -7165,3 +7173,60 @@ starting when it scrolls into view, real input scripted at frames, `rocx render`
 and rendering on the server with an app's data (TODO.md).
 
 **Reversible:** yes.
+
+## D-115 The fork on upstream's main: `rocx-fixes-5`, and `rocx --version` names its compiler
+
+**Status.** Built (2026-11-27), the user's calls: keep the fork in step with upstream, on its main
+rather than a nightly, before the first release pins the compiler a release carries.
+
+**Context.** The pin was 4674b5973d, seven fixes (each with its failing test) on
+nightly-2026-11-18-a520eed; upstream's main had moved 737 commits since (a520eed..bec95b9f4a). Four of the fixes
+are upstream's now (the Try codecs, `List.map`'s in-place extraction, the inlined call's clone,
+the binding group's claim). The round of fixes of 2026-11-27 (test/compiler-bugs/README.md indexes
+them) was first put on the latest nightly (`rocx-fixes-4`, 3943c21646, on 890d6c8); upstream's main
+was 93 commits further on, and the fixes go upstream as PRs against main.
+
+**Decision.**
+
+- **The fork's branch `rocx-fixes-5`**, pin 2dd60e319d: upstream's main at bec95b9f4a, then the
+  fork's fixes, each a failing test and the fix: the nested codec derivation, `List.map`'s output
+  item, and the round of 2026-11-27: the slot-lifetime fix again (upstream's marks only the slots
+  passed to a call: the docs site's frames 2.86 MB against 248 KB), the dispatcher's frame, a
+  nested site's evidence scope (a component call leaving out a closure-defaulted prop built a wrong
+  program without a word under `--specialize=yes`), an effectful closure's default, a nested
+  lambda literal's default, a `?` on a rigid row, two formats in one where clause (reported, not a
+  crash), an endpoint captured by a closure. Upstream's main still has nine of the thirteen bugs
+  the folder keeps. Rebasing the round onto main changed one line: upstream's `runUnify` takes its
+  options by pointer. `rocx-fixes-3` and `rocx-fixes-4` (both on the nightly) were steps on the way.
+- **PR #13549's regressions, fixed in the fork.** Upstream's main brought polymorphic constants
+  (a top-level constant generalizes, each closed instance computed at compile time), and rocx's
+  tests met six regressions of it the nightly hadn't: a constant read in a local function over its
+  enclosing function's variable (servers built `--opt=dev`: the static build's, auth's, guard's, the
+  stories app's); a constant in a recursive group taking on a function's JSON codec requirement (the
+  push example); a constant read in a value the platform types, an app's `program` (the testing
+  app); and, in a recursive group, a field's kind built as its slot, the constant read in a generic
+  function under `--specialize=yes`, and a number literal's type generalized. Each is a two-commit
+  branch on upstream's main with a repro and a README in test/compiler-bugs/; upstream's main still
+  has them.
+- **`roc_commit` is upstream's main** (bec95b9f4a), where `just setup` takes the glue spec from;
+  `roc_nightly` stays the nearest nightly (890d6c8), which `just compiler-bugs` compares against
+  and a release's notices read Roc's license from. The glue spec didn't change between them.
+- **The glue, regenerated** with the new compiler (`just glue`): the hosts' ABI files keep their
+  items in a module and their callbacks `unsafe extern "C"`; the CLI host's allocator calls say
+  `unsafe`; the server's lists `Host.dev_links!` (D-111) in order.
+- **What the compiler asks of the code now**: a closed error union is no longer widened into a
+  bigger one by itself (one docs demo annotates its value with the union the function returns);
+  a type declared in a module's block isn't another module's to name, which roc-pg 0.5.3's MD5
+  did, so the roc-pg example moves to 0.5.4 (its release for the newer compiler).
+- **What the fixes let go**: `Endpoint.checked`'s reader crashes naming its endpoint's method and
+  URL (a reader capturing the endpoint crashed the old compiler). examples/uptime may write
+  `..others` for a transaction's errors now; it keeps its closed union, which says what it means.
+- **`rocx --version` names the compiler** on a second line, `roc <its version> (<its path>)`: the one
+  rocx runs there (`Hosts.roc!`: an installed version's `bin/roc`, a clone's `.tools/roc-active`,
+  else `$ROC`), as its own `roc version` names it; or that there is none. The first line is as it
+  was. A report of a bug says which compiler it met.
+- **Compilers for every platform at the pin**, published as roc-fork-2dd60e319d and pinned by
+  SHA-256: macOS on Apple silicon, Linux arm64 and, the first time, x86_64 (the first release
+  covers it).
+
+**Reversible:** yes: the pin back to 4674b5973d and the glue with it.

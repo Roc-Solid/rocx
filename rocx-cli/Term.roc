@@ -83,6 +83,10 @@ Term := [].{
 	done! : Step => {}
 	done! = |step| Term.finish!(step, Term.green(step.styled, "✓"), Term.dim(step.styled, Term.lpad(Term.took(Time.now_ms!({}) - step.started), 8)))
 
+	## The step done under another name (what it found out it was): `  ✓ server host · SQLite  0.4 s`.
+	done_named! : Step, Str => {}
+	done_named! = |step, what| Term.done!({ ..step, what })
+
 	## The step done, with `note` (dim) where its time would go: `  ✓ server host  unchanged`.
 	done_with! : Step, Str => {}
 	done_with! = |step, note| Term.finish!(step, Term.green(step.styled, "✓"), Term.dim(step.styled, note))

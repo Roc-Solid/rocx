@@ -3,7 +3,9 @@
 # release/out/hosts/<target>/ for release/pack.sh:
 #   arm64mac, arm64musl, x64musl: `rocx`, bin/rocx built for the target, and `server/`, the server
 #     platform's host (libhost.a, and a musl target's rcrt1.o, libunwind.a, libc.a), debug info
-#     stripped;
+#     stripped; a musl target's `server/engines/<sqlite|postgres>/libhost.a` too, the host with
+#     SQLite alone or with Postgres (D-104), for a release of an app that names that engine (a Turso
+#     app's links the full host, only a little bigger than Turso's alone);
 #   wasm32: `host.wasm`, the browser's host.
 # Each target's COMMIT names the commit that built it (with -dirty when tracked files had
 # changes), so pack.sh doesn't mix builds of two commits.
@@ -47,7 +49,11 @@ stripped() {
 	cp "$from" "$to"
 	chmod u+w "$to"
 	case "$target:$to" in
-		arm64mac:*.a | *musl:*) "$(llvm_strip)" --strip-debug "$to" ;;
+		arm64mac:*.a | *musl:*)
+			local strip
+			strip=$(llvm_strip) || exit 1
+			"$strip" --strip-debug "$to"
+			;;
 	esac
 	echo "  $(basename "$to"): $(size "$from") -> $(size "$to")"
 }
@@ -85,6 +91,20 @@ for target in "$@"; do
 			for file in $files; do
 				stripped "$target" "server/platform/targets/$target/$file" "$dir/server/$file"
 			done
+			# The host with each set of database engines (D-104): what an installed rocx links a
+			# Linux release of an app that names one engine with (rocx-cli/Hosts.roc's
+			# release_platform!), as a clone builds it.
+			if [ "$target" != arm64mac ]; then
+				for engines in "" postgres; do
+					variant=${engines:-sqlite}
+					built=$(ROC="$ROC" node --input-type=module -e "
+						const build = await import('./server/build.mjs');
+						console.log(build.buildHostEngines({ target: '$target', engines: '$engines' ? ['$engines'] : [] }));
+					" | tail -1)
+					mkdir -p "$dir/server/engines/$variant"
+					stripped "$target" "$built" "$dir/server/engines/$variant/libhost.a"
+				done
+			fi
 			;;
 		*)
 			echo "No target $target: arm64mac, arm64musl, x64musl or wasm32" >&2

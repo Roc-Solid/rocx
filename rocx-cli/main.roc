@@ -58,6 +58,7 @@ main! = |args| {
 		Ok("internal") => internal!({})
 		Ok("--version") => {
 			Stdout.line!(Versions.line!(home))?
+			Stdout.line!(Versions.compiler_line!(Hosts.roc!(Hosts.root_of!(Fs.cwd!(), home))))?
 			Ok({})
 		}
 		Ok("upgrade") => Versions.upgrade!(words.drop_first(1), home)

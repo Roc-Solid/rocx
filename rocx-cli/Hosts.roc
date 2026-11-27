@@ -292,30 +292,58 @@ Hosts := [].{
 	}
 
 	## The server platform's `main.roc` a release for `target` links with, and the engines its host
-	## has (D-104): the platform's own,
-	## its host built with every engine (`server_host!`), when `engines` is all of them or this is an
-	## installed version (its host is built); else a copy of the platform's modules in `stage`, with a
-	## host built with `engines` alone (cargo's features, in a target directory of their own beside
-	## the full host's) in its `targets/<target>/`, for `roc build --replace-dep` to put in the
+	## has (D-104): the platform's own, its host built with every engine (`server_host!`), when
+	## `engines` is all of them, or this is an installed version whose bundle has no host for them;
+	## else a copy of the platform's modules in `stage`, with a host of `engines` alone in its
+	## `targets/<target>/` (a clone's built by cargo with those features, in a target directory of its
+	## own beside the full host's; an installed version's from its bundle,
+	## server/platform/engines/<variant>/<target>/), for `roc build --replace-dep` to put in the
 	## platform's place. The platform's own targets/ stay as they are, so a `rocx dev` or a test
 	## linking against them meanwhile is unaffected. `stage` is `stage_for`'s.
 	release_platform! : Str, Str, List(Str), Str => Try({ main : Str, engines : List(Str) }, [Failed(Str)])
 	release_platform! = |rocx, target, engines, stage| {
 		modules = Fs.join([rocx, "server", "platform"])
 		host_dir = Fs.join([rocx, "server", "host"])
+		full = { main: Fs.join([modules, "main.roc"]), engines: Hosts.all_engines }
 		# `engines` may name `images` too (D-125: an app that writes enhanced:src), which the full host has.
-		if engines == Hosts.all_engines or engines == Hosts.all_engines.concat(["images"]) or !File.is_dir!(host_dir) {
+		if engines == Hosts.all_engines or engines == Hosts.all_engines.concat(["images"]) {
 			Hosts.server_host!(rocx, target)?
-			return Ok({ main: Fs.join([modules, "main.roc"]), engines: Hosts.all_engines })
+			return Ok(full)
 		}
-		Hosts.sync_shared!(rocx)
 		triple = Hosts.rust_target(target)
 		variant = if (engines.is_empty()) "sqlite" else Str.join_with(engines, "-")
+		inputs = Fs.join([stage, "targets", target])
+		if !File.is_dir!(host_dir) {
+			# An installed version: the host its bundle carries for these engines (release/pack.sh, a
+			# Linux target's SQLite alone or with Postgres), else its full one (a Turso app's: Turso's
+			# alone is barely smaller).
+			prebuilt = Fs.join([modules, "engines", variant, target, "libhost.a"])
+			if !File.exists!(prebuilt) {
+				Hosts.server_host!(rocx, target)?
+				return Ok(full)
+			}
+			Hosts.staged!(modules, stage, inputs, prebuilt)?
+			for file in ["rcrt1.o", "libunwind.a", "libc.a"] {
+				Hosts.copy_if_changed!(Fs.join([modules, "targets", target, file]), Fs.join([inputs, file]))?
+			}
+			return Ok({ main: Fs.join([stage, "main.roc"]), engines })
+		}
+		Hosts.sync_shared!(rocx)
 		target_dir = Fs.join([host_dir, "target", "engines-${variant}"])
 		features = if (engines.is_empty()) [] else ["--features", Str.join_with(engines, ",")]
 		Hosts.cargo_host!(rocx, target, ["--no-default-features", "--target-dir", target_dir].concat(features))?
+		Hosts.staged!(modules, stage, inputs, Fs.join([target_dir, triple, "release", "librocx_server_host.a"]))?
+		if target.ends_with("musl") {
+			Hosts.musl_runtime!(rocx, triple, inputs)?
+		}
+		Ok({ main: Fs.join([stage, "main.roc"]), engines })
+	}
+
+	## The platform's modules copied into `stage`, afresh, and `library` as the host in `inputs`
+	## (its `targets/<target>/`).
+	staged! : Str, Str, Str, Str => Try({}, [Failed(Str)])
+	staged! = |modules, stage, inputs, library| {
 		Fs.delete_all!(stage)
-		inputs = Fs.join([stage, "targets", target])
 		Fs.make_dirs!(inputs)
 		for name in Fs.entries!(modules) {
 			if name.ends_with(".roc") {
@@ -325,20 +353,17 @@ Hosts := [].{
 				}
 			}
 		}
-		Hosts.copy_if_changed!(Fs.join([target_dir, triple, "release", "librocx_server_host.a"]), Fs.join([inputs, "libhost.a"]))?
-		if target.ends_with("musl") {
-			Hosts.musl_runtime!(rocx, triple, inputs)?
-		}
-		Ok({ main: Fs.join([stage, "main.roc"]), engines })
+		Hosts.copy_if_changed!(library, Fs.join([inputs, "libhost.a"]))
 	}
 
-	## Where a release of the app in `dir` for `target` copies the platform (D-104): under the host's
-	## cargo target directory, outside the app, whose files rocx's checks and editors read; one for
-	## each app and target, deleted once the server is linked.
+	## Where a release of the app in `dir` for `target` copies the platform (D-104): in the system's
+	## temporary directory (`tmp`, $TMPDIR's), outside the app, whose files rocx's checks and editors
+	## read, and outside rocx, which an installed version keeps read-only; one for each app and
+	## target, deleted once the server is linked.
 	stage_for : Str, Str, Str -> Str
-	stage_for = |rocx, dir, target| {
+	stage_for = |tmp, dir, target| {
 		key = Text.cut(Crypto.SHA256.hash(dir.to_utf8()).to_hex().to_utf8(), 0, 12)
-		Fs.join([rocx, "server", "host", "target", "release-platforms", "${Fs.basename(dir)}-${key}-${target}"])
+		Fs.join([tmp, "rocx-release-platforms", "${Fs.basename(dir)}-${key}-${target}"])
 	}
 
 	## Takes the debug info out of `server`, a release's executable for a musl target, with LLVM's

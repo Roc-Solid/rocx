@@ -1010,6 +1010,7 @@ rocx agents [dir]        # rocx's rules for coding agents in the app's AGENTS.md
                          # another rocx's (D-108)
   --force                # replace a block that was edited since rocx wrote it
 rocx --version           # which rocx this is (an installed version's VERSION; a clone's commit)
+                         # and the Roc compiler it runs (`roc rocx-fork-… (<path>)`)
 rocx help [command]      # the commands, or one command's options (rocx <command> --help too)
 ```
 
@@ -1261,3 +1262,8 @@ packs the archives with the fork's compilers (`just release-compilers`, `just re
 installs each from them and takes a first app to signed in (`release/test-install.sh`) on macOS and
 in bare Alpine on arm64 and x86_64, then publishes the GitHub release and commits the
 `nix/release.json` the flake reads. Run by hand, it is a dry run that publishes nothing.
+
+## License
+
+MIT: see [LICENSE](LICENSE). A release's `NOTICES` lists the licenses of what its binaries are
+built from.

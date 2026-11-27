@@ -179,28 +179,26 @@ When an item lands, delete its line here in the same commit.
 
 ## The Roc compiler (the fork in `~/roc-fork`)
 
-- **The fork's round of 2026-11-27: branch `rocx-fixes-5`** = upstream's main at bec95b9f4a (not
-  a nightly: the fixes go upstream as PRs against main) + the fork's earlier fixes (the nested codec,
-  `List.map`'s output) + this round's two-commit fix branches (a failing test, then the fix), each
-  with a repro and a plain-words README in `test/compiler-bugs/` (the index is its README.md):
-  `effectful-closure-dec-default`, `nested-lambda-literal-default`, `rigid-others-row`,
-  `two-formats-one-where` (a type error by upstream's design: now reported, not a crash; rocx's
-  `Endpoint.local` stays), `endpoint-capture-boxy`, `nested-site-evidence-scope`,
-  `huge-frame-opt-speed` (`fix-dispatcher-frame`) and the earlier base's test drift. Upstream's main
-  still has nine of the thirteen bugs. `nested-site-evidence-scope` matters most: on every compiler
-  before it, a component call that leaves out a closure-defaulted prop, inside a local function
-  that captures something and is generalized, crashes a `--specialize=yes` build or **builds a
-  wrong program without a word**, and the browser's wasm is built `--specialize=yes` (D-064).
-  **The pin bump should take `rocx-fixes-5`** (a1714c98de; its compiler is built in
-  `.tools/roc-fork/`), not `rocx-fixes-3` or `rocx-fixes-4`: they sit on the nightly 890d6c8, and
-  c69cdc3fdf dropped 4674b5973d's slot-lifetime fix as upstream's, which it isn't (frames about
-  10× the pin's). A main-based fork has no nightly at its commit, so `roc_commit` (the glue spec,
-  the nightly download) stays a nightly or the glue comes from the fork's own tree.
-  Once the pin has it: examples/uptime can write `..others` instead of naming `JobErr`;
-  `Endpoint.checked`'s reader can name `endpoint.url` (and its comment goes); an error page can call
-  `to_str` in a getter; and `Static.browser_build!`'s fallback can be reconsidered
+- **The pin is `rocx-fixes-5`** (2dd60e319d, D-115): upstream's main at bec95b9f4a, not a nightly
+  (the fixes go upstream as PRs against main), with the fork's fixes, each a two-commit branch (a
+  failing test, then the fix) with a repro and a plain-words README in `test/compiler-bugs/` (the
+  index is its README.md). Basing on main brought upstream PR #13549's polymorphic constants, and
+  six regressions of it that rocx's tests met (servers built `--opt=dev`, the push example, the
+  testing app, `--specialize=yes`); each is fixed in the fork, repro and README beside the others.
+  Upstream's main still has fifteen of the nineteen bugs the folder keeps. `nested-site-evidence-scope`
+  matters most: before it, a component call that leaves out a closure-defaulted prop, inside a local
+  function that captures something and is generalized, crashed a `--specialize=yes` build or **built
+  a wrong program without a word**, and the browser's wasm is built `--specialize=yes` (D-064).
+  `Static.browser_build!`'s fallback to a boxy wasm can be reconsidered
   (`lambda-solve-specialize-wasm`, fixed upstream, was what it caught).
 - **Still open in the compiler:**
+  - A literal in a recursive group's constant at a type only a function member's type mentions
+    (`holder = { run: |input| again(input, 0) }` with `again` doing `extra + extra`): "dispatch on a
+    value that can never exist" at run time, on the nightly too (`recursive-constant-literal`'s
+    README).
+  - With `--specialize=yes`, a debug compiler stops in Monotype on a constant read in a function an
+    app value holds when the platform passes the app's model unboxed (`weak-value-constant-instance`'s
+    README); rocx's platforms box it.
   - `huge-frame-opt-speed`, what is left: a list literal's elements all hold a slot until the list
     is made (the site's 400 KB is a list of 161 `Html` values of 2,304 bytes each). Options in its
     README: build the elements in place, box large closure captures, or capture less.
@@ -209,9 +207,10 @@ When an item lands, delete its line here in the same commit.
 - **`rocx check` checks the dev build**, whose `Html.read_at!` reads kept
   `effectful-closure-dec-default` from showing; a failure only the release program meets shows in
   `rocx build` alone. rocx could also check the release build's program.
-- **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse,
-  and the slot lifetimes of branch `rocx-fixes-2`, 0eb36c9c3b and 4674b5973d; its Try commits are
-  upstream's). Nothing is pushed from here. Its compiler is, as a binary (D-069): a release of this
+- **Fixes prepared on the fork wait for the user to open them as PRs**: each two-commit branch of
+  `rocx-fixes-4` (above), and `rocx-fixes-3`'s nested codec derivation (dc48e823c8) and `List.map`
+  output item (159add67a5); the Try codecs, `List.map`'s in-place extraction, the inlined call's
+  clone and the binding group's claim are upstream's now. Nothing is pushed from here. Its compiler is, as a binary (D-069): a release of this
   repository per pin, for CI and `just setup` without the fork, so a pin bump runs `just
   publish-roc-fork` and puts the SHA-256 it prints in the Justfile before it lands.
 
@@ -220,19 +219,13 @@ When an item lands, delete its line here in the same commit.
 - **A lint for a page and an endpoint at one path (D-100)**, configurable: `rocx lint` warns of a
   folder with both `+page.rocx` and `+server.roc`, pointing at `routes/api/<the page's path>/`,
   off or an error as an app's settings say. D-100 is docs only for now.
-- **The first release (D-078), waiting on the user:** a `LICENSE` at the repository's root (its
-  text is the user's call: the repository states none, and `just release-pack` refuses a real
-  release without the file); the x86_64 Linux fork compiler published and pinned (`just roc-fork-linux
+- **The first release (D-078), waiting on the user:** (the `LICENSE` is MIT, 2026-11-27) the x86_64 Linux fork compiler published and pinned (`just roc-fork-linux
   x86_64`, then `just publish-roc-fork`, from the Mac with the fork); then a `v<date>` tag, which
   runs `.github/workflows/release.yml` (hosts, packs, smoke on macOS and Alpine arm64/x86_64,
   publish). Once it is out: drop "the first release isn't out yet" from README.md's Getting
   started and the front page, and redeploy the docs site.
-- **Smaller releases from an installed version (D-104):** a clone's `--release` and `--image` build
-  the host with the app's database engine alone, but an installed version has only the full host
-  (release/hosts.sh) and links it. Ship a host per engine in the bundles (SQLite alone, with Turso,
-  with Postgres) for `Hosts.release_platform!` to pick. Then, measured: the host with link-time
-  optimization (`lto = "fat"`, one codegen unit: 12 MB less on disk and 2.6 MB less to send on the
-  full host, for minutes more per host build).
+- **Link-time optimization of the server's host (D-104)**, measured: `lto = "fat"`, one codegen unit:
+  12 MB less on disk and 2.6 MB less to send on the full host, for minutes more per host build.
 - **The examples' READMEs build with `node server/build.mjs`**: `rocx build <dir> --release <out>`
   does it now (D-078).
 - **rocx on Linux** (D-062, D-069, D-078): on arm64 it runs (CI's), its watching polls (inotify is

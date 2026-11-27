@@ -46,7 +46,7 @@ Help := [].{
 				{ usage: "upgrade [version]", what: "move the app to another version of rocx" },
 				{ usage: "agents [dir]", what: "rocx's rules for coding agents, in the app's AGENTS.md" },
 				{ usage: "qr <text>", what: "a QR code in the terminal" },
-				{ usage: "--version", what: "this rocx's version" },
+				{ usage: "--version", what: "this rocx's version, and the Roc compiler it runs" },
 			],
 		},
 	]

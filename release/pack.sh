@@ -119,6 +119,7 @@ for archive in "${archives[@]}"; do
 		need "$hosts/$target/server/libhost.a" "just release-hosts $target"
 		if [ "$target" != arm64mac ]; then
 			for file in rcrt1.o libunwind.a libc.a; do need "$hosts/$target/server/$file" "just release-hosts $target"; done
+			for variant in sqlite postgres; do need "$hosts/$target/server/engines/$variant/libhost.a" "just release-hosts $target"; done
 		fi
 		built_at "$hosts/$target"
 	done
@@ -178,7 +179,14 @@ for archive in "${archives[@]}"; do
 	cp "$hosts/wasm32/host.wasm" "$stage/web/platform/targets/wasm32/host.wasm"
 	for target in $(server_targets "$archive"); do
 		mkdir -p "$stage/server/platform/targets/$target"
-		cp "$hosts/$target/server/"* "$stage/server/platform/targets/$target/"
+		find "$hosts/$target/server" -maxdepth 1 -type f -exec cp {} "$stage/server/platform/targets/$target/" \;
+		# A Linux target's host with each set of database engines (D-104), for Hosts.release_platform!.
+		if [ "$target" != arm64mac ]; then
+			for variant in sqlite postgres; do
+				mkdir -p "$stage/server/platform/engines/$variant/$target"
+				cp "$hosts/$target/server/engines/$variant/libhost.a" "$stage/server/platform/engines/$variant/$target/libhost.a"
+			done
+		fi
 	done
 	# What rocx looks for: no host sources (it would run cargo) and no rocx-cli/ (it would take the
 	# install for a clone); packages/dbcheck for check --sql.
