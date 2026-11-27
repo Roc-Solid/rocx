@@ -187,10 +187,11 @@ view! = |_|
 					<a href={"${Paths.platform_server}#plugins"}>plugin</a> answers it, so list it in the app's plugins:
 				</li>
 			</ul>
-			<Code title="main.roc, in part" source={"plugins: [Storage.plugin({})]   # answers the signed links of the bucket STORAGE_URL names"} numbers={Bool.False} />
+			<Code title="main.roc, in part" source={"plugins: [Storage.plugin({ middleware: Middleware.none({}) })]   # answers the signed links of the bucket STORAGE_URL names"} numbers={Bool.False} />
 			<p>
-				The plugin reads the bucket from <code>STORAGE_URL</code>; <code>{"Storage.plugin({ env: \"UPLOADS_URL\" })"}</code>
-				reads another variable. Before it serves the file (ranges included) or keeps the one sent, it checks
+				The plugin reads the bucket from <code>STORAGE_URL</code>; <code>{"env: \"UPLOADS_URL\""}</code>
+				reads another variable. Its links are signed, so it needs no middleware of yours (a plugin's
+				routes are behind the one you give it, <code>{"Middleware.none({})"}</code> here). Before it serves the file (ranges included) or keeps the one sent, it checks
 				the link's method, that it hasn't expired, and its signature: an HMAC-SHA256 of the method, the key
 				and the expiry, made with the bucket's <code>secret</code>. A link it didn't make, one that was
 				changed, or one that has expired gets a 403. A <code>PUT</code> through the plugin is an ordinary

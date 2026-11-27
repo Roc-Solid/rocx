@@ -29,7 +29,7 @@ Otel := [].{
 	##
 	##     # routes/+middleware.roc
 	##     middleware = Otel.middleware({}).then(Middlewares.default)
-	plugin : {} -> Plugin.Value(context, ctx)
+	plugin : {} -> Plugin.Value(context)
 	plugin = |{}| {
 		name: "otel",
 		starts: [|_context| started!({})],

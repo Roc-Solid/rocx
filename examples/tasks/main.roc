@@ -14,11 +14,12 @@ app [program] { auth: "../../packages/auth/main.roc", forms: "../../packages/for
 
 import auth.Auth
 import Generated/App
+import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/tasks.db"),
 	# Who you said you are, kept for a year. `/me` is where you say it, so it is the sign-in page.
-	plugins: [Auth.plugin({ cookie: "tasks_session", sign_in: "/me", session_ms: 365 * 86_400_000 })],
+	plugins: [Auth.plugin({ middleware: Middlewares.default, cookie: "tasks_session", sign_in: "/me", session_ms: 365 * 86_400_000 })],
 })

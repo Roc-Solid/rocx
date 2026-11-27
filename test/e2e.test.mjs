@@ -269,6 +269,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.match(local.html, /<title data-rocx>Local 0<\/title><title>Local<\/title>.*<section class="local"><!--x--><!--\/x--> <p class="board rx-[a-z0-9]+"><!--x-->0<!--\/x--><\/p> <span class="tag">its own<\/span> <button class="bump" type="button">Bump<\/button><\/section>/, "a route file's own components, its <style> scoping its Board");
 		const missing = await get("/nope");
 		assert.equal(missing.status, 404);
+		assert.equal(missing.app, "e2e", "a path nothing answers is behind routes/+middleware.roc (D-114)");
 		assert.match(missing.html, /<title>Not here<\/title>.*<main><!--errored--><!--show--><section class="error"><h1>404<\/h1> <p class="problem">nothing at \/nope<\/p><\/section><!--\/show--><!--\/errored--><\/main> <footer class="at"><!--x-->\/nope<!--\/x--><\/footer>/);
 		const text = await fetch(`${server.url}/nope`);
 		assert.deepEqual([text.status, text.headers.get("content-type"), await text.text()], [404, "text/plain; charset=utf-8", "nothing at /nope"]);
@@ -287,10 +288,11 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.equal(down.status, 500);
 		assert.match(down.html, /<h1>500<\/h1> <p class="problem">GET \/things\/down: 503: the shelf is down<\/p>/);
 		assert.deepEqual([(await get("/members")).status, (await get("/members")).html], [401, "members only"]);
-		// The jobs page, a plugin's page: behind the app's middleware (its header), then its guard.
-		assert.deepEqual(await get("/admin/jobs"), { status: 401, app: "e2e", html: "members only" }, "the guard refuses a stranger");
+		// The jobs page, a plugin's page: behind the middleware main.roc gives it alone, not
+		// routes/+middleware.roc, whose header it lacks (D-114).
+		assert.deepEqual(await get("/admin/jobs"), { status: 401, app: null, html: "members only" }, "its middleware refuses a stranger");
 		const jobsPage = await get("/admin/jobs", { cookie: "member=Ada" });
-		assert.equal(jobsPage.app, "e2e");
+		assert.equal(jobsPage.app, null, "routes/+middleware.roc isn't around a plugin's route");
 		assert.match(jobsPage.html, /<body class="rocx-admin">/, "the jobs page, in the admin look (no database here, so it says why)");
 		const member = await get("/members", { cookie: "member=Ada" });
 		assert.equal(member.status, 200);

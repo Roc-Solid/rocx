@@ -65,7 +65,7 @@ Email.Options := {
     from : Str ?? "",                              # unless MAIL_FROM is set; "": "rocx <rocx@localhost>"
     smtp_url! : ({} => Str) ?? (reads SMTP_URL),   # "": no SMTP server: --dev and --debug only
 }
-Email.plugin : Email.Options -> Plugin.Value(context, ctx)
+Email.plugin : Email.Options -> Plugin.Value(context)
 ```
 
 **`Message`** is a record with defaults: only `to`, `subject` and `text` must be given, so

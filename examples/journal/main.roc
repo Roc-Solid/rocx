@@ -7,8 +7,9 @@
 app [program] { guard: "../../packages/guard/main.roc", intl: "../../packages/intl/main.roc", markdown: "../../packages/markdown/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc" }
 
 import Generated/App
+import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
-	openapi: Page(Scalar),
+	openapi: Page(Scalar, Middlewares.default),
 })

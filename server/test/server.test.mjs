@@ -1420,7 +1420,7 @@ test("jobs: finished ones are swept once older than the plugin keeps them (done 
 	assert.deepEqual(await left(), ["queued-old", "canceled-young", "failed-young", "done-young"], "newest first");
 });
 
-test("JobsPage.plugin without a guard doesn't compile: the record is missing the field guard (the hint lists the fields left out, defaulted ones too)", { skip }, () => {
+test("JobsPage.plugin without a middleware doesn't compile: the record is missing the field middleware, which has no default (D-114; the hint lists the fields left out, defaulted ones too)", { skip }, () => {
 	const at = join(root, "server", "test", "build", "guardless");
 	mkdirSync(at, { recursive: true });
 	writeFileSync(
@@ -1429,7 +1429,7 @@ test("JobsPage.plugin without a guard doesn't compile: the record is missing the
 	);
 	const checked = spawnSync(roc(), ["check", join(at, "main.roc")], { encoding: "utf8" });
 	assert.notEqual(checked.status, 0);
-	assert.match(checked.stdout + checked.stderr, /This record is missing these fields:\n - back\n - guard\n/);
+	assert.match(checked.stdout + checked.stderr, /This record is missing these fields:\n - back\n - middleware\n/);
 });
 
 test("packages/admin on Postgres: its catalog read from pg_catalog, a check's values and a foreign key as choices, a row created, found, changed and deleted", { skip: skipDb }, async () => {
@@ -1752,7 +1752,7 @@ test("what was a flag of the server's and is a plugin's now is refused, saying w
 // ---- Plugins: what a package adds to an app (server/test/fixture) ----
 
 test("plugins: a plugin's route answers in the app, with the app's context and its own pattern as the route; its call runs in a call of its own, a crash ending only that; its loop ran, its start kept, its check logged; the log says what each added, in the order their needs put them", { skip }, async () => {
-	assert.equal(await text("/fixture/context"), "/fixture/context: the app's context, facts=yes");
+	assert.equal(await text("/fixture/context"), "/fixture/context: the app's context, facts=yes, through its middleware");
 	assert.equal(await text("/fixture/notes/42"), "note 42 at /fixture/notes/[id]");
 	assert.equal((await server.get("/fixture/context", { method: "HEAD" })).status, 200, "GET answers HEAD");
 	assert.equal(await text("/fixture/shout?word=quiet"), "QUIET");

@@ -19,7 +19,7 @@ program = {
 }
 
 ## Each breaks a rule, or two.
-plugins : List(Plugin.Value(Str, {}))
+plugins : List(Plugin.Value(Str))
 plugins = [
 	# A route the app has; a loop not named with the plugin's name first; an early path outside
 	# /__rocx/; a file at the root where the app has a route; a file whose path isn't relative.
@@ -48,7 +48,7 @@ plugins = [
 file : Str, [Plugin, Root] -> Plugin.File
 file = |path, at| { path, at, content_type: "text/javascript", body: [] }
 
-route : Str, Str -> Plugin.Route({})
+route : Str, Str -> Plugin.Route(Str)
 route = |method, path| { method, path, kind: Endpoint, answer!: |_, _| answer }
 
 answer : Server.Response

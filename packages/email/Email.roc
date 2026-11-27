@@ -58,7 +58,7 @@ Email := [].{
 	## SMTP server once the server has started (`email.smtp`: whether it answers, on the log), and
 	## its options kept for `send!`. Its start refuses a server with no SMTP server outside `--dev`
 	## and `--debug`, saying `SMTP_URL` is missing, rather than one that would lose every email.
-	plugin : Options -> Plugin.Value(context, ctx)
+	plugin : Options -> Plugin.Value(context)
 	plugin = |options| {
 		from = options.from
 		smtp_url! = options.smtp_url!

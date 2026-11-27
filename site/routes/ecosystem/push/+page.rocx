@@ -85,7 +85,8 @@ view! = |_|
 			<p>That is all the server needs. The plugin brings:</p>
 			<ul>
 				<li>
-					three endpoints, behind the app's middleware (<code>routes/+middleware.roc</code>): <code>GET /push/key</code> (the public key),
+					three endpoints, behind the middleware you give it (<code>middleware</code>, which has no default;
+					your <code>routes/+middleware.roc</code> isn't around a plugin's routes): <code>GET /push/key</code> (the public key),
 					<code>POST /push/subscribe</code> and <code>POST /push/unsubscribe</code>;
 				</li>
 				<li>its table, <code>push_subscriptions</code>, in the app's database (Postgres or SQLite);</li>
@@ -96,15 +97,15 @@ view! = |_|
 				</li>
 				<li>under <code>--dev</code> only, <code>GET /__rocx/push/keys</code>: a new pair of keys each time.</li>
 			</ul>
-			<p>Two options change the defaults:</p>
+			<p>Two more options change the defaults:</p>
 			<ul>
 				<li>
-					<code>{"Push.plugin({ at: \"/notifications\" })"}</code> puts the endpoints under another path (give
+					<code>{"Push.plugin({ middleware, at: \"/notifications\" })"}</code> puts the endpoints under another path (give
 					the button the same path).
 				</li>
 				<li>
-					<code>{"Push.plugin({ owner: |context| context.member })"}</code> makes each subscription belong to the
-					signed-in user, read from the context your middleware hands on. Then <code>Push.notify!</code> can
+					<code>{"Push.plugin({ middleware: Middlewares.member, owner: |context| context.member })"}</code> makes each subscription belong to the
+					signed-in user, read from the context <code>middleware</code> hands on. Then <code>Push.notify!</code> can
 					send to that user's browsers. Without it, every subscription is a visitor's (<code>""</code>).
 				</li>
 			</ul>
@@ -281,7 +282,7 @@ view! = |_|
 					examples. The browser's half of an app can use these too (<code>browser.roc</code> lists them).
 				</li>
 				<li>
-					<strong>The plugin</strong>, <code>{"Push.plugin({})"}</code>, on the server platform, which the
+					<strong>The plugin</strong>, <code>{"Push.plugin({ middleware })"}</code>, on the server platform, which the
 					package names in its header (<a href={"${Paths.platform_server}#plugins"}>plugins</a>): its endpoints,
 					its table, and the job that sends.
 				</li>

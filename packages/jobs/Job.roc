@@ -92,7 +92,7 @@ Job := [].{
 	## or `--debug`, `POST /__rocx/jobs/wake` tells the workers to look for a due job now, as queuing
 	## one does: for a job another process wrote into the queue itself, which on SQLite can't tell
 	## them (a test's: packages/testing's `enqueue` and `settleJobs`).
-	plugin : Options(context) -> Plugin.Value(context, ctx)
+	plugin : Options(context) -> Plugin.Value(context)
 	plugin = |options| {
 		handlers = options.jobs
 		crons = options.crons

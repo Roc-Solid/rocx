@@ -105,10 +105,12 @@ contract) and `Generated/Handlers`. `site/main.roc` and `examples/*/main.roc` ar
    answers first. Otherwise `program.respond!` runs. For an app built by rocx, that is
    `Generated/App`: it sets `request.route`, sends a channel's end (`x-rocx-channel: close`)
    straight to the route's `on_close!`, and runs everything else through the platform's cross-site
-   check (`Middleware.same_origin`, unless the app says `cross_site: Allowed`), the app's middleware
-   (`routes/+middleware.roc`), then the OpenAPI middleware, then a plugin's route or the app's own
-   (`Plugin.respond!`, then `Routes.respond!`, which runs the `+middleware.roc` of each directory the
-   route is in, outermost first, D-103). `Server.clear_flash` runs on the way out.
+   check (`Middleware.same_origin`, unless the app says `cross_site: Allowed`), then a plugin's
+   route, behind the middleware the app gave that plugin (`Plugin.respond!`, D-114), else the OpenAPI
+   document, behind the middleware the app named for it (`OpenApi.middleware`), else the app's
+   middleware (`routes/+middleware.roc`) around the app's own routes (`Routes.respond!`, which runs
+   the `+middleware.roc` of each directory the route is in, outermost first, D-103) and the error
+   page. `Server.clear_flash` runs on the way out.
 5. `Server.for_host` flattens the `Server.Response` for the host. Its `kind` says which body it
    has (table below).
 6. Back in the host, in the same call: a handler's `Router.revalidate!` keys become an
@@ -192,13 +194,15 @@ program = App.program({
     init!: |_started| Ok({}),
     database: Sqlite("data/plate.db"),          # optional: Sqlite("data/app.db") by default
     cross_site: Refused,                        # optional: Refused by default
-    openapi: Page(Swagger),                     # optional: Off by default
+    openapi: Page(Swagger, Middleware.none({})), # optional: Off by default; behind the middleware it names
     plugins: [Email.plugin({})],                # optional: none by default
 })
 ```
 
 `App.program` fills in the rest: every route behind its directories' middleware (`+middleware.roc`
-files under `routes/`, `routes/+middleware.roc` around every request), the migrations in
+files under `routes/`, `routes/+middleware.roc` around every request for the app's routes and a
+path nothing answers; a plugin's routes and the OpenAPI document behind what main.roc gives them,
+D-114), the migrations in
 `migrations/*.sql` (embedded), the actor methods the app's modules define, `logs: { format: Auto }`
 and the routes' claims. `App.jobs` lists the kinds of job the modules define, for the jobs plugin.
 To change the log format, update the record: `{ ..App.program({ … }), logs: { format: Json } }`.
@@ -1436,18 +1440,17 @@ app [program] { pf: platform "../server/platform/main.roc", acme: "../packages/a
 
 import acme.Acme
 
-program = App.program({ init!, middleware, plugins: [Acme.plugin({ at: "/acme" })] })
+program = App.program({ init!, plugins: [Acme.plugin({ at: "/acme", middleware: Middlewares.default })] })
 ```
 
 ### What a plugin adds
 
-A plugin is a `Plugin.Value(context, ctx)`: a name, plus any of these fields (each defaults to
-`[]`). `context` is the app's context (its `init!`'s); `ctx` is what the app's middleware hands a
-route. A plugin knows the type of neither.
+A plugin is a `Plugin.Value(context)`: a name, plus any of these fields (each defaults to
+`[]`). `context` is the app's context (its `init!`'s), which a plugin doesn't know the type of.
 
 | Field | What it is |
 | --- | --- |
-| `routes` | Answered behind the app's middleware, before the app's own routes, given `ctx`. |
+| `routes` | Answered before the OpenAPI document and the app's own routes, given the app's context; no `+middleware.roc` is around them, not even `routes/`'s (D-114, below). |
 | `early` | Paths under `/__rocx/`, answered before the app, only under `--dev` or `--debug` (as each says). |
 | `files` | Served as they are, before anything else, the app's middleware included (D-050, below). |
 | `scripts` | Paths of the plugin's own files that every rendered page loads. |
@@ -1462,6 +1465,33 @@ Calls, loops and checks are named `<plugin>.<name>`, and are given the app's con
 makes its plugin from options of its own (a nominal record whose fields without a default are
 required). A plugin generic in the app's context is a function even with no options
 (`Acme.plugin({})`).
+
+### A plugin's routes and middleware (D-114)
+
+A plugin's routes aren't files under `routes/`, so the folders' middleware doesn't reach them,
+and neither does `routes/+middleware.roc`, which runs around the app's own routes (and a path
+nothing answers). A plugin with routes takes the app's middleware as an option instead,
+`middleware : Middleware(context, ctx)`, with no default, and puts its routes behind it
+(`Plugin.behind(options.middleware, routes)`): each route runs once the middleware has passed the
+request on, given what it handed on (`ctx`). The app says what each plugin is behind in one place,
+main.roc:
+
+```roc
+plugins: [
+    Auth.plugin({ admit!: Accounts.admit!, middleware: Middlewares.default }),        # headers only: anyone signs in
+    JobsPage.plugin({ middleware: Middlewares.default.then(Middlewares.admin) }),     # what routes/(admin)/ runs
+    Push.plugin({ middleware: Middlewares.signed_in, owner: |ctx| ctx.user.id }),    # reads what it hands on
+    Stripe.plugin({ on_event!: Billing.on_event!, middleware: Middleware.none({}) }), # Stripe's servers call it
+],
+openapi: Page(Scalar, Middlewares.default.then(Middlewares.admin)),
+```
+
+There is no default because Roc's field defaults can't tie `ctx` to `context` (a pass-through
+would have to), and because a sensitive page (the jobs page, the OpenAPI document, which says what
+every endpoint takes) should never be public because an option was left out. `Middleware.none({})`
+says "nothing" out loud. Each package's `at` (`webhook_at` for Stripe) puts its routes elsewhere
+when two would meet; the server refuses to start while they do. The platform's cross-site check
+(`cross_site`) is still around every request, plugins' too.
 
 ### Checks at start
 

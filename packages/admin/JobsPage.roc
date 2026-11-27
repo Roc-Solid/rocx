@@ -8,8 +8,9 @@ import jobs.Job
 import AdminHtml
 import Look
 
-## The jobs page: a console of packages/jobs's queue, as a plugin the app lists, behind a guard of
-## its own (only the app knows who may see it). How many jobs are queued, running, failed, done and
+## The jobs page: a console of packages/jobs's queue, as a plugin the app lists, behind the
+## middleware the app gives it (only the app knows who may see it; D-114: its `routes/+middleware.roc`
+## isn't around a plugin's routes, so `middleware` says all of what is). How many jobs are queued, running, failed, done and
 ## canceled; what finished in the last hour, and the latest failures; each kind, with its attempts,
 ## time limit and jobs; the schedules and when each runs next; and the jobs, newest first, each
 ## opening in a drawer with its input, attempts, times and last error. Retry, cancel and run now
@@ -20,9 +21,9 @@ import Look
 ## ```roc
 ## plugins: [
 ##     Job.plugin({ jobs: App.jobs }),
-##     JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin }),   # `guard` has no default
+##     JobsPage.plugin({ at: "/admin/jobs", middleware: Middlewares.default.then(Middlewares.admin) }),   # `middleware` has no default
 ##     # or, with a link back to the app's own pages, first in its sidebar:
-##     JobsPage.plugin({ guard: Middlewares.admin, back: { label: "Status", href: "/admin" } }),
+##     JobsPage.plugin({ middleware: Middlewares.default.then(Middlewares.admin), back: { label: "Status", href: "/admin" } }),
 ## ]
 ## ```
 ##
@@ -39,29 +40,28 @@ import Look
 ## another site's page is refused (403), as `Middleware.same_origin` would.
 JobsPage := [].{
 
-	## Where the page is (`at`), and who may see it: `guard`, the app's middleware for its admins,
-	## which runs after the app's own and may refuse, or send a stranger to sign in. What it hands on
-	## isn't used. `guard` has no default: a jobs page is never public because an option was left
-	## out. `back`: a link back to the app's own pages, first in the sidebar
+	## Where the page is (`at`), and who may see it: `middleware`, the app's for its admins (the
+	## whole of it: the app's `routes/+middleware.roc` isn't around a plugin's routes, D-114), which
+	## may refuse, or send a stranger to sign in. What it hands on isn't used. `middleware` has no
+	## default: a jobs page is never public because an option was left out. `back`: a link back to the app's own pages, first in the sidebar
 	## (`{ label: "Status", href: "/admin" }`); none unless the app says (`href` "").
-	Options(ctx, out) := { at : Str ?? "/admin/jobs", guard : Middleware(ctx, out), back : { label : Str, href : Str } ?? { label: "", href: "" } }
+	Options(context, out) := { at : Str ?? "/admin/jobs", middleware : Middleware(context, out), back : { label : Str, href : Str } ?? { label: "", href: "" } }
 
 	## Where the page an app mounts itself is (`mount`), and its link back to the app (`back`, as
 	## `Options` has it).
 	Mount := { mount : Str, back : { label : Str, href : Str } ?? { label: "", href: "" } }
 
 	## The jobs page as a plugin (`jobs-page`): its page at `at`, a GET route (HEAD too) and a POST
-	## route, behind `guard`. It needs the jobs plugin (`Job.plugin`), whose queue it shows. Pages,
+	## route, behind `middleware`. It needs the jobs plugin (`Job.plugin`), whose queue it shows. Pages,
 	## not endpoints: not in the app's `/openapi.json`.
-	plugin : Options(ctx, out) -> Plugin.Value(context, ctx)
+	plugin : Options(context, out) -> Plugin.Value(context)
 	plugin = |options| {
 		at = options.at
-		guard = options.guard
 		back = options.back
-		answer! = |request, context| Middleware.run!(guard, request, context, |passed, _handed| JobsPage.respond!(passed, { mount: at, back }))
+		answer! = |request, _handed| JobsPage.respond!(request, { mount: at, back })
 		{
 			name: "jobs-page",
-			routes: [{ method: "GET", path: at, kind: Page, answer! }, { method: "POST", path: at, kind: Page, answer! }],
+			routes: Plugin.behind(options.middleware, [{ method: "GET", path: at, kind: Page, answer! }, { method: "POST", path: at, kind: Page, answer! }]),
 			needs: [Plugin("jobs")],
 			# Under --dev, the page (D-111).
 			links: [{ label: "Jobs", path: at }],

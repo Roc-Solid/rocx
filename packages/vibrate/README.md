@@ -37,7 +37,7 @@ import vibrate.Vibrate
 |---|---|---|---|
 | `Vibrate` | both halves (`main.roc` and `browser.roc` expose it) | `once! : U64 => {}` | Buzzes once for that many milliseconds. Same as `pattern!([ms])`. |
 | | | `pattern! : List(U64) => {}` | Buzzes in a pattern: milliseconds on, off, on, and so on, as `navigator.vibrate` takes them. Each step is cut to 10 s at most, and only the first 32 steps play. |
-| `Vibrator` | the server's half (`main.roc` alone) | `plugin : {} -> Plugin.Value(context, ctx)` | The plugin. Its one file is the browser's script, `static/vibrate.js`, served at `/rocx/plugins/vibrate/vibrate.js` and loaded by every page before `start.js`. |
+| `Vibrator` | the server's half (`main.roc` alone) | `plugin : {} -> Plugin.Value(context)` | The plugin. Its one file is the browser's script, `static/vibrate.js`, served at `/rocx/plugins/vibrate/vibrate.js` and loaded by every page before `start.js`. |
 
 `plugin` takes `{}` even though it has no options. A plugin is generic in the app's context type,
 and in Roc a plain value can have only one type, so the plugin is a function.

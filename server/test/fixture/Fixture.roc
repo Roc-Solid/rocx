@@ -1,34 +1,40 @@
 import pf.Db
 import pf.Kv
+import pf.Middleware
 import pf.Plugin
 import pf.Server
 import "migrations/0001_notes.sql" as notes : Str
 import "static/fixture.js" as fixture_js : List(U8)
 import "static/fixture-sw.js" as fixture_sw : List(U8)
 
-## Plugins for the tests: `plugin` adds what a plugin can (a route that shows the app's context, an
+## Plugins for the tests: `plugin` adds what a plugin can (routes behind the middleware the app
+## gives it, D-114, one showing what that handed on from the app's context, an
 ## early path under `--dev`, files, one at the root and one a script every page loads, a table, a
 ## call, a loop, a start, a check, and a need); `second` and `third` a route each, `third` needing
 ## `second`, so the order they start in isn't the list's; `files` files alone, for an app whose
 ## every answer is a refusal.
 Fixture := [].{
 
-	## Where the fixture's routes are, and how it shows the app's context.
-	Options(ctx) := { at : Str ?? "/fixture", shown : ctx -> Str }
+	## What the fixture's routes are behind (`middleware`, the app's to say), where they are, and how
+	## it shows what the middleware handed on.
+	Options(context, ctx) := { middleware : Middleware(context, ctx), at : Str ?? "/fixture", shown : ctx -> Str }
 
-	plugin : Options(ctx) -> Plugin.Value(context, ctx)
+	plugin : Options(context, ctx) -> Plugin.Value(context)
 	plugin = |options| {
 		at = options.at
 		shown = options.shown
 		{
 			name: "fixture",
-			routes: [
-				{ method: "GET", path: "${at}/context", kind: Endpoint, answer!: |request, context| text("${request.route}: ${shown(context)}") },
-				{ method: "GET", path: "${at}/notes/[id]", kind: Endpoint, answer!: |request, _| text("note ${request.path.drop_prefix("${at}/notes/")} at ${request.route}") },
-				{ method: "GET", path: "${at}/shout", kind: Endpoint, answer!: |request, _| shout!(request) },
-				{ method: "GET", path: "${at}/state", kind: Endpoint, answer!: |_, _| state!({}) },
-				{ method: "GET", path: "${at}/migrated", kind: Endpoint, answer!: |_, _| migrated!({}) },
-			],
+			routes: Plugin.behind(
+				options.middleware,
+				[
+					{ method: "GET", path: "${at}/context", kind: Endpoint, answer!: |request, handed| text("${request.route}: ${shown(handed)}") },
+					{ method: "GET", path: "${at}/notes/[id]", kind: Endpoint, answer!: |request, _| text("note ${request.path.drop_prefix("${at}/notes/")} at ${request.route}") },
+					{ method: "GET", path: "${at}/shout", kind: Endpoint, answer!: |request, _| shout!(request) },
+					{ method: "GET", path: "${at}/state", kind: Endpoint, answer!: |_, _| state!({}) },
+					{ method: "GET", path: "${at}/migrated", kind: Endpoint, answer!: |_, _| migrated!({}) },
+				],
+			),
 			early: [{ method: "GET", path: "/__rocx/fixture", under: [Dev], answer!: |request| text("early ${request.route}") }],
 			files: Fixture.files_of("fixture"),
 			scripts: ["fixture.js"],
@@ -51,16 +57,16 @@ Fixture := [].{
 
 	## A plugin of files alone, called `name`: its script (which every page loads) and its file at
 	## the root.
-	files : Str -> Plugin.Value(context, ctx)
+	files : Str -> Plugin.Value(context)
 	files = |name| { name, files: Fixture.files_of(name), scripts: ["fixture.js"] }
 
 	## A plugin with one route. (A plugin that is generic in the app's context is a function, even
 	## with no options: a value can only have one type.)
-	second : {} -> Plugin.Value(context, ctx)
+	second : {} -> Plugin.Value(context)
 	second = |{}| { name: "second", routes: [{ method: "GET", path: "/second", kind: Page, answer!: |_, _| text("second") }] }
 
 	## A plugin with one route, which needs `second`.
-	third : {} -> Plugin.Value(context, ctx)
+	third : {} -> Plugin.Value(context)
 	third = |{}| { name: "third", routes: [{ method: "*", path: "/third", kind: Endpoint, answer!: |request, _| text("third ${request.method}") }], needs: [Plugin("second")] }
 }
 

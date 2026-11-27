@@ -49,7 +49,7 @@ Ai := [].{
 	## the model a call that names none is given; where the API is, when it isn't Anthropic's).
 	## Outside `--dev` the server doesn't start without a key; under it, it starts, and each call
 	## answers `NoKey`.
-	plugin : Options -> Plugin.Value(context, ctx)
+	plugin : Options -> Plugin.Value(context)
 	plugin = |options| {
 		given : Settings
 		given = { key: options.key, model: options.model, base_url: options.base_url }

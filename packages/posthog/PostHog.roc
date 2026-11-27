@@ -26,7 +26,7 @@ import Fingerprint
 ## it (`rocx server: Roc crashed`), so crashes are on the server's log, not here.
 ##
 ## ```roc
-## plugins: [PostHog.plugin({})]          # POSTHOG_KEY, POSTHOG_HOST and POSTHOG_RELEASE, from the environment
+## plugins: [PostHog.plugin({ middleware: Middleware.none({}) })]   # POSTHOG_KEY, POSTHOG_HOST and POSTHOG_RELEASE, from the environment
 ## middleware = Middlewares.member.then(PostHog.middleware(|context| context.member.id))   # routes/+middleware.roc
 ##
 ## PostHog.capture!("the payment provider refused a refund", { order: order.id, why: why })
@@ -37,8 +37,11 @@ PostHog := [].{
 	## PostHog takes events (`host`; "" for `POSTHOG_HOST`, else `https://us.i.posthog.com`, or
 	## `https://eu.i.posthog.com` for EU Cloud); the app's version on each event (`release`, a
 	## commit; "" for `POSTHOG_RELEASE`); where a page's script sends errors (`at`, its script at
-	## `<at>.js`); and how often what was kept is sent (`interval_ms`).
-	Options := {
+	## `<at>.js`); how often what was kept is sent (`interval_ms`); and what the script and where it
+	## sends are behind (`middleware`, which the app must say, D-114: not its `routes/+middleware.roc`,
+	## which isn't around a plugin's routes; `Middleware.none({})` lets every page's errors in).
+	Options(context, ctx) := {
+		middleware : Middleware(context, ctx),
 		key : Str ?? "",
 		host : Str ?? "",
 		release : Str ?? "",
@@ -50,16 +53,19 @@ PostHog := [].{
 	## (`POST <at>`), the loop that sends what was kept (`posthog.send`), its options kept when the
 	## server starts, and a look once started (`posthog.reporting`: where errors go, or that
 	## reporting is off).
-	plugin : Options -> Plugin.Value(context, ctx)
+	plugin : Options(context, ctx) -> Plugin.Value(context)
 	plugin = |options| {
 		given : Settings
 		given = { key: options.key, host: options.host, release: options.release, interval_ms: options.interval_ms }
 		{
 			name: "posthog",
-			routes: [
-				{ method: "POST", path: options.at, kind: Endpoint, answer!: |request, _context| browser!(request) },
-				{ method: "GET", path: "${options.at}.js", kind: Endpoint, answer!: |_request, _context| script({}) },
-			],
+			routes: Plugin.behind(
+				options.middleware,
+				[
+					{ method: "POST", path: options.at, kind: Endpoint, answer!: |request, _handed| browser!(request) },
+					{ method: "GET", path: "${options.at}.js", kind: Endpoint, answer!: |_request, _handed| script({}) },
+				],
+			),
 			starts: [|_context| keep!(given)],
 			loops: [{ name: "posthog.send", run!: |_context| sender!({}) }],
 			checks: [{ name: "posthog.reporting", run!: |_context| check!({}) }],
@@ -117,7 +123,7 @@ PostHog := [].{
 
 	## Reports a job that failed for good: what the jobs plugin calls with its `on_failed!`.
 	##
-	##     plugins: [Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }), PostHog.plugin({})]
+	##     plugins: [Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }), PostHog.plugin({ middleware: Middleware.none({}) })]
 	job_failed! : { kind : Str, id : I64, attempts : U64, error : Str } => {}
 	job_failed! = |failure|
 		report!(

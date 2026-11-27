@@ -14,14 +14,23 @@ import Server
 ## requests alone. Middleware is named by folder, as routes are (D-103): a `+middleware.roc` under
 ## `routes/` (`middleware = Middlewares.member`) runs around every page, endpoint and channel in its
 ## folder and the folders below it, outermost first; the one in `routes/` itself runs around every
-## request the app answers, its plugins' too. A folder in brackets, `(members)`, adds nothing to
-## the path: pages and their endpoints under `api/` share one that way. What a middleware hands on
-## is typed: a handler that reads `context.user` compiles only behind one that adds it.
+## request for the app's routes, and one for a path nothing answers. A folder in brackets,
+## `(members)`, adds nothing to the path: pages and their endpoints under `api/` share one that way.
+## A plugin's routes and the OpenAPI document aren't in `routes/`: each is behind the middleware the
+## app gives it (D-114: `Auth.plugin({ …, middleware: Middlewares.default })`,
+## `openapi: Page(Scalar, Middlewares.default.then(Middlewares.admin))`), `Middleware.none({})` for
+## none. What a middleware hands on is typed: a handler that reads `context.user` compiles only
+## behind one that adds it.
 Middleware(given, handed) :: { run : Server.Request, given, (Server.Request, handed => Server.Response) => Server.Response }.{
 
 	## A middleware, from what it does.
 	make : (Server.Request, given, (Server.Request, handed => Server.Response) => Server.Response) -> Middleware(given, handed)
 	make = |run| { run: run }
+
+	## No middleware: every request handed on as it came, with the context it came with. What an app
+	## gives a plugin whose routes anyone may reach (`Stripe.plugin({ …, middleware: Middleware.none({}) })`).
+	none : {} -> Middleware(context, context)
+	none = |{}| { run: |request, context, next!| next!(request, context) }
 
 	## `first`, then `second`: `second` gets what `first` hands on.
 	then : Middleware(a, b), Middleware(b, c) -> Middleware(a, c)

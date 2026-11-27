@@ -36,7 +36,7 @@ For signed URLs on a directory or memory bucket, also list its plugin:
 ```roc
 program = App.program({
 	# …
-	plugins: [Storage.plugin({})],   # the bucket STORAGE_URL names; Storage.plugin({ env: "UPLOADS_URL" }) for another
+	plugins: [Storage.plugin({ middleware: Middleware.none({}) })],   # the bucket STORAGE_URL names; `env: "UPLOADS_URL"` for another; its URLs are signed, so no middleware
 })
 ```
 

@@ -58,7 +58,7 @@ view! = |_|
 					<code>{"|_| \"\""}</code>.
 				</li>
 				<li>
-					<strong>The plugin</strong>, <code>{"PostHog.plugin({})"}</code>, goes in the app's plugins. It reads
+					<strong>The plugin</strong>, <code>{"PostHog.plugin({ middleware: Middleware.none({}) })"}</code>, goes in the app's plugins. It reads
 					its key from the environment (see <a href="#where">where they go</a>).
 				</li>
 				<li>

@@ -50,7 +50,7 @@ is the reference.
 
    program = App.program({
    	# …
-   	plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})],
+   	plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ middleware: Middleware.none({}) })],
    })
    ```
 
@@ -81,13 +81,16 @@ everyone.
 
 ### Plugin options
 
-`Push.plugin(setup)` takes `{ at ?? "/push", owner ?? (|_| "") }`:
+`Push.plugin(setup)` takes `{ middleware, at ?? "/push", owner ?? (|_| "") }`:
 
+- `middleware` is what the endpoints are behind, which the app must say: its
+  `routes/+middleware.roc` isn't around a plugin's routes (D-114). `Middleware.none({})` for a site
+  of visitors; the middleware that knows who is signed in for one with accounts (below).
 - `at` is where the endpoints are: `Push.plugin({ at: "/notifications" })` answers
   `GET /notifications/key` and so on (then `<PushButton api="/notifications" />`).
-- `owner` says whose a subscription is: a function from the context the app's middleware handed on
+- `owner` says whose a subscription is: a function from the context `middleware` handed on
   to the app's id for the user, as text. An app with accounts gives
-  `Push.plugin({ owner: |context| context.member })`, and `notify!(member, …)` sends to that user's
+  `Push.plugin({ middleware: Middlewares.member, owner: |context| context.member })`, and `notify!(member, …)` sends to that user's
   browsers. Without it, every subscription is a visitor's (`""`).
 
 ## Sending

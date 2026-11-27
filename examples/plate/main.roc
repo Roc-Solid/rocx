@@ -12,6 +12,7 @@ app [program] { auth: "../../packages/auth/main.roc", charts: "../../packages/ch
 
 import auth.Auth
 import Generated/App
+import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
@@ -20,6 +21,6 @@ program = App.program({
 	plugins: [
 		# A session lasts 90 days in the `plate_session` cookie, kept going while it is used; the
 		# sign-in page is the plugin's default, `/sign-in`.
-		Auth.plugin({ cookie: "plate_session", session_ms: 90 * 24 * 60 * 60 * 1000 }),
+		Auth.plugin({ middleware: Middlewares.default, cookie: "plate_session", session_ms: 90 * 24 * 60 * 60 * 1000 }),
 	],
 })

@@ -6,7 +6,7 @@ import pf.Server
 
 ## A program made from plugins, as rocx's Generated/App makes one: their routes answer requests, and
 ## the platform keeps the rest (`Plugin.running`).
-make : List(Plugin.Value(Str, Str)) -> _
+make : List(Plugin.Value(Str)) -> _
 make = |plugins| {
 	init!: |started| Ok(started),
 	respond!: |request, started| {
@@ -21,7 +21,7 @@ make = |plugins| {
 }
 
 ## A plugin whose two routes each run a guard (a middleware) before answering.
-guarded : Middleware(ctx, out) -> Plugin.Value(context, ctx)
+guarded : Middleware(context, out) -> Plugin.Value(context)
 guarded = |guard| {
 	name: "guarded",
 	routes: [

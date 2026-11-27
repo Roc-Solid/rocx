@@ -4,11 +4,12 @@
 ## page's script; the jobs plugin (packages/jobs) runs its job. The docs show it.
 app [program] { jobs: "../../jobs/main.roc", pf: platform "../../../server/platform/main.roc", push: "../main.roc" }
 
+import pf.Middleware
 import jobs.Job
 import push.Push
 import Generated/App
 
 program = App.program({
 	init!: |_started| Ok({}),
-	plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})],
+	plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ middleware: Middleware.none({}) })],
 })

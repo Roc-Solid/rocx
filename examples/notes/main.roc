@@ -14,14 +14,15 @@ import auth.Auth
 import email.Email
 import Generated/App
 import Account
+import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
-	openapi: Page(Scalar),
+	openapi: Page(Scalar, Middlewares.default),
 	plugins: [
 		Email.plugin({ from: "Notes <notes@example.com>" }),
 		# A mailed link opens /sign-in/link, whose button signs in; a link lasts `Account.link_ms`.
-		Auth.plugin({ admit!: Account.admit!, link_page: "/sign-in/link", sign_in: "/sign-in", cookie: "notes_session", link_ms: Account.link_ms }),
+		Auth.plugin({ middleware: Middlewares.default, admit!: Account.admit!, link_page: "/sign-in/link", sign_in: "/sign-in", cookie: "notes_session", link_ms: Account.link_ms }),
 	],
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/notes.db"),

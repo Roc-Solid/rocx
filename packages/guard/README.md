@@ -310,7 +310,7 @@ it, every flag is off. `Flags.enabled(values, name)` reads one flag where an `if
 | `Guard.ips({ allow, deny, trust })` | refuses an address in `deny`, or (when `allow` lists any) one not in `allow`, 403 |
 | `Guard.maintenance({ flag, message, retry_after_s, except })` | while the flag is on, answers 503 with `Retry-After` and a small page (text for a client that isn't a browser), except under the paths in `except` (`/admin`, `/health`) |
 | `Guard.feature(flag, who)` | answers 404 to anyone who doesn't have the flag on |
-| `Guard.under("/jobs", guard)` | runs `guard` for `/jobs` and the paths under it only (not `/jobsite`): for a plugin's paths; the app's own routes are guarded by their directory's `+middleware.roc` |
+| `Guard.under("/jobs", guard)` | runs `guard` for `/jobs` and the paths under it only (not `/jobsite`); the app's own routes are guarded by their directory's `+middleware.roc`, a plugin's by the `middleware` main.roc gives it (D-114) |
 
 The default CSP fits a Roc Solid app: scripts and WebAssembly from the site's own origin
 (`'wasm-unsafe-eval'`, which a page needs to start wasm under a CSP), styles inline too (components

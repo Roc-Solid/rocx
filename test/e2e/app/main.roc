@@ -19,6 +19,8 @@ program = App.program({
 	# the jobs page (packages/admin), for members only.
 	plugins: [
 		Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.welcome, { member: "everyone" })] }),
-		JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.member }),
+		# The jobs page, behind the members' middleware alone: not routes/+middleware.roc, which isn't
+		# around a plugin's routes (D-114), so its answer has no `x-app` header.
+		JobsPage.plugin({ at: "/admin/jobs", middleware: Middlewares.member }),
 	],
 })

@@ -26,8 +26,8 @@ Postgres against a stand-in for Stripe's API (`example/test/stand-in.mjs`), neve
    program = App.program({
        init!: |_started| Ok({}),
        plugins: [
-           Auth.plugin({ admit!: Accounts.admit! }),
-           Stripe.plugin({ on_event!: Billing.on_event! }),
+           Auth.plugin({ admit!: Accounts.admit!, middleware: Middleware.none({}) }),
+           Stripe.plugin({ on_event!: Billing.on_event!, middleware: Middleware.none({}) }),
        ],
        database: Sqlite("data/app.db"),
    })
@@ -227,9 +227,10 @@ the group doesn't change.
 
 ## The webhook
 
-`POST <webhook_at>`, behind the app's middleware, `routes/+middleware.roc` (a request without an
-`Origin`, as Stripe's is, passes the platform's cross-site check; middleware there that wants every
-request signed in would refuse it: guard the app's routes by their directories instead).
+`POST <webhook_at>`, behind the `middleware` the app gives the plugin, which it must say: the app's
+`routes/+middleware.roc` isn't around a plugin's routes (D-114). Stripe's servers call it, signed
+in as nobody, so give it `Middleware.none({})`, or one that only logs or adds headers (a request
+without an `Origin`, as Stripe's is, passes the platform's cross-site check).
 
 1. **Its signature.** `Stripe-Signature` is `t=<seconds>,v1=<signature>[,v1=…]`. One `v1` must be
    the HMAC-SHA256, under `STRIPE_WEBHOOK_SECRET`, of `<t>.` followed by the request's body as it

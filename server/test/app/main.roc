@@ -76,9 +76,9 @@ program = {
 ## retry (20 ms), so the tests see retries soon. Email (packages/email). The jobs page
 ## (packages/admin). A plugin package's
 ## (server/test/fixture): the
-## fixture's routes show the server's context as the app has it; `third` needs `second`, so it
-## starts after it.
-plugins : List(Plugin.Value(Str, Str))
+## fixture's routes are behind a middleware of the app's (D-114), and show what it handed on from
+## the server's context; `third` needs `second`, so it starts after it.
+plugins : List(Plugin.Value(Str))
 plugins = [
 	Job.plugin(
 		{
@@ -94,13 +94,13 @@ plugins = [
 	),
 	# Email (packages/email): SMTP_URL and MAIL_FROM from the environment, the dev mailbox under --dev.
 	Email.plugin({}),
-	# The jobs page (packages/admin), behind a guard of the app's own, with a link back to the app.
-	JobsPage.plugin({ at: "/admin/jobs", guard: admins_only, back: { label: "Acme Tests", href: "/" } }),
-	Fixture.plugin({ shown: |context| "the app's context, ${context}" }),
+	# The jobs page (packages/admin), behind a middleware of the app's own, with a link back to the app.
+	JobsPage.plugin({ at: "/admin/jobs", middleware: admins_only, back: { label: "Acme Tests", href: "/" } }),
+	Fixture.plugin({ middleware: Middleware.make(|request, context, next!| next!(request, "${context}, through its middleware")), shown: |handed| "the app's context, ${handed}" }),
 	Fixture.third({}),
 	Fixture.second({}),
 	# The signed URLs of a file: or memory: bucket (packages/storage), the app's to answer.
-	Storage.plugin({}),
+	Storage.plugin({ middleware: Middleware.none({}) }),
 ]
 
 ## Lists as parameters (`Db.array`), against Postgres, as JSON: text and bigint arrays with `= any`,

@@ -43,7 +43,7 @@ program = {
 ## The jobs (packages/jobs), with a schedule each second, a short first retry and a sweep twice a
 ## second; the jobs page (packages/admin), open to all; and a plugin that works with SQLite alone
 ## (`needs`), with a migration for each database (the server applies SQLite's) and one for any.
-plugins : List(Plugin.Value(Str, Str))
+plugins : List(Plugin.Value(Str))
 plugins = [
 	Job.plugin({
 		jobs: [Job.handler(note_job), Job.handler(flaky_job), Job.handler(slow_job), Job.handler(tick_job)],
@@ -55,7 +55,7 @@ plugins = [
 		keep_failed_ms: 7_200_000,
 		sweep_ms: 500,
 	}),
-	JobsPage.plugin({ at: "/admin/jobs", guard: Middleware.make(|request, context, next!| next!(request, context)), back: { label: "Tests", href: "/" } }),
+	JobsPage.plugin({ at: "/admin/jobs", middleware: Middleware.none({}), back: { label: "Tests", href: "/" } }),
 	{
 		name: "lite",
 		needs: [Sqlite],

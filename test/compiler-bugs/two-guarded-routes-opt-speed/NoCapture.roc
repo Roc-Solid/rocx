@@ -5,7 +5,7 @@ import pf.Plugin
 import pf.Server
 
 
-make : List(Plugin.Value(Str, Str)) -> _
+make : List(Plugin.Value(Str)) -> _
 make = |plugins| {
 	init!: |started| Ok(started),
 	respond!: |request, started| {
@@ -20,7 +20,7 @@ make = |plugins| {
 }
 
 ## A plugin whose two routes each run a guard (a middleware) before answering.
-guarded : Middleware(ctx, out) -> Plugin.Value(context, ctx)
+guarded : Middleware(context, out) -> Plugin.Value(context)
 guarded = |guard| {
 	name: "guarded",
 	routes: [

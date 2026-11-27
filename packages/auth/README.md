@@ -27,7 +27,7 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
        init!: |_started| Ok({}),
        plugins: [
            Email.plugin({ from: "Acme <hello@example.com>" }),
-           Auth.plugin({ admit!: Accounts.admit!, providers: [Auth.google, Auth.github], link_page: "/sign-in/link" }),
+           Auth.plugin({ admit!: Accounts.admit!, middleware: Middlewares.default, providers: [Auth.google, Auth.github], link_page: "/sign-in/link" }),
        ],
        database: Sqlite("data/app.db"),
    })
@@ -63,8 +63,9 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
 ## The plugin's options
 
 ```roc
-Auth.Options := {
+Auth.Options(context, ctx) := {
     admit! : (Auth.Identity => Try(Str, Str)) ?? nobody!,  # who gets in by a link or a provider
+    middleware : Middleware(context, ctx),     # what the endpoints are behind (required, below)
     at : Str ?? "/auth",                       # where the plugin's endpoints are
     sign_in : Str ?? "/sign-in",               # the app's sign-in page
     home : Str ?? "/",                         # where a sign-in goes when it wasn't going anywhere
@@ -80,6 +81,11 @@ Auth.Options := {
     key_env : Str ?? "APP_SECRET",             # the app's secret, which the sealing key is derived from
 }
 ```
+
+`middleware` is what the plugin's endpoints are behind, which the app must say (D-114: an app's `routes/+middleware.roc` isn't around a plugin's routes).
+They are how one signs in, so nothing there may send a signed-out request away: give the app's
+middleware that only adds headers or logs (`Middlewares.default`, as `rocx new` does), or
+`Middleware.none({})`.
 
 Without `admit!`, nobody signs in by a link, a provider or the dev sign-in: an app that checks a
 password of its own, or lets people pick who they are, starts sessions with `Auth.sign_in!` and
@@ -324,7 +330,7 @@ A wrong code goes back to the code page with `?error=code`.
 
 | Function | Does |
 | --- | --- |
-| `plugin : Options -> Plugin.Value(context, ctx)` | the plugin: its endpoints, its tables, its settings |
+| `plugin : Options(context, ctx) -> Plugin.Value(context)` | the plugin: its endpoints, its tables, its settings |
 | `link! : Str, Str => Try(Str, [NotAnAddress, DbErr(Str), ..])` | a sign-in link for an address, going on to `then`: the URL to mail |
 | `link_for! : Str => Try({ email, then }, [Gone])` | whom a link signs in, without using it |
 | `session! : Server.Request => Try(Session, [SignedOut])` | the request's session |

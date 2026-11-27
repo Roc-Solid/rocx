@@ -19,5 +19,5 @@ program = {
 	routes: [],
 }
 
-plugins : List(Plugin.Value(Str, {}))
+plugins : List(Plugin.Value(Str))
 plugins = [Fixture.files("files")]

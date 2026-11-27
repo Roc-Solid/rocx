@@ -68,7 +68,7 @@ Job.Options(context) := {
     sweep_ms : U64 ?? 3_600_000,                                   # how often finished jobs are swept: an hour
 }
 Job.Failure : { kind : Str, id : I64, attempts : U64, error : Str }
-Job.plugin : Job.Options(context) -> Plugin.Value(context, ctx)
+Job.plugin : Job.Options(context) -> Plugin.Value(context)
 ```
 
 `App.jobs` is every kind the app's modules define: `rocx build` finds each `Job.define` and
@@ -270,7 +270,7 @@ then moves like this:
 - Name the package in the app's header (`jobs: "…/packages/jobs/main.roc"`), and import
   `jobs.Job` and `jobs.Cron` instead of `pf.Job` and `pf.Cron`. The jobs page is `admin.JobsPage`
   (packages/admin, which the header names too), best listed as a plugin:
-  `JobsPage.plugin({ at: "/admin/jobs", guard: Middlewares.admin })`. A route file that mounted it
+  `JobsPage.plugin({ at: "/admin/jobs", middleware: Middlewares.default.then(Middlewares.admin) })`. A route file that mounted it
   still works, with `admin.JobsPage`.
 - List the plugin: `plugins: [Job.plugin({ jobs: App.jobs, crons: [...] })]`. Schedules move from
   `App.program`'s `crons`, which is gone, to the plugin's.

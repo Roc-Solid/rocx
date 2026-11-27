@@ -576,7 +576,13 @@ endpoints are under `api/` (D-100) says its own, as a type in the page: `Params 
 **Middleware** (the platform's `Middleware`) runs around answers, and goes by folder (D-103). A
 `+middleware.roc` names one (`middleware = Middlewares.signed_in`) that runs around every page,
 endpoint and channel in its directory and the directories below it, outermost first;
-`routes/+middleware.roc` runs around every request the app answers, its plugins' too. A directory in
+`routes/+middleware.roc` runs around every request for the app's routes, and one for a path nothing
+answers. A plugin's routes and the OpenAPI document aren't in `routes/`, so no `+middleware.roc`
+reaches them: main.roc gives each the middleware it is behind (D-114:
+`Auth.plugin({ …, middleware: Middlewares.default })`,
+`JobsPage.plugin({ middleware: Middlewares.default.then(Middlewares.admin) })`, or
+`Middleware.none({})` for routes anyone may reach), and a plugin with routes has no default for it,
+so what guards each is written where the plugin is listed. A directory in
 brackets is a **group** (`routes/(members)/`): it adds nothing to the path, so a page and its
 endpoints under `api/` share one guard (`routes/(members)/account/+page.rocx` is `/account`,
 `routes/(members)/api/account/+server.roc` is `/api/account`), and the sign-in pages sit outside it.
@@ -866,9 +872,11 @@ docs' [live page](https://roc-solid.github.io/platform/live).
 sentence, without the method and path it may start with, is the summary Swagger UI and Scalar list
 it by), and the JSON Schemas of what it is sent and answers, from the handlers' types (written or
 inferred). It is off unless `App.program` says otherwise: `openapi:
-Document` serves `GET /openapi.json`, and `Page(Swagger)` or `Page(Scalar)` also serves `GET
-/openapi.html`, the document in Swagger UI or
-Scalar (pinned on jsDelivr and checked against its hash). How, without reflection: a type's parser
+Document(middleware)` serves `GET /openapi.json`, and `Page(Swagger, middleware)` or
+`Page(Scalar, middleware)` also serves `GET /openapi.html`, the document in Swagger UI or
+Scalar (pinned on jsDelivr and checked against its hash), both behind `middleware`, which the app
+must name (D-114: `routes/+middleware.roc` isn't around them; `Middleware.none({})` makes them
+public). How, without reflection: a type's parser
 works with any format, and the platform's `OpenApi` is a format that reads nothing and writes the
 schema of each shape it is asked to read. A body a form can send is listed as a form's too
 (URL-encoded and multipart), beside JSON.

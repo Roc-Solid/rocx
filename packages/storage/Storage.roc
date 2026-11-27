@@ -1,6 +1,7 @@
 import pf.Blobs
 import pf.Env
 import pf.Http
+import pf.Middleware
 import pf.Plugin
 import pf.Random
 import pf.Server
@@ -255,20 +256,23 @@ Storage := [].{
 	said : Refusal -> Str
 	said = |refused| S3.said(refused)
 
-	## The storage plugin's options: the environment variable that is the bucket's URL.
-	Options := { env : Str ?? "STORAGE_URL" }
+	## The storage plugin's options: what its route is behind (`middleware`, which the app must say,
+	## D-114: not its `routes/+middleware.roc`, which isn't around a plugin's routes; each URL is
+	## signed, so `Middleware.none({})` is the usual one), and the environment variable that is the
+	## bucket's URL.
+	Options(context, ctx) := { middleware : Middleware(context, ctx), env : Str ?? "STORAGE_URL" }
 
 	## The plugin that answers the signed URLs of the app's `file:` or `memory:` bucket (whose URL
 	## is the environment variable `env`, `STORAGE_URL` unless it says): `GET`, `HEAD` or `PUT`
 	## `/__storage?method=…&key=…&expires=…&signature=…`, the object served or kept, if the URL is
 	## one `signed_url!` made for that method, and hasn't expired; 403 if not. For an S3 bucket it has
 	## nothing to answer (404): S3 answers its own.
-	plugin : Options -> Plugin.Value(context, ctx)
+	plugin : Options(context, ctx) -> Plugin.Value(context)
 	plugin = |options| {
 		named = options.env
 		{
 			name: "storage",
-			routes: [{ method: "*", path: plugin_path, kind: Endpoint, answer!: |request, _context| answered!(named, request) }],
+			routes: Plugin.behind(options.middleware, [{ method: "*", path: plugin_path, kind: Endpoint, answer!: |request, _handed| answered!(named, request) }]),
 		}
 	}
 }

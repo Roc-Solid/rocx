@@ -15,7 +15,7 @@ Vibrator := [].{
 	## The plugin: the script, served before the app and its middleware, and loaded by every page.
 	## (A function even with no options: a plugin is generic in the app's context, and a value can
 	## have only one type.)
-	plugin : {} -> Plugin.Value(context, ctx)
+	plugin : {} -> Plugin.Value(context)
 	plugin = |{}| {
 		name: "vibrate",
 		files: [{ path: "vibrate.js", at: Plugin, content_type: "text/javascript", body: script }],

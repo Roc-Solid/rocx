@@ -4,6 +4,7 @@ import pf.Env
 import pf.Http
 import pf.Kv
 import pf.Log
+import pf.Middleware
 import pf.P256
 import pf.Plugin
 import pf.Random
@@ -31,8 +32,8 @@ import "static/push.js" as script : List(U8)
 ## `Plugin` and `Env`, and packages/jobs's `Job`.
 ##
 ## ```roc
-## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})]                             # /push, visitors
-## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ owner: |context| context.member })]   # each user's own
+## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ middleware: Middleware.none({}) })]   # /push, visitors
+## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ middleware: Middlewares.member, owner: |context| context.member })]   # each user's own
 ## ```
 ##
 ## The keys come from the environment: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (a P-256 pair in
@@ -46,12 +47,14 @@ import "static/push.js" as script : List(U8)
 ## signature VAPID wants), and so is the AES (`AesGcm.seal_with_nonce!`, AES-128-GCM): D-080.
 Push := [].{
 
-	## Where the plugin's endpoints are (`at`: `GET <at>/key`, `POST <at>/subscribe`, `POST
+	## What the plugin's endpoints are behind (`middleware`, which the app must say, D-114: not its
+	## `routes/+middleware.roc`, which isn't around a plugin's routes; `Middleware.none({})` for
+	## anyone), where they are (`at`: `GET <at>/key`, `POST <at>/subscribe`, `POST
 	## <at>/unsubscribe`, where `<PushButton api="/push">` looks), and whose a subscription is: the
-	## app's id for the user its middleware handed on (`owner`; by default "", a visitor).
-	Setup(ctx) := { at : Str ?? "/push", owner : (ctx -> Str) ?? anyone }
+	## app's id for the user `middleware` handed on (`owner`; by default "", a visitor).
+	Setup(context, ctx) := { middleware : Middleware(context, ctx), at : Str ?? "/push", owner : (ctx -> Str) ?? anyone }
 
-	## The push plugin: its endpoints, behind the app's middleware; the service worker at the
+	## The push plugin: its endpoints, behind `middleware`; the service worker at the
 	## site's root (`/push-sw.js`, so its scope is the whole site) and the page's script
 	## (`/rocx/plugins/push/push.js`, which every page loads: the `push.subscribe` and
 	## `push.unsubscribe` effects `<PushButton>` calls), both served before the app and its
@@ -59,17 +62,20 @@ Push := [].{
 	## `push.deliver`, which the jobs plugin's workers run. It needs the jobs plugin, a database and
 	## the VAPID keys; its start checks the keys (or, under `--dev` without them, makes a pair), and
 	## under `--dev`, `GET /__rocx/push/keys` answers a new pair (`new_keys!`).
-	plugin : Setup(ctx) -> Plugin.Value(context, ctx)
+	plugin : Setup(context, ctx) -> Plugin.Value(context)
 	plugin = |setup| {
 		at = setup.at
 		owner = setup.owner
 		{
 			name: "push",
-			routes: [
-				{ method: "GET", path: "${at}/key", kind: Endpoint, answer!: |_, _| key!({}) },
-				{ method: "POST", path: "${at}/subscribe", kind: Endpoint, answer!: |request, context| subscribed!(request, owner(context)) },
-				{ method: "POST", path: "${at}/unsubscribe", kind: Endpoint, answer!: |request, context| unsubscribed!(request, owner(context)) },
-			],
+			routes: Plugin.behind(
+				setup.middleware,
+				[
+					{ method: "GET", path: "${at}/key", kind: Endpoint, answer!: |_, _| key!({}) },
+					{ method: "POST", path: "${at}/subscribe", kind: Endpoint, answer!: |request, handed| subscribed!(request, owner(handed)) },
+					{ method: "POST", path: "${at}/unsubscribe", kind: Endpoint, answer!: |request, handed| unsubscribed!(request, owner(handed)) },
+				],
+			),
 			early: [{ method: "GET", path: "/__rocx/push/keys", under: [Dev], answer!: |_| new_keys!({}) }],
 			files: [
 				{ path: "push-sw.js", at: Root, content_type: "text/javascript", body: worker },

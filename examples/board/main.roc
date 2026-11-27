@@ -11,6 +11,7 @@ app [program] { auth: "../../packages/auth/main.roc", guard: "../../packages/gua
 
 import auth.Auth
 import Generated/App
+import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
@@ -18,5 +19,5 @@ program = App.program({
 	database: Sqlite("data/board.db"),
 	# Who joined as whom, kept for a year. `/join` is where you say it, so it is the sign-in page:
 	# a member's page asked for signed out goes there, and comes back after (`?then=`).
-	plugins: [Auth.plugin({ cookie: "board_session", sign_in: "/join", session_ms: 365 * 86_400_000, refusal: "Join first, at /join." })],
+	plugins: [Auth.plugin({ middleware: Middlewares.default, cookie: "board_session", sign_in: "/join", session_ms: 365 * 86_400_000, refusal: "Join first, at /join." })],
 })

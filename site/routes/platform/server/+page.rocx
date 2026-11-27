@@ -327,7 +327,7 @@ view! = |_|
 			</p>
 			<Code
 				title="main.roc"
-				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tinit!,\n\tplugins: [Acme.plugin({ at: \"/acme\" })],\n})"}
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tinit!,\n\tplugins: [Acme.plugin({ at: \"/acme\", middleware: Middlewares.default })],\n})"}
 				numbers={Bool.False}
 			/>
 			<p>
@@ -336,8 +336,13 @@ view! = |_|
 			</p>
 			<ul>
 				<li>
-					<strong>Routes</strong> answer inside the app's middleware, given what the middleware hands on
-					(the signed-in user, say). A plugin's route can't share a method and path with the app's.
+					<strong>Routes</strong> answer behind the middleware the app gives the plugin
+					(<code>middleware</code>, which a plugin with routes has no default for), given what it hands on
+					(the signed-in user, say). They aren't files under <code>routes/</code>, so no
+					<code>+middleware.roc</code> is around them, not even <code>routes/</code>'s: the app says what
+					each is behind in main.roc (<code>Middlewares.default</code>,
+					<code>{"Middlewares.default.then(Middlewares.admin)"}</code>, or <code>{"Middleware.none({})"}</code>).
+					A plugin's route can't share a method and path with the app's: its <code>at</code> moves it.
 				</li>
 				<li>
 					<strong>Tables</strong> (its migrations) are applied after the platform's and before the app's,
@@ -346,7 +351,7 @@ view! = |_|
 				<li>
 					<strong>Calls, loops, starts and checks</strong> are given the app's context, which its
 					<code>init!</code> made. The plugin doesn't need to know its type
-					(<code>Plugin.Value(context, ctx)</code>).
+					(<code>Plugin.Value(context)</code>).
 				</li>
 				<li>
 					<strong>Needs</strong> say what the compiler can't check: an environment variable, a database

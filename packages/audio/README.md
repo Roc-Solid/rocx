@@ -38,7 +38,7 @@ import audio.Audio
 |---|---|---|---|
 | `Audio` | both halves (`main.roc` and `browser.roc` list it) | `play! : Str => {}` | Plays the file at the URL, at its own volume and speed. |
 | | | `play_with! : Str, { volume : F64, rate : F64 } => {}` | Plays it at a `volume` (0 to 1) and a `rate` (2.0 is twice as fast, and an octave higher). |
-| `AudioPlayer` | the server's half | `plugin : {} -> Plugin.Value(context, ctx)` | The plugin. Its one file is the player's script. |
+| `AudioPlayer` | the server's half | `plugin : {} -> Plugin.Value(context)` | The plugin. Its one file is the player's script. |
 
 A URL that begins with `/` is the site's, under its base; a whole URL plays from anywhere. A volume
 or rate that no sound could use (NaN, an infinity, below 0, above 1000) is replaced by 1 before it

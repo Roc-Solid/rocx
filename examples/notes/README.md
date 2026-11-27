@@ -114,7 +114,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 | MCP tools made from the JSON API's endpoints (`McpHttp.endpoint`). A tool's arguments fill the endpoint's path parameters too (`read_note`'s `id`), so an agent may do exactly what a script may, checked by the same code. | `Agents.roc` (`server`) |
 | The MCP server as a route, `/mcp` (its `respond!`), behind its directory's middleware; its tools are the JSON API's endpoints, sent with the MCP request's token through their own middleware. | `routes/mcp/`, `Agents.roc` |
 | A bearer token turned into its person, so a token never reaches another person's notes. Read-only tokens are refused for writes. | `Middlewares.agent`, `Notebook.writer`, `Store.roc` (every query names the person) |
-| The JSON API, and its OpenAPI document with Scalar to read it (`openapi: Page(Scalar)`), at `/openapi.json` and `/openapi.html`. | `routes/(api)/api/notes/`, `routes/(api)/api/search/`, `routes/(api)/api/me/`, `main.roc` |
+| The JSON API, and its OpenAPI document with Scalar to read it (`openapi: Page(Scalar, Middlewares.default)`), at `/openapi.json` and `/openapi.html`. | `routes/(api)/api/notes/`, `routes/(api)/api/search/`, `routes/(api)/api/me/`, `main.roc` |
 | Rate limits (packages/guard): sign-in links for each address, MCP calls for each token. | `Middlewares.mail_limit`, `Middlewares.agent_limit` |
 
 ### Search and Markdown

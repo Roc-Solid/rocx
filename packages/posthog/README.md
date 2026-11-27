@@ -47,7 +47,7 @@ program = App.program({
 	init!: |started| Ok({ facts: started }),
 	plugins: [
 		Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }),
-		PostHog.plugin({}),
+		PostHog.plugin({ middleware: Middleware.none({}) }),
 	],
 })
 ```
@@ -75,16 +75,17 @@ All of it is in the `PostHog` module (`import posthog.PostHog`).
 
 | Function | What it does |
 | --- | --- |
-| `plugin : Options -> Plugin.Value(context, ctx)` | The plugin: the browser's script (`GET <at>.js`), where it sends errors (`POST <at>`), the loop that sends what was kept (`posthog.send`), and a check that logs, once the server has started, where errors go or `off: no POSTHOG_KEY` (`posthog.reporting`). |
+| `plugin : Options(context, ctx) -> Plugin.Value(context)` | The plugin: the browser's script (`GET <at>.js`), where it sends errors (`POST <at>`), the loop that sends what was kept (`posthog.send`), and a check that logs, once the server has started, where errors go or `off: no POSTHOG_KEY` (`posthog.reporting`). |
 | `middleware : (context -> Str) -> Middleware(context, context)` | Reports every answer with a 5xx status that passes through it. The function names who asked, from the context the middleware before it handed on (`""` for nobody known). Put it after the middleware that knows who is signed in, or first, with `\|_\| ""`. |
 | `capture! : Str, fields => {}` | Reports an error the app dealt with, with fields (a record, as `Log.error!` takes them). While answering a request, the report also carries the request's path and method. |
 | `capture_for! : Str, Str, fields => {}` | `capture!` for a person the app knows (the first argument, as the app names them), so PostHog counts the people an issue reached. |
 | `job_failed! : { kind : Str, id : I64, attempts : U64, error : Str } => {}` | Reports a job that failed for good. Give it to the jobs plugin as `on_failed!`. |
 
-`Options` (every field optional):
+`Options` (every field optional but `middleware`):
 
 | Option | Environment | Default |
 | --- | --- | --- |
+| `middleware` | | none: required. What the script and `POST <at>` are behind; the app's `routes/+middleware.roc` isn't around a plugin's routes (D-114). Every page sends its errors there, so `Middleware.none({})` |
 | `key` | `POSTHOG_KEY` | none: reporting is off |
 | `host` | `POSTHOG_HOST` | `https://us.i.posthog.com` (`https://eu.i.posthog.com` for EU Cloud) |
 | `release` | `POSTHOG_RELEASE` | none (set it to the commit a build is from) |

@@ -220,9 +220,11 @@ view! = |_|
 			<Code title={"${Sources.platform_jobs_page.file}, in part"} source={"${Sources.platform_admins_only.rocx}\n\n# … in its plugins\n${Sources.platform_jobs_page.rocx}"} numbers={Bool.False} />
 			<p>
 				<a href={Paths.ecosystem_admin}>packages/admin</a> draws a page of the queue, as a plugin you list where
-				only your admins get in. <code>{"JobsPage.plugin({ at, guard, back })"}</code> answers at
-				<code>at</code> (<code>/admin/jobs</code> by default) behind your app's middleware, then
-				<code>guard</code>: the middleware that knows who is an admin. <code>guard</code> has no default, so a
+				only your admins get in. <code>{"JobsPage.plugin({ at, middleware, back })"}</code> answers at
+				<code>at</code> (<code>/admin/jobs</code> by default) behind <code>middleware</code>: all that knows
+				who is an admin, as your <code>routes/+middleware.roc</code> isn't around a plugin's routes (what
+				<code>routes/(admin)/</code> runs: <code>{"Middlewares.default.then(Middlewares.admin)"}</code>).
+				<code>middleware</code> has no default, so a
 				jobs page is never public because an option was left out; without it the app doesn't compile. The page
 				needs the jobs plugin. <code>back</code> is a link back to your app's own pages, first in the page's
 				sidebar (none by default).

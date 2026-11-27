@@ -8,7 +8,7 @@ import pf.Server
 Config(given, handed) := {
 	init! : Str => Try(given, Str),
 	middleware : Middleware(given, handed),
-	plugins : List(Plugin.Value(given, handed)) ?? [],
+	plugins : List(Plugin.Value(handed)) ?? [],
 }
 
 make : Config(_, _) -> _
@@ -26,7 +26,7 @@ make = |config| {
 }
 
 ## A plugin whose two routes each run a guard (a middleware) before answering.
-guarded : Middleware(ctx, out) -> Plugin.Value(context, ctx)
+guarded : Middleware(context, out) -> Plugin.Value(context)
 guarded = |guard| {
 	name: "guarded",
 	routes: [

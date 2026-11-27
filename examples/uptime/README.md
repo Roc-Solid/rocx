@@ -114,7 +114,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 | The incident rules, tested with `expect`s: open when the streak reaches the threshold, close on the next pass, and after a manual close, don't open again until the monitor has passed and failed again. | `Incident.roc` |
 | The nightly roll-up: each past day's checks summed into `daily` (once, with `on conflict do nothing`), and checks older than a week deleted once their day is rolled up. | `Jobs.nightly`, `Store.roll_up!` |
 | Email alerts through packages/email: one job per subscriber. The email's HTML is a pure component turned into a string (`Html.to_str`). Its unsubscribe link opens a page with a button, so opening the link changes nothing. | `Alerts.roc`, `Ui/AlertMail.rocx`, `routes/unsubscribe/`, `routes/api/unsubscribe/` |
-| The jobs page from packages/admin, as a plugin behind the admin's sign-in (`JobsPage.plugin({ at, guard, back })`). | `main.roc` |
+| The jobs page from packages/admin, as a plugin behind the admin's sign-in (`JobsPage.plugin({ at, middleware, back })`, `middleware` what `routes/(admin)/` runs: `Middlewares.default.then(Middlewares.admin)`). | `main.roc` |
 
 ### The live status page
 

@@ -102,7 +102,9 @@ attributes OpenTelemetry's HTTP conventions name:
 - `http.response.status_code`.
 
 Put it first in `routes/+middleware.roc`, so it times the rest of the middleware too, and every
-request the app answers, its plugins' too.
+request for the app's routes. A plugin's routes and the OpenAPI document are behind what main.roc
+gives them (D-114): put it first there too, to time them (`Middlewares.default`, if that is where it
+is).
 
 ## Where they go
 

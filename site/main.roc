@@ -12,6 +12,7 @@ import Generated/App
 # The count (Demos/Count.rocx) is on no page: a copy of the site as files can't stream its events.
 # The calls page shows its code, so the server's program imports it, and the compiler checks it.
 import Demos/Count
+import Middlewares
 
 ## Every request: the site's middleware (routes/+middleware.roc), given the context its init! keeps
 ## (the facts the server was started with, `--context-file`); then the routes. The site has no
@@ -21,6 +22,6 @@ program = App.program({
 	init!: |started| Ok({ facts: started }),
 	# Postgres at DATABASE_URL when `rocx site dev` is given one (`--database-url`), and none without.
 	database: Postgres,
-	openapi: Page(Swagger),
+	openapi: Page(Swagger, Middlewares.default),
 	plugins: [AudioPlayer.plugin({})],
 })

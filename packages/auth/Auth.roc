@@ -24,7 +24,7 @@ import "migrations/0004_two_factor_misses.sql" as two_factor_misses : Str
 ## user who turned it on gives a code from an authenticator app (or a recovery code) after that.
 ##
 ## ```roc
-## plugins: [Auth.plugin({ admit!: Accounts.admit!, providers: [Auth.google, Auth.github] })]
+## plugins: [Auth.plugin({ admit!: Accounts.admit!, middleware: Middlewares.default, providers: [Auth.google, Auth.github] })]
 ## ```
 ##
 ## The plugin's endpoints, under `at` (`/auth`): `GET|POST <at>/link?token=…` (a mailed link,
@@ -80,6 +80,10 @@ Auth := [].{
 	##   database error rolls all of it back. Keep anything slow (a fetch) out of it. Without it, nobody
 	##   signs in those ways, and an app signs people in its own way (`sign_in!`: a password it
 	##   checks, a name picked).
+	## - `middleware`: what the plugin's endpoints are behind (D-114), which the app must say: not its
+	##   `routes/+middleware.roc`, which isn't around a plugin's routes. They are how one signs in, so
+	##   nothing there may send a signed-out request away: `Middleware.none({})`, or the app's own that
+	##   only logs or adds headers (`Middlewares.default`, if it gates nothing).
 	## - `at`: where the plugin's endpoints are (`/auth`).
 	## - `sign_in`: the app's sign-in page, where a signed-out request (`required`) and a sign-in
 	##   that failed go (`/sign-in`).
@@ -106,8 +110,9 @@ Auth := [].{
 	##   characters (`openssl rand -hex 32`), from which the key that seals each authenticator's
 	##   secret is derived. With `two_factor`, the server doesn't start without it, but under `--dev`,
 	##   where a development secret stands in (on the log).
-	Options := {
+	Options(context, ctx) := {
 		admit! : (Auth.Identity => Try(Str, Str)) ?? nobody!,
+		middleware : Middleware(context, ctx),
 		at : Str ?? "/auth",
 		sign_in : Str ?? "/sign-in",
 		home : Str ?? "/",
@@ -145,11 +150,11 @@ Auth := [].{
 	## how many unused recovery codes they have.
 	TwoFactor : [Off, Pending, On({ since_ms : I64, recovery_codes : U64 })]
 
-	## The auth plugin: its endpoints (behind the app's middleware), its tables
+	## The auth plugin: its endpoints (behind `middleware`, the app's choice), its tables
 	## (`auth/0001_auth` to `auth/0004_two_factor_misses`, the same on SQLite and Postgres), and its
 	## settings, kept at start. It needs a database; with `two_factor`, the app's secret too (it
 	## won't start without it, but under `--dev`).
-	plugin : Auth.Options -> Plugin.Value(context, ctx)
+	plugin : Auth.Options(context, ctx) -> Plugin.Value(context)
 	plugin = |options| {
 		settings = settings_of(options)
 		admit! = options.admit!
@@ -162,13 +167,16 @@ Auth := [].{
 		)
 		{
 			name: "auth",
-			routes: [
-				{ method: "GET", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
-				{ method: "POST", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
-				{ method: "POST", path: "${at}/dev", kind: Endpoint, answer!: |request, _| dev!(settings, admit!, request) },
-				{ method: "POST", path: "${at}/sign-out", kind: Endpoint, answer!: |request, _| left!(settings, request) },
-				{ method: "POST", path: "${at}/code", kind: Endpoint, answer!: |request, _| coded!(settings, request) },
-			].concat(List.join(away)),
+			routes: Plugin.behind(
+				options.middleware,
+				[
+					{ method: "GET", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
+					{ method: "POST", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
+					{ method: "POST", path: "${at}/dev", kind: Endpoint, answer!: |request, _| dev!(settings, admit!, request) },
+					{ method: "POST", path: "${at}/sign-out", kind: Endpoint, answer!: |request, _| left!(settings, request) },
+					{ method: "POST", path: "${at}/code", kind: Endpoint, answer!: |request, _| coded!(settings, request) },
+				].concat(List.join(away)),
+			),
 			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }, { name: "0004_two_factor_misses", sql: two_factor_misses }],
 			starts: [
 				|_context| {
@@ -612,7 +620,7 @@ Auth := [].{
 }
 
 ## The settings an app's options make.
-settings_of : Auth.Options -> Auth.Settings
+settings_of : Auth.Options(_, _) -> Auth.Settings
 settings_of = |options| {
 	at: if (options.at.ends_with("/")) options.at.drop_suffix("/") else options.at,
 	sign_in: options.sign_in,

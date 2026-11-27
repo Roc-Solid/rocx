@@ -460,9 +460,10 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.route_routes.file}, in part"} source={Sources.route_routes.rocx} numbers={Bool.False} />
 			<p>
-				<code>App.program</code> answers every request with it, behind the app's middleware
-				(<code>routes/+middleware.roc</code>), and the GETs the server makes while it renders a page go the
-				same way. A route in a directory with a <code>+middleware.roc</code> above it is wrapped in
+				<code>App.program</code> answers every request with it that no plugin's route and no OpenAPI path
+				takes, behind the app's middleware (<code>routes/+middleware.roc</code>), and the GETs the server
+				makes while it renders a page go the same way. A plugin's routes and the OpenAPI document aren't
+				in <code>routes/</code>, so they are behind what main.roc gives them instead (D-114). A route in a directory with a <code>+middleware.roc</code> above it is wrapped in
 				<code>Middleware.run!</code>, one inside the other, outermost first, and the handler is given what
 				the innermost passed on. The members page and its endpoint run behind their group's:
 			</p>
@@ -489,21 +490,24 @@ view! = |_|
 			</p>
 			<h3>Turning it on</h3>
 			<p>It is off unless the app turns it on, with <code>openapi</code> in its <code>App.program</code>:</p>
-			<Code title="main.roc" source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\topenapi: Page(Swagger),\n})"} numbers={Bool.False} />
+			<Code title="main.roc" source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\topenapi: Page(Swagger, Middlewares.default),\n})"} numbers={Bool.False} />
 			<TableWrap>
 				<table>
 					<thead><tr><th><code>openapi:</code></th><th>The app serves</th></tr></thead>
 					<tbody>
 						<tr><td><code>Off</code>, or no <code>openapi</code></td><td>neither</td></tr>
-						<tr><td><code>Document</code></td><td><code>GET /openapi.json</code>: the document</td></tr>
-						<tr><td><code>Page(Swagger)</code>, <code>Page(Scalar)</code></td><td>that, and <code>GET /openapi.html</code>: the document in Swagger UI, or in Scalar</td></tr>
+						<tr><td><code>Document(middleware)</code></td><td><code>GET /openapi.json</code>: the document</td></tr>
+						<tr><td><code>Page(Swagger, middleware)</code>, <code>Page(Scalar, middleware)</code></td><td>that, and <code>GET /openapi.html</code>: the document in Swagger UI, or in Scalar</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<ul>
 				<li>
-					<strong>It is behind the app's middleware</strong> (<code>routes/+middleware.roc</code>), as every
-					answer is: a guard there keeps these from strangers too.
+					<strong>It is behind the middleware it names</strong>, which the app must give: the document says
+					what every endpoint takes and answers, so it is never public because something was left out.
+					<code>routes/+middleware.roc</code> isn't around it (D-114): give it what a folder of admins runs
+					(<code>{"Page(Scalar, Middlewares.default.then(Middlewares.admin))"}</code>) to keep it from
+					strangers, or <code>{"Middleware.none({})"}</code> to show it to anyone.
 				</li>
 				<li>
 					<strong>The page loads its viewer from jsDelivr</strong>, pinned to one version and checked
@@ -513,8 +517,8 @@ view! = |_|
 				</li>
 				<li>
 					<strong>An app that writes its own <code>program</code></strong>, instead of using
-					<code>App.program</code>, puts <code>OpenApi.middleware(Page(Swagger), Api.openapi)</code> at the end
-					of its middleware chain, as <code>App.program</code> does, or asks
+					<code>App.program</code>, runs <code>{"OpenApi.middleware(Page(Swagger, Middleware.none({})), Api.openapi)"}</code>
+					before its routes, as <code>App.program</code> does, or asks
 					<code>OpenApi.respond</code> before its routes.
 				</li>
 			</ul>

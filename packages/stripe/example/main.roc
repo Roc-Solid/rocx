@@ -10,6 +10,7 @@
 ## e-book, for those who bought it (`/ebook`).
 app [program] { auth: "../../auth/main.roc", crypto: "../../crypto/main.roc", pf: platform "../../../server/platform/main.roc", stripe: "../main.roc" }
 
+import pf.Middleware
 import auth.Auth
 import stripe.Stripe
 import Generated/App
@@ -19,10 +20,10 @@ import Billing
 program = App.program({
 	init!: |_started| Ok({}),
 	plugins: [
-		Auth.plugin({ admit!: Accounts.admit! }),
+		Auth.plugin({ middleware: Middleware.none({}), admit!: Accounts.admit! }),
 		# STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET, from the environment (README.md: the Stripe CLI's
 		# `stripe listen` gives the second).
-		Stripe.plugin({ on_event!: Billing.on_event! }),
+		Stripe.plugin({ middleware: Middleware.none({}), on_event!: Billing.on_event! }),
 	],
 	database: Sqlite("data/stripe.db"),
 })

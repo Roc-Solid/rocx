@@ -6173,6 +6173,8 @@ by hand.
 
 **Status.** Built (2026-11-26), the user's call, after a review of where an app names middleware;
 changes D-079 (a page's middleware from the `+server.roc` beside it).
+Changed by D-114: `routes/+middleware.roc` is no longer around a plugin's routes or the OpenAPI
+document.
 
 **Context.** An app named middleware in two places, with a rule between them: the app's default
 (`App.program({ middleware })` in main.roc) around every request, and a route file's own line
@@ -6733,3 +6735,55 @@ no duration is shown as one.
 
 **Reversible:** yes: `arranged` goes, and the fields come in their order again.
 
+## D-114 A plugin's routes and the OpenAPI document are behind the middleware main.roc gives them
+
+**Status.** Built (2026-11-27), the user's call, after the private app's own gate sent
+`/openapi.html` and `/admin/jobs` to its sign-in page, and its sign-in page under `--dev` offered
+Google alone.
+
+**Context.** D-103 put `routes/+middleware.roc` around every request the app answers, its plugins'
+routes and the OpenAPI document included; the folders' middleware reached the app's route files
+alone. A plugin isn't in the file tree, so the one middleware that reached it was the app's root,
+the place an app is most likely to put a sign-in gate. An app with such a gate had to list the
+plugins' public paths by hand again (`/auth/google`, `/auth/google/callback`), which D-103 was meant
+to end, and the OpenAPI page and the jobs page were sent to sign in with no way for the app to say
+otherwise. Each package did the rest its own way: `at` on most, a `guard` on the jobs page alone
+(which ran inside the root anyway), `owner : ctx -> Str` on push.
+
+**Decision.**
+
+- **No `+middleware.roc` is around a plugin's routes or the OpenAPI document**, not even
+  `routes/`'s. `Generated/App` answers a request with: the platform's cross-site check (as
+  before), then a plugin's route, then the OpenAPI document, then the app's middleware
+  (`routes/+middleware.roc`) around the app's routes and the error page. A path nothing answers
+  still goes through the app's middleware.
+- **A plugin with routes takes `middleware : Middleware(context, ctx)`, with no default**, and puts
+  its routes behind it (`Plugin.behind`): auth, push, posthog, stripe, storage and the jobs page
+  (whose `guard` it replaces). Its routes read what it hands on (`Push.plugin({ middleware,
+  owner: |ctx| … })`). `Plugin.Value(context, ctx)` is `Plugin.Value(context)`: a route is given
+  the app's context, before the middleware the plugin was given.
+- **`openapi` names its middleware too**: `Document(middleware)`, `Page(Swagger, middleware)`,
+  `Page(Scalar, middleware)`. `OpenApi.Shown` is what is served without it, for `OpenApi.respond`.
+- **`Middleware.none({})`** is the middleware that hands every request on as it came: what a plugin
+  anyone may reach is given (Stripe's webhook, signed storage links).
+- **What runs around everything is passed by name.** An app that wants its request log or its
+  headers on a plugin's routes gives that plugin its root's middleware (`Middlewares.default`), or a
+  folder's chain written out (`Middlewares.default.then(Middlewares.admin)`); rocx writes no module
+  of chains. Each package's `at` (`webhook_at` for Stripe) moves its routes when two would meet.
+
+**Why.** What guards a plugin is written where the plugin is listed, so a gate in the root can't
+reach something it wasn't meant for, and a page that should be private can't be public because an
+option was left out. The user chose: a path nothing answers stays behind the root; the OpenAPI
+document requires its middleware; and what runs around every request is passed explicitly.
+Defaults were meant for the plugins anyone may reach, but a field default may not tie `ctx` to
+`context` (the compiler refuses it: "default constrains a type parameter"), so every plugin with
+routes requires it.
+
+**Costs.** Every app lists a `middleware` for each plugin with routes, `Middleware.none({})` where
+none is wanted. A root middleware that logs or adds headers no longer reaches a plugin's routes
+unless the app passes it; an app whose root mixes headers and a gate must split them to pass one
+without the other. The examples pass their `Middlewares.default`, which only adds headers, logs or
+identifies, so they behave as before.
+
+**Reversible:** yes: `Generated/App` puts the root around `Plugin.respond!` again, and the
+plugins drop the option.
