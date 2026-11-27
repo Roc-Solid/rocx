@@ -169,6 +169,20 @@ When an item lands, delete its line here in the same commit.
     the same dispatcher 608 bytes). Every app's optimized server is still built `--specialize=no`
     (D-064, `ROCX_SPECIALIZE=yes` opts back in): whether specialization becomes the default again
     is D-064's to decide, with those numbers.
+  - `effectful-closure-dec-default` (2026-11-27, the same on every nightly and fork build tried): a
+    closure checked against `() => T` that calls a method on a captured number defaults the number
+    to `Dec`, so a `view!` component's getter prop `"… ${status.to_str()}"` made an error page take
+    a `Dec` status and a release build fail against Root's `U16`. `rocx check` passed: it checks the
+    dev build, whose `Html.read_at!` reads keep the number generic. Workaround: call `to_str` in the
+    body. rocx could also check the release build's program (no dev reads) so a failure only it
+    meets shows in `rocx check`.
+- **Specializing a large app's browser program crashes `lambda_solve`** (D-099, at 4674b5973d):
+  `--target=wasm32 --opt=size --specialize=yes` on a private app's client panics in under 2 s,
+  "guarded list invalidated: monotype_lifted.Program.branches: span … exceeds current_len"
+  (post-check, lambda_solve), and `Static.browser_build!` falls back to a boxy wasm with a note.
+  The fork's builds on nightly 890d6c8 (c69cdc3fdf, 24e2e481a8) build it specialized (2026-11-27),
+  so the pin bump should end it: then try the release's browser build and, if nothing crashes,
+  decide whether the fallback stays. Not reduced (the app is private).
 - **Not reduced yet:** a rigid `..others` beside an app's own error tag in one body doesn't
   type-check (examples/uptime names `JobErr` instead).
 - **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse,
