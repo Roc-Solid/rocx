@@ -6846,7 +6846,8 @@ routes again.
 
 ## D-117 A submission's redirect reads again what the navigation keeps
 
-**Status.** Built (2026-11-27), the user's call: things should work on the plain path.
+**Status.** Built (2026-11-27), the user's call: things should work on the plain path. Changed by
+D-119: what the new page's document answered is read from it, the rest from the server.
 
 **Context.** A form the runtime sends (D-095) or an action whose answer is a redirect
 (`x-rocx-redirect`, or one `fetch` followed) goes there in place (D-040), keeping the levels the two
@@ -6875,7 +6876,7 @@ narrows with `Router.revalidate!`.
 ## D-118 A form nothing on the page reads is answered as a plain form, in place
 
 **Status.** Built (2026-11-27), the user's call: things should work on the plain path, as in Solid
-and SvelteKit.
+and SvelteKit. Changed by D-119: brought back to the page it is on, the page is kept, not made anew.
 
 **Context.** D-095 sends every form that posts to one of the app's endpoints with `fetch`, for the
 endpoint's result or refusal, and said a refusal nothing reads "shows nothing on the page, as it
@@ -6916,3 +6917,38 @@ more than a result's revalidation), and its page is made anew: its signals start
 plain post.
 
 **Reversible:** yes: every form goes as the runtime's again.
+
+## D-119 What a navigation keeps follows its document; a form's answer keeps the page it comes back to
+
+**Status.** Built (2026-11-27), from the private app's tests on D-117 and D-118 (130 of 134 then;
+134 of 134 now).
+
+**Context.** D-117 read a kept layout's reads again from the server after a submission's redirect,
+though the document the navigation had just fetched carried an answer for every one of them (the
+server renders the layouts with the page): a request more, and the private app's tests, which hold
+that a page brings every answer it reads, saw `/api/viewer` asked. D-118 followed a plain form's
+flash back to the page it came from by making that page anew from its document: a page's own
+signals (the board's picked post) started again, as after a plain post. An audit against Solid
+and SvelteKit had the same point: a kept level's answers in the document were thrown away.
+
+**Decision.**
+
+- **After every navigation, what it kept follows its document** (`refreshKept`): a kept
+  computation whose reads of the server the document answered, one of them now differently, runs
+  again, reading them from the document's answers: no request. What reads the flash (`js_flash`)
+  runs again when the document brings another.
+- **After a submission's redirect** (D-117), what the document didn't carry is read from the
+  server: every read, or the answer's `Router.revalidate!` keys.
+- **An answer that brings back the page it is on keeps it** (D-118's flash back, a handler's
+  redirect to its own page): the root and the page aren't made anew, the scroll and the focus stay,
+  nothing is announced; its reads and the flash follow the document. A link to the page it is on
+  still makes it anew, as a load would (D-040).
+
+**Why.** The document is the server's word on every level of the page, fetched anyway: reading the
+kept levels from it is free and current. SvelteKit keeps a page's state across `use:enhance`'s
+refresh; Solid keeps it across revalidation.
+
+**Costs.** A kept computation whose answer changed runs again on a navigation that isn't a
+submission's too: what it shows follows the server, as it would after a load.
+
+**Reversible:** yes.

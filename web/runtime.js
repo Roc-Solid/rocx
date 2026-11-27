@@ -1275,6 +1275,12 @@ export class Runtime {
 		this.stats = { runs: 0, aborts: 0, patches: 0, selections: 0 };
 		/** In the browser: answers the server gave while rendering the page, by name and input. */
 		this.answers = new Map();
+		// The computations that read the flash (`js_flash`): run again when a navigation's document
+		// brings another (D-119).
+		this.flashReaders = new Set();
+		// What the last navigation's commit read again from its document (D-119), for the submission
+		// that asked for it (`sendSubmission`) to read the rest from the server.
+		this.refreshed = null;
 		/** On the server: the request being answered, as HTTP writes it (`METHOD target`, a header a
 		 * line, a blank line, its body), and the answers noted. */
 		this.request = "";
@@ -1754,7 +1760,11 @@ export class Runtime {
 			// The flash: on the server, what Roc found in the request's cookie, noted for the page; in the
 			// browser, what the page noted.
 			js_flash: (ptr, len) => {
-				if (!this.onServer) return this.give(this.flash);
+				// What reads the flash runs again when a navigation brings another (D-119).
+				if (!this.onServer) {
+					if (this.current) this.flashReaders.add(this.current);
+					return this.give(this.flash);
+				}
 				const found = text(ptr, len);
 				if (found) this.flashed = found;
 				return this.give(found);
@@ -2105,16 +2115,30 @@ export class Runtime {
 					// In place when it is one of the app's pages (D-040), but not if the visitor went to
 					// another page meanwhile: a form sent from one mustn't move them off the next.
 					// The submission is done once there, with no result (200, ""): it succeeded, and its
-					// transition (`create_optimistic!`'s writes) ends with the new data in, not before.
+					// transition (`create_optimistic!`'s writes) ends with the new data in, not before. One
+					// answered as a plain form (D-118) leaves the browser's list then: the flash the page
+					// came back with is what it said.
+					const finish = () => {
+						done(200, "");
+						if (plain) {
+							source.list = source.list.filter((each) => each !== entry);
+							this.submissionsChanged(source);
+						}
+					};
 					if (this.navigations === navigations) {
-						// What the navigation keeps (a layout the two pages share, §4.3) reads again what it
-						// read once the new page is in (D-117), as a result's page does: every read, or the
-						// handler's `Router.revalidate!` keys. A sign-in's redirect so shows the layout
-						// signed in. What it makes anew reads from the server anyway.
+						// What the navigation keeps (a layout the two pages share, §4.3; the page itself, when
+						// the answer brings it back) reads again what its document answered (D-119); what the
+						// document didn't carry it reads from the server then (D-117): every read, or the
+						// handler's `Router.revalidate!` keys. A sign-in's redirect so shows the layout signed
+						// in. What the navigation makes anew reads from its document anyway.
 						const before = new Set(this.readers);
 						const keys = Runtime.revalidating(response.headers.get("x-rocx-revalidate"));
-						Promise.resolve(this.navigate(to !== null ? this.urlOf(to) : new URL(response.url))).then(() => this.revalidate(() => done(200, ""), keys, before));
-					} else done(200, "");
+						this.refreshed = null;
+						Promise.resolve(this.navigate(to !== null ? this.urlOf(to) : new URL(response.url), { refresh: true })).then(() => {
+							const rest = new Set([...before].filter((computation) => !this.refreshed?.has(computation)));
+							this.revalidate(finish, keys, rest);
+						});
+					} else finish();
 					return;
 				}
 				const said = await response.text();
@@ -2831,7 +2855,7 @@ export class Runtime {
 	 * forward's, in `popped`); a load is the browser's, which asks with its own prompt while one
 	 * would stop it (`guardUnload`).
 	 */
-	async navigate(to, { replace = false, scroll = true, pop = null, force = false, asked = false } = {}) {
+	async navigate(to, { replace = false, scroll = true, pop = null, force = false, asked = false, refresh = false } = {}) {
 		const url = to instanceof URL ? to : this.urlOf(to);
 		if (!this.navigating || !this.ours(url)) return this.load(url, { replace, pop, asked });
 		if (!pop && Runtime.samePage(url)) return this.load(url, { replace });
@@ -2879,6 +2903,9 @@ export class Runtime {
 			this.pages.delete(Runtime.documentKey(url));
 			return this.load(at, { replace, pop, asked: true });
 		}
+		// A submission's answer bringing back the page it is on (D-119): kept where it is, its scroll,
+		// focus and nothing announced, as its reads and the flash follow the document.
+		const stays = refresh && Runtime.documentKey(at) === Runtime.documentKey(new URL(location.href));
 		if (pop) this.entryKey = pop;
 		else {
 			this.entryKey = Runtime.entryKey();
@@ -2890,9 +2917,9 @@ export class Runtime {
 		this.navigations++;
 		try {
 			const show = () => {
-				this.commit(doc, Runtime.target(`${this.unbased(at.pathname)}${at.search}`));
+				this.commit(doc, Runtime.target(`${this.unbased(at.pathname)}${at.search}`), { refresh });
 				this.afterNavigate?.(doc);
-				this.scrolled(at, { pop, scroll });
+				if (!stays) this.scrolled(at, { pop, scroll });
 			};
 			// A View Transition, where the app asked for one (§5.3): the browser snapshots the old page,
 			// the flush makes the new one (scrolled where it goes), and it cross-fades.
@@ -2907,8 +2934,10 @@ export class Runtime {
 				transition.finished.catch(() => {});
 				await transition.updateCallbackDone;
 			} else show();
-			this.focused(at);
-			this.announce(at);
+			if (!stays) {
+				this.focused(at);
+				this.announce(at);
+			}
 			this.watchSight();
 			const ms = performance.now() - started;
 			this.notify("navigated", { url: at.href, ms });
@@ -2982,9 +3011,13 @@ export class Runtime {
 	 * `<NoHydration>` regions, `<html>`'s and `<body>`'s attributes the document's. Nothing is asked
 	 * of the server; strictly (the tests'), asking throws. The effects' applies wait (`navigate`).
 	 */
-	commit(doc, target) {
+	commit(doc, target, { refresh = false } = {}) {
+		const flashBefore = this.flash;
+		// What the page read from the server before (the levels it keeps among them).
+		const before = [...this.readers];
 		this.flash = "";
 		this.seed(doc);
+		this.refreshing = refresh;
 		const hydrating = (this.hydrating = { asked: [] });
 		this.arriving = doc;
 		this.holdingEffects = true;
@@ -2995,12 +3028,48 @@ export class Runtime {
 			// Phase 1 makes the whole document anew; phase 2's levels may keep the root (`remakeRoot`).
 			if (this.root && (this.remakeRoot?.(target) ?? true)) this.schedule(this.root);
 			this.flush();
+			// What the navigation kept reads again what its document answered otherwise (D-119): no
+			// request, and kept layouts follow the server's data on every navigation.
+			this.refreshKept(before, flashBefore);
 		} finally {
+			this.refreshing = false;
 			this.arriving = null;
 			this.hydrating = null;
 			this.answers.clear();
 		}
 		if (this.strict && hydrating.asked.length) throw new Error(`rocx: navigating to ${target}, the page asked the server again for ${hydrating.asked.join(", ")}: its document didn't carry it`);
+	}
+
+	/**
+	 * After a navigation's flush, the computations it kept (a layout both pages have, the page when it
+	 * is the same one again: D-119) read again what the document's answers say otherwise: each whose
+	 * reads of the server the document answered every one of, one of them now differently, runs again,
+	 * reading them from those answers (asked of no one). What reads the flash runs again if the
+	 * document brought another. Those it read again, or found the same, are `refreshed`: a
+	 * submission's redirect (`sendSubmission`) asks the server for the rest (D-117).
+	 */
+	refreshKept(before, flashBefore) {
+		const refreshed = new Set();
+		let again = false;
+		for (const computation of before) {
+			if (computation.disposed || !computation.calls) continue;
+			const reads = [...computation.calls.keys()].filter((key) => key.startsWith("GET "));
+			if (!reads.length || !reads.every((key) => this.answers.has(key))) continue;
+			refreshed.add(computation);
+			if (reads.every((key) => computation.calls.get(key)?.value === this.answers.get(key))) continue;
+			for (const key of reads) computation.calls.delete(key);
+			this.schedule(computation);
+			again = true;
+		}
+		for (const reader of this.flashReaders) {
+			if (reader.disposed) this.flashReaders.delete(reader);
+			else if (this.flash !== flashBefore) {
+				this.schedule(reader);
+				again = true;
+			}
+		}
+		this.refreshed = refreshed;
+		if (again) this.flush();
 	}
 
 	/** After a navigation: back and forward, the scroll the entry had; else, unless told not to, the
@@ -3454,7 +3523,9 @@ export class Runtime {
 	remakeRoot(target) {
 		const previous = this.leftFrom;
 		this.leftFrom = null;
-		this.rootKept = !(this.rootOnce || target === previous);
+		// The same page again is made anew (a link to it, as a load would), but not when a submission's
+		// answer brings it back (D-119): kept, it reads again what changed (`refreshKept`).
+		this.rootKept = !(this.rootOnce || (target === previous && !this.refreshing));
 		if (!this.rootKept) {
 			if (this.rootOnce) this.madeAnew("the root layout");
 			this.rootOnce = false;

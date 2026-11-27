@@ -128,8 +128,12 @@ async function navSite({ base = "/" } = {}) {
 	// The links stay where they are as the page scrolls, so a click on one doesn't scroll it.
 	writeFileSync(join(dir, base, "nav.css"), "nav { position: fixed; top: 0; right: 0; width: 12em; font-size: 8px } .tall { height: 3000px } .progress.on { height: 2px; background: blue }");
 	const site = { asked: [], posted: [], rules: {}, held: {}, live: liveServer(), base, dir: join(dir, base) };
-	site.render = (target) => {
-		const rendered = server.renderToString({ path: target, answers: ANSWERS }).html;
+	// Who is here, as the server says it to a request: the `who` cookie a submission's redirect sets
+	// (D-117), "nobody" without one. A page's document carries it as the layout's answer.
+	const whoOf = (request) => /(?:^|; )who=([^;]*)/.exec(request?.headers?.cookie ?? "")?.[1] ?? "nobody";
+	site.render = (target, request = null) => {
+		const answers = ANSWERS.map((each) => (each[0] === "GET /api/say/who" ? [each[0], each[1], JSON.stringify(said(`who is ${whoOf(request)}`))] : each));
+		const rendered = server.renderToString({ path: target, answers }).html;
 		return { status: server.status, html: underBase(rendered, base) };
 	};
 	const unbased = (path) => (base === "/" ? path : path === base.slice(0, -1) ? "/" : path.startsWith(base) ? `/${path.slice(base.length)}` : null);
@@ -141,7 +145,7 @@ async function navSite({ base = "/" } = {}) {
 		if (at === null) return null;
 		const word = /^\/api\/say\/(.+)$/.exec(at)?.[1];
 		// Who is here: the layout's read, the `who` cookie a submission's redirect sets (D-117).
-		if (word === "who") return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(`Said: who is ${/(?:^|; )who=([^;]*)/.exec(request.headers.cookie ?? "")?.[1] ?? "nobody"}`) };
+		if (word === "who") return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(`Said: who is ${whoOf(request)}`) };
 		if (word) return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(`Said: ${decodeURIComponent(word)}`) };
 		if (at === "/api/poke") return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify("poked") };
 		if (at === "/api/leave") {
@@ -173,7 +177,7 @@ async function navSite({ base = "/" } = {}) {
 		const ruled = site.rules[at]?.(request);
 		if (ruled) return ruled;
 		const query = new URL(url, "http://x").search;
-		const page = site.render(`${at}${query}`);
+		const page = site.render(`${at}${query}`, request);
 		return { status: page.status, headers: { "content-type": "text/html; charset=utf-8" }, body: page.html };
 	};
 	const served = await serve(dir, () => null, api);
@@ -419,11 +423,11 @@ test("navigate! from a handler that waits for the server and runs again navigate
 	}
 });
 
-test("a submission's redirect (x-rocx-redirect) is followed in place, the layout it keeps reading again what it read (D-117), unless the visitor went to another page while it was on its way", { skip }, async () => {
+test("a submission's redirect (x-rocx-redirect) is followed in place, the layout it keeps reading again what the new page's document says (D-117, D-119: asking no one), unless the visitor went to another page while it was on its way", { skip }, async () => {
 	const site = await navSite();
 	try {
 		const tab = await open(site, "/");
-		assert.equal(await tab.eval("document.querySelector('.who').textContent"), "Said: who", "the layout's read, as the server rendered it");
+		assert.equal(await tab.eval("document.querySelector('.who').textContent"), "Said: who is nobody", "the layout's read, as the server rendered it");
 		await tab.eval("window.layout = document.querySelector('nav')");
 		site.asked.length = 0;
 		await tab.click(".leave");
@@ -433,7 +437,7 @@ test("a submission's redirect (x-rocx-redirect) is followed in place, the layout
 		// The answer set a cookie: the layout, kept (the same element), reads again, and says so.
 		await tab.wait("document.querySelector('.who').textContent === 'Said: who is Ada'");
 		assert.equal(await tab.eval("window.layout === document.querySelector('nav')"), true, "the layout kept, not made anew");
-		assert.equal(site.asked.filter(({ url }) => url === "/api/say/who").length, 1, "read again once");
+		assert.equal(site.asked.filter(({ url }) => url === "/api/say/who").length, 0, "from the document: not asked");
 		// And the submission is done (no result: a redirect), not pending for ever.
 		await tab.wait("[...window.ready.runtime.submissions.values()].every((source) => source.list.every((entry) => entry.state !== 'pending'))");
 		await tab.click(".to-home");
@@ -1012,19 +1016,22 @@ test("which forms the runtime sends (D-095): one posting to a path the route tab
 	}
 });
 
-test("a form to one of the app's endpoints that nothing on the page reads is posted as the browser would, answered as a plain form, and followed in place (D-095, D-118): its result and its refusal back to the page it came from, made anew from the server's, its redirect to where it goes; a path with a param and fields in its query too; a form into a frame, and one to a path no endpoint has, are the browser's", { skip }, async () => {
+test("a form to one of the app's endpoints that nothing on the page reads is posted as the browser would, answered as a plain form, and followed in place (D-095, D-118): its result and its refusal back to the page it came from, kept, reading the server's document (D-119), its redirect to where it goes; a path with a param and fields in its query too; a form into a frame, and one to a path no endpoint has, are the browser's", { skip }, async () => {
 	const site = await navSite();
 	try {
 		const tab = await open(site, "/notes");
+		await tab.eval("window.section = document.querySelector('.notes'); window.scrollTo(0, 40)");
 		const back = () => site.documents().filter((each) => each === "navigate /notes").length;
-		// A result: posted as the browser would, back to the page, which is fetched and made anew in
-		// place (its document, with what the server says now, a flash among it).
+		// A result: posted as the browser would, back to the page, whose document is fetched: the page
+		// kept (its elements, its scroll), reading what the document says (a flash among it).
 		let before = back();
 		await tab.click(".fine button");
 		await until(() => site.posted.length === 1);
 		await until(() => back() > before);
 		assert.deepEqual(site.posted[0], { url: "/notes", body: "note=fine", submission: null, inPlace: "1" });
 		assert.equal(await kept(tab), true, "no load");
+		await tab.wait("window.ready.runtime.navigation === null");
+		assert.equal(await tab.eval("window.section === document.querySelector('.notes')"), true, "the page kept, not made anew");
 		assert.equal(await tab.eval("location.pathname"), "/notes");
 		// A param in the endpoint's path, and fields in the form's URL (`with_fields`'s).
 		before = back();

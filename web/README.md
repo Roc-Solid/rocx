@@ -726,8 +726,8 @@ reads goes as the browser would post it (`accept: text/html`, no `x-rocx-submiss
 `x-rocx-in-place: 1`: the endpoint answers it as a plain form (its result or refusal flashed back to
 the page it came from, or its own redirect), the server gives the runtime that redirect, and the
 runtime follows it in place. So the page shows what a plain post would show (a refusal the page
-reads from the flash among it), and only the page changes: the same page again is made anew from
-its document. A submission is kept under its endpoint's path (its query is fields,
+reads from the flash among it), and only what changed changes: brought back to the page it is on,
+the page is kept (D-119), what it read following the document. A submission is kept under its endpoint's path (its query is fields,
 `with_fields`'). A refusal, or no answer, of a runtime's submission that no component asks for
 shows nothing on the page, so the console says so (`unread`), in every build. Any other form is the browser's: another site's, a path no endpoint
 has a `post!` for (a `+server.roc` that answers with `respond!`, such as the one that calls
@@ -747,11 +747,13 @@ why, when there was no answer). Then:
 
 - `x-rocx-redirect` (an endpoint's own redirect, which `Endpoint.respond!` gives the runtime as a
   200), or a redirect that `fetch` followed, sends the browser there, in place when it is one of
-  the app's pages. What the navigation keeps (a layout the two pages share) then reads again what it
-  read (D-117), as a result's page does: every read, or those the answer names
-  (`Router.revalidate!`). So a form that signs someone in, switches the org they act in, or adds
-  what a layout lists, shows it in the layout too, whether its endpoint is a `post!` or a
-  `respond!`.
+  the app's pages. What the navigation keeps (a layout the two pages share) reads again what the
+  new document says (D-119), and what that didn't carry, from the server (D-117: every read, or those
+  the answer names, `Router.revalidate!`). So a form that signs someone in, switches the org they act
+  in, or adds what a layout lists, shows it in the layout too, whether its endpoint is a `post!` or a
+  `respond!`. When the answer brings back the page it is on (a plain form's flash back, D-118), the
+  page is kept, not made anew: its signals, its scroll and its focus stay, and its reads and the
+  flash follow the document.
 - `clear!` forgets the latest: there is none until the next, nor the flash.
 - With no submission in the browser, `Submission` reads the flash.
 
@@ -1152,7 +1154,16 @@ below it. Each layout and the page is a **level**: a keyed part (`Html.switched`
 `{"t":"show"}` node), keyed by its file and its own params, on a memo of the location. A
 navigation makes anew the levels whose key changed and keeps the rest. The root runs again only
 when the root layout read the location once, or the same page is navigated to again
-(`remakeRoot`).
+(`remakeRoot`), but not when a submission's answer brings the page it is on back (D-119): that page
+is kept, where it is, its focus too.
+
+What a navigation keeps follows the server's data, asking no one (`refreshKept`, D-119): the
+document a navigation fetches carries an answer for every read its layouts made as the server
+rendered them, so each kept computation whose reads it answered, one of them now differently, runs
+again, reading them from those answers, and what reads the flash runs again when the document
+brings another. A kept header that counts what is waiting so shows the count of the page the
+navigation is to. After a submission's redirect, a kept computation whose reads the document didn't
+all carry reads them from the server (D-117).
 
 A read of the location that won't follow it (`readOnce`: in a component's body, or in a part made
 once; not inside `untrack!`) notes the level it is in, or the root. A navigation makes a noted
