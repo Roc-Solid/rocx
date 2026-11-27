@@ -47,9 +47,7 @@ import "migrations/0004_two_factor_misses.sql" as two_factor_misses : Str
 ## respond! = |{ request, .. }| Auth.dev_route!(request, Accounts.admit!)
 ## ```
 ##
-## Write each as a `respond!`, not a `post!`: the runtime sends a form to a `post!` endpoint itself
-## (D-095), while a sign-in should be the browser's plain form post, the page after it loaded whole
-## with the new session. An app lists only the steps it uses. Each answers with a redirect: where the browser was going, or
+## An app lists only the steps it uses. Each answers with a redirect: where the browser was going, or
 ## the app's sign-in page with why not (`?error=link|refused|provider|state|unavailable|attempts|locked|timeout`,
 ## and `&reason=` for `refused` and `provider`), or the code page after a wrong code (`?error=code`);
 ## a method it doesn't take, 405.

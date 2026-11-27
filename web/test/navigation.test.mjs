@@ -66,7 +66,7 @@ const said = (word) => ({ status: 200, body: JSON.stringify(`Said: ${word}`) });
 
 /** The answers the server's reads got as it rendered the pages: `renderToString` answers each GET
  * from them, and records those a page asked for in its document. */
-const ANSWERS = ["home", "a", "notes", ...Array.from({ length: 10 }, (_, n) => String(n)), "books", "games", "color-none", "color-red", "color-blue"].map((word) => [`GET /api/say/${word}`, "", JSON.stringify(said(word))]);
+const ANSWERS = ["who", "home", "a", "notes", ...Array.from({ length: 10 }, (_, n) => String(n)), "books", "games", "color-none", "color-red", "color-blue"].map((word) => [`GET /api/say/${word}`, "", JSON.stringify(said(word))]);
 
 /** A page's markup with its URLs under `base`, as the static build writes it (site/build.mjs's `underBase`). */
 const underBase = (html, base) => (base === "/" ? html : html.replace(/(\s(?:href|src|action)=")\/(?!\/)/g, `$1${base}`));
@@ -140,11 +140,13 @@ async function navSite({ base = "/" } = {}) {
 		const at = unbased(path);
 		if (at === null) return null;
 		const word = /^\/api\/say\/(.+)$/.exec(at)?.[1];
+		// Who is here: the layout's read, the `who` cookie a submission's redirect sets (D-117).
+		if (word === "who") return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(`Said: who is ${/(?:^|; )who=([^;]*)/.exec(request.headers.cookie ?? "")?.[1] ?? "nobody"}`) };
 		if (word) return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify(`Said: ${decodeURIComponent(word)}`) };
 		if (at === "/api/poke") return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify("poked") };
 		if (at === "/api/leave") {
 			await site.held[at];
-			return { status: 200, headers: { "content-type": "application/json", "x-rocx-redirect": "/items/3" }, body: JSON.stringify("left") };
+			return { status: 200, headers: { "content-type": "application/json", "x-rocx-redirect": "/items/3", "set-cookie": "who=Ada; Path=/" }, body: JSON.stringify("left") };
 		}
 		if (at === "/api/wait") {
 			await sleep(150);
@@ -409,14 +411,21 @@ test("navigate! from a handler that waits for the server and runs again navigate
 	}
 });
 
-test("a submission's redirect (x-rocx-redirect) is followed in place, unless the visitor went to another page while it was on its way", { skip }, async () => {
+test("a submission's redirect (x-rocx-redirect) is followed in place, the layout it keeps reading again what it read (D-117), unless the visitor went to another page while it was on its way", { skip }, async () => {
 	const site = await navSite();
 	try {
 		const tab = await open(site, "/");
+		assert.equal(await tab.eval("document.querySelector('.who').textContent"), "Said: who", "the layout's read, as the server rendered it");
+		await tab.eval("window.layout = document.querySelector('nav')");
+		site.asked.length = 0;
 		await tab.click(".leave");
 		await tab.wait("document.querySelector('.item h1')?.textContent === 'Item 3'");
 		assert.equal(await tab.eval("location.pathname"), "/items/3");
 		assert.equal(await kept(tab), true, "in place");
+		// The answer set a cookie: the layout, kept (the same element), reads again, and says so.
+		await tab.wait("document.querySelector('.who').textContent === 'Said: who is Ada'");
+		assert.equal(await tab.eval("window.layout === document.querySelector('nav')"), true, "the layout kept, not made anew");
+		assert.equal(site.asked.filter(({ url }) => url === "/api/say/who").length, 1, "read again once");
 		await tab.click(".to-home");
 		await tab.wait("document.querySelector('.home h1')");
 		let release;

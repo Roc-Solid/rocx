@@ -740,7 +740,12 @@ The submissions to each URL are a list that computations read (`Host.submission!
 why, when there was no answer). Then:
 
 - `x-rocx-redirect` (an endpoint's own redirect, which `Endpoint.respond!` gives the runtime as a
-  200), or a redirect that `fetch` followed, sends the browser there.
+  200), or a redirect that `fetch` followed, sends the browser there, in place when it is one of
+  the app's pages. What the navigation keeps (a layout the two pages share) then reads again what it
+  read (D-117), as a result's page does: every read, or those the answer names
+  (`Router.revalidate!`). So a form that signs someone in, switches the org they act in, or adds
+  what a layout lists, shows it in the layout too, whether its endpoint is a `post!` or a
+  `respond!`.
 - `clear!` forgets the latest: there is none until the next, nor the flash.
 - With no submission in the browser, `Submission` reads the flash.
 

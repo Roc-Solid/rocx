@@ -2094,7 +2094,15 @@ export class Runtime {
 					this.pages?.clear();
 					// In place when it is one of the app's pages (D-040), but not if the visitor went to
 					// another page meanwhile: a form sent from one mustn't move them off the next.
-					if (this.navigations === navigations) this.navigate(to !== null ? this.urlOf(to) : new URL(response.url));
+					if (this.navigations === navigations) {
+						// What the navigation keeps (a layout the two pages share, §4.3) reads again what it
+						// read once the new page is in (D-117), as a result's page does: every read, or the
+						// handler's `Router.revalidate!` keys. A sign-in's redirect so shows the layout
+						// signed in. What it makes anew reads from the server anyway.
+						const before = new Set(this.readers);
+						const keys = Runtime.revalidating(response.headers.get("x-rocx-revalidate"));
+						Promise.resolve(this.navigate(to !== null ? this.urlOf(to) : new URL(response.url))).then(() => this.revalidate(() => {}, keys, before));
+					}
 					return;
 				}
 				const said = await response.text();
@@ -2152,9 +2160,10 @@ export class Runtime {
 	 * value shown meanwhile, and `done` runs once each has its answer (or failed, or went), in the
 	 * run of the last one, so whatever reads both sees the new data and the submission's end
 	 * together. With `keys` (`Router.revalidate!`'s, D-054), only the reads of a GET whose URL is
-	 * one, or begins with one and a `/` or a `?`; none, `[]`.
+	 * one, or begins with one and a `/` or a `?`; none, `[]`. With `among` (a set of computations),
+	 * only those of them still there: what a navigation kept (D-117).
 	 */
-	revalidate(done, keys = null) {
+	revalidate(done, keys = null, among = null) {
 		// The server's data changed: a page fetched or prefetched before isn't the page now (D-040 §6.2).
 		this.pages?.clear();
 		const named = (key) => {
@@ -2163,7 +2172,7 @@ export class Runtime {
 			const url = key.slice(4, key.includes("\n") ? key.indexOf("\n") : undefined);
 			return keys.some((wanted) => url === wanted || url.startsWith(`${wanted}/`) || url.startsWith(`${wanted}?`));
 		};
-		const targets = [...this.readers].filter((computation) => !computation.disposed && computation.calls !== null && [...computation.calls.keys()].some(named));
+		const targets = [...this.readers].filter((computation) => !computation.disposed && (among === null || among.has(computation)) && computation.calls !== null && [...computation.calls.keys()].some(named));
 		this.notify("revalidate", { reads: targets.length });
 		if (!targets.length) return done();
 		let left = targets.length;

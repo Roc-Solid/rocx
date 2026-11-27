@@ -1,10 +1,12 @@
 import pf.Html
 import pf.Router
+import ../Api
 import ../Generated/Paths
 
 ## The document around every page: its title the page's, links of every kind (each opt-out of
-## navigation in place among them), a bar that says a navigation is on its way, a note the browser
-## never hydrates, and where it is.
+## navigation in place among them), a bar that says a navigation is on its way, who the server says
+## is here (a read the layout keeps across pages, D-117), a note the browser never hydrates, and
+## where it is.
 view! = |{ meta, children, .. }|
 	<>
 		<!doctype html>
@@ -37,6 +39,7 @@ view! = |{ meta, children, .. }|
 					<a class="to-below" href="#below">Below</a>
 					<a class="to-top" href="#">Top</a>
 				</nav>
+				<p class="who">{Api.say!("who")}</p>
 				<NoHydration><p class="note">The layout's note, for {meta.title}</p></NoHydration>
 				<main id="main">{...children}</main>
 				<footer class="at">{Router.location!({}).path}</footer>

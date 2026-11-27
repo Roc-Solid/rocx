@@ -6842,3 +6842,31 @@ Storage's links still go to one fixed path. Every consumer of a package with rou
 
 **Reversible:** yes: `routes` comes back to `Plugin.Value`, and the handlers become a plugin's
 routes again.
+
+## D-117 A submission's redirect reads again what the navigation keeps
+
+**Status.** Built (2026-11-27), the user's call: things should work on the plain path.
+
+**Context.** A form the runtime sends (D-095) or an action whose answer is a redirect
+(`x-rocx-redirect`, or one `fetch` followed) goes there in place (D-040), keeping the levels the two
+pages share (§4.3: the root layout, every time). A result (200) reads the page's reads again
+(`revalidate`, as SolidStart does after any action); a redirect only emptied the page cache, so a
+kept layout showed what it read before the form. Moving the private app's dev sign-in to a route
+of its own (D-116) showed it: written as a `post!`, its form went with `fetch`, the redirect home
+kept the root layout, and the header still said nobody was signed in. The same holds for any form
+that changes what a layout shows (an org made or switched, a count of requests waiting).
+
+**Decision.** Once a submission's redirect is followed in place, the computations it kept read
+again what they read: every read, or the answer's `Router.revalidate!` keys (`x-rocx-revalidate`,
+which a redirect's answer carries as a result's does). What the navigation makes anew reads from
+the server anyway, so it isn't asked twice. Not when the visitor went to another page meanwhile
+(the redirect isn't followed then).
+
+**Why.** Solid Router revalidates every query after an action, a redirect's too, and SvelteKit's
+`use:enhance` runs `invalidateAll` and `goto` with it for a redirect: the plain way works there, and
+a sign-in written as a `post!` behaves as one written as a `respond!` (which the browser posts).
+
+**Costs.** A kept layout's reads go again after such a redirect: one round of them, which a handler
+narrows with `Router.revalidate!`.
+
+**Reversible:** yes.
