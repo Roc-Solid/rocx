@@ -79,8 +79,11 @@ view! = |_|
 					</tbody>
 				</table>
 			</TableWrap>
-			<p>Once started, the server logs which model it asks, and where (<code>ai.model</code>):</p>
-			<Code source={"claude-haiku-5-5 (the model under --dev: ANTHROPIC_MODEL or the plugin's model names another), at https://api.anthropic.com"} plain numbers={Bool.False} />
+			<p>
+				Once started, the server logs the default, the model a call that names none is given
+				(<code>ai.model</code>), and where the API is when it isn't Anthropic's:
+			</p>
+			<Code source={"default AI model: claude-haiku-5-5"} plain numbers={Bool.False} />
 			<p>
 				Each setting can be given to <code>{"Ai.plugin({ key, model, base_url })"}</code> instead of the
 				environment. An option given in code wins.

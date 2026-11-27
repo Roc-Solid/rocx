@@ -45,13 +45,14 @@ Ai := [].{
 	Options := { key : Str ?? "", model : Str ?? "", base_url : Str ?? "" }
 
 	## The AI plugin: its options, with the environment's where they leave something out, kept when
-	## the server starts, and a look once started (`ai.model`: the model, and where the API is).
+	## the server starts, and a look once started (`ai.model`: `default AI model: claude-opus-5-5`,
+	## the model a call that names none is given; where the API is, when it isn't Anthropic's).
 	## Outside `--dev` the server doesn't start without a key; under it, it starts, and each call
 	## answers `NoKey`.
 	plugin : Options -> Plugin.Value(context, ctx)
 	plugin = |options| {
 		given : Settings
-		given = { key: options.key, model: options.model, base_url: options.base_url, chosen: "" }
+		given = { key: options.key, model: options.model, base_url: options.base_url }
 		{
 			name: "ai",
 			starts: [|_context| keep!(given)],
@@ -350,9 +351,8 @@ doing_for = |tools, name|
 settings_key : Str
 settings_key = "ai:settings"
 
-## The key, the model, where the API is, and why the model is the one it is (`chosen`: "" when it
-## was named).
-Settings : { key : Str, model : Str, base_url : Str, chosen : Str }
+## The key, the default model (a call's own wins: `model_for`), and where the API is.
+Settings : { key : Str, model : Str, base_url : Str }
 
 ## The options, with the environment's where they leave something out.
 resolved! : Settings => Settings
@@ -361,9 +361,8 @@ resolved! = |given| {
 	named = (if (given.model.is_empty()) (Env.var!("ANTHROPIC_MODEL") ?? "") else given.model).trim()
 	dev = Env.dev!({})
 	model = if (!named.is_empty()) named else if (dev) dev_model else default_model
-	chosen = if (!named.is_empty()) "" else if (dev) "the model under --dev" else "the default"
 	base = (if (given.base_url.is_empty()) (Env.var!("ANTHROPIC_BASE_URL") ?? "") else given.base_url).trim()
-	{ key: key, model: model, base_url: if (base.is_empty()) "https://api.anthropic.com" else base.drop_suffix("/"), chosen: chosen }
+	{ key: key, model: model, base_url: if (base.is_empty()) anthropic else base.drop_suffix("/") }
 }
 
 ## The plugin's start: its settings kept; outside `--dev`, none without a key.
@@ -382,7 +381,7 @@ keep! = |given| {
 settings! : {} => Settings
 settings! = |{}| {
 	none : Settings
-	none = { key: "", model: "", base_url: "", chosen: "" }
+	none = { key: "", model: "", base_url: "" }
 	match Plugin.kept!(settings_key) {
 		Ok(text) => {
 			parsed : Try(Settings, [InvalidJson(Str)])
@@ -393,17 +392,21 @@ settings! = |{}| {
 	}
 }
 
-## The model and where the API is, said on the log once the server has started.
+## Said on the log once the server has started: the model a call that names none is given (each
+## call may name its own), and where the API is when it isn't Anthropic's.
 check! : {} => Try(Str, Str)
 check! = |{}| {
 	found = settings!({})
 	if found.key.is_empty() {
-		Ok("off: no ANTHROPIC_API_KEY (each call answers NoKey)")
+		Ok("AI off: no ANTHROPIC_API_KEY (each call answers NoKey)")
 	} else {
-		why = if (found.chosen.is_empty()) "" else " (${found.chosen}: ANTHROPIC_MODEL or the plugin's model names another)"
-		Ok("${found.model}${why}, at ${found.base_url}")
+		Ok("default AI model: ${found.model}${if (found.base_url == anthropic) "" else ", at ${found.base_url}"}")
 	}
 }
+
+## Anthropic's API, where a call goes unless `ANTHROPIC_BASE_URL` or the plugin's `base_url` says.
+anthropic : Str
+anthropic = "https://api.anthropic.com"
 
 ## The request's model, or the plugin's.
 model_for : Settings, Ai.Request -> Str

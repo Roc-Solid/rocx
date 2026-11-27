@@ -53,9 +53,9 @@ async function say(client, chat, text) {
 const textOf = (heard) => heard.map((data) => data.text).join("");
 const statusesOf = (heard) => heard.filter((data) => data.status).map((data) => `${data.agent}|${data.status}`);
 
-test("the start says which model, and where the API is", async () => {
+test("the start says the default model (a call may name its own), and where the API is when it isn't Anthropic's", async () => {
 	await until(() => JSON.stringify(app.logs()).includes("ai.model"), { ms: 5000 });
-	assert.ok(JSON.stringify(app.logs()).includes(`claude-opus-5-5 (the default: ANTHROPIC_MODEL or the plugin's model names another), at ${api.url}`), JSON.stringify(app.logs()));
+	assert.ok(JSON.stringify(app.logs()).includes(`default AI model: claude-opus-5-5, at ${api.url}`), JSON.stringify(app.logs()));
 });
 
 test("a chat: the assistant hands the note to the notes keeper, an agent it uses as a tool; its answer streams; the next turn sends the conversation back as it came", async () => {

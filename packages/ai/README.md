@@ -43,10 +43,11 @@ never the API itself.
 
 3. The model is `claude-opus-5-5`, and `claude-haiku-5-5` under `--dev`, where answers should
    come fast and cost little. `ANTHROPIC_MODEL`, or the plugin's `model`, names another for both;
-   a request's `model` for one call. Once started, the server logs which it is (`ai.model`):
+   a request's `model` for one call. Once started, the server logs the default, the model a call
+   that names none is given (`ai.model`), and where the API is when it isn't Anthropic's:
 
    ```text
-   claude-haiku-5-5 (the model under --dev: ANTHROPIC_MODEL or the plugin's model names another), at https://api.anthropic.com
+   default AI model: claude-haiku-5-5
    ```
 
 `Ai.plugin({ key, model, base_url })` takes each instead of the environment's
