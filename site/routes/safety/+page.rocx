@@ -35,19 +35,15 @@ view! = |_|
 				eyebrow="Safety"
 				title="Data can't become markup"
 			>
-				Cross-site scripting happens when data (a name, a comment, a URL) ends up in a page as markup
-				or script. In rocx you don't prevent it by remembering to escape: markup can only say "this is
-				text", so the only markup a page contains is the markup written in its <code>.rocx</code>
-				files. This page shows how each way into a page is guarded, and what rocx refuses to build.
+				Cross-site scripting is data (a name, a comment, a URL) landing in a page as markup or script. In
+				rocx a value is always text, so a page's only markup is what its <code>.rocx</code> files contain:
+				there is no escaping to remember.
 			</PageHero>
 
 			<Heading id="opaque">Html is opaque</Heading>
 			<p>
-				Markup is the platform's <code>Html</code> type, and outside its module nothing can turn a
-				string into it as markup. Markup in a <code>.rocx</code> file is built only from escaped text,
-				from elements whose tags and attribute names are written in the file, and from the text of the
-				<code>{"<script>"}</code> and <code>{"<style>"}</code> elements written there. So every value you
-				put in a page goes through one of these doors:
+				Markup is the platform's <code>Html</code> type; outside its module, no string can become markup.
+				Every value goes through one of these doors:
 			</p>
 			<FeatureGrid>
 				<Feature title="Text and attributes">
@@ -64,57 +60,58 @@ view! = |_|
 				</Feature>
 				<Feature title="Styles">
 					<p>
-						A value for <code>style:color</code> or <code>style:--size</code> is dropped if it could
-						end the declaration or calls a function that loads something (<code>url(…)</code>).
+						A <code>style:color</code> or <code>style:--size</code> value is dropped if it could end the
+						declaration or calls a function that loads something (<code>url(…)</code>).
 					</p>
 				</Feature>
 				<Feature title="Tags and script">
-					<p>Tags, attribute names and script come only from the file, never from a value.</p>
+					<p>
+						Tags, attribute names and the text of <code>{"<script>"}</code> and <code>{"<style>"}</code> come
+						only from the file, never from a value.
+					</p>
 				</Feature>
 			</FeatureGrid>
 			<Heading id="names">Names in hand-written Roc</Heading>
 			<p>
-				Plain Roc code can build markup too, with <code>Html.element</code>, <code>Html.void</code>
-				and <code>Html.attr</code> (<code>Html.optional</code>, <code>Html.flag</code> and their
-				computed forms too), and there a tag or attribute name is a <code>Str</code> argument, which
-				could come from data. Text and values are escaped as in a file, and every renderer (the server's,
-				the browser's, <code>Html.to_str</code>) checks the names. One that isn't plain is never written:
+				Plain Roc can build markup with <code>Html.element</code>, <code>Html.void</code> and
+				<code>Html.attr</code> (and <code>Html.optional</code>, <code>Html.flag</code> and their computed
+				forms), where a tag or attribute name is a <code>Str</code> that could come from data. Text and
+				values are escaped as in a file, and every renderer (the server's, the browser's,
+				<code>Html.to_str</code>) leaves out a name that isn't plain:
 			</p>
 			<ul>
 				<li>
 					<strong>A tag</strong> is an ASCII letter, then letters, digits and <code>-</code>
 					(<code>p</code>, <code>h2</code>, <code>linearGradient</code>, <code>acme-card</code>).
-					<code>img src=x onerror=…</code> isn't, so that element, and what is inside it, is left out.
+					<code>img src=x onerror=…</code> isn't, so that element and its contents are left out.
 				</li>
 				<li>
 					<strong>An attribute</strong> is an ASCII letter, then letters, digits, <code>-</code>,
 					<code>_</code>, <code>.</code> and <code>:</code> (<code>data-id</code>, <code>aria-label</code>,
-					<code>xml:lang</code>, <code>viewBox</code>), and never starts with <code>on</code>: an inline
-					handler (<code>onclick</code>) runs its value as script, and a handler is Roc, written
-					<code>on:click</code> (<a href="#handlers">below</a>). One that isn't is left out, and the
-					element is written without it.
+					<code>xml:lang</code>, <code>viewBox</code>), never starting with <code>on</code>: an inline
+					handler (<code>onclick</code>) runs script, while Roc's is <code>on:click</code>
+					(<a href="#handlers">below</a>). The element is written without a bad one.
 				</li>
 				<li>
 					<strong>A <code>{"<script>"}</code></strong> is written only as a <code>.rocx</code> file has
-					it, its text as written there (<code>Html.source_text</code>, which
-					<a href="#lint"><code>rocx lint</code></a> refuses in hand-written Roc). One built of text, of a
-					hole, or of nothing but a <code>src</code> is left out.
+					it, with its text as written there (<code>Html.source_text</code>, which
+					<a href="#lint"><code>rocx lint</code></a> refuses in hand-written Roc). One built from text, a
+					hole, or only a <code>src</code> is left out.
 				</li>
 			</ul>
 			<p>
-				A page never fails for a name. It renders without what was left out, and says so: the server logs
+				A bad name never fails a page; it is left out, and reported. The server logs
 				<code>rocx server: markup named what a page can't have, which wasn't written</code> with the
-				page's <code>path</code> and the <code>names</code>, once a render, and the browser warns on the
-				console, once a name. <code>.rocx</code> files are unaffected: their names come from the file, and
-				the build refuses an inline handler there already.
+				page's <code>path</code> and the <code>names</code>, once per render; the browser warns on the
+				console, once per name. <code>.rocx</code> files are unaffected: their names come from the file,
+				and the build refuses inline handlers there.
 			</p>
 
 			<Heading id="lab">Try to break it</Heading>
 			<p>
 				This component renders <code>{"<a href={url} title={text}>{text}</a>"}</code> with whatever you
-				type, twice. First as the markup <code>Html.to_str</code> writes for it, as the server would
-				write it (here compiled to WebAssembly and running in your browser). Then live, where the
-				runtime sets its holes as text and attributes, never as markup.
+				type, twice: as <code>Html.to_str</code> writes it, as the server would (compiled to WebAssembly
+				here), and live, where the runtime sets holes as text and attributes, never markup.
 			</p>
 		</NoHydration>
 		<Demo><div data-demo="escape-lab"><EscapeLab /></div></Demo>
@@ -122,19 +119,18 @@ view! = |_|
 		<NoHydration>
 			<Heading id="urls">URLs</Heading>
 			<p>
-				In a URL attribute, a relative URL passes, and so does one whose scheme is <code>http</code>,
-				<code>https</code>, <code>mailto</code> or <code>tel</code>. Anything else becomes
-				<code>about:invalid#rocx-unsafe-url</code>. Browsers ignore tabs, line breaks and leading spaces
-				in a scheme (<code>{"java\\tscript:"}</code> runs), so those are dropped before the check. Where
-				the browser shows the URL as a picture (<code>{"<img src>"}</code>, <code>{"<link href>"}</code>,
-				<code>{"<source src>"}</code> and <code>{"<video poster>"}</code>), a <code>data:image/…</code>
-				URL passes too, SVG included: a picture runs no script.
+				A URL attribute takes a relative URL or an <code>http</code>, <code>https</code>,
+				<code>mailto</code> or <code>tel</code> one; anything else becomes
+				<code>about:invalid#rocx-unsafe-url</code>. Tabs, line breaks and leading spaces in a scheme are
+				dropped first, since browsers ignore them (<code>{"java\\tscript:"}</code> runs). In a picture's URL
+				(<code>{"<img src>"}</code>, <code>{"<link href>"}</code>, <code>{"<source src>"}</code>,
+				<code>{"<video poster>"}</code>), <code>data:image/…</code> passes too, SVG included: a picture runs
+				no script.
 			</p>
 			<p>
-				The check runs in Roc, in the platform's <code>Html</code> module, whenever a value becomes an
-				attribute, on the server and in the browser alike, so the server's markup and the browser's
-				patches get the same answer. Here is what Roc rendered for these values in an
-				<code>href</code> when this page was rendered:
+				The check runs in the platform's <code>Html</code> module, in Roc, whenever a value becomes an
+				attribute, so the server's markup and the browser's patches agree. What this page rendered for
+				these values in an <code>href</code>:
 			</p>
 			<TableWrap>
 				<UrlChecks urls={urls} />
@@ -142,8 +138,8 @@ view! = |_|
 
 			<Heading id="refused">What the build refuses</Heading>
 			<p>
-				Some markup is refused before the compiler ever sees it, at its line and column. These are
-				rocx's own messages, produced when this page was built:
+				Some markup is refused before the compiler sees it, at its line and column. rocx's messages, from
+				this page's build:
 			</p>
 			<TableWrap>
 				<Refusals refusals={Sources.refusals} />
@@ -151,47 +147,43 @@ view! = |_|
 
 			<Heading id="handlers">Handlers aren't script</Heading>
 			<p>
-				<code>onclick="…"</code> is refused: it is script in an attribute, the very thing escaping exists
-				to prevent. A component's <code>{"on:click={…}"}</code> is a Roc function instead. The server
-				renders nothing for it, the browser never sees it as text, and when the event fires, Roc decides
-				what happens. The runtime builds elements with <code>createElement</code> and sets text and
-				attributes as such, never by parsing markup, so a value can't become a tag. Inside a
-				<code>{"<NoHydration>"}</code>, which the browser never hydrates, there are no handlers at all:
-				rocx refuses one there, at its line.
+				<code>onclick="…"</code> is refused: it is script in an attribute. A component's
+				<code>{"on:click={…}"}</code> is a Roc function, which the server renders nothing for and the browser
+				never sees as text. The runtime builds elements with <code>createElement</code> and sets text and
+				attributes directly, never parsing markup, so a value can't become a tag. A handler inside a
+				<code>{"<NoHydration>"}</code>, which is never hydrated, is refused at its line.
 			</p>
 			<Callout kind="note" title="What the server sends the browser is data too">
 				<p>
-					The answers the server gave the page's endpoint reads travel at the end of the page as JSON,
-					in a <code>{"<script type=\"application/json\">"}</code>, with every <code>{"<"}</code>
-					written as <code>\u003c</code>, so no answer can end the script. The runtime parses them;
-					nothing runs them.
+					The page's endpoint answers travel at its end as JSON, in a
+					<code>{"<script type=\"application/json\">"}</code>, every <code>{"<"}</code> written as
+					<code>\u003c</code> so no answer can end the script. The runtime parses them; nothing runs them.
 				</p>
 			</Callout>
 
 			<Heading id="origin">Requests from other sites</Heading>
 			<p>
-				A page on another site can make a visitor's browser send a request to your app, with your
-				app's cookies: a form that posts, a script that fetches. The platform refuses, with a 403, a request that may change something (a POST, PUT, PATCH or DELETE to an
-				<a href={"${Paths.calls}#endpoints"}>endpoint</a>) when the browser says another site's page sent
-				it, that is, when its <code>Origin</code> isn't your server. A client that isn't a page
-				(<code>curl</code>, another server) sends no <code>Origin</code>, and is answered. A GET changes
-				nothing, and is answered whoever asks.
+				Another site's page can make a visitor's browser send your app a request with its cookies (a form
+				that posts, a script that fetches). So the platform answers 403 to a POST, PUT, PATCH or DELETE to
+				an <a href={"${Paths.calls}#endpoints"}>endpoint</a> whose <code>Origin</code> isn't your server.
+				Clients that aren't pages (<code>curl</code>, another server) send no <code>Origin</code> and are
+				answered; a GET changes nothing and is answered whoever asks.
 			</p>
 			<p>
-				It runs before any of the app's <a href={"${Paths.routing}#middleware"}>middleware</a>, on every
-				request, unless the app says <code>cross_site: Allowed</code> in its <code>App.program</code> (an API
-				other sites' pages call, with CORS): then <code>{"Middleware.same_origin({})"}</code> in a
-				directory's <code>+middleware.roc</code> puts it back where it should be. Cookies set with
-				<code>Server.with_cookie</code> are <code>HttpOnly</code>, so no script reads them, and
-				<code>SameSite=Lax</code>, so another site's form doesn't get them sent along.
+				The check runs on every request, before the app's
+				<a href={"${Paths.routing}#middleware"}>middleware</a>, unless <code>App.program</code> says
+				<code>cross_site: Allowed</code> (an API other sites' pages call, with CORS); then
+				<code>{"Middleware.same_origin({})"}</code> in a directory's <code>+middleware.roc</code> puts it
+				back where needed. Cookies from <code>Server.with_cookie</code> are <code>HttpOnly</code> (no script
+				reads them) and <code>SameSite=Lax</code> (another site's form doesn't send them).
 			</p>
 
 			<Heading id="lint">rocx lint</Heading>
 			<p>
 				<code>Html.source_text</code> is how rocx writes a <code>{"<script>"}</code>'s or
-				<code>{"<style>"}</code>'s text, as written in the file. In hand-written Roc it would put any
-				string in a page as markup, so <code>rocx lint</code> refuses it there. Run it in CI, beside
-				<code>rocx check</code> (<a href={"${Paths.tooling}#commands"}>tooling</a>).
+				<code>{"<style>"}</code>'s text from the file. In hand-written Roc it would put any string in a page
+				as markup, so <code>rocx lint</code> refuses it there. Run it in CI beside <code>rocx check</code>
+				(<a href={"${Paths.tooling}#commands"}>tooling</a>).
 			</p>
 			<Code source={"$ rocx lint app\n✗ app/Sneaky.roc:1: Html.source_text puts text in a page as markup; only rocx may write it"} numbers={Bool.False} plain />
 		</NoHydration>

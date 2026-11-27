@@ -22,7 +22,7 @@ import ../../Ui/Versus
 
 meta = {
 	title: "Components",
-	description: "Components in Roc Solid: SolidJS 2.0's signals, written in Roc. A component runs once, and each hole in its markup runs again when what it reads changes. A page is one tree of components, rendered on the server and hydrated in the browser.",
+	description: "Components in Roc Solid: SolidJS 2.0's signals in Roc. A component runs once; each hole in its markup runs again when what it reads changes. A page is one tree of components, rendered on the server and hydrated in the browser.",
 	toc: [
 		{ id: "glance", label: "At a glance" },
 		{ id: "primitives", label: "Signals, holes and memos" },
@@ -61,163 +61,142 @@ view! = |_|
 					<Button href="#solid">Coming from Solid</Button>,
 				]}
 			>
-				Components are the interactive parts of a page. Their model is SolidJS 2.0's, written in Roc: a
-				component runs once, and each hole in its markup runs again when a value it reads changes,
-				patching only its own node. Data from the server is read as a plain value, and boundaries say
-				what shows while it is on its way. This page builds the model up from one signal, then covers
-				each tool in turn.
+				Components are a page's interactive parts, on SolidJS 2.0's model, in Roc: a component runs once,
+				and each hole in its markup runs again when a value it reads changes. Server data is a plain value,
+				and boundaries say what shows while it loads.
 			</PageHero>
 
 			<Heading id="glance">At a glance</Heading>
 			<p>
-				A component is a function from props to markup (<code>Html</code>). You write it in a
-				<code>.rocx</code> file, which is Roc with markup wherever an expression can stand (the
-				<a href={Paths.syntax}>syntax page</a> covers the markup itself). The file imports the platform's
-				<code>Html</code> (<code>import pf.Html</code>), and the component's module defines its
-				<code>view</code> or <code>view!</code>. Here is the smallest component with state of its own, the
-				counter from the front page:
+				A component is a function from props to markup (<code>Html</code>), written in a
+				<code>.rocx</code> file: Roc with markup wherever an expression can stand (see the
+				<a href={Paths.syntax}>syntax page</a>). The file has <code>import pf.Html</code>; its module defines
+				<code>view</code> or <code>view!</code>. The front page's counter, the smallest component with state:
 			</p>
 			<Code title={Sources.demo_counter.file} source={Sources.home_update.rocx} numbers={Bool.False} />
 			<FeatureGrid>
 				<Feature title="The component runs once">
 					<p>
-						<code>view!</code> runs once, where the component is rendered. It makes the signal
-						<code>count!</code>, builds the markup, and is done. It never runs again.
+						<code>view!</code> runs once, where the component is rendered: it makes the signal
+						<code>count!</code>, builds the markup, and never runs again.
 					</p>
 				</Feature>
 				<Feature title="Holes run again">
 					<p>
-						Each <code>{"{…}"}</code> and each attribute that reads <code>count!()</code> is a small
-						computation. When the count changes, those run again and patch their own nodes. There is no
-						virtual DOM and no diffing.
+						Each <code>{"{…}"}</code> or attribute that reads <code>count!()</code> reruns when the count
+						changes, and patches its own node. No virtual DOM, no diffing.
 					</p>
 				</Feature>
 				<Feature title="Server data is a plain value">
 					<p>
-						A memo that reads an endpoint gives you a <code>Str</code> or a record, never a loading
-						state. A hole that reads it waits until the answer is in, and <code>{"<Loading>"}</code> and
-						<code>{"<Errored>"}</code> say what shows meanwhile.
+						A memo that reads an endpoint gives a <code>Str</code> or a record, never a loading state.
+						<code>{"<Loading>"}</code> and <code>{"<Errored>"}</code> say what shows while it waits.
 					</p>
 				</Feature>
 				<Feature title="Rendered on the server">
 					<p>
-						The server renders the page with every answer in it, and sends the answers along. The
-						browser takes over the server's nodes (hydration) and asks for nothing again.
+						The server renders the page with every answer in it. The browser takes over the server's nodes
+						(hydration) and asks for nothing again.
 					</p>
 				</Feature>
 			</FeatureGrid>
 			<p>
-				The sections below build this up one piece at a time. If you know SolidJS,
-				<a href="#solid">Coming from Solid</a> maps each of its functions to its name here.
+				Know SolidJS? <a href="#solid">Coming from Solid</a> maps each of its functions to its name here.
 			</p>
 
 			<Heading id="primitives">Signals, holes and memos</Heading>
 			<p>
-				Three pieces make up the reactive model: a signal holds a value that changes, a hole shows it, and
-				a memo computes a value from others. A handler is where a signal changes. The functions come from
-				the platform's <code>Solid</code> module:
+				The functions come from the platform's <code>Solid</code> module:
 			</p>
 			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, untrack!]"} numbers={Bool.False} />
 			<FeatureGrid>
 				<Feature title="A signal">
 					<Code source={"(count!, set_count!) =\n\tcreate_signal!(0)"} numbers={Bool.False} />
 					<p>
-						A value that changes, given as two functions: an accessor, <code>count!</code>, that reads it
-						(<code>count!()</code>), and a setter, <code>set_count!</code>, that writes a new one. Its
-						type is fixed when it is made.
+						A value that changes, as two functions: an <em>accessor</em>, <code>count!</code>, reads it
+						(<code>count!()</code>) and tracks the read; a setter, <code>set_count!</code>, writes a new
+						one. Its type is fixed when it is made.
 					</p>
 				</Feature>
 				<Feature title="A hole">
 					<Code source={"<output>\n\t{count!().to_str()}\n</output>"} numbers={Bool.False} />
 					<p>
-						A computation in the markup. The runtime runs it, notes which signals it read, and runs it
-						again when one of them changes, patching its own node.
+						A computation in the markup. The runtime notes which signals it reads and reruns it when one
+						changes, patching its own node.
 					</p>
 				</Feature>
 				<Feature title="A handler">
 					<Code source={"<button on:click={||\n\tset_count!(count!() + 1)}>"} numbers={Bool.False} />
-					<p>
-						What an event runs, and the place where signals are written. Its writes apply together
-						when it is done.
-					</p>
+					<p>What an event runs, and where signals are written. Its writes apply together when it ends.</p>
 				</Feature>
 				<Feature title="A memo">
 					<Code source={"doubled! = create_memo!(||\n\tcount!() * 2)"} numbers={Bool.False} />
 					<p>
-						A value computed from others, and computed again when they change. You read it as you read
-						a signal: <code>doubled!()</code>. Computed again to the same value, it tells no one, so what
-						reads it runs only when it changed.
+						A value computed from others, again when they change; read it like a signal. Computed again to
+						the same value, it tells no one.
 					</p>
 				</Feature>
 			</FeatureGrid>
 			<p>
-				Every one of these names ends in <code>!</code> because Roc marks each function that has an effect,
-				and the compiler checks the mark. Reading a signal is an effect: the read is tracked. A function
-				like <code>count!</code>, which reads a value and tracks the read, is called an
-				<em>accessor</em>. Signals, memos, and props that change are all read through one.
+				These names end in <code>!</code> because Roc marks every function that has an effect, and the
+				compiler checks the mark. Reading a signal is an effect: the read is tracked. Signals, memos and
+				changing props are all read through an accessor.
 			</p>
 
 			<h3>What runs, and when</h3>
-			<p>Here is what happens in the counter above, in order:</p>
+			<p>In the counter above:</p>
 			<ol>
 				<li>
-					<strong>The body runs once.</strong> When the page renders the counter, <code>view!</code> runs.
-					It makes the signal and builds the markup, each hole a closure it doesn't run itself. As in
-					Solid, the body's own reads aren't tracked.
+					<strong>The body runs once.</strong> <code>view!</code> makes the signal and builds the markup;
+					each hole is a closure it doesn't run. As in Solid, the body's own reads aren't tracked.
 				</li>
 				<li>
-					<strong>Each hole runs once to show its first value</strong>, and the runtime notes what it read.
-					The <code>{"<output>"}</code>'s text, the <code>negative</code> class and the Reset button's
+					<strong>Each hole runs once</strong> to show its first value, and the runtime notes what it read:
+					the <code>{"<output>"}</code>'s text, the <code>negative</code> class and Reset's
 					<code>disabled</code> all read <code>count!</code>.
 				</li>
 				<li>
-					<strong>A click runs a handler.</strong> <code>set_count!</code> doesn't change anything yet: the
-					write is applied when the handler is done, together with any others it made.
+					<strong>A click runs a handler.</strong> <code>set_count!</code>'s write applies when the handler
+					ends, with any others it made.
 				</li>
 				<li>
-					<strong>The three holes run again</strong>, once each, and patch their nodes. The body doesn't
-					run again, so the signal it made keeps its value, and nothing else on the page is touched.
+					<strong>Those three holes run again</strong> and patch their nodes. Nothing else runs, so the
+					signal keeps its value.
 				</li>
 			</ol>
 			<p>
-				Attributes are holes too: <code>{"disabled?={count!() == 0}"}</code>,
-				<code>{"class:negative={count!() < 0}"}</code> and <code>{"style:--size={…}"}</code> each run again on
-				their own. A hole that calls nothing ending in <code>!</code> can't change, so rocx writes it once,
-				with no computation (<code>{"{label}"}</code>, showing a pure component's prop). A hole that ran and
-				read nothing that changes, such as a prop its caller gave a constant, is static too: the server
-				writes it as plain text, and the browser keeps nothing for it.
+				Attributes are holes too (<code>{"disabled?={count!() == 0}"}</code>,
+				<code>{"class:negative={count!() < 0}"}</code>, <code>{"style:--size={…}"}</code>). A hole that calls
+				nothing ending in <code>!</code> can't change, so rocx writes it once, with no computation
+				(<code>{"{label}"}</code>, a pure component's prop). A hole that ran and read nothing that changes
+				(a prop given a constant) is static too: plain text from the server, nothing kept in the browser.
 			</p>
 			<p>
-				A write is never compared with the value before it. Writing the same count again still runs every
-				hole that reads it (a hole whose text comes out the same patches nothing). A memo computed again
-				isn't compared either. When something should run only when a value really changes, read the
-				value through a <a href="#stores">store's selection</a>, which compares with <code>==</code>.
+				A signal's write isn't compared with the old value: writing the same count again reruns every hole
+				that reads it (one whose text comes out the same patches nothing). Memos and
+				<a href="#stores">store selections</a> do compare, with <code>==</code>.
 			</p>
 
 			<h3>Writing from the value</h3>
 			<p>
-				Since a handler's writes apply when it is done, a read in the handler still gives the value before
-				them, as in Solid 2.0: <code>set_count!(count!() + 1)</code> twice in one handler adds one. To write
-				from the value the handler's writes leave, use <code>update!</code>, the function form of Solid's
-				setter (<code>{"setCount((c) => c + 1)"}</code>). It is given the accessor, the setter and a function
-				of the value, and the function gets the value as the handler's writes so far leave it, so two
-				updates add two. Only <code>update!</code> sees a write before it applies: a plain read after it
-				still gives the value before.
+				Since writes apply when the handler ends, a read in it gives the old value:
+				<code>set_count!(count!() + 1)</code> twice adds one, as in Solid 2.0. <code>update!</code> (Solid's
+				<code>{"setCount((c) => c + 1)"}</code>) writes from the value the handler's writes so far leave, so
+				two updates add two. Only <code>update!</code> sees a pending write; a plain read still gives the old
+				value.
 			</p>
 			<Code source={"import pf.Solid exposing [create_signal!, update!]\n\n(count!, set_count!) = create_signal!(0)\nadd! = |n| update!(count!, set_count!, |c| c + n)\n\n<button on:click={|| {\n\tadd!(1)\n\tadd!(1)\n}}>Two more</button>"} numbers={Bool.False} />
 			<p>
-				It takes an <a href="#actions">optimistic value</a>'s accessor and setter too. A
-				<a href="#stores">store's</a> setter already takes a function, and two of its writes in one handler
-				compose the same way.
+				It also takes an <a href="#actions">optimistic value</a>'s accessor and setter. A
+				<a href="#stores">store's</a> setter already takes a function and composes the same way.
 			</p>
 
 			<h3>Memos and the server</h3>
 			<p>
-				A memo starts computing as soon as it is made. One that reads an endpoint
-				(<code>Endpoint.read!</code>, see <a href={Paths.calls}>talking to the server</a>) is async: a
-				component that makes five such memos sends five requests at once, and a hole that reads one waits
-				until its answer is in (<a href="#waiting">waiting and failing</a>). <code>refresh!(user!)</code>
-				computes a memo again, asking the server again. The old value stays on screen meanwhile, and
+				A memo starts computing when it is made. One that reads an endpoint (<code>Endpoint.read!</code>,
+				see <a href={Paths.calls}>talking to the server</a>) is async: five such memos send five requests at
+				once, and a hole that reads one waits (<a href="#waiting">waiting and failing</a>).
+				<code>refresh!(user!)</code> asks the server again; the old value stays on screen, and
 				<a href="#pending"><code>is_pending!(user!)</code></a> says it is on its way out. Roc can't compare
 				functions, so <code>refresh!</code> finds the memos by running the accessor once and noting what it
 				reads.
@@ -225,46 +204,38 @@ view! = |_|
 
 			<h3>A read in the body is read once</h3>
 			<p>
-				Since a component's body runs once, a value it reads there is read once.
-				<code>{"doubled = count!() * 2"}</code> in the body is the count as the component started, times
-				two, for good. To show a value that follows the count, read the count in the hole
-				(<code>{"{(count!() * 2).to_str()}"}</code>) or in a memo. This is the one mistake the model invites,
-				so a dev build (<code>rocx dev</code>, or <code>rocx build --dev</code>) warns in the browser's
-				console, once for each place, as Solid 2.0's dev build does:
+				<code>{"doubled = count!() * 2"}</code> in the body is the starting count times two, for good. To
+				follow the count, read it in the hole (<code>{"{(count!() * 2).to_str()}"}</code>) or a memo. This is
+				the one mistake the model invites, so a dev build (<code>rocx dev</code>, <code>rocx build --dev</code>)
+				warns in the browser's console, once per place, as Solid 2.0's does:
 			</p>
 			<Code source={"rocx: Ui/Chart.rocx:44:39 reads a value that changes (a signal, a memo or a prop) in a component's body, once, as the component runs: what it shows won't follow it. Read it where it is used (in markup, a memo, an effect's compute or a handler), or, if one read is what you want, say so: untrack!(|| …)"} plain numbers={Bool.False} />
 			<p>
-				Sometimes one read is what you want, such as a start value. <code>untrack!(|| …)</code> reads
-				without tracking, as Solid's <code>untrack</code> does, and tells the warning the read is meant:
-				<code>{"create_signal!(untrack!(|| start))"}</code>. It works the same in a memo or a hole:
-				<code>{"create_memo!(|| count!() + untrack!(|| base!()))"}</code> runs again when
-				<code>count!</code> changes, not when <code>base!</code> does, and uses whatever <code>base!</code>
-				is at that moment. A hole whose reads are all untracked is static. The warning sees an accessor
-				called in the body itself; one called inside a helper function goes unnoticed.
+				When one read is meant (a start value), <code>untrack!</code> (Solid's <code>untrack</code>) reads
+				without tracking and silences the warning: <code>{"create_signal!(untrack!(|| start))"}</code>. In a
+				memo or hole, <code>{"create_memo!(|| count!() + untrack!(|| base!()))"}</code> reruns when
+				<code>count!</code> changes, not <code>base!</code>. A hole whose reads are all untracked is static.
+				The warning misses reads inside a helper function.
 			</p>
 			<Callout kind="note" title="Two rules the runtime enforces">
 				<ul>
 					<li>
-						<strong>Write signals in handlers.</strong> An event's handler, an effect's
-						<code>apply</code>, a cleanup and a timer's tick all count. A write while computing (in a
-						hole, a memo or a component's body) fails, and the nearest <code>{"<Errored>"}</code> shows
-						why.
+						<strong>Write signals in handlers</strong>: an event's handler, an effect's <code>apply</code>,
+						a cleanup or a timer's tick. A write in a hole, a memo or a component's body fails, and the
+						nearest <code>{"<Errored>"}</code> shows why.
 					</li>
 					<li>
 						<strong>Read server data in holes, memos and handlers, not in a component's body.</strong> A
-						hole can wait for an answer; the body can't. A body that reads an answer that isn't in yet
-						stops with an error that says so.
+						hole can wait for an answer; the body can't, and stops with an error.
 					</li>
 				</ul>
 			</Callout>
 
 			<Heading id="todos">Try it: a to-do list</Heading>
 			<p>
-				The model at work. The server rendered this list with three items. Add one, tick one, filter them,
-				or press Escape in the field. The panel beside it says what the runtime did each time: a key typed
-				patches the field's value and the Add button's <code>disabled</code>, and removing an item drops
-				its row and touches nothing else. Its state is four signals, and each hole reads only the ones it
-				needs.
+				The server rendered this list. Add an item, tick one, filter, or press Escape in the field. The
+				panel says what the runtime did: a key typed patches the field's value and Add's <code>disabled</code>; removing an item drops its
+				row and touches nothing else. The state is four signals, and each hole reads only what it needs.
 			</p>
 		</NoHydration>
 		<Demo inspect="todos">
@@ -278,128 +249,109 @@ view! = |_|
 
 			<Heading id="kinds">Pure and effectful components</Heading>
 			<p>
-				Roc marks every function that has effects with a <code>!</code>, and the compiler checks the mark:
-				a function without one can't call one with one. Components use the mark too. A component's module
-				defines either <code>view</code> (pure) or <code>view!</code> (effectful), and rocx calls each its
-				own way. The counter above is effectful. This site's section heading is pure:
+				Components use Roc's <code>!</code> mark too: a function without one can't call one with one. A
+				component's module defines either <code>view</code> (pure) or <code>view!</code> (effectful). The
+				counter above is effectful; this site's section heading is pure:
 			</p>
 			<Code title={Sources.ui_heading.file} source={Sources.ui_heading.rocx} numbers={Bool.False} />
 			<FeatureGrid>
 				<Feature heading={[<code>view</code>, <>: pure</>]}>
 					<p>
-						It makes markup from its props, which are plain values. It can't make a signal, read a context
-						or call the server: the compiler refuses the call. So it is called where it is written, as any
-						function is: <code>{"<Heading id=\"why\">…</Heading>"}</code> becomes
+						Makes markup from its props, which are plain values. It can't make a signal, read a context or
+						call the server: the compiler refuses. It is called where it is written, like any function:
+						<code>{"<Heading id=\"why\">…</Heading>"}</code> becomes
 						<code>{"Heading.view({ id: \"why\", children: […] })"}</code>.
 					</p>
 				</Feature>
 				<Feature heading={[<code>view!</code>, <>: effectful</>]}>
 					<p>
-						It may make signals and memos, read a context, and read endpoints. It runs where it is
-						rendered, once, as a Solid component does: <code>{"<Counter start_value={3} />"}</code> becomes
+						May make signals and memos, read a context, and read endpoints. It runs once, where it is
+						rendered, like a Solid component: <code>{"<Counter start_value={3} />"}</code> becomes
 						<code>{"Html.component(|| Counter.view!({ start_value: || 3 }))"}</code>, which the runtime calls
-						at its place in the tree, under the contexts provided above it. Its props are getters
+						at its place in the tree, under the contexts above it. Its props are getters
 						(<a href="#passing">props that change</a>).
 					</p>
 				</Feature>
 			</FeatureGrid>
 			<p>
-				You don't mark the call. <code>rocx build</code> reads each component's module and writes the call
-				that fits, so a component can change from one kind to the other without its callers changing.
-				Start with <code>view</code>, and add the <code>!</code> when the component needs state of its own,
-				a context or the server. Solid can't tell the two apart, since any JavaScript function may do
-				anything. Roc can, so a pure component is guaranteed to keep no state, and costs no more than a
-				function call.
+				You don't mark the call: <code>rocx build</code> writes the one that fits, so a component can switch
+				kinds without its callers changing. Start with <code>view</code>; add the <code>!</code> when the
+				component needs its own state, a context or the server. Solid can't tell the two apart, since any
+				JavaScript function may do anything. Roc can, so a pure component is guaranteed to keep no state,
+				and costs no more than a function call.
 			</p>
 			<p>
-				A pure component can still show values that change. Given a value read from something that
-				changes (<code>{"<Badge count={unread!()} />"}</code>), its call becomes a hole of its own: when the
-				value changes, the component is called again and its markup replaced. It has no state to lose, but
-				its elements are new, so what the browser keeps in them (the focus, a field's text) is lost. To
-				keep its elements, give it an accessor instead (<code>{"<Badge count!={unread!()} />"}</code>, typed
-				<code>{"count! : () => U64"}</code>) for its holes to read, or make it a <code>view!</code>. This is
-				on purpose: a pure component stays a function of values, so a test, or an email's HTML
-				(<code>Html.to_str</code>), can call it with plain values.
+				A pure component can still show changing values. Given one (<code>{"<Badge count={unread!()} />"}</code>),
+				its call becomes a hole: when the value changes, the component is called again and its markup
+				replaced. It has no state to lose, but its elements are new, so the focus or text typed in them
+				goes. To keep them, pass an accessor for its holes to read (<code>{"<Badge count!={unread!()} />"}</code>, typed
+				<code>{"count! : () => U64"}</code>), or make it a <code>view!</code>. This is on purpose: a pure
+				component stays a function of values, so a test or an email's HTML (<code>Html.to_str</code>) can
+				call it with plain values.
 			</p>
 
 			<Heading id="passing">Props that change</Heading>
 			<p>
-				An effectful component runs once, so a prop whose value changes has to be read where it is used,
-				not when the component is called. Solid's compiler handles this by turning
-				<code>{"<Heading text={user().name} />"}</code> into a getter, which the child's
-				<code>props.text</code> runs. rocx does the same with Roc's types. It passes each value prop of a
-				<code>view!</code> as a function that computes it (a <em>getter</em>), and the child, written with a
-				plain <code>text : Str</code>, calls that function wherever its code says <code>text</code>:
+				An effectful component runs once, so a changing prop must be read where it is used. Like Solid's
+				compiler, rocx passes each value prop of a <code>view!</code> as a <em>getter</em>, a function that
+				computes it, and the child (written with a plain <code>text : Str</code>) calls it wherever it says
+				<code>text</code>:
 			</p>
 			<Code title="rocx" source={"<Heading text={user!().name} level={2} />\n# Html.component(|| Heading.view!({ text: || user!().name, level: || 2 }))\n\nview! = |{ text, level }| <h2 class={level.to_str()}>{text}</h2>\n# |{ text: text!, level: level! }| … class: || level!().to_str() … || text!()"} numbers={Bool.False} />
-			<p>Where the child reads a prop decides what follows it, as in Solid:</p>
+			<p>Where the child reads a prop decides what follows it:</p>
 			<ul>
 				<li>
-					<strong>In a hole, an attribute, a memo or an effect's <code>compute</code></strong>, it is read
-					again when the value changes, and only that place is patched. The component stays, and so do
-					its signals.
+					<strong>In a hole, an attribute, a memo or an effect's <code>compute</code></strong>: read again
+					when the value changes, patching only that place. The component and its signals stay.
 				</li>
-				<li><strong>In a handler</strong>, it is the value at the moment the handler runs.</li>
+				<li><strong>In a handler</strong>: the value when the handler runs.</li>
 				<li>
-					<strong>In the component's body</strong>, it is read once, as the body runs:
-					<code>{"first = text"}</code> keeps the first value. That suits a start value, and
-					<code>untrack!</code> says the one read is meant: <code>{"create_signal!(untrack!(|| start))"}</code>.
-					Anywhere else, the dev build warns (<a href="#primitives">a read in the body is read once</a>).
+					<strong>In the component's body</strong>: read once (<code>{"first = text"}</code> keeps the first
+					value). Fine for a start value, with <code>untrack!</code>; otherwise the dev build warns
+					(<a href="#primitives">a read in the body is read once</a>), and <code>rocx build</code> warns at a
+					call given a <code>match</code> arm's name or a row's item (<a href="#control">if, match and .map</a>).
 				</li>
 				<li>
 					<strong>In a pure function</strong> the component calls
-					(<code>{"items.keep_if(|item| item.owner == me)"}</code>), it is a value: a pure function can't
-					call a getter, so the hole or memo around the call reads the prop and passes the value in.
+					(<code>{"items.keep_if(|item| item.owner == me)"}</code>): a value. A pure function can't call a
+					getter, so the hole or memo around the call reads the prop and passes the value in.
 				</li>
 			</ul>
 			<p>
 				So destructuring is safe. In Solid, <code>{"const { text } = props"}</code> loses reactivity; here
-				<code>{"|{ text }|"}</code> means what <code>props.text</code> means, because rocx rewrites every read
-				of <code>text</code>. A prop given a constant (<code>{"level={2}"}</code>) reads nothing that changes,
-				so a hole that reads only it is static, and the dev warning stays quiet about it.
+				<code>{"|{ text }|"}</code> means <code>props.text</code>, because rocx rewrites every read of
+				<code>text</code>. A prop given a constant (<code>{"level={2}"}</code>) is static, and the dev warning
+				ignores it.
 			</p>
 			<p>
-				<strong>Accessor props.</strong> A prop whose name ends in <code>!</code>,
-				<code>{"text!={user!().name}"}</code>, is the same getter written by hand: the child types it
-				(<code>{"text! : () => Str"}</code>) and calls it (<code>text!()</code>). It is also how a pure
-				component follows a value that changes while keeping its elements
-				(<a href="#kinds">pure and effectful components</a>). To let a child write, give it the setter too. A setter is already a
-				handler, so <code>{"on:input.value={set_draft!}"}</code> needs nothing around it. The
-				<code>children</code> prop is markup, whose holes are already live.
+				<strong>Accessor props.</strong> A prop named with <code>!</code>, <code>{"text!={user!().name}"}</code>,
+				is the same getter written by hand: the child types it (<code>{"text! : () => Str"}</code>) and calls
+				it (<code>text!()</code>). It lets a pure component follow a changing value and keep its elements
+				(<a href="#kinds">above</a>). To let a child write, pass the setter; it is already a handler, so
+				<code>{"on:input.value={set_draft!}"}</code> needs no wrapper. <code>children</code> is markup, whose
+				holes are already live.
 			</p>
 			<p>
 				<strong>Passing props on.</strong> <code>{"|{ kind, ..rest }|"}</code> takes <code>kind</code> out and
-				keeps the rest in a record, as Solid's <code>omit</code> does. <code>{"<Base {...rest} size={3} />"}</code>
-				passes them to another component, as JSX's spread and Solid's <code>merge</code> do: of two props
-				with the same name, the last wins. They stay getters, so <code>Base</code> reads the caller's
-				expressions live. When the view's props are annotated, rocx writes the fields out one by one
-				(<code>label: rest.label</code>), and other attributes can add or replace some. Without an
-				annotation it writes Roc's record update (<code>{"{ ..rest, size: || 3 }"}</code>), so
-				<code>Base</code>'s props must be exactly that record's type, and two such records can't be spread
-				on one tag.
+				keeps the rest (Solid's <code>omit</code>); <code>{"<Base {...rest} size={3} />"}</code> passes them on,
+				still getters (Solid's <code>merge</code>: the last of a name wins). With the view's props annotated,
+				rocx writes the fields out one by one (<code>label: rest.label</code>), and other attributes can add
+				or replace some. Without, it writes Roc's record update (<code>{"{ ..rest, size: || 3 }"}</code>), so
+				<code>Base</code>'s props must be exactly that type, and only one such record can be spread on a tag.
 			</p>
 			<Code source={"Button := [].{\n\tview! : { kind : Str, label : Str, on_press! : () => {} } => Html\n\tview! = |{ kind, ..rest }| <span class={kind}><Base {...rest} size={3} /></span>\n}\n# Base.view!({ label: rest.label, on_press!: rest.on_press!, size: || 3 })"} numbers={Bool.False} />
-			<p>
-				One case needs care. A <code>match</code> arm's names and a <code>.map</code> row's item change while
-				the part showing them stays on the page. A component given one, which reads that prop once in its
-				body, keeps the first value, so <code>rocx build</code> warns at the call
-				(<a href="#control">if, match and .map</a> says what to write instead).
-			</p>
 
 			<Heading id="control">if, match and .map</Heading>
 			<p>
-				A hole takes any Roc expression, so branches and lists are Roc's own <code>if</code>,
-				<code>match</code> and <code>.map</code>. There are no <code>{"<Show>"}</code>,
-				<code>{"<Switch>"}</code> or <code>{"<For>"}</code> components to learn. When a condition or a list
-				reads something that changes, rocx makes the hole work as Solid 2.0's control flow does: each
-				branch and each row is a <em>part</em>, made once and then kept, moved or dropped as things change.
-				A part is never built again just to compare it with the old one.
+				Branches and lists are Roc's own <code>if</code>, <code>match</code> and <code>.map</code> in a hole:
+				no <code>{"<Show>"}</code>, <code>{"<Switch>"}</code> or <code>{"<For>"}</code> to learn. When they read
+				something that changes, each branch and row is a <em>part</em>, as in Solid 2.0: made once, then
+				kept, moved or dropped, never rebuilt just to compare.
 			</p>
 			<p>
-				Below, the same picks are listed twice: a row per id on the left, and a row per position on the
-				right. Click the buttons and watch. A ring marks each node that changed, in the colour of what
-				happened to it. (The picks come from a <a href="#contexts">context</a>, which the
-				<a href="#tree">tally</a> further down reads too.)
+				Below, the same picks are listed by id (left) and by position (right). Click the buttons: a ring
+				marks each node that changed, coloured by what happened. (The picks come from a
+				<a href="#contexts">context</a> the <a href="#tree">tally</a> further down reads too.)
 			</p>
 		</NoHydration>
 		<PicksContext value={Picks.store!({})}>
@@ -408,112 +360,97 @@ view! = |_|
 			</Demo>
 			<NoHydration>
 				<ul class="tries">
-					<li><strong>Reverse</strong> moves the rows by key (the same elements, in a new order) and patches their indexes. The rows by position stay where they are, and their names are patched.</li>
+					<li><strong>Reverse</strong> moves the rows by key (the same elements, reordered) and patches their indexes. The rows by position stay put; their names are patched.</li>
 					<li><strong>Shout</strong> changes every name but no id: every row stays, and only its name is patched.</li>
-					<li><strong>Add</strong> makes one row in each list, and the fourth pick switches the <code>if</code> under them. <strong>Clear</strong> drops every row, and shows the <code>if</code> that says there are none.</li>
+					<li><strong>Add</strong> makes one row in each list; the fourth pick switches the <code>if</code> under them. <strong>Clear</strong> drops every row and shows the <code>if</code> that says there are none.</li>
 				</ul>
 				<Code title={"${Sources.signals_picks_control.file}, in part"} source={Sources.signals_picks_control.rocx} numbers={Bool.False} />
 
 				<h3>A row per key: .map</h3>
 				<p>
-					<code>{"{...todos!().map(|todo| <li key={todo.id}>{todo.title}</li>)}"}</code> is a list of rows,
-					Solid's <code>{"<For>"}</code>. When the list reads something that changes, each row is kept by
-					the <code>key</code> on its root element: made once, moved when its key moves, and dropped when
-					its key goes. The row's name (<code>todo</code>) always reads its item as it is now (rocx makes it
-					a getter), so an edit that keeps the id keeps the row, its elements, and the focus and typing in
-					them.
+					<code>{"{...todos!().map(|todo| <li key={todo.id}>{todo.title}</li>)}"}</code> is Solid's
+					<code>{"<For>"}</code>. Each row is kept by the <code>key</code> on its root: made once, moved when
+					its key moves, dropped when its key goes. <code>todo</code> is a getter for the current item, so an
+					edit that keeps the id keeps the row's elements, focus and typing.
 				</p>
 				<ul>
 					<li>
-						<strong>A key is required</strong> when the list changes. rocx refuses a row without one, at
-						its line, and says what to write. Roc's values have no identity, so Solid's default, a row per
-						object, has nothing to go by. A key can be any value: a string as it is, anything else as
-						<code>Str.inspect</code> writes it.
+						<strong>A key is required</strong> when the list changes; rocx refuses a row without one, at its
+						line. Roc's values have no identity, so Solid's default (a row per object) can't work. A key can
+						be any value: a string as is, anything else as <code>Str.inspect</code> writes it.
 					</li>
 					<li>
-						<strong>The key goes on the row's root</strong>, an element or a component. On a component,
-						<code>key</code> is the row's key, never one of its props. A row that is an <code>if</code> puts
-						a key on each branch.
+						<strong>The key goes on the row's root</strong>, an element or a component (where it is never a
+						prop). A row that is an <code>if</code> puts a key on each branch.
 					</li>
 					<li>
-						<strong>A row is told only when its item changed.</strong> When the list is read again, each
-						row compares its new item with the one it had, using Roc's <code>==</code>, and only a row
-						whose item differs runs its holes again. Toggling one todo of a thousand runs that row's holes
-						alone. So an item must be data that <code>==</code> compares (records, tags, lists, text,
-						numbers), not a function or markup.
+						<strong>A row is told only when its item changed</strong>, compared by <code>==</code>: toggling
+						one todo of a thousand runs that row's holes alone. So an item must be data (records, tags,
+						lists, text, numbers), not a function or markup.
 					</li>
 					<li>
-						<strong>A row runs once</strong>, as a component does (Solid's <code>mapArray</code>). What it
-						reads at its top is read once; its holes, and the props it gives components, follow the item.
-						It may hold another <code>.map</code>, an <code>if</code>, or plain markup.
+						<strong>A row runs once</strong>, like a component (Solid's <code>mapArray</code>): what it reads at
+						its top is read once; its holes, and the props it gives components, follow the item. It may hold
+						another <code>.map</code>, an <code>if</code>, or plain markup.
 					</li>
 					<li>
-						<strong>A list that reads nothing that changes</strong> (a constant list, or one inside a
-						<code>{"<NoHydration>"}</code>) is built once, and needs no keys.
+						<strong>A list that reads nothing that changes</strong> (a constant, or one in a
+						<code>{"<NoHydration>"}</code>) is built once and needs no keys.
 					</li>
 				</ul>
 				<p>
 					<strong>A row per position.</strong> <code>{".map_with_index(|pick, i| <li key={i}>…</li>)"}</code>
-					keeps a row for each index: Solid's <code>{"<For keyed={false}>"}</code>, its old
-					<code>{"<Index>"}</code>. The rows stay where they are, and the item at each position is what
-					changes (the right list above). With any other key, <code>.map_with_index</code> is a row per key
-					whose index is a getter too, following the row as it moves (the left list). A key computed from
-					the index is refused: write <code>{"key={i}"}</code> alone.
+					is Solid's <code>{"<For keyed={false}>"}</code> (formerly <code>{"<Index>"}</code>): rows stay put,
+					and the item at each position changes (the right list). With any other key, it is a row per key
+					whose index is a getter too (the left list). A key computed from the index is refused: write
+					<code>{"key={i}"}</code> alone.
 				</p>
 
 				<h3>A part per branch: if</h3>
 				<p>
-					<code>{"{if (count!() > 3) <Timer />}"}</code> shows its part while the condition holds, and nothing
-					otherwise: no <code>else</code> is needed. The part is made when its branch starts to hold, and
-					made again only when a different branch holds, not each time something the condition read
-					changes. So the <code>{"<Timer>"}</code> keeps its own signals as the count goes from 4 to 5. Each
-					branch is a part of its own, so a hole inside it still follows what it reads. An
-					<code>if</code> whose branches are all text, <code>{"{if (on!()) \"On\" else \"Off\"}"}</code>, is an
-					ordinary text hole, patched in place.
+					<code>{"{if (count!() > 3) <Timer />}"}</code> shows its part while the condition holds (no
+					<code>else</code> needed). The part is remade only when a different branch holds, so the
+					<code>{"<Timer>"}</code> keeps its signals as the count goes from 4 to 5; holes inside still follow
+					what they read. An <code>if</code> whose branches are all text,
+					<code>{"{if (on!()) \"On\" else \"Off\"}"}</code>, is an ordinary text hole.
 				</p>
 
 				<h3>A part per arm: match</h3>
 				<p>
-					A <code>match</code> works the same way, one part per arm. It is Solid's <code>{"<Switch>"}</code>,
-					and also its <code>{"<Show>"}</code> narrowing a value that may be missing, which in Roc is a
-					<code>Try</code>:
+					One part per arm: Solid's <code>{"<Switch>"}</code>, and its <code>{"<Show>"}</code> narrowing a value
+					that may be missing (in Roc, a <code>Try</code>):
 				</p>
 				<Code title="rocx" source={"{match tab!() {\n\tInbox => <Inbox />\n\tCard(card) => <CardView title={card.title} />\n\tNothing => <p>Nothing to show</p>\n}}"} numbers={Bool.False} />
 				<p>
-					The names an arm binds (<code>card</code> in <code>Card(card)</code>) read the newest value: rocx
-					makes them getters. The arm's part stays while the value changes, and
-					<code>{"<CardView title={card.title} />"}</code> follows it. When you want a part made anew for each
-					new value instead (Solid's keyed <code>{"<Show>"}</code>), use a <code>.map</code> over a list of
-					one, keyed by the value or its id:
-					<code>{"{...[card!()].map(|card| <Editor key={card.id} card={card} />)}"}</code>.
+					An arm's names (<code>card</code> in <code>Card(card)</code>) are getters for the newest value: the
+					part stays, and <code>{"<CardView title={card.title} />"}</code> follows it. For a part remade per
+					value (Solid's keyed <code>{"<Show>"}</code>), <code>.map</code> a list of one, keyed by the value or
+					its id: <code>{"{...[card!()].map(|card| <Editor key={card.id} card={card} />)}"}</code>.
 				</p>
 				<p>
-					A component that reads a prop once, in its body (<code>{"shown = card"}</code>), keeps the first
-					value it read. That is a bug when its caller passes a match arm's name or a row's item, which
-					change while the part stays, so <code>rocx build</code> warns at the call, and
-					<code>rocx check</code> exits with 2. The warning gives three ways out: read the prop where it is
-					used, write <code>{"untrack!(|| card)"}</code> if one read is meant, or key the part by the value as
-					above.
+					A component that reads such a name or a row's item once, in its body (<code>{"shown = card"}</code>),
+					keeps the first value: a bug. <code>rocx build</code> warns at the call, and <code>rocx check</code>
+					exits with 2. The ways out: read the prop where it is used, write <code>{"untrack!(|| card)"}</code>
+					if one read is meant, or key the part by the value as above.
 				</p>
 
 				<h3>When parts are made</h3>
 				<p>
-					A part (an <code>if</code>'s or <code>match</code>'s branch, or a row) is made when it appears, the
-					way a component is: once, where it is rendered, with its own reads untracked, and again each time
-					it appears again. Its holes are made then. So a value prop inside,
+					A part (a branch, an arm or a row) is made like a component: once, where it is rendered, its own
+					reads untracked, and again each time it reappears. So a value prop inside,
 					<code>{"<Podium players={game!().players} />"}</code>, is read where the component reads it, while
-					the part shows. A signal made inside a part goes when the part does.
+					the part shows. A signal made inside a part goes with it.
 				</p>
 
 				<h3>Rows by index: Repeat</h3>
 				<p>
 					<code>{"<Repeat count!={n!()} from!={first!()}>{|index| …}</Repeat>"}</code>
-					(<code>import pf.Repeat</code>, Solid 2.0's <code>{"<Repeat>"}</code>) makes a row for each index
-					from <code>from!</code> (0 unless given) up to, but not including, <code>from! + count!</code>,
-					with no list behind them. A row is kept while its index is in the range, so when the range moves,
-					only the rows that come into it are made. With <a href="#handlers"><code>on:viewport</code></a> it
-					becomes a virtual list: <a href={Paths.ecosystem_virtual}>packages/virtual</a> renders a million
-					rows as the twenty that show.
+					(<code>import pf.Repeat</code>, Solid 2.0's <code>{"<Repeat>"}</code>) makes a row per index from
+					<code>from!</code> (default 0) up to, not including, <code>from! + count!</code>, with no list
+					behind them. When the range moves, only rows entering it are made. With
+					<a href="#handlers"><code>on:viewport</code></a> it becomes a virtual list:
+					<a href={Paths.ecosystem_virtual}>packages/virtual</a> renders a million rows as the twenty that
+					show.
 				</p>
 				<details>
 					<summary>The whole component: <code>{Sources.signals_picks.file}</code></summary>
@@ -522,118 +459,99 @@ view! = |_|
 
 				<Heading id="stores">Stores</Heading>
 				<p>
-					A store holds state of many parts in one value, and lets each part be read on its own: Solid
-					2.0's <code>createStore</code>. Use one where a single signal would make every reader run on
-					every change, such as a board, a form with many fields, or a list with filters. Solid's store is
-					a proxy that sees which field a read touches. Roc has no proxies, so here a read
-					<em>selects</em> a part with a function, and is tracked by the value it selected:
+					A store (Solid 2.0's <code>createStore</code>) holds many parts in one value, each read on its own.
+					Use one where a single signal would rerun every reader on every change: a board, a big form, a
+					filtered list. Roc has no proxies, so a read <em>selects</em> a part with a function, tracked by the
+					value selected:
 				</p>
 				<Code title="rocx" source={"import pf.Solid exposing [create_store!]\n\n(todos, set_todos!) = create_store!({ items: [], filter: All })\n\n<p>{Filter.name(todos.get!(|s| s.filter))}</p>\n<ul>{...todos.get!(|s| s.items).map(|todo| <li key={todo.id} class:done={todo.done}>{todo.title}</li>)}</ul>\n<button on:click={|| set_todos!(|s| { ..s, filter: Done })}>Done</button>"} numbers={Bool.False} />
 				<ul>
 					<li>
-						<strong>A part's readers run again only when the part changes.</strong> Each write computes
-						every selected part again and compares it with its last value, using <code>==</code>. Clicking
-						Done runs the filter's hole and nothing else: the items' selection is computed, found equal,
-						and stays quiet. So a part must be data: records, tags, lists, text and numbers (a type of
-						your own needs an <code>is_eq</code>). A function or markup can't be selected.
+						<strong>A part's readers rerun only when it changes.</strong> Each write recomputes every
+						selection and compares it with its last value by <code>==</code>: clicking Done reruns the filter's
+						hole alone. So a part must be data (a type of your own needs an <code>is_eq</code>), not a function
+						or markup.
 					</li>
 					<li>
-						<strong>A write is a function of the state</strong>, Solid 2.0's draft setter, with Roc's
-						record update as the draft. Two writes in one handler compose: the second is given what the
-						first made.
+						<strong>A write is a function of the state</strong> (Solid 2.0's draft setter, with Roc's record
+						update as the draft). Two writes in one handler compose.
 					</li>
 					<li>
-						<strong>A read outside a computation</strong> (in a handler, a component's body, or
-						<code>untrack!</code>) selects once, with no tracking.
+						<strong>A read outside a computation</strong> (a handler, a component's body,
+						<code>untrack!</code>) selects once, untracked.
 					</li>
 					<li>
-						<strong><code>Store.of(board!)</code></strong> (<code>import pf.Store</code>) reads any accessor
-						by parts: an endpoint's answer, a memo, a prop. It has no setter; it changes when the accessor
-						does.
-					</li>
-					<li>
-						<strong>A selection is how you compare.</strong> Signals and memos don't compare their values,
-						so a selection is the way to run something only when a value really changes:
-						<code>{"Store.of(user!).get!(|u| u.id)"}</code>, read in a hole or an effect's
-						<code>compute</code>, runs it again only when the id changes.
+						<strong><code>Store.of(board!)</code></strong> (<code>import pf.Store</code>) reads any accessor by
+						parts: an endpoint's answer, a memo, a prop. It has no setter. In a hole or an effect's
+						<code>compute</code>, <code>{"Store.of(user!).get!(|u| u.id)"}</code> reruns only when the id
+						changes.
 					</li>
 				</ul>
 				<p>
-					What it costs: each write runs every live selection of its store, a pure function and a
-					comparison each (four hundred take about half a millisecond), where Solid's store touches only
-					the paths written.
+					The cost: each write runs every live selection of its store (four hundred take about half a
+					millisecond). Solid's store touches only the paths written.
 				</p>
 
 				<Heading id="selectors">Selectors</Heading>
 				<p>
-					In a list where one row is picked (the selected one, the open one), each row compares its own
-					id with the picked one. With a plain signal every row reads it, so every pick runs every row's
-					hole. A <em>selector</em>, Solid's <code>createSelector</code>, answers whether a key is the
-					picked one and tracks each key on its own: a pick runs the hole of the row it leaves and of the
-					row it comes to, and no other.
+					When one row of a list is picked (selected, open), every row reading a plain signal reruns on each
+					pick. A <em>selector</em> (Solid's <code>createSelector</code>) answers whether a key is the picked
+					one and tracks each key on its own: a pick reruns only the row it leaves and the row it comes to.
 				</p>
 				<Code source={"import pf.Solid exposing [create_selector!, create_signal!]\n\n(picked!, set_picked!) = create_signal!(0)\nis_picked! = create_selector!(picked!)\n\n<ul>\n\t{...rows!().map(|row|\n\t\t<li key={row.id} class:picked={is_picked!(row.id)} on:click={|| set_picked!(row.id)}>{row.label}</li>\n\t)}\n</ul>"} numbers={Bool.False} />
 				<p>
-					Its source is any accessor (a signal, a memo, a store's part), and a key is a value of the same
-					type. On the server it is computed once, as a memo is.
+					Its source is any accessor (a signal, a memo, a store's part), and keys have its type. On the server
+					it is computed once, like a memo.
 				</p>
 
 				<Heading id="contexts">Contexts</Heading>
 				<p>
-					A context gives a value to every component under its provider, however deep, without passing it
-					down as a prop: Solid's <code>createContext</code> and <code>useContext</code>. The picks above
-					don't make their list. They read it, with its setter, from a context, and so does the tally below.
-					Here is the context, defined with no default, and the value it provides, a record of accessors and
-					setters:
+					A context (Solid's <code>createContext</code>, <code>useContext</code>) gives a value to every
+					component under its provider, however deep. The picks above and the tally below read their list
+					and setter from one. Here is the context (no default) and the record of accessors and setters it
+					provides:
 				</p>
 				<Code title={"${Sources.signals_store.file}, in part"} source={Sources.signals_store.rocx} numbers={Bool.False} />
 				<p>
-					Its provider is a tag named after the context: <code>picks_context</code> gives
-					<code>{"<PicksContext value={…}>"}</code>. Under it, a component reads the value with
-					<code>use_context!</code>:
+					Its provider is a tag named after it (<code>picks_context</code> gives
+					<code>{"<PicksContext value={…}>"}</code>). Under it, <code>use_context!</code> reads the value:
 				</p>
 				<Code title={"${Sources.signals_tally_use.file}, in part"} source={Sources.signals_tally_use.rocx} numbers={Bool.False} />
 				<ul>
 					<li>
-						<strong>Defining one.</strong> <code>{"name = create_context()"}</code> defines a context that must
-						be provided, and <code>{"create_context(\"light\")"}</code> one with a default. Either is a
-						definition in a module, in a file that imports <code>pf.Context</code>. Roc's values have no
-						identity to tell two contexts apart, so rocx names each after its module and definition, and
-						writes <code>{"Context.required(\"Demos/Picks.picks_context\")"}</code> (or
-						<code>Context.define</code>, with a default). <code>create_context</code> has no
-						<code>!</code>: it makes nothing until a provider gives it a value.
+						<strong>Defining one.</strong> <code>{"name = create_context()"}</code> must be provided;
+						<code>{"create_context(\"light\")"}</code> has a default. Either is a module's definition, in a file
+						importing <code>pf.Context</code>. rocx names each after its module and definition:
+						<code>{"Context.required(\"Demos/Picks.picks_context\")"}</code> (or <code>Context.define</code>, with
+						a default). <code>create_context</code> has no <code>!</code>: it makes nothing until provided.
 					</li>
 					<li>
-						<strong>Providing it.</strong> The provider's tag is the context's name in PascalCase, usable in
-						the context's module or any module that imports it, in a file that imports
-						<code>pf.Context</code>. It takes <code>{"value={…}"}</code> and children. A layout can provide one
-						for every page under it.
+						<strong>Providing it.</strong> The tag (the name in PascalCase) works in the context's module or
+						any module importing it, in a file importing <code>pf.Context</code>. It takes
+						<code>{"value={…}"}</code> and children. A layout can provide one for every page under it.
 					</li>
 					<li>
-						<strong>Nothing above?</strong> A context with a default gives the default. One without fails,
-						and the nearest <code>{"<Errored>"}</code> says that nothing above provides it.
+						<strong>Nothing above?</strong> A context with a default gives it; one without fails, and the
+						nearest <code>{"<Errored>"}</code> says so.
 					</li>
 					<li>
 						<strong>Read it in a component's body or a computation</strong>, and keep what it gives for your
-						handlers, as the tally does. A component reads what is above the place it is rendered, because
-						rocx puts each component's call off (<code>{"Html.component(|| …)"}</code>) until the runtime
-						builds that place.
+						handlers, as the tally does. A component sees what is above where it is rendered, because rocx
+						defers each component's call (<code>{"Html.component(|| …)"}</code>) until the runtime builds that
+						place.
 					</li>
 				</ul>
 
 				<Heading id="tree">One page, one tree</Heading>
 				<p>
-					A page is one tree of components: its layouts, then the page, then the components inside them. A
-					component goes on a page the way it goes in another component, by its tag, with its props. There
-					is nothing to register, and no islands to name.
+					A page is one tree: its layouts, the page, and their components. A component goes on a page as in
+					another component, by its tag. Nothing to register, no islands.
 				</p>
 				<p>
-					The server renders the whole tree, and the browser hydrates the whole document. Hydration is the
-					browser taking over the page the server rendered: the runtime walks the server's HTML and binds
-					each hole and handler to its node, building nothing twice. So two components far apart on a page
-					can share state through a context provided above both. The picks above and this tally are far
-					apart: this page puts one <code>{"<PicksContext>"}</code> around both, with all the prose between
-					them inside it. Further down, one <code>{"<BagContext>"}</code> holds the shelf and the bag:
+					The server renders the whole tree, and the browser hydrates the whole document, binding each hole
+					and handler to the server's nodes. So components far apart share state through a context above
+					both. This page puts one <code>{"<PicksContext>"}</code> around the picks and this tally, prose and
+					all, and one <code>{"<BagContext>"}</code> around the shelf and the bag further down:
 				</p>
 				<Code title={"${Sources.components_demos.file}, in part"} source={Sources.components_demos.rocx} numbers={Bool.False} />
 				<p>
@@ -649,9 +567,9 @@ view! = |_|
 		</PicksContext>
 		<NoHydration>
 			<p>
-				And a shelf and a bag: two more components sharing a context. The shelf's stock and the reader's
-				name are GET endpoints' answers (<code>/api/shelf</code> and <code>/api/reader</code>). The server
-				read both as it rendered this page and put the answers in it, so the browser asked for neither.
+				Below, a shelf and a bag share a context. The shelf's stock and the reader's name come from GET
+				endpoints (<code>/api/shelf</code>, <code>/api/reader</code>). The server read both while rendering this page and put the answers in it,
+				so the browser asked for neither.
 			</p>
 		</NoHydration>
 		<BagContext value={Bag.store!({})}>
@@ -668,35 +586,29 @@ view! = |_|
 			</details>
 			<ul>
 				<li>
-					<strong>Sharing a context is sharing its signals.</strong> Nothing is copied or sent between
-					components that share one: a write in one patches what reads it in the other, as within one
-					component.
+					<strong>Sharing a context is sharing its signals</strong>: a write in one component patches what
+					reads it in the other.
 				</li>
 				<li>
-					<strong>Per request, by construction.</strong> In Solid, components far apart often share a
-					signal made at a module's top level, which on a server every request shares too (SolidStart
-					warns against it, and context is its answer). Roc has no module-level state, and each request
-					renders its own tree. This page makes the picks as it runs (<code>{"Picks.store!({})"}</code>, the
-					provider's value): once for each request on the server, and once in the browser as it hydrates.
+					<strong>Per request, by construction.</strong> Roc has no module-level state for requests to share;
+					each renders its own tree. This page makes the picks as it runs (<code>{"Picks.store!({})"}</code>):
+					per request on the server, and once in the browser as it hydrates.
 				</li>
 				<li>
-					<strong>Only the page's tree runs.</strong> The server renders the route's layouts, its page and
-					the components in them, and nothing else: on a page without the shelf, the shelf's endpoint
-					isn't read. The answers go once, at the end of the page, next to <code>/rocx/start.js</code>, which
-					loads the runtime and the app's wasm and hydrates the document. Every page loads the same wasm,
-					with every page's components in it.
+					<strong>Only the page's tree runs</strong>: without the shelf, its endpoint isn't read. The answers
+					go at the end of the page, beside <code>/rocx/start.js</code>, which loads the runtime and the app's
+					wasm and hydrates. Every page loads the same wasm, with every page's components.
 				</li>
 				<li>
-					<strong>What stays the server's goes in a <code>{"<NoHydration>"}</code></strong> (Solid's name):
-					prose, listings, anything that never changes in the browser. The server renders it as plain HTML.
-					The browser's copy of it is an empty placeholder, so none of it is in the wasm, and hydration
-					passes over it. A handler can't go inside one, and an endpoint read inside isn't put in the page,
-					since the browser never makes it. This page's prose is in them, between the demos.
+					<strong>What never changes in the browser goes in a <code>{"<NoHydration>"}</code></strong>: prose,
+					listings. It stays plain HTML; the browser's copy is an empty placeholder, so none of it is in the
+					wasm, and hydration skips it. No handler can go inside, and reads inside aren't sent with the page.
+					This page's prose is in them.
 				</li>
 				<li>
 					<strong>A page that doesn't match</strong> what the app renders (a browser extension added a
-					node, or the parser repaired broken markup) has its <code>{"<body>"}</code> rendered again from the
-					same answers, with a warning in the console. The <code>{"<head>"}</code> and the
+					node, the parser repaired broken markup) has its <code>{"<body>"}</code> rendered again from the
+					same answers, with a console warning; the <code>{"<head>"}</code> and
 					<code>{"<NoHydration>"}</code> regions keep the server's nodes.
 				</li>
 			</ul>
@@ -704,16 +616,15 @@ view! = |_|
 			<Heading id="handlers">Handlers</Heading>
 			<p>
 				A handler is the function an event runs, written on the element:
-				<code>{"on:click={|| set_count!(count!() + 1)}"}</code>. It is an effect, and the place where signals
-				are written. What it writes is applied when it is done, and each computation that read what it
-				wrote runs once then. A name after the event's, following a dot, gives the handler what the event
-				carries, or narrows which events it runs for:
+				<code>{"on:click={|| set_count!(count!() + 1)}"}</code>. Its writes apply when it ends, and each
+				computation that read them runs once then. A dotted name after the event gives the handler what the
+				event carries, or narrows which events it runs for:
 			</p>
 			<TableWrap>
 				<table class="events">
 					<thead><tr><th>Written</th><th>What the handler gets</th></tr></thead>
 					<tbody>
-						<tr><td><code>{"on:click={|| …}"}</code></td><td>Runs on the event, given nothing. Any DOM event works the same way: <code>on:input</code>, <code>on:focus</code>, <code>on:dragstart</code>…</td></tr>
+						<tr><td><code>{"on:click={|| …}"}</code></td><td>Runs on the event, given nothing. Any DOM event works: <code>on:input</code>, <code>on:focus</code>, <code>on:dragstart</code>…</td></tr>
 						<tr><td><code>{"on:input.value={|text| …}"}</code></td><td>The field's value.</td></tr>
 						<tr><td><code>{"on:change.checked={|on| …}"}</code></td><td>Whether the box is ticked.</td></tr>
 						<tr><td><code>{"on:keydown.key={|key| …}"}</code></td><td>The key's name, as the browser has it: <code>"k"</code>, <code>"Enter"</code>, <code>"ArrowUp"</code>.</td></tr>
@@ -722,100 +633,95 @@ view! = |_|
 						<tr><td><code>{"on:keydown.Shift+Enter={…}"}</code>, <code>{"on:keydown.Mod+K={…}"}</code></td><td>Runs with exactly those modifier keys held. <code>Mod</code> is ⌘ on macOS and Ctrl elsewhere.</td></tr>
 						<tr><td><code>{"on:click.prevent={…}"}</code></td><td>The browser's default is prevented first: a link's click goes where the handler says, not to its <code>href</code>.</td></tr>
 						<tr><td><code>{"on:frame.ms={|ms| …}"}</code></td><td>Runs every animation frame while the element is on the page, given the milliseconds since the last frame (at most 100).</td></tr>
-						<tr><td><code>{"on:viewport={|view| …}"}</code></td><td>What of the element's content shows (<code>Html.Viewport</code>: <code>top</code>, <code>left</code>, <code>width</code>, <code>height</code>), once it is on the page, then each time it scrolls or changes size, at most once a frame. A virtual list renders by it.</td></tr>
-						<tr><td><code>{"on:pointermove.point={|point| …}"}</code></td><td>Where the pointer is over the element, as shares of its width and height from 0 to 1 (<code>Html.Point</code>), at most once a frame. Live cursors send this.</td></tr>
+						<tr><td><code>{"on:viewport={|view| …}"}</code></td><td>The part of the element's content that shows (<code>Html.Viewport</code>: <code>top</code>, <code>left</code>, <code>width</code>, <code>height</code>), once it is on the page, then on each scroll or resize, at most once a frame. A virtual list renders by it.</td></tr>
+						<tr><td><code>{"on:pointermove.point={|point| …}"}</code></td><td>Where the pointer is over the element, as fractions of its width and height from 0 to 1 (<code>Html.Point</code>), at most once a frame. Live cursors send this.</td></tr>
 						<tr><td><code>on:drop.files</code>, <code>on:paste.files</code>, <code>on:change.files</code></td><td>The files dropped, pasted or picked (<a href="#drag">drag and drop</a>).</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<ul>
 				<li>
-					<strong>Keys with modifiers</strong> run only with exactly the modifier keys named
-					(Shift+Enter isn't Enter), and the browser doesn't also do what the key would: an arrow key a
-					game takes doesn't scroll the page, and ⌘K doesn't focus the browser's search.
+					<strong>Keys with modifiers</strong> run only with exactly the modifiers named (Shift+Enter isn't
+					Enter), and the browser's own action is prevented: an arrow key a game takes doesn't scroll, and
+					⌘K doesn't focus the browser's search.
 				</li>
 				<li>
-					<strong>The whole document.</strong> A handler for the whole page, such as a ⌘K anywhere or an
-					Escape that closes a panel, goes on <code>{"<Document on:keydown.Mod+K={open!} />"}</code>, written
-					as an element's handlers are. It renders nothing. Its handlers listen from where it is rendered
-					until that part goes, so an <code>if</code> around it turns them on and off.
+					<strong>The whole document.</strong> A page-wide handler (⌘K anywhere, Escape to close a panel)
+					goes on <code>{"<Document on:keydown.Mod+K={open!} />"}</code>. It renders nothing and listens while
+					its part is on the page, so an <code>if</code> around it turns it on and off.
 					<code>{"<Document on:visibilitychange.visible={|shown| …} />"}</code> is told whether the page shows
-					(false while its tab is hidden), and <code>{"<Window on:resize={…} />"}</code> listens to the window.
+					(false while its tab is hidden); <code>{"<Window on:resize={…} />"}</code> listens to the window.
 				</li>
 				<li>
-					<strong>A form's <code>on:submit</code></strong> runs instead of a page load: the runtime prevents
-					the browser's default for you. A form that posts to an endpoint is another matter
-					(<a href="#forms">forms and submissions</a>).
+					<strong>A form's <code>on:submit</code></strong> runs instead of a page load (the runtime prevents
+					the default). A form that posts to an endpoint is different (<a href="#forms">forms and
+					submissions</a>).
 				</li>
 			</ul>
 
 			<h3>Asking the server from a handler</h3>
 			<p>
-				A handler can send an endpoint and use its answer. Until the answer is in, the handler waits: the
-				run that waited drops its writes, and the handler runs again once the answer is in. The answer is
-				kept for that second run, so the request is sent once. Here a rename is sent, then the user is read
-				again:
+				A handler can send an endpoint and use its answer. While it waits, that run's writes are dropped;
+				once the answer is in, the handler runs again with it, so the request is sent once. Here a rename is
+				sent, then the user read again:
 			</p>
 			<Code title={"${Sources.signals_rename.file}, in part"} source={Sources.signals_rename.rocx} numbers={Bool.False} />
 			<p>
-				A handler that sends without waiting for the answer is an action
-				(<a href="#actions">actions and optimistic values</a>), and a form has its submission
-				(<a href="#forms">forms</a>).
+				To send without waiting, use an action (<a href="#actions">actions and optimistic values</a>); a form
+				has its submission (<a href="#forms">forms</a>).
 			</p>
 
 			<h3>Going to another page</h3>
 			<p>
 				<code>{"navigate!(Paths.blog_slug({ slug }))"}</code> (<code>import pf.Router exposing [navigate!]</code>,
-				Solid Router's <code>useNavigate</code>) goes to another of the app's pages once the handler is
-				done, rendering it in place as a link's click does. <code>{"navigate_with!(to, { replace, scroll })"}</code>
-				takes Solid Router's options. A handler that waits for the server and runs again navigates once,
-				and navigating while rendering fails. <code>{"Router.location!({})"}</code> and
-				<code>{"Router.is_routing!({})"}</code> say where the page is and whether a navigation is on its way;
-				<code>{"use_search_params!({})"}</code> reads and changes the query in place;
-				every link says when the page is at its path (<code>aria-current</code>); and a component that
-				must send the visitor elsewhere as it renders renders <code>{"<Navigate href={…} />"}</code>. All of
-				it is on the routing page: <a href={"${Paths.routing}#navigating"}>navigating, without a load</a>.
+				Solid Router's <code>useNavigate</code>) goes to another of the app's pages once the handler ends,
+				rendering it in place like a link's click. <code>{"navigate_with!(to, { replace, scroll })"}</code>
+				takes Solid Router's options. A handler that waits and runs again navigates once; navigating while
+				rendering fails. <code>{"Router.location!({})"}</code> and <code>{"Router.is_routing!({})"}</code> say
+				where the page is and whether a navigation is on its way; <code>{"use_search_params!({})"}</code> reads
+				and changes the query in place; every link at the page's path gets <code>aria-current</code>; and a
+				component that must redirect as it renders renders <code>{"<Navigate href={…} />"}</code>. Details:
+				<a href={"${Paths.routing}#navigating"}>navigating, without a load</a>.
 			</p>
 
 			<h3>Timers, sounds and the browser</h3>
 			<ul>
 				<li>
 					<strong>Timers.</strong> <code>set_interval!(ms, tick!)</code> runs <code>tick!</code> every
-					<code>ms</code> milliseconds, and <code>set_timeout!(ms, done!)</code> runs <code>done!</code> once,
-					<code>ms</code> from now. Each returns a <code>clear!</code> that stops it, and stops by itself when
-					what started it goes (<a href="#effects">effects, cleanups and timers</a>).
+					<code>ms</code> milliseconds; <code>set_timeout!(ms, done!)</code> runs <code>done!</code> once after
+					<code>ms</code>. Each returns a <code>clear!</code>, and stops by itself when what started it goes
+					(<a href="#effects">effects, cleanups and timers</a>).
 				</li>
 				<li>
 					<strong>The time.</strong> <code>{"Time.now_millis!({})"}</code> and <code>{"Time.now_nanos!({})"}</code>
-					(<code>import pf.Time</code>, the server's names) read the clock in a handler, an effect's
-					<code>apply</code> or a timer's tick. Never read it while rendering: markup made from the time
-					would differ from the server's.
+					(<code>import pf.Time</code>, as on the server) read the clock in a handler, an effect's
+					<code>apply</code> or a timer's tick. Never while rendering: the markup would differ from the
+					server's.
 				</li>
 				<li>
 					<strong>Sounds.</strong> <code>{"Audio.play!(\"/sounds/eat.wav\")"}</code> plays any sound file the
-					browser can, with nothing prepared ahead (<code>Audio.play_with!</code> sets a volume and a rate).
-					It comes from <a href={Paths.ecosystem_audio}>packages/audio</a>, a plugin; the
-					<a href={"${Paths.showcase}#sound"}>showcase's games</a> play theirs this way.
+					browser can, with nothing prepared (<code>Audio.play_with!</code> sets volume and rate). It comes
+					from the <a href={Paths.ecosystem_audio}>packages/audio</a> plugin; the
+					<a href={"${Paths.showcase}#sound"}>showcase's games</a> use it.
 				</li>
 				<li>
-					<strong>The page's own JavaScript.</strong> For what the platform has no module for (a vibration,
+					<strong>The page's own JavaScript.</strong> For what the platform has no module for (vibration,
 					the clipboard), <code>{"Browser.call!(\"vibrate\", { ms: 50 })"}</code> (<code>import pf.Browser</code>)
 					calls the function the page gave the runtime as <code>vibrate</code>
-					(<code>{"Runtime.load(wasm, { effects })"}</code>), with the argument as JSON, parsed, as Elm's ports
-					do. <code>{"Browser.focus!(\"card-title\")"}</code> moves the keyboard's focus to the element with
-					that id. Both happen once the handler is done and the page is patched; from an effect,
+					(<code>{"Runtime.load(wasm, { effects })"}</code>), with the argument as parsed JSON, like Elm's
+					ports. <code>{"Browser.focus!(\"card-title\")"}</code> focuses the element with that id. Both run
+					after the handler and the page's patch; in an effect,
 					<code>{"on_settled!(|| Browser.focus!(\"card-title\"))"}</code> focuses a field as its part shows.
 				</li>
 			</ul>
 
 			<Heading id="effects">Effects, cleanups and timers</Heading>
 			<p>
-				An effect is what a component does outside its markup: listen to a stream while it is on the page,
-				run a timer, focus a field, call the browser. As in Solid 2.0, an effect comes in two halves:
-				<code>{"create_effect!(compute, apply)"}</code>. <code>compute</code> reads, and what it reads is
-				tracked. <code>apply</code> acts on what <code>compute</code> returned, once the markup is on the page.
-				When something <code>compute</code> read changes, <code>compute</code> runs again, then the last
-				<code>apply</code>'s cleanups, then <code>apply</code> again.
+				An effect is what a component does outside its markup: listen to a stream, run a timer, focus a
+				field, call the browser. As in Solid 2.0, <code>{"create_effect!(compute, apply)"}</code> has two
+				halves: <code>compute</code> reads, tracked; <code>apply</code> acts on its result once the markup is
+				on the page. When a read changes, <code>compute</code> reruns, then the last <code>apply</code>'s
+				cleanups, then <code>apply</code>.
 			</p>
 			<Code
 				title="rocx"
@@ -824,82 +730,70 @@ view! = |_|
 			/>
 			<ul>
 				<li>
-					<strong><code>apply</code> runs once the page shows the markup</strong>, after the update that
-					made it. It runs as a handler does: untracked, with its writes applied when it is done. Values
-					aren't compared, so every run of <code>compute</code> runs <code>apply</code> again. To act only
-					when a value really changes, read it in <code>compute</code> through a store's selection, which
-					compares: <code>{"create_effect!(|| Store.of(user!).get!(|u| u.id), |id| …)"}</code>.
+					<strong><code>apply</code> runs like a handler</strong>: untracked, its writes applied when it ends.
+					Every run of <code>compute</code> runs it, uncompared; to act only on a real change, read through a
+					selection: <code>{"create_effect!(|| Store.of(user!).get!(|u| u.id), |id| …)"}</code>.
 				</li>
 				<li>
-					<strong>An effect belongs to what made it.</strong> One made in a component goes with the
-					component (an <code>if</code> switching to another branch, a row going), and its cleanups run then.
+					<strong>An effect goes with what made it</strong> (an <code>if</code> switching branch, a row
+					going), running its cleanups.
 				</li>
 				<li>
-					<strong><code>{"on_cleanup!(|| …)"}</code> runs when what is running now is done with</strong>
-					(Solid's <code>onCleanup</code>): in a component, when the component goes; in a computation,
-					before it runs again; in an effect's <code>apply</code>, before the next <code>apply</code>. What a
-					part owns goes first, then its own cleanups, the last one first. In an event handler it fails,
-					since nothing would ever run it.
+					<strong><code>{"on_cleanup!(|| …)"}</code></strong> (Solid's <code>onCleanup</code>) runs when what is
+					running now is done: a component, when it goes; a computation, before it reruns; an effect's
+					<code>apply</code>, before the next. What a part owns goes first, then its own cleanups, last one
+					first. In an event handler it fails, since nothing would run it.
 				</li>
 				<li>
-					<strong>A listen started in an effect stops with it</strong>: its request is aborted, and its
-					handler doesn't run again. A listen started in a click's handler runs to the stream's end.
+					<strong>A listen started in an effect stops with it</strong>: the request is aborted. One started
+					in a click's handler runs to the stream's end.
 				</li>
 				<li>
-					<strong>Timers stop by themselves too.</strong> <code>set_interval!(ms, tick!)</code> and
-					<code>set_timeout!(ms, done!)</code> return their <code>clear!</code>, and are cleaned up with what
-					started them, as if it had called <code>on_cleanup!(clear!)</code>: in a component, when it goes; in
-					an effect's <code>apply</code>, before the next one and when the effect goes; in an event handler,
-					when the element whose handler started it goes. That is Solid's
-					<code>{"onCleanup(() => clearInterval(id))"}</code>, built in. The server, rendering, starts none. The
+					<strong>Timers clean up too</strong>, as if their starter had called <code>on_cleanup!(clear!)</code>.
+					A component's timer stops when the component goes; an effect's, before its next <code>apply</code>
+					and when the effect goes; an event handler's, when its element goes. The server starts none. The
 					<a href={"${Paths.showcase}#timers"}>showcase</a> has a stopwatch, a search that waits for a pause in
-					the typing, and a clock that goes with its <code>if</code>.
+					typing, and a clock that goes with its <code>if</code>.
 				</li>
 				<li>
 					<strong><code>{"on_settled!(|| …)"}</code> runs once, in the browser, once the component is on the
-					page</strong>: Solid 2.0's <code>onSettled</code> (<code>onMount</code> before it). It is an effect
-					whose <code>compute</code> reads nothing, so it never runs again, and an <code>on_cleanup!</code>
-					inside it runs when the component goes. What only makes sense in a browser goes there: reading
+					page</strong> (Solid 2.0's <code>onSettled</code>, formerly <code>onMount</code>). An
+					<code>on_cleanup!</code> inside runs when the component goes. Browser-only work goes there: reading
 					what the page kept, focusing a field, measuring.
 				</li>
 				<li>
-					<strong>A render effect runs its <code>apply</code> at once.</strong>
-					<code>{"create_render_effect!(|| query!(), |_| set_page!(1))"}</code> is Solid 2.0's
-					<code>createRenderEffect</code>: its <code>apply</code> runs as soon as <code>compute</code> has,
-					during the render, before the page settles. Made in a component, it runs before the component's
-					markup is built; in an update, before the other effects' <code>apply</code>s. Use it to keep a value
-					in step with the render, with no frame in between. Anything that reads the page wants
+					<strong>A render effect applies at once.</strong>
+					<code>{"create_render_effect!(|| query!(), |_| set_page!(1))"}</code> (Solid 2.0's
+					<code>createRenderEffect</code>) applies right after <code>compute</code>, during the render: in a
+					component, before its markup is built; in an update, before other effects apply. It keeps a value
+					in step with the render, with no frame between; anything that reads the page wants
 					<code>create_effect!</code>.
 				</li>
 				<li>
 					<strong>An effect can handle its own failure.</strong>
 					<code>{"create_effect_with!(compute, { apply, error })"}</code> is Solid 2.0's
-					<code>{"createEffect(compute, { effect, error })"}</code>. When <code>compute</code> fails (a read
-					that failed, a context nothing provides), <code>error</code> is called with why, after the update,
-					and the nearest <code>{"<Errored>"}</code> doesn't show. When <code>compute</code> succeeds again,
-					<code>apply</code> runs again as usual.
+					<code>{"createEffect(compute, { effect, error })"}</code>. When <code>compute</code> fails (a failed
+					read, a missing context), <code>error</code> gets why after the update, instead of an
+					<code>{"<Errored>"}</code> showing. When <code>compute</code> succeeds again, <code>apply</code> runs.
 				</li>
 				<li>
-					<strong>On the server, no effect runs.</strong> The page is rendered as it is before any effect,
-					the browser hydrates that, and then the effects run. (Solid's server runs a render effect's two
-					halves. Here, what its first <code>apply</code> writes is patched in as the page hydrates.)
+					<strong>On the server, no effect runs.</strong> The browser hydrates the page as it was before any
+					effect, then runs them. (Solid's server runs both halves of a render effect; here, its first
+					<code>apply</code>'s writes are patched in during hydration.)
 				</li>
 			</ul>
 
 			<Heading id="waiting">Waiting and failing</Heading>
 			<p>
-				Data from the server comes as plain values. A memo that reads an endpoint gives a
-				<code>User</code>, not a loading state, and a hole that reads it waits until the answer is in. Two
-				boundaries say what the page shows meanwhile: <code>{"<Loading>"}</code> while the first values
-				come, and <code>{"<Errored>"}</code> when something fails (<code>import pf.Loading</code>,
-				<code>import pf.Errored</code>).
+				A hole that reads an endpoint waits for its answer. Meanwhile <code>{"<Loading>"}</code> shows a
+				fallback until the first values come, and <code>{"<Errored>"}</code> one when something fails
+				(<code>import pf.Loading</code>, <code>import pf.Errored</code>).
 			</p>
 			<p>
-				The design was made around this component, from the browser platform's tests. It needs five answers
-				from the server: who you are, your posts, your friends, your likes and your notifications. It shows
-				one spinner until they are all in. The posts and the friends can each fail on their own, and anything
-				else failing fails the whole. (<code>{"Api.current_user!({})"}</code> and the others are small
-				functions in that test app around <code>Endpoint.read!</code>, which reads a GET endpoint.)
+				The design came from this component in the browser platform's tests: five answers (you, your posts,
+				friends, likes and notifications), one spinner until all are in. Posts and friends can each fail
+				alone; anything else fails the whole. (<code>{"Api.current_user!({})"}</code> and the others wrap
+				<code>Endpoint.read!</code>, which reads a GET endpoint.)
 			</p>
 			<Code title={"${Sources.signals_glance.file}, in part"} source={Sources.signals_glance.rocx} numbers={Bool.False} />
 			<ol class="timeline">
@@ -928,29 +822,26 @@ view! = |_|
 			<ul>
 				<li>
 					<strong><code>{"<Loading fallback={…}>"}</code></strong> shows its fallback until everything inside
-					has its first values, then shows the children all together. Later, a change that waits keeps what is
-					shown until its answer is in; <a href="#pending"><code>is_pending!</code></a> can say that it is on
-					its way.
+					has its first values. Later waits keep what is shown; <a href="#pending"><code>is_pending!</code></a>
+					can flag them.
 				</li>
 				<li>
 					<strong><code>{"<Errored fallback={|problem, retry| …}>"}</code></strong> shows its fallback when
-					something inside fails: a read the endpoint refused, a request that got no answer, a context
-					nothing provides. The fallback is a function given why (a <code>Str</code>) and
-					<code>retry</code>, a handler that asks again for what failed (and for the failed reads it was
-					computed from, even ones nothing inside reads directly), then renders the children again.
+					something inside fails: a refused read, a request with no answer, a context nothing provides. It
+					gets why (a <code>Str</code>) and <code>retry</code>, a handler that asks again for what failed (and
+					the failed reads it came from, even ones nothing inside reads), then renders the children again.
 				</li>
 				<li>
-					<strong>A failure none of your <code>{"<Errored>"}</code>s catches</strong> reaches the app's root
-					one, which rocx writes: the page answers with its error page (<code>+error.rocx</code>), with the
-					endpoint's status when it refused with a 4xx, and 500 otherwise
-					(<a href={"${Paths.routing}#error"}>where no page is</a>).
+					<strong>A failure no <code>{"<Errored>"}</code> of yours catches</strong> reaches the app's root one,
+					which rocx writes: the page answers with its error page (<code>+error.rocx</code>), with the
+					endpoint's status for a 4xx refusal, else 500 (<a href={"${Paths.routing}#error"}>where no page
+					is</a>).
 				</li>
 			</ul>
 			<p>
-				On the server nothing waits: an endpoint read there is answered in-process, there and then, so the
-				page is rendered with its answers in, and the browser reads them from the page.
-				<a href={Paths.calls}>Talking to the server</a> follows one read from the server's render to a click
-				in the browser.
+				On the server nothing waits: endpoint reads are answered in-process, and the browser reads the
+				answers from the page. <a href={Paths.calls}>Talking to the server</a> follows one read from the
+				server's render to a click in the browser.
 			</p>
 			<details>
 				<summary>The whole component: <code>{Sources.signals_profile.file}</code></summary>
@@ -959,88 +850,93 @@ view! = |_|
 
 			<Heading id="pending">Loading again: is_pending!</Heading>
 			<p>
-				A memo that already has a value and is reading again (after a <code>refresh!</code>, or because the
-				URL it reads changed) keeps showing the old value until the new one is in. No spinner comes back,
-				which is right, but the reader can't tell that what they see is about to change.
-				<code>is_pending!</code>, Solid 2.0's <code>isPending</code>, says so. The rule is Solid's: the first
-				load is <code>{"<Loading>"}</code>'s job, and loading again is <code>is_pending!</code>'s.
+				A memo reading again (after a <code>refresh!</code>, or because its URL changed) keeps showing the
+				old value, with no spinner. <code>is_pending!</code> (Solid 2.0's <code>isPending</code>) tells the
+				reader it is about to change. The first load is <code>{"<Loading>"}</code>'s job; loading again is
+				<code>is_pending!</code>'s.
 			</p>
 			<Code source={"import pf.Solid exposing [create_signal!, create_memo!, refresh!, is_pending!]\n\n(page!, set_page!) = create_signal!(1.U64)\nposts! = create_memo!(|| Api.get_posts({}).with_query(\"page=\${page!().to_str()}\").read!())\n\n<Loading fallback={<p>Loading…</p>}>\n\t<ul class:stale={is_pending!(posts!)}>\n\t\t{...posts!().map(|post| <li key={post.id}>{post.title}</li>)}\n\t</ul>\n</Loading>\n<button on:click={|| refresh!(posts!)}>Refresh</button>\n<button on:click={|| set_page!(page!() + 1)}>Next page</button>\n{if (is_pending!(posts!)) <p>Updating…</p>}"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>True</strong> while a memo the accessor reads has a value and waits for a new one, from
-					the update the click started until the answer is in. Then it is false, with the new value on
-					screen. A memo that reads a pending memo is pending too: <code>is_pending!(count!)</code> is true
-					while <code>count!</code>, which counts <code>posts!()</code>, waits with it.
+					the update the click started until the answer is in. A memo that reads a pending memo is pending
+					too: <code>is_pending!(count!)</code> is true while <code>count!</code>, which counts
+					<code>posts!()</code>, waits with it.
 				</li>
 				<li>
-					<strong>False</strong> on the first load, when there is nothing to show yet (that is
-					<code>{"<Loading>"}</code>'s job); for a read that failed (<code>{"<Errored>"}</code>'s); and on the
-					server, which renders final values, so hydration sees false too.
+					<strong>False</strong> on the first load (<code>{"<Loading>"}</code>'s job), for a failed read
+					(<code>{"<Errored>"}</code>'s), and on the server, which renders final values, so hydration sees
+					false too.
 				</li>
 				<li>
-					<strong>Several at once:</strong> pass an accessor that reads them all,
-					<code>{"is_pending!(|| (user!(), posts!()))"}</code>, which is true while any of them is.
+					<strong>Several at once:</strong> <code>{"is_pending!(|| (user!(), posts!()))"}</code> is true while
+					any of them is.
 				</li>
 				<li>
-					<strong>It never waits or fails</strong>, and it doesn't make its caller depend on the values it
-					reads. A hole, memo or effect that calls it runs again only when its answer changes: the
-					<code>class:stale</code> above is patched twice a refresh, on and then off.
+					<strong>It never waits or fails</strong>, and doesn't make its caller depend on the values it
+					reads: its caller reruns only when its answer changes. The <code>class:stale</code> above is patched
+					twice a refresh, on and off.
 				</li>
 			</ul>
 			<p>
-				<code>latest!(posts!)</code> is Solid 2.0's <code>latest</code>: the last value a memo settled at.
-				Here every read gives that already, since nothing holds a write back until a change is done (as
-				Solid's transitions do), so <code>latest!(posts!)</code> reads as <code>posts!()</code> does. It is
-				there for code written the Solid way.
+				<code>latest!(posts!)</code> (Solid 2.0's <code>latest</code>) is the last value a memo settled at.
+				Every read here gives that already, since nothing holds writes back as Solid's transitions do; it
+				exists for code written the Solid way.
 			</p>
 			<p>
-				This one is a code sample, not a live demo: this site's static copy answers its reads from files,
-				at once, so there would be nothing to see. A form's <code>submission.pending!()</code> is a different
-				thing: whether a submission is on its way (<a href="#forms">forms</a>).
+				No live demo here: this site's static copy answers reads from files at once, so there would be
+				nothing to see. A form's <code>submission.pending!()</code> is different: whether a submission is on
+				its way (<a href="#forms">forms</a>).
 			</p>
 
 			<Heading id="forms">Forms and submissions</Heading>
 			<p>
-				A form posts to an endpoint, which reads its fields as a record and answers.
+				A form posts to an endpoint, which reads its fields as a record.
 				<code>use_submission!(endpoint)</code> (<code>import pf.Router exposing [use_submission!]</code>, Solid
-				Router's <code>useSubmission</code>) is the latest submission to it, read with its methods:
-				<code>pending!()</code>, <code>input!()</code> (what was typed, as the endpoint reads it),
-				<code>field!(name)</code>, <code>result!()</code> and <code>error!()</code>, with
-				<code>clear!()</code> and <code>retry!()</code> for a handler. The runtime sends every form that posts
-				to one of the app's endpoints with <code>fetch</code>, and only the page changes. A form whose
-				submission a component reads gets its result or refusal for it; its result reads the page's data
-				again, and a redirect is followed. A form nothing reads is answered as a plain form, and the
-				runtime goes where that answer goes, in place: back to the page with the flash (its refusal or its
-				result), or to the endpoint's redirect. A form that succeeded starts empty again
-				(<code>data-rocx-keep</code> keeps what was typed), and one the server fails on shows the failure
-				in the nearest <code>{"<Errored>"}</code> around it.
+				Router's <code>useSubmission</code>) is the latest submission to it: <code>pending!()</code>,
+				<code>input!()</code> (what was typed, as the endpoint reads it), <code>field!(name)</code>,
+				<code>result!()</code>, <code>error!()</code>, and <code>clear!()</code> and <code>retry!()</code> for
+				a handler. The runtime sends a form posting to one of the app's endpoints with <code>fetch</code>, so
+				only the page changes:
 			</p>
+			<ul>
+				<li>
+					A form whose submission a component reads gets its result or refusal there; a result reads the
+					page's data again, and a redirect is followed.
+				</li>
+				<li>
+					A form nothing reads is followed in place like a plain form: back to the page with the flash
+					(below), or to the endpoint's redirect.
+				</li>
+				<li>
+					A form that succeeded is emptied (<code>data-rocx-keep</code> keeps it). A server failure shows in
+					the nearest <code>{"<Errored>"}</code> around the form.
+				</li>
+			</ul>
 			<Code title={"${Sources.components_form.file}, in part"} source={Sources.components_form.rocx} numbers={Bool.False} />
 			<p>
-				Without the runtime (before it loads, or with JavaScript off), the form posts as any HTML form does.
-				The endpoint then sends the browser back to the page it came from with a <em>flash</em>: what was
-				typed, and the result or the refusal, kept on the server for a minute under an id in a cookie. The
-				page's submission is then the flash, so the page shows what it shows with the runtime, and
-				hydrates as the server rendered it. <code>{"Server.flash!({})"}</code> reads the flash directly:
-				<code>{"Ok({ url, fields, status, body })"}</code>, or <code>Err(NoFlash)</code>. The endpoint's side,
-				and redirects: <a href={"${Paths.calls}#forms"}>forms</a>, on the server page.
+				Without the runtime (before it loads, or with JavaScript off), the form posts like any HTML form, and
+				the endpoint sends the browser back with a <em>flash</em>: what was typed and the result or refusal,
+				kept on the server for a minute under an id in a cookie. The page's submission is then the flash, so
+				the page looks as it would with the runtime and hydrates as rendered.
+				<code>{"Server.flash!({})"}</code> reads it directly: <code>{"Ok({ url, fields, status, body })"}</code>
+				or <code>Err(NoFlash)</code>. The endpoint's side and redirects: <a href={"${Paths.calls}#forms"}>forms</a>,
+				on the server page.
 			</p>
 
 			<Heading id="actions">Actions and optimistic values</Heading>
 			<p>
-				A handler can send an endpoint without a form, and without waiting for its answer.
-				<code>use_action!(endpoint)</code> (Solid Router's <code>useAction</code>) gives a function that a
-				handler calls with the endpoint's arg. Each call is a submission of its own, sent once the handler is
-				done, with the arg as JSON. A form posting to the same endpoint sends its fields instead, which the
-				server reads into the same type (a number from its text, an unticked box as false), so one endpoint
-				takes both. <code>use_submissions!(endpoint)</code> (<code>useSubmissions</code>) lists every
-				submission, each as it is now: whether it is on its way, what it sent, and the result or the refusal.
+				<code>use_action!(endpoint)</code> (Solid Router's <code>useAction</code>) gives a function a handler
+				calls with the endpoint's arg, without a form or waiting: each call is a submission, sent as JSON when
+				the handler ends. A form posting to the same endpoint sends fields, read into the same type (a number
+				from its text, an unticked box as false). <code>use_submissions!(endpoint)</code>
+				(<code>useSubmissions</code>) lists every submission: whether on its way, what it sent, its result or
+				refusal.
 			</p>
 			<p>
-				An <em>optimistic value</em> is the server's data with the submissions still on their way applied to
-				it, so the page shows a change before the server confirms it. Drag a plan to another day: it moves at
-				once, though the server takes 800 ms to answer, and refuses a full day or the dentist.
+				An <em>optimistic value</em> is the server's data with the pending submissions applied, shown before
+				the server confirms. Drag a plan to another day: it moves at once, though the server takes 800 ms
+				and refuses a full day or the dentist.
 			</p>
 		</NoHydration>
 		<Demo inspect="planner" title="What the runtime did, newest first" stacked>
@@ -1050,217 +946,194 @@ view! = |_|
 			<Code title={"${Sources.components_planner.file}, in part"} source={Sources.components_planner.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>It shows at once, and stays while it is on its way.</strong> The memo reads the server's
-					week and the moves on their way (<code>pending_inputs!()</code>). A drop adds one, so the week the
-					page shows has the plan where it was dropped.
+					<strong>It shows at once.</strong> The memo reads the server's week and the moves on their way
+					(<code>pending_inputs!()</code>); a drop adds one, so the plan shows where it was dropped.
 				</li>
 				<li>
-					<strong>It gives way to the server's data without a flicker.</strong> A submission answered with a
-					result has the page's reads read again (Solid Router's revalidation: every endpoint the page read),
-					and stays on its way until they are in. Then the server's week, which has the move, and the move's
-					end show together, so the plan never jumps back. Meanwhile <code>is_pending!(plans!)</code> is
-					true, and the week dims a little.
+					<strong>It gives way without a flicker.</strong> A result has every endpoint the page read read
+					again (Solid Router's revalidation), and the submission stays on its way until they are in; then
+					the server's week and the move's end show together. Meanwhile <code>is_pending!(plans!)</code> is
+					true, and the week dims.
 				</li>
 				<li>
-					<strong>A refusal puts it back</strong>, and says why. A refused submission isn't on its way, so its
-					move isn't applied, and its <code>error</code> is the refusal (<code>Refused(409, why)</code>) until
-					<code>moves.clear!(id)</code> forgets it.
+					<strong>A refusal puts it back</strong> and says why: its <code>error</code> is the refusal
+					(<code>Refused(409, why)</code>) until <code>moves.clear!(id)</code>.
 				</li>
 				<li>
-					<strong>Several can be on their way at once</strong>, each answered on its own: drag two plans
-					quickly, and one may be refused while the other goes in. Apply a value (a plan's day), not a step
-					(one more), since the server's data, read again, may already include a move still on its way.
+					<strong>Several can be on their way</strong>, each answered on its own. Apply a value (a plan's
+					day), not a step (one more): the server's data, read again, may already include a pending move.
 				</li>
 				<li>
-					<strong>Nothing optimistic exists on the server.</strong> It renders the server's week with no
-					submissions, and the browser hydrates that. Submissions are kept by the endpoint's URL, so what
-					varies goes in the body, not the path.
+					<strong>Nothing optimistic exists on the server</strong>: the browser hydrates the week with no
+					submissions. Submissions are kept by the endpoint's URL, so what varies goes in the body, not the
+					path.
 				</li>
 			</ul>
 			<p>
-				Solid 2.0 also writes an optimistic value the other way round, and so can you:
-				<code>{"create_optimistic!(|| board.read!())"}</code> is a signal whose value is the server's
-				until a handler writes it. The write shows at once and is held until the submissions that handler
-				sent are done and the page's reads have been read again; then it is undone in the same update, so
-				the server's data takes its place without a flicker. A refusal undoes it at once, and so does a write
-				whose handler sent nothing. Use it for a value the handler knows; use the memo above for many moves
-				on their way, each applied to the server's latest data.
+				Or the other way round, as in Solid 2.0: <code>{"create_optimistic!(|| board.read!())"}</code> is a
+				signal holding the server's value until a handler writes it. The write shows at once and holds until
+				that handler's submissions are done and the page's reads are in again; then it is undone in the same
+				update, with no flicker. A refusal undoes it at once, as does a write whose handler sent nothing. Use
+				it for a value the handler knows; use the memo above for many pending moves on the latest data.
 			</p>
 			<Code title="A count shown ahead of the server" source={"(count!, set_count!) = create_optimistic!(|| Api.get_count({}).read!())\nadd! = use_action!(Api.post_add({}))\n\n<button on:click={|| {\n\tset_count!(count!() + 1)\n\tadd!({ by: 1 })\n}}>{count!().to_str()}</button>"} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>Which reads a result reads again</strong> is the endpoint's to say, as Solid Router's
-					revalidate keys are: <code>{"Router.revalidate!([Endpoint.url_of(Api.get_board({}))])"}</code> in its
-					handler, and only the reads of that URL (or of URLs beginning with it and a <code>/</code> or a
-					<code>?</code>) are read again; <code>[]</code> means none. Called in a handler in the browser, it
-					reads them again there and then.
+					<strong>What a result reads again</strong> is the endpoint's call (Solid Router's revalidate keys):
+					<code>{"Router.revalidate!([Endpoint.url_of(Api.get_board({}))])"}</code> in its handler limits it to
+					that URL and those under it (after <code>/</code> or <code>?</code>); <code>[]</code> means none. In a
+					browser handler, it reads them again at once.
 				</li>
 				<li>
-					<strong>Trying again:</strong> <code>{"submission.retry!()"}</code>, or <code>{"moves.retry!(id)"}</code>,
-					sends a submission again with what it sent, and it is pending again.
+					<strong>Retrying:</strong> <code>{"submission.retry!()"}</code> or <code>{"moves.retry!(id)"}</code>
+					resends what was sent, pending again.
 				</li>
 				<li>
 					<strong>A form's fields given ahead of time</strong> (Solid Router's <code>action.with</code>):
 					<code>{"Endpoint.url_of(Endpoint.with_fields(toggle, { id: todo.id }))"}</code> is the form's
-					<code>action</code>, with its fields in the URL (<code>/todos/toggle?id=7</code>), read before the
-					form's own, with or without JavaScript. An action binds its values with a closure instead.
+					<code>action</code>, its fields in the URL (<code>/todos/toggle?id=7</code>), read before the form's
+					own, with or without JavaScript. An action binds values with a closure instead.
 				</li>
 				<li>
 					<strong>Files:</strong> a form with an <code>{"<input type=\"file\">"}</code>
-					(<code>enctype="multipart/form-data"</code>) is sent as the browser sends it, and so is an action
-					whose arg holds the URL of a file the page has (one dropped, pasted or picked). The endpoint reads
-					the field as the file's name, and its bytes with <code>{"Server.file(request, \"photo\")"}</code>.
+					(<code>enctype="multipart/form-data"</code>) is sent as the browser sends it, as is an action whose
+					arg holds a file's URL (dropped, pasted or picked). The endpoint reads the field as the file's
+					name, and its bytes with <code>{"Server.file(request, \"photo\")"}</code>.
 				</li>
 			</ul>
 
 			<Heading id="drag">Drag and drop</Heading>
 			<p>
-				The browser's drag and drop are events like any other: <code>on:dragstart</code> and
-				<code>on:dragend</code> on what is dragged (with <code>draggable="true"</code>), and
-				<code>on:dragenter</code>, <code>on:dragleave</code> and <code>on:drop</code> where it goes. What is
-				being dragged is yours to keep track of, in a signal: the dragstart handler sets it, and the drop
-				handler reads it. The <a href="#actions">planner above</a> works this way:
+				Drag and drop are plain events: <code>on:dragstart</code> and <code>on:dragend</code> on what is
+				dragged (with <code>draggable="true"</code>), <code>on:dragenter</code>, <code>on:dragleave</code> and
+				<code>on:drop</code> where it goes. Keep what is dragged in a signal: dragstart sets it, drop reads it,
+				as the <a href="#actions">planner above</a> does:
 			</p>
 			<Code title={"${Sources.components_planner_day.file}, in part"} source={Sources.components_planner_day.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>An element with a drop handler is a drop target.</strong> The runtime accepts a drag over
-					it as a move (it prevents <code>dragover</code>'s default, which is how a browser is told), and
-					keeps a dropped link or file from opening in the tab. An element without a drop handler accepts no
-					drag.
+					<strong>Only an element with a drop handler is a drop target</strong>: the runtime accepts a drag
+					over it as a move (preventing <code>dragover</code>'s default) and keeps a dropped link or file
+					from opening in the tab.
 				</li>
 				<li>
-					<strong>Its dragenter and dragleave are the element's own</strong>, as mouseenter and mouseleave
-					are: moving over a child inside it fires neither, and a drop or the drag's end counts as leaving.
-					So a day lit while a plan is over it stays lit over its other plans, and goes dark when the plan
-					is dropped.
+					<strong>Its dragenter and dragleave are its own</strong>, like mouseenter and mouseleave: a child
+					fires neither, and a drop or the drag's end counts as leaving. So a lit day stays lit over its
+					plans.
 				</li>
 				<li>
-					<strong>It works in every browser</strong>, Firefox included, which starts a drag only when it
-					carries data: the runtime puts some on it. <code>on:drop.value</code> gives the text dropped from
-					elsewhere: a link from another page, a word from another program.
+					<strong>It works in every browser</strong>, Firefox included (the runtime adds the data Firefox
+					needs to start a drag). <code>on:drop.value</code> gives text dropped from elsewhere: a link, a word
+					from another program.
 				</li>
 				<li>
-					<strong>By touch and with a pen too.</strong> Holding a finger still on a draggable element for a
-					quarter of a second starts the runtime's own drag, which fires the same events, so the same
-					handlers take it. A swipe still scrolls the page, and a tap still clicks. A copy of the element
-					follows the finger, and a list that scrolls scrolls when the finger nears its edge. A mouse keeps
-					the browser's own drag, which can carry things to other windows. Give keyboard users another way
-					to move things too, as the planner's menus do.
+					<strong>By touch and pen too.</strong> Holding a finger still on a draggable element for a quarter
+					second starts the runtime's own drag, firing the same events; swipes still scroll and taps still
+					click. A copy follows the finger, and a scrolling list scrolls near its edge. A mouse keeps the
+					browser's drag, which can reach other windows. Give keyboard users another way, as the planner's
+					menus do.
 				</li>
 				<li>
 					<strong>What a drag carries for other pages:</strong>
 					<code>{"drag:data={[(\"text/uri-list\", url), (\"text/plain\", title)]}"}</code> puts each piece on
-					the drag by its type as it starts, so a link dropped in another tab opens. A drop target gets every
-					piece with <code>{"on:drop.data={|items| …}"}</code>. <code>{"drag:image={id}"}</code> sets what the
-					drag shows: a copy of the element with that id (hidden or not), held where the dragged one was
-					grabbed.
+					the drag by type, so a link dropped in another tab opens. A drop target gets every piece with
+					<code>{"on:drop.data={|items| …}"}</code>. <code>{"drag:image={id}"}</code> shows a copy of the element
+					with that id (hidden or not), held where the dragged one was grabbed.
 				</li>
 				<li>
 					<strong>Files</strong> dropped, pasted or picked come to <code>on:drop.files</code>,
-					<code>on:paste.files</code> or a file input's <code>on:change.files</code>: each with its name, type
-					and size, and a <code>blob:</code> URL to show it by (<code>{"<img src={file.url}>"}</code>) while the
-					element is on the page. An action sends one to the server as a field of its arg.
+					<code>on:paste.files</code> or a file input's <code>on:change.files</code>, each with its name, type,
+					size and a <code>blob:</code> URL to show it by (<code>{"<img src={file.url}>"}</code>) while the
+					element is on the page. An action sends one as a field of its arg.
 				</li>
 			</ul>
 
 			<Heading id="transitions">Transitions</Heading>
 			<p>
-				A row or a part can animate as it comes and as it goes. You write the transition on the element, as
-				in Svelte (<code>import pf.Transition</code>). An element that goes stays where it was, inert, until
-				its animation is over, and then the runtime removes it. The browser plays the animations, so they
-				cost Roc nothing per frame.
+				A row or part can animate as it comes and goes, with the transition written on the element as in
+				Svelte (<code>import pf.Transition</code>). A leaving element stays in place, inert, until its
+				animation ends. The browser plays the animations, so they cost Roc nothing per frame.
 			</p>
 			<Code title="rocx" source={"import pf.Transition\n\n{...todos!().map(|todo|\n\t<li key={todo.id} transition={Transition.fade}>{todo.text}</li>\n)}\n\n{if open!() {\n\t<div class=\"panel\"\n\t\ttransition:in={Transition.fly({ x: 0.0, y: -8.0 })}\n\t\ttransition:out={Transition.fade.ms(120)}\n\t>…</div>\n}}"} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong><code>{"transition={…}"}</code></strong> plays both ways, <code>{"transition:in={…}"}</code> as
-					the element comes, and <code>{"transition:out={…}"}</code> as it goes.
+					<strong><code>{"transition={…}"}</code></strong> plays both ways; <code>{"transition:in={…}"}</code> and
+					<code>{"transition:out={…}"}</code> one each.
 				</li>
 				<li>
 					<strong>A transition is a Roc value</strong>: <code>Transition.fade</code>,
 					<code>{"Transition.fly({ x, y })"}</code>, <code>Transition.scale(0.5)</code>,
-					<code>Transition.grow(Bottom)</code>, or your own, given as the element's style while it is hidden:
-					<code>{"Transition.style([(\"opacity\", \"0\"), (\"translate\", \"0 8px\")])"}</code>. The element
-					animates from that style to its own as it comes, and back as it goes. <code>.ms(…)</code> (200 by
-					default), <code>.delay(…)</code>, <code>.easing(…)</code> and <code>.origin(…)</code> adjust it, and
-					<code>.plus(…)</code> plays two at once. A style value with anything but letters, digits, spaces and
-					<code>.,%#()-+</code> in it is dropped, so data can't write CSS.
+					<code>Transition.grow(Bottom)</code>, or your own hidden style, animated to and from the element's
+					own: <code>{"Transition.style([(\"opacity\", \"0\"), (\"translate\", \"0 8px\")])"}</code>.
+					<code>.ms(…)</code> (default 200), <code>.delay(…)</code>, <code>.easing(…)</code> and
+					<code>.origin(…)</code> adjust it; <code>.plus(…)</code> plays two at once. A style value with
+					anything but letters, digits, spaces and <code>.,%#()-+</code> is dropped, so data can't write CSS.
 				</li>
 				<li>
-					<strong>They play when a <code>.map</code>'s row or an <code>if</code>'s or <code>match</code>'s part
-					comes or goes</strong>, and only that row's or part's own elements play theirs, as Svelte's local
-					transitions do: a list inside a part that goes stays as it is until the part has gone. Nothing
-					plays as the page hydrates.
+					<strong>They play when a row or part comes or goes</strong>, on that row's or part's own elements
+					only (Svelte's local transitions): a list inside a leaving part stays as it is. Nothing plays during
+					hydration.
 				</li>
 				<li>
-					<strong>A transition that reads a signal is computed</strong>, as any attribute is, and the one it
-					gives at the moment the element goes is the one played. The charts' bars shrink into the axis, up
-					or down, as their value says: give a <a href={"${Paths.ecosystem_charts}#bar"}>bar chart</a> new data and
-					watch its bars go.
+					<strong>A transition that reads a signal is computed</strong> like any attribute, and the one current
+					when the element goes plays. Chart bars shrink into the axis, up or down by their value: give a
+					<a href={"${Paths.ecosystem_charts}#bar"}>bar chart</a> new data and watch.
 				</li>
 				<li>
 					<strong>Moves: <code>{"transition:move={Transition.glide}"}</code>.</strong> When a change moves the
-					element (its row reordered, or pushed by one that comes or goes), it glides from its old place to
-					its new one: the runtime measures it before and after the change and animates the difference (the
-					FLIP technique). With a <code>{"key={…}"}</code>, an element is the same one anywhere on the page:
-					when one with that key leaves one list as one comes into another, it glides from the first place
-					to the second, and neither plays its in or out transition. One that moves from one scrolling box
-					to another (a card into another column) glides above the page, so neither box clips it, and one
-					whose size changes with the move grows or shrinks as it glides. The
+					element (reordered, or pushed by one coming or going), it glides from its old place to its new one
+					(the FLIP technique: measured before and after). With a <code>{"key={…}"}</code>, an element is the
+					same anywhere on the page: leaving one list as it enters another, it glides between them, with no
+					in or out transition. Moving between scrolling boxes (a card into another column), it glides above
+					the page, unclipped, growing or shrinking to its new size. The
 					<a href="#actions">planner's plans</a> glide from day to day.
 				</li>
 				<li>
-					<strong>For someone who asked their system for less motion</strong>
-					(<code>prefers-reduced-motion</code>), none plays: what goes, goes at once, and what moves is simply
-					where it goes.
+					<strong>With <code>prefers-reduced-motion</code></strong>, none plays: what goes, goes at once, and
+					what moves lands in place.
 				</li>
 			</ul>
 			<p>
-				Solid's core has no transitions; the community's <code>solid-transition-group</code> keeps a leaving
-				element on the page with classes and a callback. Roc Solid takes Svelte's form instead, because a
-				transition written on the element is a value the compiler checks.
+				Solid's core has no transitions (the community's <code>solid-transition-group</code> uses classes and
+				a callback). Roc Solid takes Svelte's form, because a transition on the element is a value the
+				compiler checks.
 			</p>
 
 			<Heading id="title">The document's head</Heading>
 			<p>
-				A page sets the document's title with <code>{"<Title>"}</code> (<code>import pf.Title</code>), as
-				@solidjs/meta does. It can go anywhere in what the page renders, and its holes are computations like
-				any other. The last <code>{"<Title>"}</code> rendered that is still on the page wins: a page's,
-				rendered after its layouts', over theirs; one in an <code>if</code>'s part, while that part shows. With
-				none, the root layout's own <code>{"<title>"}</code> stands.
+				<code>{"<Title>"}</code> (<code>import pf.Title</code>, as in @solidjs/meta) sets the document's title
+				from anywhere in the page, its holes live. The last one rendered that is still on the page wins: a
+				page's over its layouts'; one in an <code>if</code>'s part while that part shows. With none, the root
+				layout's own <code>{"<title>"}</code> stands.
 			</p>
 			<Code title={"${Sources.routes_local.file}, in part"} source={Sources.routes_local.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>On the server</strong>, the title goes first in the page's <code>{"<head>"}</code>, as a
-					<code>{"<title data-rocx>"}</code> before the layout's own, since browsers, and anything else that
-					reads the page, take the first. The layout's <code>{"<head>"}</code> is rendered as written, so
-					hydration finds exactly what it rendered and passes over the platform's element.
+					<strong>On the server</strong>, it goes first in the <code>{"<head>"}</code>, as a
+					<code>{"<title data-rocx>"}</code> before the layout's own, since browsers take the first. The
+					layout's <code>{"<head>"}</code> is rendered as written, and hydration passes over the platform's
+					element.
 				</li>
 				<li>
-					<strong>In the browser</strong>, the runtime keeps <code>document.title</code> in step from
-					hydration on: a <code>{"<Title>"}</code> whose text changes changes it, and one that goes gives the
-					title back to the one before it, or, with none left, to the layout's.
+					<strong>In the browser</strong>, the runtime keeps <code>document.title</code> in step: a changed
+					<code>{"<Title>"}</code> changes it, and one that goes hands the title back to the one before it, or
+					to the layout's.
 				</li>
 			</ul>
 			<p>
-				The head's other elements come from @solidjs/meta too, with nothing to import:
-				<code>{"<Meta name=\"description\" content={post!().summary} />"}</code>,
+				The other @solidjs/meta elements need no import: <code>{"<Meta name=\"description\" content={post!().summary} />"}</code>,
 				<code>{"<Link rel=\"canonical\" href={…} />"}</code> and <code>{"<Style>p { … }</Style>"}</code>, written
-				as a <code>{"<meta>"}</code>, a <code>{"<link>"}</code> and a <code>{"<style>"}</code> would be, anywhere
-				in the page. The server puts them just before <code>{"</head>"}</code>, in the order they were
-				rendered, and the browser keeps them there while they are rendered, following their holes. A later
-				<code>{"<Meta>"}</code> with the same <code>name</code> (or <code>property</code>,
-				<code>http-equiv</code>, <code>charset</code>) replaces an earlier one, so a layout can set a default
-				description and a page replace it. Hydration keeps the server's elements, so a stylesheet isn't
-				loaded twice.
+				like their lowercase tags, anywhere in the page. The server puts them just before
+				<code>{"</head>"}</code>, in render order, and the browser keeps them there, following their holes. A
+				later <code>{"<Meta>"}</code> with the same <code>name</code> (or <code>property</code>,
+				<code>http-equiv</code>, <code>charset</code>) replaces an earlier one, so a page can replace its
+				layout's default description. Hydration keeps the server's elements, so a stylesheet isn't loaded
+				twice.
 			</p>
 
 			<Heading id="solid">Coming from Solid</Heading>
 			<p>
-				Solid 2.0 is the map: its primitives, its control flow and its boundaries, with Roc's names for
-				them. Here is the same component in both:
+				Solid 2.0's primitives, control flow and boundaries, with Roc's names. The same component in both:
 			</p>
 			<Versus>
 				<Code title="Solid 2.0" source={Sources.solid_friends.rocx} markup={Bool.True} numbers={Bool.False} />
@@ -1330,57 +1203,50 @@ view! = |_|
 			<p>Where they differ, Roc is the reason:</p>
 			<ul class="differences">
 				<li>
-					<strong>Names end in <code>!</code>.</strong> Reading a signal, making one and rendering a component
-					are effects to Roc, and an effect's name says so: <code>count!()</code>, <code>create_signal!</code>,
-					<code>Picks.view!</code>.
+					<strong>Names end in <code>!</code></strong>: reading or making a signal and rendering a component
+					are effects to Roc (<code>count!()</code>, <code>create_signal!</code>, <code>Picks.view!</code>).
 				</li>
 				<li>
-					<strong>A pair is a tuple:</strong> <code>{"(count!, set_count!) = …"}</code>, since Roc's list
-					patterns can't take a list apart into names.
+					<strong>A pair is a tuple</strong> (<code>{"(count!, set_count!) = …"}</code>): Roc's list patterns
+					can't take a list apart into names.
 				</li>
 				<li>
-					<strong>Props are getters, and destructuring keeps them.</strong> Where Solid's compiler makes
-					<code>text</code> a getter, rocx passes a function that computes it, and calls it where the child
-					reads <code>text</code>. A Roc pattern is the only way to name props, so <code>{"|{ text }|"}</code>
-					reads as <code>props.text</code> does (<a href="#passing">props that change</a>).
+					<strong>Props are getters, and destructuring keeps them</strong>: props can only be named by a Roc
+					pattern, so <code>{"|{ text }|"}</code> reads like <code>props.text</code>
+					(<a href="#passing">props that change</a>).
 				</li>
 				<li>
-					<strong>A row says its key.</strong> Solid's <code>{"<For>"}</code> keys a row by its object, which
-					needs identity, and Roc's values have none: a <code>.map</code>'s row has
-					<code>{"key={…}"}</code>.
+					<strong>A row says its key</strong>: Solid keys a row by its object's identity, and Roc's values have
+					none.
 				</li>
 				<li>
-					<strong>Branches are Roc's own <code>if</code> and <code>match</code></strong>, where Solid has
-					components. A <code>match</code> narrows a <code>Try</code>, Roc's way of saying a value may be
-					missing, where Solid's <code>{"<Show>"}</code> narrows what isn't null. rocx reads the branches before
-					the compiler does, as Svelte reads <code>{"{#if}"}</code>.
+					<strong>Branches are Roc's <code>if</code> and <code>match</code></strong>, not components. A
+					<code>match</code> narrows a <code>Try</code> where <code>{"<Show>"}</code> narrows what isn't null.
+					rocx reads the branches before the compiler, as Svelte reads <code>{"{#if}"}</code>.
 				</li>
 				<li>
-					<strong>rocx names a context</strong> after its module and definition, since there is no identity to
-					tell two apart. <code>create_context</code> has no <code>!</code>: it makes nothing until it is
-					provided, so it can be a module's constant.
+					<strong>rocx names a context</strong> after its module and definition, since values have no identity.
+					<code>create_context</code> has no <code>!</code>, so it can be a module's constant.
 				</li>
 				<li>
-					<strong>An effect's <code>apply</code> calls <code>on_cleanup!</code></strong> where Solid's returns
-					its cleanup, because a Roc function can't return "nothing" when it has no cleanup. Neither half is
-					given the previous value.
+					<strong>An effect's <code>apply</code> calls <code>on_cleanup!</code></strong> instead of returning a
+					cleanup: a Roc function can't return "nothing" when it has none. Neither half gets the previous
+					value.
 				</li>
 				<li>
 					<strong>A submission's fields are methods</strong> (<code>submission.pending!()</code>), and a form's
 					<code>action</code> is the endpoint's URL: Roc can't turn an endpoint into a string by itself.
 				</li>
 				<li>
-					<strong>A setter takes a value.</strong> Solid's takes a function of the latest value too. A Roc
-					function takes one type of argument, so that form is a function of its own,
-					<code>{"update!(count!, set_count!, |c| c + 1)"}</code>, given the accessor too: Roc can't tell
-					which signal a setter writes, so the update reads it through its accessor.
+					<strong>A setter takes a value.</strong> A Roc function takes one type of argument, so Solid's
+					function form is <code>{"update!(count!, set_count!, |c| c + 1)"}</code>, given the accessor since
+					Roc can't tell which signal a setter writes.
 				</li>
 				<li>
-					<strong>Signals and memos don't compare.</strong> Solid skips a write of an equal value. Roc can't
-					compare every value (a signal may hold functions), so a write always runs what reads it, and so
-					does a memo computed again. A hole whose result is the same patches nothing, and a
-					<a href="#stores">store's selection</a> compares with <code>==</code> where you want it. State that
-					nothing shows (the snake's time since its last move) can go in a signal nothing reads.
+					<strong>Signals don't compare.</strong> A signal may hold functions, which Roc can't compare, so a
+					write always runs its readers (Solid skips an equal one). Memos and
+					<a href="#stores">store selections</a> compare with <code>==</code>. Keep state nothing shows (the
+					snake's time since its last move) in a signal nothing reads.
 				</li>
 			</ul>
 
@@ -1390,39 +1256,37 @@ view! = |_|
 					<strong>A component runs once, where it is rendered</strong>
 					<span>
 						and returns markup whose holes are Roc closures. The runtime, in JavaScript, keeps them as boxes
-						and runs them when it needs to, running the components inside as it builds.
+						and runs them as needed, running the components inside as it builds.
 					</span>
 				</li>
 				<li>
 					<strong>A read that has to wait stops its hole</strong>
 					<span>
 						It throws, in JavaScript, through the Roc code that made it. The runtime restores Roc's stack
-						pointer, and runs the hole again when the value is in. No JSPI is needed.
+						pointer and reruns the hole when the value is in. No JSPI needed.
 					</span>
 				</li>
 				<li>
 					<strong>On the server, nothing waits</strong>
 					<span>
-						An endpoint read there is answered in-process, so the page renders with every answer in, with
-						comments marking its holes. The answers go at the end of it, with the script that starts the
-						browser's side.
+						Reads are answered in-process; comments mark the holes. The answers go at the page's end, with
+						the script that starts the browser's side.
 					</span>
 				</li>
 				<li>
 					<strong>In the browser, nothing is made twice</strong>
 					<span>
-						The runtime walks the whole document and binds each computation to its own node, reading the
-						answers from the page, and passes over every <code>{"<NoHydration>"}</code>. A page that isn't
-						what the app renders has its <code>{"<body>"}</code> rendered again, with a warning.
+						The runtime walks the document, binding each computation to its node with the answers from the
+						page, and skips every <code>{"<NoHydration>"}</code>.
 					</span>
 				</li>
 			</ol>
 			<Code title="What the server sends for the echo, in part (spaced out)" source={Sources.echo_rendered.rocx} markup={Bool.True} numbers={Bool.False} />
 			<p>
 				<a href={Paths.platform_browser}>The browser platform</a> has the rest: the wasm, its host, the
-				runtime, and the numbers. The <a href={Paths.platform_reference}>platform reference</a> lists the
-				modules this page uses (<code>Solid</code>, <code>Store</code>, <code>Html</code>,
-				<code>Router</code> and the rest), with every function's type.
+				runtime, and the numbers. The <a href={Paths.platform_reference}>platform reference</a> types every
+				function in the modules used here (<code>Solid</code>, <code>Store</code>, <code>Html</code>,
+				<code>Router</code> and the rest).
 			</p>
 
 			<Heading id="roadmap">Roadmap</Heading>
@@ -1434,23 +1298,23 @@ view! = |_|
 					<h3>Works now</h3>
 					<ul>
 						<li>Signals and <code>update!</code>, memos, <code>refresh!</code>, <code>is_pending!</code>, <code>latest!</code>, <code>untrack!</code></li>
-						<li>Holes in text, attributes, classes and styles; static when they read nothing that changes</li>
-						<li>Pure and effectful components; props as getters, read where they are used; accessor props; <code>{"{...rest}"}</code></li>
-						<li>A dev build's warning of a read made once in a component's body, and rocx build's of an arm's value or row's item read once</li>
-						<li>Contexts, and components that run where they are rendered</li>
-						<li>A page as one tree, hydrated whole; <code>{"<NoHydration>"}</code> for what stays the server's</li>
+						<li>Holes in text, attributes, classes and styles; static when nothing they read changes</li>
+						<li>Pure and effectful components; getter and accessor props; <code>{"{...rest}"}</code></li>
+						<li>Warnings for a value read once in a body, an arm or a row</li>
+						<li>Contexts; components that run where they are rendered</li>
+						<li>One tree per page, hydrated whole; <code>{"<NoHydration>"}</code></li>
 						<li><code>if</code> and <code>match</code> in a hole, each part kept while its branch holds</li>
-						<li>A hole's <code>.map</code>, by key and by position; <code>{"<Repeat>"}</code>, by index</li>
-						<li>Stores, each part tracked by its value; selectors; rows told only when their item changed</li>
-						<li><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code>, trying again</li>
-						<li>Handlers that wait for the server; keys with modifiers; frames; <code>on:viewport</code>; the document's and window's events</li>
-						<li>Effects as Solid 2.0 splits them; render effects; an effect's error handler; <code>on_cleanup!</code>, <code>on_settled!</code></li>
-						<li>Timers, cleared by their <code>clear!</code> or with their part</li>
-						<li>Forms sent by the runtime, their submissions, and a flash without it</li>
-						<li>Actions, every submission, optimistic values, <code>retry!</code>, revalidate keys, fields given ahead of time, files</li>
-						<li>Drag and drop by mouse, touch and pen; what a drag carries and shows; files dropped</li>
-						<li>Transitions in and out; moves, with a <code>key</code> across lists</li>
-						<li>The document's head: <code>{"<Title>"}</code>, <code>{"<Meta>"}</code>, <code>{"<Link>"}</code>, <code>{"<Style>"}</code></li>
+						<li><code>.map</code> by key and by position; <code>{"<Repeat>"}</code> by index</li>
+						<li>Stores tracked by part; selectors; rows told only when their item changed</li>
+						<li><code>{"<Loading>"}</code>, <code>{"<Errored>"}</code>, retry</li>
+						<li>Handlers that wait for the server; modifier keys; frames; <code>on:viewport</code>; document and window events</li>
+						<li>Effects split as in Solid 2.0; render effects; error handlers; <code>on_cleanup!</code>, <code>on_settled!</code></li>
+						<li>Timers, cleared by <code>clear!</code> or with their part</li>
+						<li>Forms sent by the runtime; submissions; a flash without it</li>
+						<li>Actions, submissions, optimistic values, <code>retry!</code>, revalidate keys, fields ahead of time, files</li>
+						<li>Drag and drop by mouse, touch and pen; drag data and image; dropped files</li>
+						<li>Transitions in and out; moves, keyed across lists</li>
+						<li><code>{"<Title>"}</code>, <code>{"<Meta>"}</code>, <code>{"<Link>"}</code>, <code>{"<Style>"}</code></li>
 						<li>Navigating without a load: links, <code>navigate!</code>, back and forward, the query in place</li>
 						<li>Sound files (<code>Audio.play!</code>) and the page's own functions (<code>Browser.call!</code>)</li>
 					</ul>
@@ -1458,20 +1322,20 @@ view! = |_|
 				<div class="roadmap-later">
 					<h3>Not yet</h3>
 					<ul>
-						<li>Derived stores and projections (<code>createStore(fn, seed)</code>, <code>createProjection</code>): a memo is the derived read for now</li>
-						<li><code>createOptimisticStore</code>, a store's optimistic kind; <code>reconcile</code> and <code>storePath</code></li>
-						<li>A store write that touches only the paths written: each write runs every live selection</li>
-						<li>Finer reads within a row: a changed item runs all of its row's holes</li>
-						<li>A dev warning for a read made once inside a helper function, or at the top of a <code>.map</code> row</li>
-						<li>A drag by keyboard: give keyboard users another way, as the planner's menus do</li>
-						<li>Loading only a page's own components: every page loads one wasm with all of them</li>
+						<li>Derived stores and projections (<code>createStore(fn, seed)</code>, <code>createProjection</code>); a memo does for now</li>
+						<li><code>createOptimisticStore</code>; <code>reconcile</code> and <code>storePath</code></li>
+						<li>Store writes that touch only the paths written (each write runs every live selection)</li>
+						<li>Finer reads within a row (a changed item reruns all its row's holes)</li>
+						<li>A dev warning for a value read once in a helper function or at a <code>.map</code> row's top</li>
+						<li>Dragging by keyboard (offer another way, as the planner's menus do)</li>
+						<li>Loading only a page's own components (every page loads one wasm with all of them)</li>
 					</ul>
 				</div>
 			</div>
 			<Callout kind="note" title="A working prototype">
 				<p>
 					Roc's new compiler is pre-0.1, and so is this. The pieces are tested together, on the server and
-					in a real browser; what isn't there yet is listed above.
+					in a real browser; what's missing is listed above.
 				</p>
 			</Callout>
 		</NoHydration>

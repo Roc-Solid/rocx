@@ -14,7 +14,7 @@ import ../../Ui/Way
 ## rocx's overview: what the markup is, why it is shaped the way it is, and its pages, as cards.
 meta = {
 	title: "rocx: markup in Roc",
-	description: "rocx is Roc Solid's markup: Roc in which markup may stand wherever an expression can. rocx build turns each file into plain Roc with the same line numbers, so the Roc compiler checks every value put in a page; the server renders the page, and the browser runs the same Roc to make it live.",
+	description: "rocx is Roc Solid's markup: Roc with markup wherever an expression can stand. rocx build turns each file into plain Roc with the same line numbers, so the compiler checks every value in a page; the server renders it, and the browser runs the same Roc to make it live.",
 	toc: [
 		{ id: "why", label: "Why rocx" },
 		{ id: "kinds", label: "Pages, components, endpoints" },
@@ -34,63 +34,59 @@ view! = |_|
 					<Button href={Paths.components}>Components</Button>,
 				]}
 			>
-				A <code>.rocx</code> file is a Roc file in which you may write markup wherever an expression can
-				go. <code>rocx build</code> turns it into plain Roc with the same line numbers, and the Roc
-				compiler checks it like any other Roc. Pages, layouts and components are all written this way.
-				The server renders a page to HTML; in the browser, the same Roc, compiled to WebAssembly, takes
-				that HTML over and keeps it up to date. What only the server needs to show stays plain HTML,
-				inside a <code>{"<NoHydration>"}</code>.
+				A <code>.rocx</code> file is Roc with markup wherever an expression can go; pages, layouts and
+				components are all written this way. <code>rocx build</code> turns it into plain Roc, line for line,
+				for the Roc compiler to check. The server renders a page to HTML, and the browser runs the same
+				Roc, compiled to WebAssembly, to keep it live.
 			</PageHero>
 
 			<Heading id="why">Why rocx</Heading>
 			<FeatureGrid>
 				<Feature title="Checked by Roc">
 					<p>
-						Every <code>{"{hole}"}</code> in markup is a Roc expression, and the compiler checks it: a
-						hole shows text, a number or markup, a list hole takes a <code>List(Html)</code>, an
-						attribute a <code>Str</code>, and a handler must be a function of the right type. Mistakes
-						are reported at your <code>.rocx</code> line, quoting your code.
+						Every <code>{"{hole}"}</code> is a Roc expression the compiler checks: a hole shows text, a
+						number or markup; a list hole takes a <code>List(Html)</code>, an attribute a <code>Str</code>,
+						a handler a function of the right type. Errors point at your <code>.rocx</code> line, quoting
+						your code.
 					</p>
 				</Feature>
 				<Feature title="Safe by construction">
 					<p>
-						<code>Html</code> is an opaque type, and markup has no way to turn a string into markup.
-						Text and attribute values are escaped, URLs that could run script are replaced, and handlers
-						are Roc functions, never script in an attribute (<a href={Paths.safety}>safety</a>).
+						<code>Html</code> is opaque: no string can become markup. Text and attribute values are
+						escaped, URLs that could run script are replaced, and handlers are Roc functions, never
+						script in an attribute (<a href={Paths.safety}>safety</a>).
 					</p>
 				</Feature>
 				<Feature title="Line for line">
 					<p>
-						Line <var>N</var> of the generated Roc is line <var>N</var> of your file, so the compiler's
-						reports, <code>dbg</code> and crash messages already point to the right place. There are no
-						source maps to break.
+						Line <var>N</var> of the generated Roc is line <var>N</var> of your file, so compiler
+						reports, <code>dbg</code> and crash messages point to the right place, with no source maps to
+						break.
 					</p>
 				</Feature>
 				<Feature title="Fine-grained, end to end">
 					<p>
-						As in SolidJS, a component runs once. The server renders the page whole. In the browser, a
-						change runs only the holes that read what changed, and each patches its own node: nothing is
-						rendered again to find out what changed.
+						As in SolidJS, a component runs once. A change reruns only the holes that read it, each
+						patching its own node; nothing is re-rendered to find what changed.
 					</p>
 				</Feature>
 			</FeatureGrid>
 
 			<Heading id="kinds">Pages, components, endpoints</Heading>
 			<Way kind="Pages" href={Paths.routing} more="Routing →" code={[<Code source={Sources.hello.rocx} numbers={Bool.False} />]}>
-				A page is a file, <code>routes/…/+page.rocx</code>, at the URL its folders spell. It is a
-				component: the server renders it for each request, inside the layouts above it, and the browser
-				hydrates it. What it wraps in <code>{"<NoHydration>"}</code> stays the server's HTML.
+				A page is a file, <code>routes/…/+page.rocx</code>, at the URL its folders spell. It is a component
+				the server renders for each request, inside the layouts above it, and the browser hydrates. What it
+				wraps in <code>{"<NoHydration>"}</code> stays the server's HTML.
 			</Way>
 			<Way kind="Components" href={Paths.components} more="Components →" code={[<Code source={Sources.home_update.rocx} numbers={Bool.False} />]}>
-				SolidJS 2.0's model: a component runs once and may make signals, values that change. Each hole
-				that reads a signal is a small computation that runs again when the signal changes, and patches
-				its own node. A page puts a component wherever it wants it, as it would an element.
+				SolidJS 2.0's model: a component runs once and may make signals, values that change, and the
+				holes that read them rerun. A page places a component like an element.
 			</Way>
 			<Way kind="Endpoints" href={Paths.calls} more="Talking to the server →" code={[<Code source={Sources.way_endpoint.rocx} numbers={Bool.False} />]}>
-				A route's <code>+server.roc</code> holds its endpoints: a function per HTTP method at a URL,
-				typed at both ends. A component reads a GET as a plain value. The server answers that read while
-				it renders the page, and the page carries the answer to the browser. The handler's code runs only
-				on the server and is not in the browser's download.
+				A route's <code>+server.roc</code> holds its endpoints: a function per HTTP method at a URL, typed
+				at both ends. A component reads a GET as a plain value; the server answers it while rendering, and
+				the page carries the answer to the browser. The handler runs only on the server and isn't in the
+				browser's download.
 			</Way>
 
 			<Heading id="build">A file, and the Roc it becomes</Heading>
@@ -99,9 +95,8 @@ view! = |_|
 			</p>
 			<Code title={Sources.demo_counter.file} source={Sources.demo_counter.rocx} />
 			<p>
-				<code>rocx build</code> writes <code>Counter.roc</code> beside it. Its lines 9 to 20 are these,
-				the same lines as in the file above, with the markup turned into calls to the platform's
-				<code>Html</code> module:
+				<code>rocx build</code> writes <code>Counter.roc</code> beside it. Its lines 9 to 20, the same
+				lines as above, with the markup turned into calls to the platform's <code>Html</code> module:
 			</p>
 			<Code
 				title="Counter.roc, as rocx build writes it"
@@ -110,31 +105,29 @@ view! = |_|
 			/>
 			<ul>
 				<li>
-					What calls something named with <code>!</code>, such as <code>count!()</code>, can change, so
-					it becomes a function the browser runs again when the signal changes:
-					<code>{"{count!().to_str()}"}</code> is <code>{"Html.hole_of(|| …)"}</code>, and
-					<code>{"class:negative={…}"}</code> is <code>{"Html.class_of(\"negative\", || …)"}</code>.
-					What reads nothing that changes is written once, as a plain value: an attribute written in the
-					file is <code>Html.attr_literal</code>, and text <code>Html.text</code>.
+					What calls a <code>!</code> function, such as <code>count!()</code>, can change, so it becomes a
+					function the browser reruns: <code>{"{count!().to_str()}"}</code> is
+					<code>{"Html.hole_of(|| …)"}</code>, and <code>{"class:negative={…}"}</code> is
+					<code>{"Html.class_of(\"negative\", || …)"}</code>. What can't change is written once: an attribute
+					from the file is <code>Html.attr_literal</code>, text is <code>Html.text</code>.
 				</li>
 				<li>
 					A handler, <code>{"on:click={…}"}</code>, is a Roc function given to <code>Html.on</code>.
 				</li>
 				<li>
-					The props of an effectful component (<code>view!</code>) become getters:
-					<code>start_value</code> is now a function, read where the code reads it, so a parent can pass
-					a value that changes.
+					An effectful component's (<code>view!</code>) props become getters: <code>start_value</code> is a
+					function, read where the code reads it, so a parent can pass a changing value.
 				</li>
 				<li>
-					The class <code>rx-49lxy6</code> comes from the component's <code>{"<style>"}</code>, which
-					rocx scopes to this component's markup and moves into the app's stylesheet.
+					The class <code>rx-49lxy6</code> comes from the component's <code>{"<style>"}</code>, which rocx
+					scopes to its markup and moves into the app's stylesheet.
 				</li>
 			</ul>
 			<p>
-				A route file's Roc goes into the app's <code>Generated/</code> folder instead of beside it. The
-				<a href={Paths.syntax}>syntax</a> page has everything you can write in markup,
-				<a href={Paths.tooling}>tooling</a> has the commands, and <a href={Paths.safety}>safety</a> shows
-				what rocx refuses to build, and why.
+				A route file's Roc goes into the app's <code>Generated/</code> folder instead. The
+				<a href={Paths.syntax}>syntax</a> page covers everything you can write in markup,
+				<a href={Paths.tooling}>tooling</a> the commands, and <a href={Paths.safety}>safety</a> what rocx
+				refuses to build, and why.
 			</p>
 
 			<Heading id="pages">rocx's pages</Heading>
