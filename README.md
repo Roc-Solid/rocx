@@ -912,6 +912,8 @@ rocx dev [dir]           # build the app (a directory with routes/) and serve it
                          # a mistake shown at its .rocx line; writes the smallest main.roc if there is
                          # none; checks the app's SQL after each start (as rocx check --sql)
   --port 8080            # where (or PORT)
+  --opt dev              # how hard the compiler works on both programs: dev (the default, seconds),
+                         # or size or speed, as a release builds them, to try what ships
   --android [--lan]      # each build for the Android dev client too (a phone or emulator over adb;
                          # --lan: phones on this Wi-Fi, a QR code shows the way); see examples/pomodoro
   -- <server options>    # given to the app's server (--database-url URL, …; below)
@@ -923,6 +925,8 @@ rocx build [dir]         # the app (here, or in dir) built to deploy: dist/serve
   --out dist             # where it goes
   --target arm64musl     # for another machine (arm64mac, x64mac, arm64musl, x64musl: a musl one is
                          # a static Linux executable); this one's by default
+  --opt speed            # both programs at this level (speed, size or dev); without it, the
+                         # server for speed and the browser's wasm for size
 rocx build [dir] --image # the release as a container image, which rocx writes itself (no Dockerfile,
                          # no Docker): <name>.tar, one layer, /app/server and /app/static, run as
                          # 65532 in /app on PORT 8080, /app/data for a volume; docker load -i it

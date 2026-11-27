@@ -184,6 +184,8 @@ Auth := [].{
 				},
 			],
 			needs: [Database],
+			# Under --dev, the way in (D-111): the app's sign-in page.
+			links: [{ label: "Sign in", path: settings.sign_in }],
 		}
 	}
 

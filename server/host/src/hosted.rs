@@ -566,6 +566,15 @@ pub extern "C" fn roc_host_log_format(format: u8) {
     crate::logging::choose(format);
 }
 
+/// Under `--dev`, the places to open, as the platform gathered them from the plugins as it started
+/// (`Host.dev_links!`, D-111): a line each, its label, a tab, its path or URL. The server lists
+/// them under its address as it starts to answer.
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_dev_links(links: RocStr) {
+    let _host = preempt::host();
+    crate::logging::set_links(&taken(links));
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_host_now_millis() -> u64 {
     let _host = preempt::host();

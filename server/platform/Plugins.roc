@@ -142,13 +142,24 @@ Plugins := [].{
 		if (parts.is_empty()) "nothing" else Str.join_with(parts, ", ")
 	}
 
-	## Logs what each plugin added, an event a plugin, in their order: `rocx plugins: added`, with
-	## the plugin's name and what it adds (`plugin=jobs adds="1 migration, 5 loops"`).
+	## Logs the plugins started, in their order, one line at info (`rocx plugins: jobs, email`, D-111),
+	## and what each added at debug (`rocx plugins: added`, `plugin=jobs adds="1 migration, 5
+	## loops"`). One that adds nothing but links (the app's own) isn't named.
 	log! : List(Plugin.Running(context)) => {}
-	log! = |plugins|
+	log! = |plugins| {
 		for plugin in plugins {
-			Log.info!("rocx plugins: added", { plugin: plugin.name, adds: Plugins.added(plugin) })
+			Log.debug!("rocx plugins: added", { plugin: plugin.name, adds: Plugins.added(plugin) })
 		}
+		named = plugins.keep_if(|plugin| Plugins.added(plugin) != "nothing").map(|plugin| plugin.name)
+		if !named.is_empty() {
+			Log.info!("rocx plugins: ${Str.join_with(named, ", ")}", {})
+		}
+	}
+
+	## The plugins' links, in their order, as `Host.dev_links!` takes them (D-111): a line each, its
+	## label, a tab, its path or URL.
+	links_text : List(Plugin.Running(context)) -> Str
+	links_text = |plugins| Str.join_with(plugins.join_map(|plugin| plugin.links).map(|link| "${link.label}\t${link.path}"), "\n")
 }
 
 is_name : Str -> Bool
@@ -287,7 +298,7 @@ circles = |plugins| {
 }
 
 none : Plugin.Running({})
-none = { name: "", claims: [], early: [], files: [], scripts: [], migrations: [], calls: [], loops: [], starts: [], checks: [], needs: [] }
+none = { name: "", claims: [], early: [], files: [], scripts: [], migrations: [], calls: [], loops: [], starts: [], checks: [], needs: [], links: [] }
 
 expect is_name("push") and is_name("open-api2") and !is_name("Push") and !is_name("")
 expect shape("/push/[id]/x") == "/push/[]/x"

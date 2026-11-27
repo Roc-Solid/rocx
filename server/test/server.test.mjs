@@ -231,7 +231,7 @@ test("Roc answers: the request's method, path, query, body and the server's cont
 // ---- The log ----
 
 /** A pretty line: the local time, the level (as wide as each other), the message and its fields. */
-const PRETTY = /^\d\d:\d\d:\d\d (DEBUG|INFO |WARN |ERROR) \S/;
+const PRETTY = /^\d\d:\d\d:\d\d (debug|info |warn |error) \S/;
 
 /** What the platform may say as a server starts, whatever a test does: a migration applied, jobs a
  * stop cut short queued again, a look at S3 (`STORAGE_URL`). */
@@ -317,14 +317,15 @@ test("ROCX_LOG=pretty: a line each, the local time, the level (no colour: stderr
 	assert.ok(Math.min(apart, 86_400 - apart) < 60, `the local time: ${lines[0].slice(0, 8)}, now ${now.toTimeString()}`);
 	// The lines this test made: not the platform's own at a start (a migration, a job queued again).
 	const shown = lines.map((line) => line.slice(9)).filter((line) => !STARTING.test(line));
-	assert.match(shown[0], /^INFO  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/);
+	assert.match(shown[0], /^info  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/);
+	// The level in lower case, the fields two spaces after the message (D-111).
 	assert.deepEqual(shown.slice(1), [
-		'INFO  an event from Roc count=3 fields.level="not the level" fields.msg="not the message" note="two words" ok=true path=/log/fields',
-		"WARN  a warning from Roc run=r1",
-		"ERROR an error from Roc",
-		'DEBUG a detail from Roc nested="{\\"list\\":[1,2]}"',
-		'ERROR rocx server: Roc crashed method=GET target=/crash error="on purpose"',
-		"INFO  rocx server: stopping",
+		'info  an event from Roc  count=3 fields.level="not the level" fields.msg="not the message" note="two words" ok=true path=/log/fields',
+		"warn  a warning from Roc  run=r1",
+		"error an error from Roc",
+		'debug a detail from Roc  nested="{\\"list\\":[1,2]}"',
+		'error rocx server: Roc crashed  method=GET target=/crash error="on purpose"',
+		"info  rocx server: stopping",
 	]);
 });
 
@@ -342,8 +343,8 @@ test("a program's `logs: { format: Pretty }` wins over what Auto would guess (JS
 			.split("\n")
 			.map((line) => (assert.match(line, PRETTY), line.slice(9)))
 			.filter((line) => !STARTING.test(line));
-		assert.match(shown[0], /^INFO  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/, JSON.stringify(environment));
-		assert.deepEqual(shown.slice(1), ['INFO  an event from Roc note="two words" target=/hello', "INFO  rocx server: stopping"]);
+		assert.match(shown[0], /^info  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/, JSON.stringify(environment));
+		assert.deepEqual(shown.slice(1), ['info  an event from Roc  note="two words" target=/hello', "info  rocx server: stopping"]);
 	}
 });
 
@@ -1753,15 +1754,22 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 			.filter((event) => event.msg === "rocx plugins: added")
 			.map(({ level, plugin, adds }) => `${level} ${plugin}: ${adds}`),
 		[
-			"info jobs: 1 early route, 1 migration, 1 call, 6 loops, 1 start",
-			"info email: 4 early routes, 1 start, 1 check",
-			"info jobs-page: 2 routes",
-			"info fixture: 5 routes, 1 early route, 2 files, 1 script, 1 migration, 1 call, 1 loop, 1 start, 1 check",
-			"info second: 1 route",
-			"info third: 1 route",
-			"info storage: 1 route",
+			"debug jobs: 1 early route, 1 migration, 1 call, 6 loops, 1 start",
+			"debug email: 4 early routes, 1 start, 1 check",
+			"debug jobs-page: 2 routes",
+			"debug fixture: 5 routes, 1 early route, 2 files, 1 script, 1 migration, 1 call, 1 loop, 1 start, 1 check",
+			"debug second: 1 route",
+			"debug third: 1 route",
+			"debug storage: 1 route",
 		],
-		"listed jobs, email, the jobs page, fixture, third, second, storage: third needs second, so it comes after it",
+		"listed jobs, email, the jobs page, fixture, third, second, storage: third needs second, so it comes after it; what each added at debug (D-111)",
+	);
+	assert.deepEqual(
+		events()
+			.filter((event) => event.msg.startsWith("rocx plugins: ") && event.msg !== "rocx plugins: added")
+			.map(({ level, msg }) => `${level} ${msg}`),
+		["info rocx plugins: jobs, email, jobs-page, fixture, second, third, storage"],
+		"one line at info, naming them in their order (D-111)",
 	);
 	await logsEvent({ level: "info", msg: "the fixture looked", check: "fixture.look" });
 });
@@ -1831,7 +1839,7 @@ test("plugins: a plugin's files come before the app and its middleware: an app t
 		assert.equal(worker.status, 200, "and its file at the root, a service worker");
 		assert.equal(worker.headers.get("content-type"), "text/javascript");
 		assert.equal((await refusing.get("/files-sw.js", { method: "PUT", body: "x" })).status, 405, "the file's, not the app's");
-		assert.ok(events(refusing).some((event) => has(event, { level: "info", msg: "rocx plugins: added", plugin: "files", adds: "2 files, 1 script" })), refusing.logged());
+		assert.ok(events(refusing).some((event) => has(event, { level: "debug", msg: "rocx plugins: added", plugin: "files", adds: "2 files, 1 script" })), refusing.logged());
 	} finally {
 		await refusing.stop();
 	}
@@ -1844,9 +1852,14 @@ test("plugins: an early path is answered before the app, only under the flag it 
 	const dev = await start(["--dev"]);
 	try {
 		assert.equal(await dev.text("/__rocx/fixture"), "early /__rocx/fixture");
+		// Under --dev, the places the plugins add, listed under the address, each a whole URL (D-111).
+		const listed = events(dev).find((event) => event.msg === "rocx server: links");
+		assert.ok(listed, dev.logged());
+		assert.deepEqual({ ...listed, time: "" }, { time: "", level: "info", msg: "rocx server: links", Mailbox: `${dev.url}/__rocx/mail`, Jobs: `${dev.url}/admin/jobs` });
 	} finally {
 		await dev.stop();
 	}
+	assert.ok(!events(server).some((event) => event.msg === "rocx server: links"), "none without --dev");
 });
 
 test("a sqlite: or turso: URL stops a Postgres app at start, saying which it wants (D-045, D-046), and makes no file", { skip }, async () => {

@@ -13,6 +13,11 @@ Host := [].{
 	## 0 `Auto` (`ROCX_LOG`, or else pretty on a terminal and JSON elsewhere), 1 `Pretty`, 2 `Json`.
 	log_format! : U8 => {}
 
+	## Under `--dev`, the places a person may want to open, as the platform gathers them from the
+	## plugins as it starts (D-111): a line each, its label, a tab, then its path (or a whole URL).
+	## The server lists them under its address.
+	dev_links! : Str => {}
+
 	## Writes to the response of the stream this thread is sending; whether its client is still
 	## there to read it.
 	send! : Str => Bool

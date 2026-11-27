@@ -139,6 +139,7 @@ platform ""
 		"roc_host_db_query": Host.db_query!,
 		"roc_host_db_rollback": Host.db_rollback!,
 		"roc_host_db_script": Host.db_script!,
+		"roc_host_dev_links": Host.dev_links!,
 		"roc_host_env_var": Host.env_var!,
 		"roc_host_http_close": Host.http_close!,
 		"roc_host_http_open": Host.http_open!,
@@ -438,6 +439,11 @@ started_for_host! = |boxed| {
 		}
 	}
 	Plugins.log!(plugins)
+	# Under --dev, the places to open (the plugins', the app's own among them), for the server to
+	# list under its address (D-111).
+	if !Setting.text!("dev").is_empty() {
+		Host.dev_links!(Plugins.links_text(plugins))
+	}
 	Ok({})
 }
 

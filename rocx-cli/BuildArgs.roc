@@ -13,7 +13,7 @@ BuildArgs := [].{
 
 	## The flags that take a value, their value the next word.
 	valued : List(Str)
-	valued = ["--out", "--target", "--tag", "--base", "--route", "--built", "--release"]
+	valued = ["--out", "--target", "--tag", "--base", "--route", "--built", "--release", "--opt"]
 
 	read : List(Str) -> Read
 	read = |args| {

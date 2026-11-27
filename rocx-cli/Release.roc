@@ -30,7 +30,16 @@ import Term
 Release := [].{
 
 	usage : Str
-	usage = "usage: rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl]"
+	usage = "usage: rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl] [--opt speed|size|dev]"
+
+	## How hard the compiler works, as `--opt` says it (D-111): `speed`, `size` or `dev`, for both
+	## programs; "" when it doesn't, each its own (the server for speed, the browser's wasm for size).
+	levels : List(Str)
+	levels = ["speed", "size", "dev"]
+
+	## The level a program is built at: `asked`'s, or `own` when it says none.
+	level : Str, Str -> Str
+	level = |asked, own| if (asked.is_empty()) own else asked
 
 	## The targets a server can be built for (Roc's names).
 	known_targets : List(Str)
@@ -38,19 +47,26 @@ Release := [].{
 
 	## What `rocx build … --release` was asked: the app's directory, where the build goes, and the
 	## target (`""`: this machine's). Paths are absolute.
-	Asked : { dir : Str, out : Str, target : Str }
+	Asked : { dir : Str, out : Str, target : Str, opt : Str }
 
 	## The words after `rocx build`, read, with paths from `cwd`; `Usage` says what is wrong.
 	options : List(Str), Str -> Try(Asked, [Usage(Str)])
 	options = |args, cwd| {
 		var $out = ""
 		var $target = ""
+		var $opt = ""
 		var $dirs = []
 		var $i = 0
 		while $i < args.len() {
 			arg = args.get($i) ?? ""
 			value = args.get($i + 1) ?? ""
-			if arg == "--release" or arg == "--target" {
+			if arg == "--opt" {
+				if !Release.levels.contains(value) {
+					return Err(Usage("rocx build --opt: one of ${Str.join_with(Release.levels, ", ")}\n${Release.usage}"))
+				}
+				$opt = value
+				$i = $i + 2
+			} else if arg == "--release" or arg == "--target" {
 				if value.is_empty() or value.starts_with("--") {
 					return Err(Usage("rocx build ${arg}: give it a value\n${Release.usage}"))
 				}
@@ -74,7 +90,7 @@ Release := [].{
 		if $dirs.len() != 1 or $out.is_empty() {
 			return Err(Usage("rocx build --release: one directory, the app's, and where its build goes\n${Release.usage}"))
 		}
-		Ok({ dir: Fs.resolve(cwd, [$dirs.first() ?? "."]), out: Fs.resolve(cwd, [$out]), target: $target })
+		Ok({ dir: Fs.resolve(cwd, [$dirs.first() ?? "."]), out: Fs.resolve(cwd, [$out]), target: $target, opt: $opt })
 	}
 
 	## `rocx build <dir> --release <out> …` (the words after `build`), with the home of this rocx
@@ -167,9 +183,9 @@ Release := [].{
 		specialize = if (Env.var!("ROCX_SPECIALIZE") == Ok("yes")) "yes" else "no"
 		unstripped = Term.step!(
 			styled,
-			"server · optimized",
+			"server · --opt=${Release.level(asked.opt, "speed")}",
 			|{}| {
-				built = Static.roc_build!(tools, ["--target=${target}", "--opt=speed", "--specialize=${specialize}", "--output=${server}", main].concat(replaced), "the server's build")
+				built = Static.roc_build!(tools, ["--target=${target}", "--opt=${Release.level(asked.opt, "speed")}", "--specialize=${specialize}", "--output=${server}", main].concat(replaced), "the server's build")
 				# The platform's copy is linked in now: gone, so an app built once (a test's) leaves none.
 				if linked.main != own {
 					Fs.delete_all!(Fs.dirname(linked.main))
@@ -188,10 +204,10 @@ Release := [].{
 		if pages {
 			Term.step!(
 				styled,
-				"browser wasm · for size",
+				"browser wasm · --opt=${Release.level(asked.opt, "size")}",
 				|{}| {
 					Dev.web_host!(tools)?
-					Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]))?
+					Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]), Release.level(asked.opt, "size"))?
 					Static.shake!(root, dir, client)
 				},
 			)?
@@ -246,8 +262,10 @@ Release := [].{
 	}
 }
 
-expect Release.options(["app", "--release", "dist"], "/w") == Ok({ dir: "/w/app", out: "/w/dist", target: "" })
-expect Release.options(["app", "--release", "dist", "--target", "arm64musl"], "/w") == Ok({ dir: "/w/app", out: "/w/dist", target: "arm64musl" })
+expect Release.options(["app", "--release", "dist"], "/w") == Ok({ dir: "/w/app", out: "/w/dist", target: "", opt: "" })
+expect Release.options(["app", "--release", "dist", "--target", "arm64musl"], "/w") == Ok({ dir: "/w/app", out: "/w/dist", target: "arm64musl", opt: "" })
+expect Release.options(["app", "--release", "dist", "--opt", "dev"], "/w") == Ok({ dir: "/w/app", out: "/w/dist", target: "", opt: "dev" })
+expect Release.options(["app", "--release", "dist", "--opt", "fast"], "/w").is_err()
 expect {
 	read = Release.options(["app", "--release", "dist", "--target", "windows"], "/w")
 	match read {

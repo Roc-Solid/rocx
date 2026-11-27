@@ -2,16 +2,20 @@
 //! forwarding) and Roc's (`Log.info!` and the others, through `Host.log!`) alike, each a level, a
 //! message and fields, written by one formatter in one of two formats:
 //!
-//! - pretty, for a person at a terminal: `14:03:12 INFO  gate failed error="no session" path=/admin`
-//!   (the local time, the level, coloured when stderr is a terminal, the message, then the fields,
-//!   a value quoted when it has a space, a quote, an `=` or a control character in it, or is empty);
+//! - pretty, for a person at a terminal: `14:03:12 info  gate failed  error="no session" path=/admin`
+//!   (the local time, the level, the message, then after two spaces the fields, a value quoted when
+//!   it has a space, a quote, an `=` or a control character in it, or is empty). When stderr is a
+//!   terminal the time and the fields' names are dimmed and the level is coloured, so the message
+//!   and the values stand out (D-111);
 //! - JSON, for a machine: `{"time":"2026-11-21T13:03:12.345Z","level":"info","msg":"gate failed",
 //!   "error":"no session","path":"/admin"}` (the time in RFC 3339, UTC), the fields beside `time`,
 //!   `level` and `msg`.
 //!
 //! A field named `time`, `level` or `msg` is written as `fields.time` (and so on), in both, so it
 //! can't take the place of the line's own. Either way an event is one line: what would break it
-//! (a newline in a message) is escaped.
+//! (a newline in a message) is escaped. One kind of event is several lines when pretty: a listing
+//! (`listing`, under `--dev` the places to open under the server's address, D-111), a line an item
+//! under the line before it; in JSON it is one event, an item a field.
 //!
 //! The app chooses the format in its `program` (`logs: { format: Auto }`, or `Pretty`, or `Json`),
 //! which the platform hands over as it starts (`Host.log_format!`, `choose`). Before that (a server
@@ -37,7 +41,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::cell::Cell;
 use std::io::{BufWriter, Write};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::time::Duration;
@@ -84,20 +88,20 @@ impl Level {
     /// As a pretty line shows it: as wide as each other.
     fn shown(self) -> &'static str {
         match self {
-            Level::Debug => "DEBUG",
-            Level::Info => "INFO ",
-            Level::Warn => "WARN ",
-            Level::Error => "ERROR",
+            Level::Debug => "debug",
+            Level::Info => "info ",
+            Level::Warn => "warn ",
+            Level::Error => "error",
         }
     }
 
-    /// Its colour on a terminal (ANSI): grey, green, yellow, red.
+    /// Its colour on a terminal (ANSI): grey, cyan, yellow, a bold red.
     fn colour(self) -> &'static str {
         match self {
             Level::Debug => "\x1b[90m",
-            Level::Info => "\x1b[32m",
+            Level::Info => "\x1b[36m",
             Level::Warn => "\x1b[33m",
-            Level::Error => "\x1b[31m",
+            Level::Error => "\x1b[1;31m",
         }
     }
 }
@@ -177,7 +181,21 @@ enum Fields {
     Pairs(Vec<(String, Value)>),
     /// Roc's: JSON, an object (a record's), or none ("").
     Json(String),
+    /// A listing's items, each a label and its value (`listing`).
+    Listing(Vec<(String, String)>),
 }
+
+/// Dim, on a terminal: the time and a field's name.
+const DIM: &str = "\x1b[2m";
+const PLAIN: &str = "\x1b[0m";
+
+/// Where a pretty line's message starts: after the time (`HH:MM:SS `) and the level (`info  `). A
+/// listing's items line up there.
+const MESSAGE_AT: usize = 15;
+
+/// Under `--dev`, the places to open, as the platform gathered them as it started
+/// (`Host.dev_links!`): each a label and a path or URL. The server lists them under its address.
+static LINKS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
 enum Message {
     Record(Record),
@@ -253,6 +271,25 @@ pub fn warn(message: &str, fields: &[(&str, Value)]) {
 
 pub fn error(message: &str, fields: &[(&str, Value)]) {
     log(Level::Error, message, fields)
+}
+
+/// The places to open, from the platform (`Host.dev_links!`): a line each, its label, a tab, then its
+/// path or URL. A line without a tab is left out.
+pub fn set_links(text: &str) {
+    let links = text.lines().filter_map(|line| line.split_once('\t')).map(|(label, at)| (label.to_string(), at.to_string())).collect();
+    *LINKS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = links;
+}
+
+/// The places to open, as the platform gave them (none outside `--dev`).
+pub fn links() -> Vec<(String, String)> {
+    LINKS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+}
+
+/// Logs a listing at info: pretty, a line an item, `➜ label  value`, the labels as wide as each
+/// other, under the line before it (no time or level of its own); JSON, one event, `message`, an
+/// item a field.
+pub fn listing(message: &str, items: &[(String, String)]) {
+    queued(Record { time: Utc::now(), format: format(), level: Level::Info, message: message.to_string(), fields: Fields::Listing(items.to_vec()) });
 }
 
 /// Logs an event: its level, its message and its fields.
@@ -343,26 +380,46 @@ fn line(record: &Record) -> String {
             parsed = self::parsed(json);
             &parsed
         }
+        Fields::Listing(items) => {
+            if record.format == Format::Pretty {
+                return listed(items);
+            }
+            parsed = items.iter().map(|(label, value)| (label.clone(), Value::String(value.clone()))).collect();
+            &parsed
+        }
     };
     let level = record.level;
     let mut out = String::with_capacity(64 + record.message.len());
     match record.format {
         Format::Pretty => {
+            let colour = terminal();
+            if colour {
+                out.push_str(DIM);
+            }
             out.push_str(&local_time(record.time));
+            if colour {
+                out.push_str(PLAIN);
+            }
             out.push(' ');
-            if terminal() {
+            if colour {
                 out.push_str(level.colour());
                 out.push_str(level.shown());
-                out.push_str("\x1b[0m");
+                out.push_str(PLAIN);
             } else {
                 out.push_str(level.shown());
             }
             out.push(' ');
             one_line(&record.message, &mut out);
-            for (name, value) in fields {
-                out.push(' ');
+            for (index, (name, value)) in fields.iter().enumerate() {
+                out.push_str(if index == 0 { "  " } else { " " });
+                if colour {
+                    out.push_str(DIM);
+                }
                 one_line(&key(name), &mut out);
                 out.push('=');
+                if colour {
+                    out.push_str(PLAIN);
+                }
                 out.push_str(&pretty(value));
             }
         }
@@ -383,6 +440,29 @@ fn line(record: &Record) -> String {
         }
     }
     out.push('\n');
+    out
+}
+
+/// A listing, pretty: a line an item, under the message of the line before it, `➜ label  value`,
+/// the labels padded to the longest; on a terminal the arrow coloured and the value bold.
+fn listed(items: &[(String, String)]) -> String {
+    let colour = terminal();
+    let widest = items.iter().map(|(label, _)| label.chars().count()).max().unwrap_or(0);
+    let mut out = String::new();
+    for (label, value) in items {
+        out.push_str(&" ".repeat(MESSAGE_AT));
+        out.push_str(if colour { "\x1b[36m➜\x1b[0m " } else { "➜ " });
+        one_line(label, &mut out);
+        out.push_str(&" ".repeat(widest - label.chars().count() + 2));
+        if colour {
+            out.push_str("\x1b[1m");
+        }
+        one_line(value, &mut out);
+        if colour {
+            out.push_str(PLAIN);
+        }
+        out.push('\n');
+    }
     out
 }
 

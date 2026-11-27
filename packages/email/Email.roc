@@ -65,6 +65,8 @@ Email := [].{
 		{
 			name: "email",
 			early: Mailbox.early,
+			# Under --dev, where the mail kept for the dev mailbox is read (D-111).
+			links: [{ label: "Mailbox", path: "/__rocx/mail" }],
 			starts: [|_context| keep!(from, smtp_url!)],
 			checks: [{ name: "email.smtp", run!: |_context| check!({}) }],
 		}

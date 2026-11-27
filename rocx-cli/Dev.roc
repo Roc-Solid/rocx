@@ -190,7 +190,7 @@ Dev := [].{
 	## server is on this network too, for phones on its Wi-Fi (a QR code shows the way).
 	app! : List(Str), Str => Try({}, [Exit(I32)])
 	app! = |args, rocx| {
-		usage = "usage: rocx dev [dir] [--port 8080] [--android [--lan]] [-- server options…]"
+		usage = "usage: rocx dev [dir] [--port 8080] [--opt dev|size|speed] [--android [--lan]] [-- server options…]"
 		var $own = []
 		var $passed = []
 		var $after = Bool.False
@@ -207,12 +207,21 @@ Dev := [].{
 		var $dirs = []
 		var $android = Bool.False
 		var $lan = Bool.False
+		# How hard the compiler works on both programs (D-111): `dev` (the default) builds in seconds;
+		# `size` and `speed` as a release builds them, to try what ships.
+		var $opt = "dev"
 		var $i = 0
 		while $i < $own.len() {
 			arg = $own.get($i) ?? ""
 			if arg == "--port" and $i + 1 < $own.len() {
 				$port = $own.get($i + 1) ?? ""
 				$i = $i + 2
+			} else if arg == "--opt" and $i + 1 < $own.len() {
+				$opt = $own.get($i + 1) ?? ""
+				$i = $i + 2
+			} else if arg.starts_with("--opt=") {
+				$opt = arg.drop_prefix("--opt=")
+				$i = $i + 1
 			} else if arg == "--android" {
 				$android = Bool.True
 				$i = $i + 1
@@ -228,7 +237,7 @@ Dev := [].{
 				$i = $i + 1
 			}
 		}
-		if $dirs.len() > 1 or $port.is_empty() or !$port.to_utf8().all(|byte| byte >= '0' and byte <= '9') {
+		if $dirs.len() > 1 or $port.is_empty() or !$port.to_utf8().all(|byte| byte >= '0' and byte <= '9') or !["dev", "size", "speed"].contains($opt) {
 			return Dev.fail!(usage)
 		}
 		given = $dirs.first() ?? "."
@@ -292,7 +301,7 @@ Dev := [].{
 			watch: [dir],
 			skip: ["build", "dist", "Generated", "node_modules", "static"],
 			edited!: |path| Dev.app_edit!(path),
-			build!: |{}| Dev.build_app!({ dir, shown, main, client, server, tools, phone }),
+			build!: |{}| Dev.build_app!({ dir, shown, main, client, server, tools, phone, opt: $opt }),
 			serve: Cmd.new(server).args(["--port", $port, "--dev"].concat(lan_host).concat(statics).concat(server_flags)),
 			started!: |{}|
 				match phone {
@@ -495,7 +504,7 @@ Dev := [].{
 	## Everything, beside what is served, then moved into place together: the server serving the
 	## build before keeps serving it whole until it is restarted. The server first: it compiles every
 	## page the browser does, from the app's own Generated/, whose reports point into the .rocx files.
-	build_app! : { dir : Str, shown : Str, main : Str, client : Str, server : Str, tools : Tools, phone : [On(Phone), Off] } => Try({}, [Failed(Str)])
+	build_app! : { dir : Str, shown : Str, main : Str, client : Str, server : Str, tools : Tools, phone : [On(Phone), Off], opt : Str } => Try({}, [Failed(Str)])
 	build_app! = |a| {
 		match Dev.build_all!(a) {
 			Ok({}) => Ok({})
@@ -510,7 +519,7 @@ Dev := [].{
 		}
 	}
 
-	build_all! : { dir : Str, shown : Str, main : Str, client : Str, server : Str, tools : Tools, phone : [On(Phone), Off] } => Try({}, [Failed(Str)])
+	build_all! : { dir : Str, shown : Str, main : Str, client : Str, server : Str, tools : Tools, phone : [On(Phone), Off], opt : Str } => Try({}, [Failed(Str)])
 	build_all! = |a| {
 		styled = Term.styled!({})
 		if !styled {
@@ -571,7 +580,7 @@ Dev := [].{
 		}
 	}
 
-	build_steps! : { dir : Str, shown : Str, main : Str, client : Str, server : Str, tools : Tools, phone : [On(Phone), Off] } => Try({}, [Failed(Str)])
+	build_steps! : { dir : Str, shown : Str, main : Str, client : Str, server : Str, tools : Tools, phone : [On(Phone), Off], opt : Str } => Try({}, [Failed(Str)])
 	build_steps! = |a| {
 		built = match Build.build!([a.dir], { client: Some(a.client), cwd: Fs.cwd!(), dev: Bool.True, rocx: a.tools.rocx }) {
 			Ok(done) => done
@@ -588,14 +597,14 @@ Dev := [].{
 			Ok({}) => {}
 			Err(Failed(message)) => return Err(Failed("${Text.trim_end(message)}\nrocx dev: the server's host didn't build"))
 		}
-		Dev.roc_build!(a.tools, ["--target=${a.tools.target}", "--opt=dev", "--output=${a.server}.building", a.main], "the server's build")?
+		Dev.roc_build!(a.tools, ["--target=${a.tools.target}", "--opt=${a.opt}", "--output=${a.server}.building", a.main], "the server's build")?
 		var $built = [a.server]
 		# An app of pages has a browser's half (rocx build wrote its main.roc); one of endpoints alone hasn't.
 		client_main = Fs.join([a.client, "main.roc"])
 		if File.exists!(client_main) {
 			Dev.web_host!(a.tools)?
 			wasm = Fs.join([a.client, "static", "rocx", "app.wasm"])
-			Dev.roc_build!(a.tools, ["--target=wasm32", "--opt=dev", "--output=${wasm}.building", client_main], "the browser's build")?
+			Dev.roc_build!(a.tools, ["--target=wasm32", "--opt=${a.opt}", "--output=${wasm}.building", client_main], "the browser's build")?
 			$built = $built.append(wasm)
 			match a.phone {
 				On(phone) => Dev.phone_build!(phone, client_main, a.tools)?

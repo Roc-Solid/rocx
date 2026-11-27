@@ -265,22 +265,23 @@ Static := [].{
 			"browser wasm · for size",
 			|{}| {
 				Dev.web_host!(tools)?
-				Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]))?
+				Static.browser_build!(tools, client_main, Fs.join([client, "static", "rocx", "app.wasm"]), "size")?
 				Static.shake!(rocx, dir, client)
 			},
 		)
 	}
 
-	## The browser's wasm, optimized for size with its lambda sets specialized (smaller with brotli);
-	## when the compiler crashes specializing them (its own fault, not the app's: Roc's lambda-set
-	## solving still has crashes on some large apps), built without (boxy, as the server is), said so.
-	browser_build! : Dev.Tools, Str, Str => Try({}, [Failed(Str)])
-	browser_build! = |tools, client_main, wasm|
-		match Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=yes", "--output=${wasm}", client_main], "the browser's build") {
+	## The browser's wasm, at `level` (`size` for a release, D-111: `rocx build --opt` may say
+	## another) with its lambda sets specialized (smaller with brotli); when the compiler crashes
+	## specializing them (its own fault, not the app's: Roc's lambda-set solving still has crashes on
+	## some large apps), built without (boxy, as the server is), said so.
+	browser_build! : Dev.Tools, Str, Str, Str => Try({}, [Failed(Str)])
+	browser_build! = |tools, client_main, wasm, level|
+		match Static.roc_build!(tools, ["--target=wasm32", "--opt=${level}", "--specialize=yes", "--output=${wasm}", client_main], "the browser's build") {
 			Ok({}) => Ok({})
 			Err(Failed(why)) if Static.compiler_crashed(why) => {
 				Term.note!("  rocx: the compiler crashed specializing the browser's program (a bug of Roc's, not the app's): building it without specializing")
-				Static.roc_build!(tools, ["--target=wasm32", "--opt=size", "--specialize=no", "--output=${wasm}", client_main], "the browser's build")
+				Static.roc_build!(tools, ["--target=wasm32", "--opt=${level}", "--specialize=no", "--output=${wasm}", client_main], "the browser's build")
 			}
 			Err(failed) => Err(failed)
 		}

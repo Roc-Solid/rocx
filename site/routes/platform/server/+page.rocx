@@ -107,7 +107,7 @@ view! = |_|
 			/>
 			<Code
 				title="The line, pretty and as JSON"
-				source={"14:03:12 INFO  gate failed error=\"no session\" path=/admin\n{\"time\":\"2026-11-21T13:03:12.345Z\",\"level\":\"info\",\"msg\":\"gate failed\",\"error\":\"no session\",\"path\":\"/admin\"}"}
+				source={"14:03:12 info  gate failed  error=\"no session\" path=/admin\n{\"time\":\"2026-11-21T13:03:12.345Z\",\"level\":\"info\",\"msg\":\"gate failed\",\"error\":\"no session\",\"path\":\"/admin\"}"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>

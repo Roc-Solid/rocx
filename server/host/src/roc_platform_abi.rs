@@ -3644,6 +3644,15 @@ pub struct HostKvDeleteArgs {
     pub arg0: RocStr,
 }
 
+/// Arguments for Host.dev_links!
+/// Roc signature: Str => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostDevLinksArgs {
+    pub arg0: RocStr,
+}
+
 /// Arguments for Host.kv_get!
 /// Roc signature: Str => Try(Str, Str)
 /// Refcounted fields are owned by the hosted function.
@@ -5898,6 +5907,13 @@ unsafe extern "C" {
     /// moved into storage or into the result:
     ///     unsafe { arg0.decref(roc_host); }
     pub fn roc_host_kv_delete(arg0: RocStr);
+
+    /// Hosted symbol for Host.dev_links!
+    /// Roc signature: Str => {}
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    pub fn roc_host_dev_links(arg0: RocStr);
 
     /// Hosted symbol for Host.kv_get!
     /// Roc signature: Str => Try(Str, Str)

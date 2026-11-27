@@ -6,8 +6,9 @@ import Server
 ## `--dev` or `--debug` (`early`); files served as they are, before the app and its middleware
 ## (`files`), and those of them every page loads (`scripts`); its tables (`migrations`); named
 ## functions run in a call of their own (`calls`); background loops; work run once the server has
-## started (`starts`) and checks run after (`checks`); and what it needs that the compiler can't see
-## (`needs`). Every field but `name` has a default, so a plugin says only what it adds. A package
+## started (`starts`) and checks run after (`checks`); what it needs that the compiler can't see
+## (`needs`); and the places it adds that a person may want to open (`links`), which the server
+## lists under its address under `--dev`. Every field but `name` has a default, so a plugin says only what it adds. A package
 ## makes one from options of its own, whose fields without a default are required
 ## (`JobsPage.plugin({ guard })`).
 ##
@@ -53,6 +54,7 @@ Plugin := [].{
 		starts : List(Start(context)) ?? [],
 		checks : List(Check(context)) ?? [],
 		needs : List(Need) ?? [],
+		links : List(Link) ?? [],
 	}
 
 	## A route, which answers once the app's middleware has passed the request on: what that
@@ -107,6 +109,11 @@ Plugin := [].{
 	## first).
 	Need : [Env(Str), Database, Postgres, Sqlite, Plugin(Str)]
 
+	## A place a person may want to open (D-111): its label and a path of the app's
+	## (`/__rocx/mail`), or a whole URL. Under `--dev` the server lists them under its address, as
+	## it starts: `➜ Mailbox  http://localhost:8080/__rocx/mail`.
+	Link : { label : Str, path : Str }
+
 	## What the platform keeps of a plugin (`program.plugins`): all but its routes, which the app's
 	## `respond!` answers (`Plugin.respond!`); their methods and paths, for the checks.
 	Running(context) : {
@@ -121,6 +128,7 @@ Plugin := [].{
 		starts : List(Start(context)),
 		checks : List(Check(context)),
 		needs : List(Need),
+		links : List(Link),
 	}
 
 	## What the platform keeps of `plugin`.
@@ -137,6 +145,7 @@ Plugin := [].{
 		starts: plugin.starts,
 		checks: plugin.checks,
 		needs: plugin.needs,
+		links: plugin.links,
 	}
 
 	## Where `file` of the plugin called `plugin` is served: `/rocx/plugins/<plugin>/<path>`, or

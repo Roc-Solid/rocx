@@ -230,6 +230,17 @@ pub async fn serve(listener: TcpListener, config: Config, mut stop: watch::Recei
         logging::info("rocx server: settings read", &[("file", file.into()), ("set", set.into()), ("kept", kept.into())]);
     }
     logging::info(&format!("rocx server: http://{} (Roc, native)", listener.local_addr()?), &[]);
+    // Under --dev, the places to open, under the address (D-111): the platform gathered them from
+    // the plugins as it started. A path is the server's; a whole URL, as it is.
+    let links = logging::links();
+    if !links.is_empty() {
+        let base = listening_url(listener.local_addr()?);
+        let items: Vec<(String, String)> = links
+            .into_iter()
+            .map(|(label, at)| (label, if at.starts_with("http://") || at.starts_with("https://") { at } else { format!("{base}{at}") }))
+            .collect();
+        logging::listing("rocx server: links", &items);
+    }
     let config = Arc::new(config);
     let graceful = GracefulShutdown::new();
     loop {

@@ -401,7 +401,7 @@ Build := [].{
 					.concat([{ name: "Paths", content: Routes.paths_module(table, sources) }, { name: "Styles", content: Build.styles_module(css, sheet) }])
 					.concat(api)
 					.concat(root_page)
-					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints, jobs_package, middleware: Routes.root_middleware(table) }) }])
+					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints, jobs_package, middleware: Routes.root_middleware(table), stories: !stories_page.is_empty() }) }])
 			if pages {
 				match options.client {
 					Some(_) => {

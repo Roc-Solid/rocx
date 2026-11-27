@@ -63,6 +63,8 @@ JobsPage := [].{
 			name: "jobs-page",
 			routes: [{ method: "GET", path: at, kind: Page, answer! }, { method: "POST", path: at, kind: Page, answer! }],
 			needs: [Plugin("jobs")],
+			# Under --dev, the page (D-111).
+			links: [{ label: "Jobs", path: at }],
 		}
 	}
 

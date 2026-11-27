@@ -153,7 +153,9 @@ The boxes an answer doesn't use (the page, the stream) do nothing, and the host 
      plugins', then the app's.
    - `context_for_host!`: the app's `init!` makes its context.
    - `started_for_host!`: actors' timers left from the last run are set again, the plugins'
-     `starts` run in order, and each plugin's line goes on the log (`rocx plugins: added`).
+     `starts` run in order, one line names them (`rocx plugins: jobs, email`; what each added at
+     debug), and under `--dev` their links go to the host (`Host.dev_links!`, D-111), which lists
+     them under its address as it starts to answer.
    An `Err` or a crash in any of them stops the server.
 6. The background loops start: the plugins' loops and checks (`roc_background_count`), each a call
    of its own. One that crashes starts again a second later.
@@ -1328,8 +1330,27 @@ Log.line!("migrated")                                          # a message alone
 ```
 
 ```
-14:03:12 INFO  gate failed error="no session" path=/admin
+14:03:12 info  gate failed  error="no session" path=/admin
 {"time":"2026-11-21T13:03:12.345Z","level":"info","msg":"gate failed","error":"no session","path":"/admin"}
+```
+
+Pretty (D-111): the local time, the level in lower case, the message, then two spaces and the
+fields. At a terminal the time and the fields' names are dimmed and the level coloured (debug
+grey, info cyan, warn yellow, error a bold red), so the message and the values stand out.
+
+Under `--dev`, the server lists the places to open under its address as it starts: the app's
+stories, its OpenAPI document, and what each plugin adds (`Plugin.Link`: the mailbox, the sign-in
+page, the jobs page) and what the app names itself (`App.program({ links })`). A path is the
+server's; a whole URL is listed as it is. In JSON it is one event, `rocx server: links`, a link a
+field.
+
+```
+10:36:32 info  rocx plugins: jobs, email, auth
+10:36:32 info  rocx server: http://127.0.0.1:8080 (Roc, native)
+               ➜ Stories   http://127.0.0.1:8080/__rocx/stories
+               ➜ OpenAPI   http://127.0.0.1:8080/openapi.html
+               ➜ Mailbox   http://127.0.0.1:8080/__rocx/mail
+               ➜ Sign in   http://127.0.0.1:8080/sign-in
 ```
 
 Every line the server writes to stderr is an event: a level, a message and fields. The host's own
@@ -1348,7 +1369,9 @@ can be searched:
 | `rocx server: no database, so these tables aren't made, and what reads them fails` | warn | `tables` (under `--dev` or `--debug`) |
 | `rocx server: Roc crashed` | error | `method`, `target`, `error` |
 | `rocx server: migrated` | info | `migration` |
-| `rocx plugins: added` | info | `plugin`, `adds` |
+| `rocx plugins: <names>` | info | (the plugins started, in their order, in the message; one that adds nothing but links isn't named) |
+| `rocx plugins: added` | debug | `plugin`, `adds` |
+| `rocx server: links` | info | a link a field, its label its name (under `--dev`, D-111) |
 | `rocx actor: a message failed` | error | `actor`, `key`, `error` |
 | `rocx jobs: a job failed, and runs again` | warn | `kind`, `id`, `attempt`, `of`, `again_in_ms`, `error` |
 | `rocx jobs: a job failed for good` | error | `kind`, `id`, `attempts`, `error` |
@@ -1443,8 +1466,11 @@ each (`Plugins.roc`):
 - a file whose path isn't relative, a root file under `rocx/` or `__rocx/`, two files at one place,
   a root file where a route is, or a script that isn't one of the plugin's files.
 
-Then the plugins are ordered by their needs (the list's order breaks ties), and the log says what
-each added (`rocx plugins: added plugin=acme adds="2 routes, 2 files, 1 script, 1 migration"`).
+Then the plugins are ordered by their needs (the list's order breaks ties), and the log names them
+on one line (`rocx plugins: jobs, acme`), and at debug says what each added (`rocx plugins: added
+plugin=acme adds="2 routes, 2 files, 1 script, 1 migration"`). A plugin's `links` (D-111) are the
+places it adds that a person may want to open: under `--dev` the server lists them under its
+address.
 
 ### Files and scripts (D-050)
 
@@ -1626,7 +1652,9 @@ node server/build.mjs <app.roc> <output> [--opt=dev|speed] [--target=arm64mac|x6
 An app with routes is built to deploy with `rocx build <dir> --release <out> [--target …]`
 (D-078), which needs no Node: the browser's copy and its wasm, then the server's host when it
 changed and the app on it, optimized for speed (boxy, as below), into `<out>/server`, with what it
-serves in `<out>/static`.
+serves in `<out>/static`. `--opt speed|size|dev` (D-111) builds both programs at that level instead
+(the server's default is `speed`, the wasm's `size`); `rocx dev` builds both at `dev` unless its
+`--opt` says another.
 
 `just glue` regenerates `host/src/roc_platform_abi.rs` after a change to `platform/main.roc`'s
 header (with the other platforms' glue).

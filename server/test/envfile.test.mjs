@@ -135,7 +135,7 @@ test("ROCX_ENV_FILE names nothing: a variable would reach every server started u
 test("the settings line is in the app's log format, as it is logged once the server listens", { skip }, async () => {
 	const server = await start(place({ ".env": "ENVFILE_ONE=1\n" }), { flags: ["--env-file", ".env"], env: { ROCX_LOG: "pretty" } });
 	try {
-		assert.match(server.logged(), /^\d\d:\d\d:\d\d INFO  rocx server: settings read/m, server.logged());
+		assert.match(server.logged(), /^\d\d:\d\d:\d\d info  rocx server: settings read/m, server.logged());
 	} finally {
 		await server.stop();
 	}

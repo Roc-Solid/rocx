@@ -3323,7 +3323,7 @@ Routes := [].{
 	}
 
 	## `Generated/App.roc`, the server's program.
-	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), endpoints : Bool, jobs_package : Str, middleware : [Some(Str), None] } -> Str
+	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), endpoints : Bool, jobs_package : Str, middleware : [Some(Str), None], stories : Bool } -> Str
 	app_module = |input| {
 		# The jobs package, as the app's header names it (packages/jobs): `App.jobs` is for its plugin.
 		jobs_package = input.jobs_package
@@ -3423,15 +3423,33 @@ Routes := [].{
 					"\t## says; `Turso(path)`, the same SQL on Turso's engine (D-046; `turso:<path>` runs a SQLite app on it); or",
 					"\t## `Postgres`, at `--database-url`;",
 					"\t## `openapi`, whether it serves its endpoints' OpenAPI document, and a page to read it",
-					"\t## in (`OpenApi.Serving`): `Off` unless it says; and `plugins`, what packages add to it",
+					"\t## in (`OpenApi.Serving`): `Off` unless it says; `plugins`, what packages add to it",
 					"\t## (`Plugin`): their routes answer behind the middleware, before the app's own, and the",
-					"\t## platform runs the rest (the jobs plugin: `App.jobs`, and its schedules).",
+					"\t## platform runs the rest (the jobs plugin: `App.jobs`, and its schedules); and `links`,",
+					"\t## places of the app's a person may want to open (`Plugin.Link`: `/mcp`, or a whole URL),",
+					"\t## which the server lists under its address under `--dev` (D-111), after the stories and",
+					"\t## the OpenAPI document (`App.links`).",
 					"\tConfig(given, handed) := {",
 					"\t\tinit! : Str => Try(given, Str),",
 					"\t\tcross_site : [Refused, Allowed] ?? Refused,",
 					"\t\tdatabase : [Postgres, Sqlite(Str), Turso(Str)] ?? Sqlite(\"data/app.db\"),",
 					"\t\topenapi : OpenApi.Serving ?? Off,",
 					"\t\tplugins : List(Plugin.Value(given, handed)) ?? [],",
+					"\t\tlinks : List(Plugin.Link) ?? [],",
+					"\t}",
+					"",
+					"\t## Under `--dev`, the app's places to open (D-111), its own plugin's: ${if (input.stories) "its stories, " else ""}its endpoints' OpenAPI",
+					"\t## document or its page, as it serves them, then its own (`links`).",
+					"\tlinks : OpenApi.Serving, List(Plugin.Link) -> List(Plugin.Link)",
+					"\tlinks = |openapi, own| {",
+					"\t\tstories = ${if (input.stories) "[{ label: \"Stories\", path: \"/__rocx/stories\" }]" else "[]"}",
+					"\t\tserved =",
+					"\t\t\tmatch openapi {",
+					"\t\t\t\tOff => []",
+					"\t\t\t\tDocument => ${if (input.endpoints) "[{ label: \"OpenAPI\", path: \"/openapi.json\" }]" else "[]"}",
+					"\t\t\t\tPage(_) => ${if (input.endpoints) "[{ label: \"OpenAPI\", path: \"/openapi.html\" }]" else "[]"}",
+					"\t\t\t}",
+					"\t\tstories.concat(served).concat(own)",
 					"\t}",
 					"",
 					"\t## The platform's program, from what the app says (`Config`).",
@@ -3484,7 +3502,8 @@ Routes := [].{
 					"\t\tmigrations: [${Str.join_with(embedded.map(|each| "{ name: ${Text.roc_string(each.name)}, sql: ${each.as_name} }"), ", ")}],",
 					"\t\tactors: [${Str.join_with(input.actors.map(|actor| "Actor.handler(${alias(actor)}.${actor.define}${if (actor.thunk) "({})" else ""})"), ", ")}],",
 					"\t\tlogs: { format: Auto },",
-					"\t\tplugins: config.plugins.map(Plugin.running),",
+					"\t\t# The app's own plugin first, adding nothing but its places to open (D-111), then the packages'.",
+					"\t\tplugins: [Plugin.running({ name: \"app\", links: App.links(config.openapi, config.links) })].concat(config.plugins.map(Plugin.running)),",
 					"\t\troutes: Routes.claims,",
 					"\t}",
 					"}",
@@ -3959,7 +3978,7 @@ Routes := [].{
 			"migrationsIn" => Ok(Value.strs(Routes.migrations_in!(Value.str(arg(0)))))
 			"appModule" => {
 				input = arg(0)
-				Ok(Text(Routes.app_module({ jobs: Value.items(Value.field(input, "jobs")).map(Routes.found_from), actors: Value.items(Value.field(input, "actors")).map(Routes.found_from), migrations: Value.items(Value.field(input, "migrations")).map(Value.str), endpoints: Routes.truthy(Value.field(input, "endpoints")), jobs_package: Value.str_or(Value.field(input, "jobsPackage"), ""), middleware: Routes.maybe_text(Value.field(input, "middleware")) })))
+				Ok(Text(Routes.app_module({ jobs: Value.items(Value.field(input, "jobs")).map(Routes.found_from), actors: Value.items(Value.field(input, "actors")).map(Routes.found_from), migrations: Value.items(Value.field(input, "migrations")).map(Value.str), endpoints: Routes.truthy(Value.field(input, "endpoints")), jobs_package: Value.str_or(Value.field(input, "jobsPackage"), ""), middleware: Routes.maybe_text(Value.field(input, "middleware")), stories: Routes.truthy(Value.field(input, "stories")) })))
 			}
 			"clientMainModule" => {
 				input = arg(0)

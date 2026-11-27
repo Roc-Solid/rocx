@@ -32,7 +32,7 @@ Image := [].{
 
 	## What `rocx build … --image` was asked: the app's directory, the file, the image's name and
 	## tag, and the target (`""`: this machine's Linux). Paths are absolute.
-	Asked : { dir : Str, file : Str, tag : Str, target : Str }
+	Asked : { dir : Str, file : Str, tag : Str, target : Str, opt : Str }
 
 	## The words after `rocx build`, read, with paths from `cwd`; `Usage` says what is wrong.
 	options : List(Str), Str -> Try(Asked, [Usage(Str)])
@@ -40,12 +40,19 @@ Image := [].{
 		var $file = ""
 		var $tag = ""
 		var $target = ""
+		var $opt = ""
 		var $dirs = []
 		var $i = 0
 		while $i < args.len() {
 			arg = args.get($i) ?? ""
 			value = args.get($i + 1) ?? ""
-			if arg == "--image" or arg == "--tag" or arg == "--target" {
+			if arg == "--opt" {
+				if !Release.levels.contains(value) {
+					return Err(Usage("rocx build --opt: one of ${Str.join_with(Release.levels, ", ")}\n${Image.usage}"))
+				}
+				$opt = value
+				$i = $i + 2
+			} else if arg == "--image" or arg == "--tag" or arg == "--target" {
 				if value.is_empty() or value.starts_with("--") {
 					return Err(Usage("rocx build ${arg}: give it a value\n${Image.usage}"))
 				}
@@ -71,7 +78,7 @@ Image := [].{
 		}
 		dir = Fs.resolve(cwd, [$dirs.first() ?? "."])
 		tag = if ($tag.is_empty()) "${Image.name_of(Fs.basename(dir))}:latest" else if (Image.has_tag($tag)) $tag else "${$tag}:latest"
-		Ok({ dir, file: Fs.resolve(cwd, [$file]), tag, target: $target })
+		Ok({ dir, file: Fs.resolve(cwd, [$file]), tag, target: $target, opt: $opt })
 	}
 
 	## `rocx build <dir> --image <file> …` (the words after `build`), with the home of this rocx: exit
@@ -120,7 +127,7 @@ Image := [].{
 		target = asked.target
 		work = Fs.join([asked.dir, "build", "image"])
 		release = Fs.join([work, "release"])
-		_ = Release.made!({ dir: asked.dir, out: release, target }, cwd, rocx)?
+		_ = Release.made!({ dir: asked.dir, out: release, target, opt: asked.opt }, cwd, rocx)?
 		Term.step!(Term.styled!({}), "image · one layer, gzipped", |{}| Image.written!(asked, work, release))
 	}
 
@@ -542,8 +549,9 @@ expect Image.name_of("Acme Notes") == "acmenotes"
 expect Image.iso_time(0) == "1970-01-01T00:00:00Z"
 expect Image.iso_time(1_795_716_245_000) == "2026-11-26T18:04:05Z" and Image.iso_time(951_782_400_000) == "2000-02-29T00:00:00Z"
 expect Image.megabytes(23_456_789) == "23.4 MB"
-expect Image.options(["app", "--image", "out/app.tar"], "/w") == Ok({ dir: "/w/app", file: "/w/out/app.tar", tag: "app:latest", target: "" })
-expect Image.options(["app", "--image", "a.tar", "--tag", "ghcr.io/x/app", "--target", "x64musl"], "/w") == Ok({ dir: "/w/app", file: "/w/a.tar", tag: "ghcr.io/x/app:latest", target: "x64musl" })
+expect Image.options(["app", "--image", "out/app.tar"], "/w") == Ok({ dir: "/w/app", file: "/w/out/app.tar", tag: "app:latest", target: "", opt: "" })
+expect Image.options(["app", "--image", "a.tar", "--tag", "ghcr.io/x/app", "--target", "x64musl"], "/w") == Ok({ dir: "/w/app", file: "/w/a.tar", tag: "ghcr.io/x/app:latest", target: "x64musl", opt: "" })
+expect Image.options(["app", "--image", "a.tar", "--opt", "size"], "/w") == Ok({ dir: "/w/app", file: "/w/a.tar", tag: "app:latest", target: "", opt: "size" })
 expect {
 	read = Image.options(["app", "--image", "a.tar", "--target", "arm64mac"], "/w")
 	match read {

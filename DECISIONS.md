@@ -6576,3 +6576,50 @@ every arm made anew each time its value changed, with no warning. `Flow.skip_com
 whole comment lines where a pattern starts; their lines are kept, so reports point where they did.
 test/transpile.test.mjs checks a match with comments before its first arm and between arms.
 
+
+## D-111 A dev server says where to go, a log line easier to read, and the build level a flag
+
+**Status.** Built (2026-11-27), the user's calls: links at the start in dev, one line for the
+plugins, a flag for how hard the compiler works with a quicker default in dev, and a log line
+that reads better.
+
+**Context.** A dev server's start was a column of the host's and the platform's lines: a line a
+plugin saying what it added (`rocx plugins: added adds="1 early route, 1 migration, 1 call, 6
+loops, 1 start" plugin=jobs`), the address among them, and nothing about the places a person opens
+while working: the stories, the dev mailbox, the sign-in page, the OpenAPI page, an app's own (an
+MCP endpoint). Every pretty line was `14:03:12 INFO  message key=value…` in one colour but the
+level's. And an app that built its own way had the browser's wasm at `--opt=size`, a minute of the
+compiler's time on each build.
+
+**Decision.**
+
+- **Links.** A plugin says the places it adds that a person may want to open (`Plugin.Link`:
+  `{ label, path }`, a path of the app's or a whole URL): the email plugin its mailbox, the auth
+  plugin the app's sign-in page, the jobs page its page. The generated `App.program` takes the
+  app's own (`links`) and adds, first in the plugins' list, a plugin of the app's (`app`) adding
+  nothing but links: its stories (a dev build's), its OpenAPI document or page as it serves them,
+  then its own. Under `--dev` the platform hands them to the host as it starts
+  (`Host.dev_links!`, new: a line a link, its label, a tab, its path), and the host lists them
+  under its address: pretty, a line each, `➜ label  URL`, the labels lined up under the message
+  (`logging::listing`); JSON, one event, `rocx server: links`, a link a field. None outside
+  `--dev`.
+- **Plugins.** One line at info names them in their order (`rocx plugins: jobs, email, auth`); a
+  plugin that adds nothing but links isn't named. What each added is at debug.
+- **The pretty line.** `14:03:12 info  gate failed  error="no session" path=/admin`: the level in
+  lower case, the fields two spaces after the message. At a terminal the time and the fields'
+  names are dimmed and the level coloured (debug grey, info cyan, warn yellow, error a bold red),
+  so what is read, the message and the values, stands out. JSON is as it was.
+- **The build level.** `rocx dev --opt dev|size|speed` builds both programs at that level (`dev`,
+  as before, by default: seconds); `rocx build --opt …` (the release, and `--image`) builds both at
+  it, where by default the server is built for speed and the browser's wasm for size.
+
+**Why.** The start says where things are, once; the platform's own wiring is a debug detail; the
+level is the reader's eye's first stop, the message its second. A build level is a choice to make
+when trying what ships, not a constant.
+
+**Costs.** A host function more (`Host.dev_links!`, the glue regenerated). A tool that read the
+pretty line by its upper-case level reads lower case now. The app's own plugin is a plugin named
+`app`, which an app's plugin can't be named.
+
+**Reversible:** yes: the links field and the host's listing go, the level back upper case, the
+plugin lines back at info.
