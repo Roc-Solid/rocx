@@ -228,7 +228,9 @@ view! = |_|
 				<code>{"Server.set_cookie(answer, name, value, options)"}</code> adds a <code>Set-Cookie</code>
 				header. <code>Server.CookieOpts</code> holds its attributes. <code>Server.cookie_defaults</code>,
 				changed with a record update, are: path <code>/</code>, <code>http_only</code>,
-				<code>same_site: Lax</code>, this host only, until the browser closes, sent over plain HTTP too.
+				<code>same_site: Lax</code>, this host only, until the browser closes. When the app's public URL
+				is HTTPS, the server marks every cookie it sets <code>Secure</code>, so leaving
+				<code>secure</code> off only matters over plain HTTP in development.
 			</p>
 			<ul>
 				<li>
