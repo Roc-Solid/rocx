@@ -127,6 +127,34 @@ for (const database of databases) {
 			assert.equal(said.msg, "test mode, Stripe-Version 2025-03-31.basil, webhooks at POST /stripe/webhook");
 		});
 
+		test("without its keys: under --dev the server starts with Stripe off (the webhook refuses every event, 503, a signature under an empty key too; a checkout says why); outside --dev it doesn't start", async () => {
+			const empty = { STRIPE_SECRET_KEY: "", STRIPE_WEBHOOK_SECRET: "", STRIPE_API_URL: stripe.origin };
+			const offDb = database === "sqlite" ? testSqlite() : await testDatabase();
+			const off = await startServer(built.server, { database: offDb.url, dev: true, env: empty });
+			try {
+				const said = await until(() => off.logs().find((line) => line.check === "stripe.keys"), { what: "the check's line" });
+				assert.equal(said.msg, "off under --dev: no STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET (each call answers StripeErr, the webhook 503)");
+				const body = JSON.stringify(stripe.event("invoice.paid", {}));
+				const refused = await fetch(`${off.url}/stripe/webhook`, { method: "POST", headers: { "content-type": "application/json; charset=utf-8", "stripe-signature": sign(body, { secret: "" }) }, body });
+				assert.equal(refused.status, 503, await refused.text());
+				const client = off.client();
+				assert.equal((await client.post("/auth/dev", { email: "off@example.com", then: "/" })).status, 303);
+				const from = stripe.requests.length;
+				const checkout = await client.json("/api/billing/checkout", { price: "price_pro" });
+				assert.equal(checkout.status, 502, checkout.text);
+				assert.equal(stripe.requests.length, from, "Stripe isn't asked");
+			} finally {
+				await off.stop();
+				await offDb.drop();
+			}
+			const stoppedDb = database === "sqlite" ? testSqlite() : await testDatabase();
+			try {
+				await assert.rejects(startServer(built.server, { database: stoppedDb.url, dev: false, env: empty }), /STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET not set/);
+			} finally {
+				await stoppedDb.drop();
+			}
+		});
+
 		test("checkout: off to Stripe's Checkout, the user's customer made once and used again, the form as Stripe takes it", async () => {
 			const { client, user } = await signedIn("ann@example.com");
 			const from = stripe.requests.length;

@@ -47,7 +47,9 @@ Postgres against a stand-in for Stripe's API (`example/test/stand-in.mjs`), neve
 3. Give the server its keys: `STRIPE_SECRET_KEY` (`sk_test_…` while you build, `sk_live_…` in
    production; a restricted key, `rk_…`, with write access to Customers, Checkout Sessions and the
    Customer Portal, and read access to Subscriptions, will do) and `STRIPE_WEBHOOK_SECRET` (the
-   webhook endpoint's signing secret, `whsec_…`). The server doesn't start without them, and once it
+   webhook endpoint's signing secret, `whsec_…`). Outside `--dev` the server doesn't start without
+   them; under `--dev` it starts with Stripe off (each call answers `StripeErr`, the webhook refuses
+   every event with a 503), as the AI plugin does without its key, and once it
    has, it logs which mode they are (`stripe.keys`).
 
 4. Send the browser to Checkout from an endpoint of the app's (a plan's button posts to it):
@@ -361,7 +363,8 @@ milliseconds, given by the package):
 - **No card ever reaches the app**: Checkout and the portal are Stripe's pages.
 - **The webhook takes Stripe's word only**: a signature of the very bytes it was sent, under the
   endpoint's secret, compared in constant time, at most five minutes old. Without
-  `STRIPE_WEBHOOK_SECRET` nothing is accepted (and the server doesn't start).
+  `STRIPE_WEBHOOK_SECRET` nothing is accepted: outside `--dev` the server doesn't start, and under
+  `--dev` the webhook answers every event 503 (a signature under an empty key is anyone's to make).
 - **What the app reads is its own database**, kept by signed events, so a page that checks
   `subscribed!` doesn't wait on Stripe, and nothing the browser sends decides who has paid.
 - **A checkout belongs to its user**: `checkout_session!` refuses another user's session.

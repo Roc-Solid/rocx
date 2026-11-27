@@ -52,7 +52,8 @@ view! = |_|
 			</p>
 			<p>
 				<strong>1. The plugin and the webhook.</strong> List the plugin, for its tables. The server needs
-				<code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code> to start. The webhook is your
+				<code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code> to start; under <code>--dev</code>
+				it starts without them, with Stripe off, as it does without the AI's key. The webhook is your
 				route (D-116), calling the package's handler with your <code>on_event!</code>.
 			</p>
 			<Code title={Sources.stripe_example_main.file} source={Sources.stripe_example_main.rocx} />

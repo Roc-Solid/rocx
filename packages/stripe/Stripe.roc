@@ -145,16 +145,19 @@ Stripe := [].{
 
 	## The Stripe plugin: the tables (`stripe/0001_stripe` and `stripe/0002_refunds`, the same on
 	## SQLite and Postgres), and a look at the keys once the server has started (`stripe.keys`: test or live mode). It needs a database, and
-	## `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set; `STRIPE_API_URL` points it at another
-	## API than Stripe's (a test's stand-in).
+	## `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`: outside `--dev`, a server without them doesn't
+	## start; under `--dev` it starts with Stripe off (each call answers `StripeErr`, the webhook
+	## refuses every event, 503), as the AI plugin does without its key. `STRIPE_API_URL` points it at
+	## another API than Stripe's (a test's stand-in).
 	plugin : Stripe.Options -> Plugin.Value(context)
 	plugin = |options| {
 		at = options.webhook_at
 		{
 			name: "stripe",
 			migrations: [{ name: "0001_stripe", sql: table }, { name: "0002_refunds", sql: refunds }],
+			starts: [|_context| keys_needed!({})],
 			checks: [{ name: "stripe.keys", run!: |_context| keys!(at) }],
-			needs: [Database, Env("STRIPE_SECRET_KEY"), Env("STRIPE_WEBHOOK_SECRET")],
+			needs: [Database],
 		}
 	}
 
@@ -425,6 +428,9 @@ fetched! = |path, fields| asked!(Get, path, fields, "", 3)
 asked! : [Get, Post], Str, List((Str, Str)), Str, U64 => Try(Str, [Refused(U16, Str), Unreached(Str)])
 asked! = |method, path, fields, key, tries| {
 	secret = (Env.var!("STRIPE_SECRET_KEY") ?? "").trim()
+	if secret.is_empty() {
+		return Err(Unreached("STRIPE_SECRET_KEY isn't set"))
+	}
 	url = "${api_url!({})}${path}"
 	headers = [("authorization", "Bearer ${secret}"), ("stripe-version", Stripe.api_version), ("user-agent", "roc-solid-stripe")].concat(if (key.is_empty()) [] else [("idempotency-key", key)])
 	answer =
@@ -620,6 +626,12 @@ Read : [Sub(StripeRules.Subscription), Sess(StripeRules.Session), Inv(StripeRule
 webhook! : (Stripe.Event => Try({}, Str)), Server.Request => Server.Response
 webhook! = |on_event!, request| {
 	secret = (Env.var!("STRIPE_WEBHOOK_SECRET") ?? "").trim()
+	# Without a secret (Stripe off, under --dev), nothing is taken: a signature under an empty key
+	# is anyone's to make.
+	if secret.is_empty() {
+		Log.warn!("stripe: a webhook was refused", { reason: "STRIPE_WEBHOOK_SECRET isn't set" })
+		return Server.refused(503, "Refused: STRIPE_WEBHOOK_SECRET isn't set.")
+	}
 	signed = Server.header(request, "stripe-signature") ?? ""
 	match StripeRules.verify(signed, request.body, secret, now!({}) // 1000) {
 		Err(problem) => {
@@ -778,6 +790,30 @@ kept! = |event, ready, now|
 		}
 	}
 
+## The plugin's start: outside `--dev`, a server without its keys doesn't start (under `--dev` it
+## starts with Stripe off, and `keys!` says so).
+keys_needed! : {} => Try({}, Str)
+keys_needed! = |{}| {
+	missing = missing_keys!({})
+	if missing.is_empty() or Env.dev!({}) {
+		Ok({})
+	} else {
+		Err("${Str.join_with(missing, " and ")} not set: the Stripe plugin needs them outside --dev")
+	}
+}
+
+## The keys that aren't set.
+missing_keys! : {} => List(Str)
+missing_keys! = |{}| {
+	var $missing = []
+	for name in ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"] {
+		if (Env.var!(name) ?? "").trim().is_empty() {
+			$missing = $missing.append(name)
+		}
+	}
+	$missing
+}
+
 ## The look at the keys once the server has started (`stripe.keys`): test or live mode, or what is
 ## wrong with them.
 keys! : Str => Try(Str, Str)
@@ -786,7 +822,12 @@ keys! = |at| {
 	hook = (Env.var!("STRIPE_WEBHOOK_SECRET") ?? "").trim()
 	live = key.starts_with("sk_live_") or key.starts_with("rk_live_")
 	test = key.starts_with("sk_test_") or key.starts_with("rk_test_")
-	if !live and !test {
+	missing = missing_keys!({})
+	if !missing.is_empty() and Env.dev!({}) {
+		Ok("off under --dev: no ${Str.join_with(missing, " or ")} (each call answers StripeErr, the webhook 503)")
+	} else if !missing.is_empty() {
+		Err("${Str.join_with(missing, " and ")} not set: the Stripe plugin needs them outside --dev")
+	} else if !live and !test {
 		Err("STRIPE_SECRET_KEY isn't a secret key (sk_test_…, sk_live_…, or a restricted rk_…)")
 	} else if !hook.starts_with("whsec_") {
 		Err("STRIPE_WEBHOOK_SECRET isn't a webhook signing secret (whsec_…)")
