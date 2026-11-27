@@ -176,6 +176,22 @@ Choose the mode from your own plan, never from the form: a price is Stripe's, bu
 subscribes or buys once is the app's. A user subscribed already changes plan in the portal; the
 example's endpoint sends them to their account instead of to Checkout again.
 
+### Prices by their lookup key
+
+```roc
+Stripe.price! : Str => Try(Str, [NoPrice, StripeErr(Str), ..])
+```
+
+`price!(key)` is the id of the active price whose lookup key is `key`, for `checkout!`'s prices. A
+lookup key is a name you set on a price in the Dashboard (`pro_monthly`). It is the same in test and
+live mode, where the ids differ, so the app needs no setting for each mode; and when the price
+changes, you make a new price and move the key to it (`transfer_lookup_key`), with no change to the
+app. `NoPrice` when no active price has it. It asks Stripe each time, which a checkout can afford.
+
+A price changed that way leaves the subscriptions on the old one on its id: ask whether someone pays
+for the product (`paid_for!(user, "prod_…")`), or for anything (`subscribed!`), rather than for a
+price id.
+
 ## The page Checkout goes back to
 
 ```roc

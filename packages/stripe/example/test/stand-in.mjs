@@ -22,9 +22,9 @@ export const API_VERSION = "2025-03-31.basil";
 
 /** The prices it has: two monthly, one once. */
 export const PRICES = {
-	price_basic: { product: "prod_basic", unit_amount: 500, recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } },
-	price_pro: { product: "prod_pro", unit_amount: 1500, recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } },
-	price_ebook: { product: "prod_ebook", unit_amount: 900, recurring: null },
+	price_basic: { product: "prod_basic", unit_amount: 500, recurring: { interval: "month", interval_count: 1, usage_type: "licensed" }, lookup_key: "basic_monthly" },
+	price_pro: { product: "prod_pro", unit_amount: 1500, recurring: { interval: "month", interval_count: 1, usage_type: "licensed" }, lookup_key: "pro_monthly" },
+	price_ebook: { product: "prod_ebook", unit_amount: 900, recurring: null, lookup_key: null },
 };
 
 /** Now, in seconds, as Stripe's times are. */
@@ -62,7 +62,7 @@ function price(id) {
 		created: 1700000000,
 		currency: "usd",
 		livemode: false,
-		lookup_key: null,
+		lookup_key: known.lookup_key,
 		metadata: {},
 		nickname: null,
 		product: known.product,
@@ -185,6 +185,14 @@ export async function standIn() {
 			if (!session) return refused(404, `No such checkout.session: '${decodeURIComponent(match[1])}'`, { code: "resource_missing", param: "id" });
 			const expanded = query.getAll("expand[]").includes("subscription") && session.subscription ? subscriptions.get(session.subscription) : session.subscription;
 			return { status: 200, body: { ...session, subscription: expanded } };
+		}
+		if (method === "GET" && path === "/v1/prices") {
+			// Its prices by lookup key (`lookup_keys[]`), the active ones (all of them are).
+			const keys = query.getAll("lookup_keys[]");
+			const data = Object.keys(PRICES)
+				.filter((id) => keys.length === 0 || keys.includes(PRICES[id].lookup_key))
+				.map(price);
+			return { status: 200, body: { object: "list", data: data.slice(0, Number(query.get("limit") ?? 10)), has_more: false, url: "/v1/prices" } };
 		}
 		if (method === "GET" && (match = /^\/v1\/subscriptions\/([^/]+)$/.exec(path))) {
 			const subscription = subscriptions.get(decodeURIComponent(match[1]));

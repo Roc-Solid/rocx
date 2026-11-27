@@ -33,6 +33,21 @@ post! = |{ body, .. }|
 	}
 `;
 
+const priceRoute = `import pf.Server
+import pf.Endpoint
+import stripe.Stripe
+
+## POST /test/price: the id of the active price whose lookup key is \`key\` (\`Stripe.price!\`), 404
+## for none. Written by packages/stripe's tests into the app they build; the example has none.
+post! : { request : Server.Request, params : {}, context : {}, body : { key : Str } } => Try({ price : Str }, Endpoint.Refusal)
+post! = |{ body, .. }|
+	match Stripe.price!(body.key) {
+		Ok(price) => Ok({ price: price })
+		Err(NoPrice) => Err(NotFound)
+		Err(StripeErr(why)) => Err(Status(502, why))
+	}
+`;
+
 const example = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The example for `database`, in build/<database>/app: its folder. */
@@ -47,6 +62,8 @@ function app(database) {
 	writeFileSync(join(dir, "main.roc"), main);
 	mkdirSync(join(dir, "routes", "test", "refund"), { recursive: true });
 	writeFileSync(join(dir, "routes", "test", "refund", "+server.roc"), refundRoute);
+	mkdirSync(join(dir, "routes", "test", "price"), { recursive: true });
+	writeFileSync(join(dir, "routes", "test", "price", "+server.roc"), priceRoute);
 	return dir;
 }
 
@@ -333,6 +350,15 @@ for (const database of databases) {
 			assert.equal((await max.get("/ebook")).location, "/");
 			assert.equal((await deliver(stripe.event("charge.dispute.closed", maxDispute("won")))).status, 200);
 			assert.equal((await max.get("/ebook")).status, 200, "won: theirs again");
+		});
+
+		test("Stripe.price!: a price by its lookup key, the active one, asked of Stripe; none for a key no price has", async () => {
+			const asked = await server.client().json("/test/price", { key: "pro_monthly" });
+			assert.equal(asked.status, 200, asked.text);
+			assert.deepEqual(await asked.json(), { price: "price_pro" });
+			const request = stripe.requests.findLast((each) => each.path === "/v1/prices");
+			assert.deepEqual([request.method, request.query.getAll("lookup_keys[]"), request.query.get("active")], ["GET", ["pro_monthly"], "true"]);
+			assert.equal((await server.client().json("/test/price", { key: "no_such_key" })).status, 404);
 		});
 
 		test("Stripe.post_with!: the app's own idempotency key, the same each time the same thing is asked, so a call made again makes one refund", async () => {

@@ -60,7 +60,9 @@ view! = |_|
 			<p>
 				<strong>2. Off to Checkout.</strong> A plan's button posts its price to your endpoint, which calls
 				<code>Stripe.checkout!</code> and redirects. The mode comes from your plan, never the form. Each user
-				gets one Stripe customer, made the first time.
+				gets one Stripe customer, made the first time. A price may be named by its lookup key, set in the
+				Dashboard: <code>{"Stripe.price!(\"pro_monthly\")"}</code> is its id, the same key in test and live
+				mode.
 			</p>
 			<Code title={Sources.stripe_example_checkout.file} source={Sources.stripe_example_checkout.rocx} />
 			<p>

@@ -333,6 +333,16 @@ Stripe := [].{
 	post_with! : { path : Str, fields : List((Str, Str)), idempotency_key : Str } => Try(Str, [StripeErr(Str), ..others])
 	post_with! = |asked| posted!(asked.path, asked.fields, if (asked.idempotency_key.is_empty()) random_key!({}) else asked.idempotency_key).map_err(stripe_err)
 
+	## The id of the active price whose lookup key is `key`, for `checkout!`'s prices. A lookup key
+	## is a name set on a price in the Dashboard (`pro_monthly`): the same in test and live mode,
+	## where the ids differ, and moved to a new price when the price changes (the subscriptions on
+	## the old one keep it). `NoPrice` when no active price has it. Asked of Stripe each time.
+	price! : Str => Try(Str, [NoPrice, StripeErr(Str), ..others])
+	price! = |key| {
+		text = fetched!("/v1/prices", [("lookup_keys[]", key), ("active", "true"), ("limit", "1")]).map_err(stripe_err)?
+		StripeRules.price_in(text)
+	}
+
 	## Anything else of Stripe's API that reads (`/v1/invoices`, with its query's fields): its JSON.
 	get! : Str, List((Str, Str)) => Try(Str, [StripeErr(Str), ..others])
 	get! = |path, fields| fetched!(path, fields).map_err(stripe_err)

@@ -95,6 +95,17 @@ StripeRules := [].{
 	bool : Str, List(Str) -> Bool
 	bool = |json, path| StripeRules.at(json, path) == Ok("true")
 
+	## The first price's id in a list of prices (`GET /v1/prices`'s answer); `NoPrice` when it has
+	## none.
+	price_in : Str -> Try(Str, [NoPrice, ..others])
+	price_in = |json| {
+		listed = StripeRules.elements(StripeRules.at(json, ["data"]) ?? "[]")
+		match listed.first() {
+			Ok(first) if !StripeRules.text(first, ["id"]).is_empty() => Ok(StripeRules.text(first, ["id"]))
+			_ => Err(NoPrice)
+		}
+	}
+
 	## The JSON of each item of the array `json` is; none when it isn't one.
 	elements : Str -> List(Str)
 	elements = |json| {
@@ -586,3 +597,6 @@ expect StripeRules.problem(502, "<html>") == "Stripe answered 502"
 expect StripeRules.no_customer("{\"error\":{\"code\":\"resource_missing\",\"param\":\"customer\",\"message\":\"No such customer\"}}")
 expect !StripeRules.no_customer("{\"error\":{\"code\":\"resource_missing\",\"param\":\"line_items[0][price]\"}}")
 expect StripeRules.is_session_id("cs_test_a1B2") and !StripeRules.is_session_id("cs_test/../x") and !StripeRules.is_session_id("sub_1")
+expect StripeRules.price_in("{\"object\":\"list\",\"data\":[{\"id\":\"price_pro\",\"lookup_key\":\"pro_monthly\"}],\"has_more\":false}") == Ok("price_pro")
+expect StripeRules.price_in("{\"object\":\"list\",\"data\":[],\"has_more\":false}") == Err(NoPrice)
+expect StripeRules.price_in("nonsense") == Err(NoPrice)
