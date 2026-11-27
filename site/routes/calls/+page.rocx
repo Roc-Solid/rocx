@@ -318,7 +318,9 @@ view! = |_|
 					answer is on its way and, after a result, until the page's reads are read again, so the new data and
 					the result show together. Then <code>result!()</code> is the result, or <code>error!()</code> the refusal
 					(<code>{"Refused(409, \"…\")"}</code>) or why no answer came. <code>input!()</code> is what was
-					sent, as the endpoint reads it; <code>field!(name)</code> is one field as typed. Only the latest
+					sent, as the endpoint reads it. After a refusal, <code>field!(name)</code> gives back what was typed
+					in a field; after a result it is <code>""</code>, and the form is emptied (unless it, or what is
+					around it, says <code>data-rocx-keep</code>), so an add form isn't filled again. Only the latest
 					submission counts; <code>clear!()</code>, in an event handler, forgets it. An endpoint's redirect
 					(<code>{"Ok(Server.redirect(…))"}</code>, setting a cookie, say) sends the browser there. A form
 					nothing on the page reads is answered as a plain form, followed in place: back to its page with

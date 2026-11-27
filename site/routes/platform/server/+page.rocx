@@ -269,19 +269,19 @@ view! = |_|
 
 			<Heading id="photos">Photos' copies</Heading>
 			<p>
-				A photo written as <code>{"<img enhanced:src={path} alt=\"…\" />"}</code> is one the server makes
-				smaller copies of, WebP at 160 to 1920 pixels wide, as pages show it. The first page that shows a
-				photo gets its <code>src</code> alone, and the photo goes to a queue that two workers of the host's
-				own take from. The next page has the copies: their <code>srcset</code>, a <code>sizes</code>, and the
-				photo's <code>width</code> and <code>height</code>, so the page keeps its room. No page waits for a
-				photo; nothing is set up to have them, no job and no build step.
+				Write a photo as <code>{"<img enhanced:src={path} alt=\"…\" />"}</code> and the server makes
+				smaller WebP copies of it, 160 to 1920 pixels wide. The first page to show it gets the plain
+				<code>src</code>, and the photo joins a queue two of the host's workers take from. Later pages get
+				the copies: a <code>srcset</code>, <code>sizes</code>, and the photo's <code>width</code> and
+				<code>height</code>, so the layout keeps its room. No page waits, and there is nothing to set up:
+				no job, no build step.
 			</p>
 			<ul>
-				<li><strong>Whose photos:</strong> a file in the app's <code>static/</code>, or what one of the app's routes answers someone signed out (the server asks itself, with no cookies). Never another site's, and never a photo for those signed in only: its copies would be anyone's.</li>
-				<li><strong>Where they are kept:</strong> <code>data/images</code>, named by each photo's content, and served at <code>/rocx/images/…</code> for browsers to keep for good. The directory is its own index: a server started again has the copies on its first page.</li>
-				<li><strong>Pruned:</strong> photos no page named for 30 days go, and then the least recently used while the directory is over its size (1 GiB, <code>--images-max-mb</code>). One removed is made again the next time a page shows it.</li>
-				<li><strong>A changed photo</strong> (a file written again, a route's new answer) gets copies of its own; its page shows its <code>src</code> until they are made.</li>
-				<li><strong>A static build</strong> (<code>rocx build --static</code>) waits for every photo's copies as it renders, and copies them with the pages.</li>
+				<li><strong>Whose photos:</strong> files in the app's <code>static/</code>, or what the app's routes answer someone signed out (the server asks itself, without cookies). Never another site's, and never a photo only signed-in users may see: its copies would be anyone's.</li>
+				<li><strong>Where they're kept:</strong> <code>data/images</code>, named by content and served at <code>/rocx/images/…</code> for browsers to cache for good. The directory is its own index, so a restarted server has the copies on its first page.</li>
+				<li><strong>Pruning:</strong> photos no page named for 30 days go, then the least recently used while the directory is over 1 GiB (<code>--images-max-mb</code>). A removed one is made again the next time a page shows it.</li>
+				<li><strong>A changed photo</strong> (a rewritten file, a route's new answer) gets new copies; its page shows the plain <code>src</code> until they exist.</li>
+				<li><strong>A static build</strong> (<code>rocx build --static</code>) waits for every photo's copies and ships them with the pages.</li>
 			</ul>
 
 			<Heading id="background">Background loops and isolated calls</Heading>
