@@ -1344,8 +1344,10 @@ of. rocx writes it as the `src` and a mark (`["e"]`), with `loading="lazy"` and 
 unless the markup says otherwise; the host, writing the page (`signals.rs`), asks
 `server/host/src/images.rs` whether the photo's copies are made:
 
-- **Made:** the page gets their `srcset`; `sizes`, unless written (the written `width` in pixels,
-  else `100vw`); and the photo's `width` and `height`, or the one not written, in its shape.
+- **Made:** the page gets their `srcset`; `sizes`, unless written (`100vw`, or with a written
+  `width` of 1200, `(max-width: 1200px) 100vw, 1200px`: never wider than the window, nor than the
+  written width, which is often the photo's own, fitted to a narrower screen by CSS); and the
+  photo's `width` and `height`, or the one not written, in its shape.
 - **Not yet:** the page gets the `src` alone, and the photo is queued. Two workers (threads of their
   own, not tokio's or Roc's) make one photo each at a time; a photo many pages ask for is made once.
   The next page that shows it has its copies. A page never waits, but on a static build's server
@@ -1354,7 +1356,7 @@ unless the markup says otherwise; the host, writing the page (`signals.rs`), ask
 | What | Is |
 | --- | --- |
 | The copies | WebP (quality 80) at 160, 320, 640, 960, 1280 and 1920 pixels wide under the photo's own width, and its own (up to 1920); upright by its EXIF orientation, no metadata |
-| What is read | JPEG, PNG and WebP, up to 64 megapixels and 64 MiB; anything else keeps its `src` (said once in the log, remembered until the source changes) |
+| What is read | JPEG, PNG and WebP, up to 64 megapixels and 64 MiB; anything else keeps its `src` (said once in the log, remembered until the source changes). An SVG (by its extension) is drawn at any size: it keeps its `src`, and isn't tried |
 | A source | A path of this site: a file in a `--static` directory, or else the app's answer to a signed-out GET of it (the server asks itself, with no cookies; 200 or nothing). Never another site's URL |
 | Where they are kept | `data/images` from where the server starts (`--images-dir`): `<hash>-<width>.webp`, `<hash>.txt` (the photo's size and the widths, written last), and `<path hash>.src` (which photo a source is) |
 | Where they are served | `/rocx/images/<hash>-<width>.webp`, with `cache-control: public, max-age=31536000, immutable`; a name it has no copy by is a 404 |

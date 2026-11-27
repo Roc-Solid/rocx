@@ -1012,8 +1012,9 @@ fn sized(said: &mut Vec<(String, String)>, name: &str, value: &str) {
 
 /// What an `<img enhanced:src>` gets besides what is written (D-125), once its photo's copies are
 /// made (else nothing: the page shows its `src`, and the copies are being made): their `srcset`;
-/// `sizes`, unless written (its `width`, in pixels, if written, or the window's width); and the
-/// photo's `width` and `height`, or the one not written, in its shape, so the page keeps its room.
+/// `sizes`, unless written (the window's width, at most the written `width` in pixels: a written
+/// width is often the photo's own, the page's CSS fitting it to a narrower column or screen); and
+/// the photo's `width` and `height`, or the one not written, in its shape, so the page keeps its room.
 fn enhanced_attributes(said: &[(String, String)]) -> Vec<String> {
     #[cfg(feature = "images")]
     {
@@ -1032,7 +1033,7 @@ fn enhanced_attributes(said: &[(String, String)]) -> Vec<String> {
         let mut out = vec![format!("srcset=\"{}\"", escape(&ready.srcset()))];
         if written("sizes").is_none() {
             out.push(match number("width") {
-                Some(width) => format!("sizes=\"{width}px\""),
+                Some(width) => format!("sizes=\"(max-width: {width}px) 100vw, {width}px\""),
                 None => "sizes=\"100vw\"".to_string(),
             });
         }

@@ -18,7 +18,7 @@ Masthead := [].{
 			<a class="skip" href="#content">{intl.t("skip", [])}</a>
 			<div class="bar">
 				<a class="brand" href={home}>
-					<img class="mark" src="/images/mark.svg" alt="" width="36" height="36" />
+					<img class="mark" enhanced:src="/images/mark.svg" alt="" width="36" height="36" loading="eager" />
 					<span class="name">Journal</span>
 					<span class="tagline">{intl.t("site.tagline", [])}</span>
 				</a>

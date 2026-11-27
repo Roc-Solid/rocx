@@ -7060,13 +7060,14 @@ touched.
   `src` or `srcset` beside it is refused; only an `<img>` has one.
 - **The server**, writing the page (signals.rs, beside D-086's `aria-current`), asks whether the
   photo's copies are made (server/host/src/images.rs). If they are, it writes their `srcset`, a
-  `sizes` (the written `width` in pixels, else `100vw`) and the photo's `width` and `height` (or the
-  one not written, in its shape), unless written. If not, the page has the `src` alone, and the
+  `sizes` (`100vw`, at most the written `width` in pixels: `(max-width: 1200px) 100vw, 1200px`)
+  and the photo's `width` and `height` (or the one not written, in its shape), unless written. If not, the page has the `src` alone, and the
   photo is queued: the next page that shows it has its copies. A page never waits.
 - **The copies** are WebP (libwebp's lossy encoder, quality 80) at 160, 320, 640, 960, 1280 and
   1920 pixels wide under the photo's own width, and its own up to 1920; turned upright by its EXIF
   orientation, its metadata (a location) left out. JPEG, PNG and WebP are read; anything else, more
-  than 64 megapixels or 64 MiB, keeps its `src`, remembered until the source changes. Two workers
+  than 64 megapixels or 64 MiB, keeps its `src`, remembered until the source changes; an SVG (by its
+  extension) isn't tried, as it is drawn at any size. Two workers
   (threads of their own) make them, one photo each at a time; a photo a hundred pages ask for is
   made once.
 - **A source is a path of this site**: a file in a `--static` directory, or else what the app

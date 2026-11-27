@@ -94,9 +94,11 @@ When an item lands, delete its line here in the same commit.
 - **enhanced:src's next steps (D-125):** colours (a photo with an ICC profile, a phone's Display P3,
   is copied as if sRGB: convert it, qcms or lcms2, or keep the profile in the WebP); AVIF beside WebP
   (a `<picture>`, slow to encode); photos of listed other hosts (Open Food Facts' in Plate); a
-  `rocx build` that makes the copies of the paths it can see ahead of a deploy; a markdown image and
-  a frontmatter cover through it (packages/markdown, the journal's covers); uploads resized as they
-  come (a `Storage.put!` of a photo, by the same code).
+  `rocx build` that makes the copies of the paths it can see ahead of a deploy; packages/markdown's
+  `<Markdown>` writing its images with it (the journal's own renderer does), and presence's
+  avatars; a photo in the journal (its pictures are SVGs, which have no copies); uploads resized as
+  they come (a `Storage.put!` of a photo, by the same code); a route that refuses a signed-out GET
+  (a private photo) is asked again every 5 minutes a page shows it: remembered longer.
 
 - **Found by the docs audit of 2026-11-26, to check:**
   - The tools page's "the same tools, twice" example types an AI tool list `Tool({})`, but McpHttp

@@ -20,7 +20,7 @@ Article := [].{
 		intl = I18n.intl(lang)
 		headings = Md.headings(entry.doc)
 		toc = if (headings.count_if(|heading| heading.level == 2) >= 2) <Toc lang={lang} headings={headings} /> else <></>
-		cover = if (post.cover.is_empty()) <></> else <figure class="cover"><img src={post.cover} alt={post.cover_alt} width="1200" height="630" /></figure>
+		cover = if (post.cover.is_empty()) <></> else <figure class="cover"><img enhanced:src={post.cover} alt={post.cover_alt} width="1200" height="630" fetchpriority="high" /></figure>
 		translations = Posts.translations(entry).map(|other| <a class="translation" href={Posts.url(other)} lang={other.lang} hreflang={other.lang}>{I18n.t(other.lang, "post.read_here")} →</a>)
 		<article class="article" aria-labelledby="title">
 			<header class="head">

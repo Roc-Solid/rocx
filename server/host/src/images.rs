@@ -195,9 +195,13 @@ pub fn waits() -> bool {
 }
 
 /// A page's `<img enhanced:src={src}>`: the photo's copies if they are ready, else nothing, and the
-/// photo queued (if it can be: a path of this site, not made before, its source not known to fail).
+/// photo queued (if it can be: a path of this site, not an SVG, not made before, its source not
+/// known to fail).
 pub fn lookup(src: &str) -> Option<Ready> {
     let path = source_path(src)?;
+    if vector(&path) {
+        return None;
+    }
     let mut guard = STATE.lock().unwrap();
     let state = guard.as_mut()?;
     let now = SystemTime::now();
@@ -281,6 +285,12 @@ pub fn source_path(src: &str) -> Option<String> {
         return None;
     }
     Some(path.to_string())
+}
+
+/// Whether a path names an SVG, by its extension: drawn at any size, it has no copies to make, and
+/// isn't tried (or said in the log) as a photo that can't be read.
+pub fn vector(path: &str) -> bool {
+    path.rsplit_once('.').is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("svg"))
 }
 
 /// The widths of a photo `width` wide.
@@ -672,6 +682,15 @@ mod tests {
         assert_eq!(source_path("/images/../secret"), None);
         assert_eq!(source_path("images/a.jpg"), None);
         assert_eq!(source_path("/rocx/images/0123456789abcdef-640.webp"), None);
+    }
+
+    #[test]
+    fn svgs_have_no_copies() {
+        assert!(vector("/images/mark.svg"));
+        assert!(vector("/images/Mark.SVG"));
+        assert!(!vector("/images/harbour.jpg"));
+        assert!(!vector("/photos/svg"));
+        assert_eq!(lookup("/images/mark.svg"), None);
     }
 
     #[test]

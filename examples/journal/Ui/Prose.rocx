@@ -56,7 +56,7 @@ Prose := [].{
 	image : Markdown.Image -> Html
 	image = |found|
 		<span class="figure">
-			<img src={Md.href(found.url)} alt={found.alt} loading="lazy" decoding="async" />
+			<img enhanced:src={Md.href(found.url)} alt={found.alt} />
 			{if (found.title.is_empty()) <></> else <span class="caption">{found.title}</span>}
 		</span>
 

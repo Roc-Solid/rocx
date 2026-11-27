@@ -108,7 +108,7 @@ test("the first page shows each photo's src, and queues it; the next, once made,
 	assert.equal(routed.src, "/photos/one");
 	assert.equal(routed.width, "200");
 	assert.equal(routed.height, "150");
-	assert.equal(routed.sizes, "200px");
+	assert.equal(routed.sizes, "(max-width: 200px) 100vw, 200px", "the window's width, at most the written width");
 	assert.deepEqual(candidates(routed.srcset).map((copy) => copy.width), [160, 320, 400]);
 
 	// A plain src is left as written.
@@ -212,7 +212,7 @@ test("in the browser, another photo in an enhanced:src drops the copies and the 
 		assert.equal(arrived.static.sizes, "100vw");
 		assert.equal(arrived.static.width, "1000");
 		assert.equal(arrived.static.height, "600");
-		assert.equal(arrived.route.sizes, "200px");
+		assert.equal(arrived.route.sizes, "(max-width: 200px) 100vw, 200px");
 		assert.equal(arrived.route.width, "200", "as the markup writes it");
 		assert.equal(arrived.route.height, "150");
 		assert.ok(arrived.switched.srcset);
