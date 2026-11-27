@@ -1,0 +1,1198 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import video.Player
+import video.Sequence
+import video.Timeline
+import ../Demos/Counter
+import ../Ui/Code
+import ../Ui/Logo
+
+## What Roc Solid is, as a video: five designs to pick from, each eleven seconds at 30 frames a
+## second, 1280 by 720, made of the site's own pieces (its mark, `<Code>`, the counter demo) with
+## packages/video. The component's name in the catalog plays all five side by side, in step; Render
+## films one. Only a dev build has stories/.
+Explainers := [].{
+
+	## Every design's length, so side by side they end together.
+	frames : U64
+	frames = 330
+
+	## A spring let go at `from`: 0 before it, then up past 1 a little and settled.
+	rise : U64, U64, U64 -> F64
+	rise = |frame, from, fps| Timeline.spring_with(Timeline.since(frame, from), fps, { stiffness: 140.0, damping: 15.0, mass: 1.0 })
+
+	## A share as CSS takes it (`opacity`), held between 0 and 1.
+	share : F64 -> Str
+	share = |value| F64.min(F64.max(value, 0.0), 1.0).to_str()
+
+	<story name="Terminal">
+		<div class="full">
+			<Player frames={Explainers.frames} width={1280} height={720} fit={Scale} controls={Hidden} label="Roc Solid, from a terminal"><Terminal /></Player>
+		</div>
+	</story>
+
+	<story name="Kinetic type">
+		<div class="full">
+			<Player frames={Explainers.frames} width={1280} height={720} fit={Scale} controls={Hidden} label="Roc Solid, in words"><Kinetic /></Player>
+		</div>
+	</story>
+
+	<story name="The stack">
+		<div class="full">
+			<Player frames={Explainers.frames} width={1280} height={720} fit={Scale} controls={Hidden} label="Roc Solid, from the database to the browser"><Stack /></Player>
+		</div>
+	</story>
+
+	<story name="Code to page">
+		<div class="full">
+			<Player frames={Explainers.frames} width={1280} height={720} fit={Scale} controls={Hidden} label="A Roc Solid component, as written and as it runs"><CodeToPage /></Player>
+		</div>
+	</story>
+
+	<story name="Bento">
+		<div class="full">
+			<Player frames={Explainers.frames} width={1280} height={720} fit={Scale} controls={Hidden} label="What Roc Solid gives you"><Bento /></Player>
+		</div>
+	</story>
+
+	<style>
+		/* The video as wide as the story's page, out of the site's column, as a video is shown. */
+		.full {
+			width: 100vw;
+			margin-left: calc(50% - 50vw);
+		}
+	</style>
+}
+
+## Every design's last seconds: the mark, the name, and what it is.
+EndCard := [].{
+	Props := { shown : F64, line : Str }
+
+	view : Props -> Html
+	view = |{ shown, line }|
+		<div class="end" style:opacity={Explainers.share(shown * 1.4)} style:transform={"scale(${(0.92 + 0.08 * shown).to_str()})"}>
+			<span class="mark"><Logo /></span>
+			<p class="name">Roc Solid</p>
+			<p class="line">{line}</p>
+		</div>
+
+	<style>
+		.end {
+			position: absolute;
+			inset: 0;
+			z-index: 5;
+			display: grid;
+			place-content: center;
+			justify-items: center;
+			gap: 14px;
+			background: radial-gradient(60% 60% at 50% 45%, #1b1530, #0a0910 70%);
+			color: #f1eefc;
+			font-family: var(--font);
+			text-align: center;
+		}
+
+		.mark {
+			display: block;
+			width: 112px;
+			height: 112px;
+		}
+
+		.mark :global(.logo) {
+			width: 100%;
+			height: 100%;
+		}
+
+		.name {
+			margin: 6px 0 0;
+			background: linear-gradient(90deg, #2ee8ff, #a99bff 55%, #ff4fd0);
+			background-clip: text;
+			color: transparent;
+			font-size: 76px;
+			font-weight: 800;
+			letter-spacing: -0.035em;
+			line-height: 1;
+		}
+
+		.line {
+			margin: 0;
+			color: #aca6c8;
+			font-size: 26px;
+		}
+	</style>
+}
+
+## A mouse pointer, pressed in a little as it clicks.
+Pointer := [].{
+	Props := { pressed : Bool ?? Bool.False }
+
+	view : Props -> Html
+	view = |{ pressed }|
+		<svg class="pointer" class:pressed={pressed} viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M5 2.5v16.2l4.2-4.1 3 6.6 2.7-1.2-3-6.5h5.9Z" /></svg>
+
+	<style>
+		.pointer {
+			display: block;
+			fill: #ffffff;
+			stroke: #0c0b12;
+			stroke-width: 1.3;
+			stroke-linejoin: round;
+			filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.5));
+			transform-origin: 5px 3px;
+		}
+
+		.pressed {
+			transform: scale(0.84);
+		}
+	</style>
+}
+
+## One: a terminal makes an app and runs it, and a browser window shows the counter, clicked.
+Terminal := [].{
+	Line : { at : U64, text : Str, kind : [Command, Done, Link] }
+
+	## What the terminal says, each line from its frame on: a command typed, then what it printed.
+	script : List(Line)
+	script = [
+		{ at: 12, text: "rocx new acme", kind: Command },
+		{ at: 42, text: "acme/ made from the template", kind: Done },
+		{ at: 50, text: "AGENTS.md: rules for coding agents", kind: Done },
+		{ at: 64, text: "cd acme && rocx dev", kind: Command },
+		{ at: 96, text: "built in 3.1 s", kind: Done },
+		{ at: 104, text: "http://localhost:8080", kind: Link },
+	]
+
+	## The lines shown at `frame`, a command typed as far as it has got.
+	shown : U64 -> List(Line)
+	shown = |frame|
+		Terminal.script.keep_if(|line| frame >= line.at).map(|line| if (line.kind == Command) { ..line, text: Timeline.typed(line.text, Timeline.progress(frame, line.at + 2, line.at + 22)) } else line)
+
+	sign : [Command, Done, Link] -> Str
+	sign = |kind|
+		match kind {
+			Command => "$"
+			Done => "✓"
+			Link => "→"
+		}
+
+	kind_name : [Command, Done, Link] -> Str
+	kind_name = |kind|
+		match kind {
+			Command => "command"
+			Done => "done"
+			Link => "link"
+		}
+
+	## The frames the pointer clicks +, and the count each click makes (the counter starts at 0).
+	clicks : List(U64)
+	clicks = [190, 214, 238]
+
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, fps, .. } = Player.clock!({})
+		lines! = create_memo!(|| Terminal.shown(frame!()))
+		window! = create_memo!(|| Explainers.rise(frame!(), 120, fps))
+		toward! = create_memo!(|| Timeline.eased(frame!(), 150, 182, InOut))
+		pressed! = create_memo!(
+			|| {
+				now = frame!()
+				Terminal.clicks.any(|at| now + 3 >= at and now < at + 2)
+			},
+		)
+		end! = create_memo!(|| Explainers.rise(frame!(), 288, fps))
+		<div class="frame">
+			<section class="terminal" style:opacity={Timeline.keys(frame!(), [(0, 0.0), (8, 1.0)]).to_str()}>
+				<header><span class="dots"><i></i><i></i><i></i></span>zsh — ~/code</header>
+				<div class="body" class:blink={(frame!() // 14) % 2 == 1}>
+					{...lines!().map(|line| <p key={line.at.to_str()} class={"row ${Terminal.kind_name(line.kind)}"}><span class="sign">{Terminal.sign(line.kind)}</span> {line.text}</p>)}
+				</div>
+			</section>
+			<section class="browser" style:opacity={Explainers.share(window!() * 1.5)} style:transform={"translateY(${((1.0 - window!()) * 60.0).to_str()}px)"}>
+				<header><span class="dots"><i></i><i></i><i></i></span><span class="address">localhost:8080</span></header>
+				<div class="page">
+					<p class="title">Acme</p>
+					<p class="subtitle">Rendered on the server, awake in your browser</p>
+					<div class="demo">
+						<Sequence from={120} frames={70}><Counter start_value={0} /></Sequence>
+						<Sequence from={190} frames={24}><Counter start_value={1} /></Sequence>
+						<Sequence from={214} frames={24}><Counter start_value={2} /></Sequence>
+						<Sequence from={238}><Counter start_value={3} /></Sequence>
+						<span class="at" style:--t={toward!().to_str()} style:opacity={Explainers.share(Timeline.keys(frame!(), [(140, 0.0), (150, 1.0)]))}><Pointer pressed={pressed!()} /></span>
+					</div>
+				</div>
+			</section>
+			<p class="caption" style:opacity={Explainers.share(Timeline.keys(frame!(), [(252, 0.0), (262, 1.0), (284, 1.0), (290, 0.0)]))}>One language, for the server and the browser.</p>
+			<EndCard shown={end!()} line="Web apps in Roc, from the database to the browser." />
+		</div>
+	}
+
+	<style>
+		.frame {
+			position: relative;
+			width: 1280px;
+			height: 720px;
+			overflow: hidden;
+			background:
+				radial-gradient(50% 60% at 20% 20%, rgb(124 56 245 / 0.28), transparent 70%),
+				radial-gradient(40% 50% at 90% 90%, rgb(46 232 255 / 0.16), transparent 70%),
+				#0a0910;
+			color: #f1eefc;
+			font-family: var(--font);
+		}
+
+		header {
+			display: flex;
+			align-items: center;
+			gap: 14px;
+			height: 40px;
+			padding: 0 16px;
+			border-bottom: 1px solid rgb(255 255 255 / 0.08);
+			color: #8a84ab;
+			font: 500 14px var(--mono);
+		}
+
+		.dots {
+			display: flex;
+			gap: 7px;
+		}
+
+		.dots i {
+			width: 11px;
+			height: 11px;
+			border-radius: 50%;
+			background: rgb(255 255 255 / 0.18);
+		}
+
+		.terminal {
+			position: absolute;
+			top: 96px;
+			left: 70px;
+			width: 640px;
+			height: 440px;
+			border-radius: 14px;
+			background: #100e19;
+			box-shadow:
+				0 0 0 1px rgb(255 255 255 / 0.08),
+				0 30px 60px rgb(0 0 0 / 0.5);
+		}
+
+		.body {
+			padding: 22px 24px;
+			font: 500 20px / 1.75 var(--mono);
+		}
+
+		.row {
+			margin: 0;
+			white-space: nowrap;
+		}
+
+		.sign {
+			font-weight: 700;
+		}
+
+		.command .sign {
+			color: #ff4fd0;
+		}
+
+		.done {
+			color: #aca6c8;
+		}
+
+		.done .sign {
+			color: #5ef0a5;
+		}
+
+		.link {
+			color: #2ee8ff;
+		}
+
+		.body .row:last-child::after {
+			content: "";
+			display: inline-block;
+			width: 11px;
+			height: 22px;
+			margin-left: 4px;
+			background: #2ee8ff;
+			vertical-align: -4px;
+		}
+
+		.body.blink .row:last-child::after {
+			opacity: 0;
+		}
+
+		.browser {
+			position: absolute;
+			top: 190px;
+			left: 560px;
+			width: 640px;
+			height: 420px;
+			overflow: hidden;
+			border-radius: 14px;
+			background: #0c0b12;
+			box-shadow:
+				0 0 0 1px rgb(255 255 255 / 0.1),
+				0 40px 80px rgb(0 0 0 / 0.6);
+		}
+
+		.address {
+			flex: 1;
+			padding: 6px 12px;
+			border-radius: 8px;
+			background: rgb(255 255 255 / 0.06);
+			color: #aca6c8;
+		}
+
+		.page {
+			display: grid;
+			justify-items: center;
+			gap: 6px;
+			padding: 40px 32px;
+			text-align: center;
+		}
+
+		.title {
+			margin: 0;
+			font-size: 40px;
+			font-weight: 800;
+			letter-spacing: -0.03em;
+		}
+
+		.subtitle {
+			margin: 0 0 26px;
+			color: #8a84ab;
+			font-size: 17px;
+		}
+
+		.demo {
+			position: relative;
+			width: 100%;
+		}
+
+		/* From the window's foot to the + button, `--t` of the way. */
+		.at {
+			position: absolute;
+			top: calc(170px - var(--t, 0) * 150px);
+			left: calc(50% + 230px - var(--t, 0) * 150px);
+			z-index: 2;
+		}
+
+		.caption {
+			position: absolute;
+			right: 0;
+			bottom: 42px;
+			left: 0;
+			margin: 0;
+			color: #f1eefc;
+			font-size: 30px;
+			font-weight: 700;
+			letter-spacing: -0.02em;
+			text-align: center;
+		}
+	</style>
+}
+
+## Two: kinetic type, a phrase at a time, then the mark.
+Kinetic := [].{
+
+	## How a phrase from `from` to `to` shows at `frame`: springs in, holds, and goes up and out.
+	Show : { opacity : Str, transform : Str }
+
+	phrase : U64, U64, U64, U64 -> Show
+	phrase = |frame, from, to, fps| {
+		entered = Explainers.rise(frame, from, fps)
+		gone = Timeline.eased(frame, to - 6, to, In)
+		{
+			opacity: Explainers.share(F64.min(entered * 1.4, 1.0) - gone),
+			transform: "translateY(${((1.0 - entered) * 70.0 - gone * 50.0).to_str()}px) scale(${(1.0 + gone * 0.08).to_str()})",
+		}
+	}
+
+	## The one-codebase list: each word's frame.
+	words : List((Str, U64))
+	words = [("Pages", 104), ("Components", 114), ("Endpoints", 124), ("Jobs", 134)]
+
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, fps, .. } = Player.clock!({})
+		write! = create_memo!(|| Kinetic.phrase(frame!(), 4, 50, fps))
+		roc! = create_memo!(|| Kinetic.phrase(frame!(), 46, 96, fps))
+		list! = create_memo!(
+			|| {
+				now = frame!()
+				out = Timeline.eased(now, 166, 172, In)
+				Kinetic.words.map(|(word, at)| { word, show: Explainers.share(F64.min(Explainers.rise(now, at, fps) * 1.4, 1.0) - out), lift: ((1.0 - Explainers.rise(now, at, fps)) * 40.0).to_str() })
+			},
+		)
+		checked! = create_memo!(|| Kinetic.phrase(frame!(), 170, 226, fps))
+		tick! = create_memo!(|| Timeline.eased(frame!(), 182, 200, Out))
+		split! = create_memo!(|| Explainers.rise(frame!(), 224, fps))
+		split_out! = create_memo!(|| Timeline.eased(frame!(), 272, 280, In))
+		end! = create_memo!(|| Explainers.rise(frame!(), 278, fps))
+		<div class="frame" style:background-position={"${Timeline.tween(frame!(), 0, 330, 0.0, 100.0, Linear).to_str()}% 50%"}>
+			<p class="big" style:opacity={write!().opacity} style:transform={write!().transform}>Write the whole app</p>
+			<p class="huge" style:opacity={roc!().opacity} style:transform={roc!().transform}>in Roc.</p>
+			<div class="list">
+				<p class="list-head" style:opacity={(list!().first() ?? { word: "", show: "0", lift: "0" }).show}>One codebase:</p>
+				{...list!().map(|w| <p key={w.word} class="word" style:opacity={w.show} style:transform={"translateY(${w.lift}px)"}>{w.word}</p>)}
+			</div>
+			<div class="checked" style:opacity={checked!().opacity} style:transform={checked!().transform}>
+				<svg viewBox="0 0 52 52" width="86" height="86" aria-hidden="true"><path d="M12 27l9 9 19-21" style:stroke-dashoffset={((1.0 - tick!()) * 60.0).to_str()} /></svg>
+				<p>Checked by the compiler.</p>
+			</div>
+			<div class="split" style:opacity={Explainers.share(split!() * 1.5 - split_out!())}>
+				<p class="half left" style:transform={"translateX(${((1.0 - split!()) * -260.0).to_str()}px)"}>Native<br />on the server.</p>
+				<p class="half right" style:transform={"translateX(${((1.0 - split!()) * 260.0).to_str()}px)"}>WebAssembly<br />in the browser.</p>
+			</div>
+			<EndCard shown={end!()} line="from the database to the browser" />
+		</div>
+	}
+
+	<style>
+		.frame {
+			position: relative;
+			display: grid;
+			place-items: center;
+			width: 1280px;
+			height: 720px;
+			overflow: hidden;
+			background: linear-gradient(120deg, #0a0910, #170f2a 35%, #0a0910 60%, #0b1a20);
+			background-size: 260% 100%;
+			color: #f1eefc;
+			font-family: var(--font);
+		}
+
+		.frame > * {
+			grid-area: 1 / 1;
+			margin: 0;
+		}
+
+		.big {
+			font-size: 92px;
+			font-weight: 800;
+			letter-spacing: -0.04em;
+		}
+
+		.huge {
+			background: linear-gradient(90deg, #2ee8ff, #a99bff 55%, #ff4fd0);
+			background-clip: text;
+			color: transparent;
+			font-size: 190px;
+			font-weight: 900;
+			letter-spacing: -0.05em;
+		}
+
+		.list {
+			display: grid;
+			justify-items: start;
+			width: 640px;
+		}
+
+		.list-head {
+			margin: 0 0 8px;
+			color: #8a84ab;
+			font-size: 34px;
+			font-weight: 600;
+		}
+
+		.word {
+			margin: 0;
+			font-size: 84px;
+			font-weight: 800;
+			letter-spacing: -0.04em;
+			line-height: 1.02;
+		}
+
+		.word:nth-of-type(odd) {
+			color: #2ee8ff;
+		}
+
+		.checked {
+			display: flex;
+			align-items: center;
+			gap: 28px;
+		}
+
+		.checked p {
+			margin: 0;
+			font-size: 80px;
+			font-weight: 800;
+			letter-spacing: -0.04em;
+		}
+
+		.checked svg path {
+			fill: none;
+			stroke: #5ef0a5;
+			stroke-width: 6;
+			stroke-linecap: round;
+			stroke-linejoin: round;
+			stroke-dasharray: 60;
+		}
+
+		.split {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			width: 1280px;
+			height: 720px;
+		}
+
+		.half {
+			display: grid;
+			place-content: center;
+			margin: 0;
+			padding: 0 60px;
+			font-size: 72px;
+			font-weight: 800;
+			letter-spacing: -0.04em;
+			line-height: 1.05;
+		}
+
+		.left {
+			background: #14121e;
+		}
+
+		.right {
+			background: linear-gradient(135deg, #7c38f5, #2ee8ff);
+			color: #0a0910;
+		}
+	</style>
+}
+
+## Three: the stack, from the browser down to the database and back, then one set of files made
+## into the server's program and the browser's.
+Stack := [].{
+
+	## Where the request is at `frame`: its height between the browser (0) and the database (2), and
+	## whether it shows.
+	packet : U64 -> { level : F64, shown : F64 }
+	packet = |frame| {
+		level = Timeline.keys_with(frame, [(66, 0.0), (90, 1.0), (98, 1.0), (118, 2.0), (126, 2.0), (146, 1.0), (154, 1.0), (176, 0.0)], InOut)
+		{ level, shown: Timeline.keys(frame, [(60, 0.0), (66, 1.0), (176, 1.0), (182, 0.0)]) }
+	}
+
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, fps, .. } = Player.clock!({})
+		layers! = create_memo!(
+			|| {
+				now = frame!()
+				[0, 1, 2].map(|i| Explainers.rise(now, 6 + i * 10, fps))
+			},
+		)
+		packet! = create_memo!(|| Stack.packet(frame!()))
+		rows! = create_memo!(|| Timeline.eased(frame!(), 176, 196, Out))
+		files! = create_memo!(|| Explainers.rise(frame!(), 200, fps))
+		lines! = create_memo!(|| Timeline.eased(frame!(), 212, 240, InOut))
+		end! = create_memo!(|| Explainers.rise(frame!(), 284, fps))
+		label! = |at, last| Explainers.share(Timeline.keys(frame!(), [(at, 0.0), (at + 6, 1.0), (last, 1.0), (last + 6, 0.0)]))
+		<div class="frame">
+			<p class="kicker" style:opacity={Explainers.share((layers!().first() ?? 0.0) * 1.5)} style:transform={"translateX(${((1.0 - files!()) * 210.0).to_str()}px)"}>One app, three places</p>
+			<div class="layers" style:transform={"translateX(${((1.0 - files!()) * 210.0).to_str()}px)"}>
+				<section class="layer browser" style:opacity={Explainers.share((layers!().get(0) ?? 0.0) * 1.5)} style:transform={"translateY(${((1.0 - (layers!().get(0) ?? 0.0)) * 50.0).to_str()}px)"}>
+					<strong>Browser</strong>
+					<span>WebAssembly · signals · hydrated HTML</span>
+					<span class="list" style:opacity={Explainers.share(rows!())}><i style:width={"${(rows!() * 120.0).to_str()}px"}></i><i style:width={"${(rows!() * 90.0).to_str()}px"}></i><i style:width={"${(rows!() * 105.0).to_str()}px"}></i></span>
+				</section>
+				<section class="layer server" style:opacity={Explainers.share((layers!().get(1) ?? 0.0) * 1.5)} style:transform={"translateY(${((1.0 - (layers!().get(1) ?? 0.0)) * 50.0).to_str()}px)"}>
+					<strong>Server</strong>
+					<span>Native code in a Rust host · endpoints · jobs</span>
+				</section>
+				<section class="layer database" style:opacity={Explainers.share((layers!().get(2) ?? 0.0) * 1.5)} style:transform={"translateY(${((1.0 - (layers!().get(2) ?? 0.0)) * 50.0).to_str()}px)"}>
+					<strong>Database</strong>
+					<span>SQLite or Postgres · its SQL checked by rocx</span>
+				</section>
+				<span class="packet" style:--level={packet!().level.to_str()} style:opacity={Explainers.share(packet!().shown)}></span>
+				<span class="note n1" style:opacity={label!(70, 96)}>GET /api/posts · a typed endpoint</span>
+				<span class="note n2" style:opacity={label!(100, 124)}>SELECT … · checked against the schema</span>
+				<span class="note n1" style:opacity={label!(150, 178)}>List(Post), back up to the page</span>
+			</div>
+			<div class="files" style:opacity={Explainers.share(files!() * 1.5 - Timeline.eased(frame!(), 276, 284, In))} style:transform={"scale(${(0.9 + 0.1 * files!()).to_str()})"}>
+				<span class="file">Posts.rocx</span>
+				<svg class="wires" viewBox="0 0 400 110" width="400" height="110" aria-hidden="true"><path d="M200 0 C 200 60, 95 50, 95 110" style:stroke-dashoffset={((1.0 - lines!()) * 200.0).to_str()} /><path d="M200 0 C 200 60, 305 50, 305 110" style:stroke-dashoffset={((1.0 - lines!()) * 200.0).to_str()} /></svg>
+				<div class="outs" style:opacity={Explainers.share(lines!() * 2.0 - 1.0)}>
+					<span class="out"><b>Server</b>native code</span>
+					<span class="out"><b>Browser</b>WebAssembly</span>
+				</div>
+				<p class="files-line" style:opacity={Explainers.share(lines!() * 2.0 - 1.0)}>One set of files, two programs, one compiler checking both.</p>
+			</div>
+			<EndCard shown={end!()} line="Web apps in Roc, from the database to the browser." />
+		</div>
+	}
+
+	<style>
+		.frame {
+			position: relative;
+			width: 1280px;
+			height: 720px;
+			overflow: hidden;
+			background:
+				linear-gradient(rgb(255 255 255 / 0.03) 1px, transparent 1px) 0 0 / 40px 40px,
+				linear-gradient(90deg, rgb(255 255 255 / 0.03) 1px, transparent 1px) 0 0 / 40px 40px,
+				#0b0a12;
+			color: #f1eefc;
+			font-family: var(--font);
+		}
+
+		.kicker {
+			position: absolute;
+			top: 54px;
+			left: 120px;
+			margin: 0;
+			color: #2ee8ff;
+			font-size: 22px;
+			font-weight: 700;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+		}
+
+		.layers {
+			position: absolute;
+			top: 120px;
+			left: 120px;
+			display: grid;
+			gap: 60px;
+			width: 620px;
+		}
+
+		.layer {
+			position: relative;
+			display: grid;
+			gap: 6px;
+			height: 98px;
+			box-sizing: border-box;
+			padding: 18px 26px;
+			border-radius: 16px;
+			background: #15131f;
+			box-shadow: 0 0 0 1px rgb(255 255 255 / 0.09);
+		}
+
+		.layer strong {
+			font-size: 30px;
+			letter-spacing: -0.02em;
+		}
+
+		.layer span {
+			color: #aca6c8;
+			font-size: 18px;
+		}
+
+		.browser {
+			box-shadow: 0 0 0 1.5px #2ee8ff;
+		}
+
+		.server {
+			box-shadow: 0 0 0 1.5px #a99bff;
+		}
+
+		.database {
+			box-shadow: 0 0 0 1.5px #ff4fd0;
+		}
+
+		.list {
+			position: absolute;
+			top: 22px;
+			right: 26px;
+			display: grid;
+			gap: 9px;
+			justify-items: end;
+		}
+
+		.list i {
+			display: block;
+			height: 9px;
+			border-radius: 9px;
+			background: #2ee8ff;
+		}
+
+		/* The request, between the layers' middles: 98px a layer and 60px between. */
+		.packet {
+			position: absolute;
+			top: calc(49px - 11px + var(--level, 0) * 158px);
+			left: 290px;
+			width: 22px;
+			height: 22px;
+			border-radius: 50%;
+			background: #ffffff;
+			box-shadow:
+				0 0 0 6px rgb(46 232 255 / 0.25),
+				0 0 30px #2ee8ff;
+		}
+
+		.note {
+			position: absolute;
+			left: 330px;
+			color: #f1eefc;
+			font: 600 17px var(--mono);
+			white-space: nowrap;
+		}
+
+		.n1 {
+			top: 117px;
+		}
+
+		.n2 {
+			top: 275px;
+		}
+
+		.files {
+			position: absolute;
+			top: 170px;
+			right: 70px;
+			display: grid;
+			justify-items: center;
+			width: 400px;
+		}
+
+		.file {
+			padding: 14px 20px;
+			border-radius: 12px;
+			background: #1c1929;
+			box-shadow: 0 0 0 1px rgb(255 255 255 / 0.18);
+			font: 700 24px var(--mono);
+		}
+
+		.wires path {
+			fill: none;
+			stroke: #a99bff;
+			stroke-width: 3;
+			stroke-dasharray: 200;
+		}
+
+		.outs {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 20px;
+			width: 100%;
+		}
+
+		.out {
+			display: grid;
+			gap: 4px;
+			padding: 14px 16px;
+			border-radius: 12px;
+			background: #15131f;
+			box-shadow: 0 0 0 1px rgb(255 255 255 / 0.15);
+			color: #aca6c8;
+			font: 600 16px var(--mono);
+			text-align: center;
+		}
+
+		.out b {
+			color: #f1eefc;
+			font: 800 22px var(--font);
+		}
+
+		.files-line {
+			margin: 36px 0 0;
+			text-align: center;
+			color: #f1eefc;
+			font-size: 28px;
+			font-weight: 700;
+			letter-spacing: -0.02em;
+			line-height: 1.25;
+		}
+	</style>
+}
+
+## Four: a component as it is written, beside it as it runs: what each line does, said under it,
+## while the pointer clicks.
+CodeToPage := [].{
+
+	## The captions, each from its frame, and the line of the code it lights (from 1).
+	beats : List({ at : U64, line : U64, words : Str })
+	beats = [
+		{ at: 14, line: 1, words: "A component is a function that runs once." },
+		{ at: 74, line: 2, words: "count! is a signal: a value that changes." },
+		{ at: 134, line: 6, words: "A click writes it…" },
+		{ at: 186, line: 5, words: "…and only the hole that reads it runs again." },
+		{ at: 240, line: 0, words: "Rendered on the server, awake in your browser." },
+	]
+
+	## The beat at `frame`: the last one started.
+	beat : U64 -> { at : U64, line : U64, words : Str }
+	beat = |frame| CodeToPage.beats.keep_if(|b| frame >= b.at).last() ?? { at: 0, line: 0, words: "" }
+
+	clicks : List(U64)
+	clicks = [156, 180, 204]
+
+	## The counter as README.md shows it: the site's demo (site/Demos/Counter.rocx) without its Reset
+	## and its labels, so a line fits.
+	source : Str
+	source = "view! = |{ start_value }| {\n\t(count!, set_count!) = create_signal!(start_value)\n\t<div class=\"counter\">\n\t\t<button on:click={|| set_count!(count!() - 1)}>−</button>\n\t\t<output>{count!().to_str()}</output>\n\t\t<button on:click={|| set_count!(count!() + 1)}>+</button>\n\t</div>\n}"
+
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, fps, .. } = Player.clock!({})
+		beat! = create_memo!(|| CodeToPage.beat(frame!()))
+		toward! = create_memo!(|| Timeline.eased(frame!(), 120, 150, InOut))
+		pressed! = create_memo!(
+			|| {
+				now = frame!()
+				CodeToPage.clicks.any(|at| now + 3 >= at and now < at + 2)
+			},
+		)
+		pulse! = create_memo!(
+			|| {
+				now = frame!()
+				CodeToPage.clicks.map(|at| Timeline.keys(now, [(at, 0.0), (at + 2, 1.0), (at + 16, 0.0)])).fold(0.0, |a, b| F64.max(a, b))
+			},
+		)
+		end! = create_memo!(|| Explainers.rise(frame!(), 288, fps))
+		<div class="frame">
+			<div class={"code hl-${beat!().line.to_str()}"} style:opacity={Explainers.share(Timeline.keys(frame!(), [(0, 0.0), (10, 1.0)]))}>
+				<Code title="Counter.rocx" source={CodeToPage.source} numbers={Bool.False} />
+			</div>
+			<div class="stage" style:opacity={Explainers.share(Timeline.keys(frame!(), [(6, 0.0), (16, 1.0)]))}>
+				<p class="label">Live</p>
+				<div class="demo">
+					<Sequence frames={156}><Counter start_value={3} /></Sequence>
+					<Sequence from={156} frames={24}><Counter start_value={4} /></Sequence>
+					<Sequence from={180} frames={24}><Counter start_value={5} /></Sequence>
+					<Sequence from={204}><Counter start_value={6} /></Sequence>
+					<span class="ring" style:opacity={Explainers.share(pulse!())} style:transform={"scale(${(1.0 + (1.0 - pulse!()) * 0.6).to_str()})"}></span>
+					<span class="at" style:--t={toward!().to_str()} style:opacity={Explainers.share(Timeline.keys(frame!(), [(112, 0.0), (120, 1.0), (226, 1.0), (234, 0.0)]))}><Pointer pressed={pressed!()} /></span>
+				</div>
+			</div>
+			<p class="caption" style:opacity={Explainers.share(Timeline.keys(frame!(), [(beat!().at, 0.0), (beat!().at + 6, 1.0)]))}>{beat!().words}</p>
+			<EndCard shown={end!()} line="Components as in SolidJS, written in Roc." />
+		</div>
+	}
+
+	<style>
+		.frame {
+			position: relative;
+			width: 1280px;
+			height: 720px;
+			overflow: hidden;
+			background: #0c0b12;
+			color: #f1eefc;
+			font-family: var(--font);
+		}
+
+		.code {
+			position: absolute;
+			top: 60px;
+			left: 56px;
+			width: 560px;
+			zoom: 1.4;
+		}
+
+		/* The line a beat is about, lit; `hl-0` lights none. */
+		.code :global(.line) {
+			display: inline-block;
+			min-width: 100%;
+			border-radius: 6px;
+			transition: background-color 200ms;
+		}
+
+		.hl-1 :global(.line:nth-of-type(1)),
+		.hl-2 :global(.line:nth-of-type(2)),
+		.hl-5 :global(.line:nth-of-type(5)),
+		.hl-6 :global(.line:nth-of-type(6)) {
+			background: rgb(46 232 255 / 0.16);
+			box-shadow: -6px 0 0 #2ee8ff;
+		}
+
+		.stage {
+			position: absolute;
+			top: 60px;
+			right: 56px;
+			display: grid;
+			align-content: center;
+			width: 360px;
+			height: 470px;
+			border-radius: 16px;
+			background: #13111c;
+			box-shadow: 0 0 0 1px rgb(255 255 255 / 0.1);
+		}
+
+		.label {
+			position: absolute;
+			top: 16px;
+			left: 20px;
+			margin: 0;
+			color: #5ef0a5;
+			font: 700 14px var(--mono);
+			letter-spacing: 0.1em;
+			text-transform: uppercase;
+		}
+
+		.demo {
+			position: relative;
+			zoom: 1.5;
+		}
+
+		/* Around the number, as a click changes it. */
+		.ring {
+			position: absolute;
+			top: -6px;
+			left: calc(50% - 36px);
+			width: 72px;
+			height: 60px;
+			border-radius: 14px;
+			box-shadow: 0 0 0 3px #2ee8ff;
+			pointer-events: none;
+		}
+
+		.at {
+			position: absolute;
+			top: calc(150px - var(--t, 0) * 132px);
+			left: calc(50% + 160px - var(--t, 0) * 90px);
+			z-index: 2;
+		}
+
+		.caption {
+			position: absolute;
+			right: 60px;
+			bottom: 64px;
+			left: 60px;
+			margin: 0;
+			font-size: 38px;
+			font-weight: 800;
+			letter-spacing: -0.03em;
+		}
+	</style>
+}
+
+## Five: a bento of what it gives, each card coming in with a motion of its own, then the mark.
+Bento := [].{
+
+	## The packages the batteries card goes through, one every ten frames.
+	names : List(Str)
+	names = ["Auth", "Stripe", "Jobs and cron", "Email", "Charts", "Claude", "Storage", "Forms", "Video"]
+
+	cards : List({ title : Str, line : Str })
+	cards = [
+		{ title: "One language", line: "Pages, components, endpoints and jobs, all Roc." },
+		{ title: "Typed end to end", line: "The compiler checks the server and the browser together." },
+		{ title: "A native server", line: "Your Roc, compiled into a Rust host." },
+		{ title: "Signals, as in Solid", line: "Only what reads a value runs again." },
+		{ title: "Rendered, then hydrated", line: "HTML from the server; the browser takes it over." },
+		{ title: "Batteries", line: "Sign-in, payments, jobs, email and more, as packages." },
+	]
+
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, fps, .. } = Player.clock!({})
+		shown! = create_memo!(
+			|| {
+				now = frame!()
+				Bento.cards.map_with_index(|card, i| { title: card.title, line: card.line, index: i, rise: Explainers.rise(now, 10 + i * 12, fps) })
+			},
+		)
+		# Each card's motion shows with its card.
+		on! = |i| Explainers.share(((shown!().get(i) ?? { title: "", line: "", index: 0, rise: 0.0 }).rise) * 1.5)
+		dim! = create_memo!(|| Timeline.eased(frame!(), 262, 276, In))
+		lit! = create_memo!(|| (frame!() // 16) % 5)
+		package! = create_memo!(|| Bento.names.get((Timeline.since(frame!(), 90) // 10) % Bento.names.len()) ?? "Auth")
+		# The server's log: a request answered every 14 frames, the last three shown.
+		served! = create_memo!(
+			|| {
+				answered = Timeline.since(frame!(), 50) // 14
+				[0, 1, 2].map(|back| if (answered >= back) Bento.request(answered - back) else "")
+			},
+		)
+		flow! = create_memo!(|| Timeline.keys(frame!(), [(90, 0.0), (140, 1.0), (180, 1.0), (181, 0.0), (230, 1.0)]))
+		end! = create_memo!(|| Explainers.rise(frame!(), 270, fps))
+		<div class="frame">
+			<div class="grid" style:opacity={Explainers.share(1.0 - dim!())} style:transform={"scale(${(1.0 - dim!() * 0.05).to_str()})"}>
+				{...shown!().map(|card|
+					<section key={card.title} class={"card c${card.index.to_str()}"} style:opacity={Explainers.share(card.rise * 1.5)} style:transform={"translateY(${((1.0 - card.rise) * 40.0).to_str()}px) scale(${(0.94 + 0.06 * card.rise).to_str()})"}>
+						<div class="visual"></div>
+						<strong>{card.title}</strong>
+						<span>{card.line}</span>
+					</section>
+				)}
+				<span class="roc" style:opacity={on!(0)}>Roc</span>
+				<span class="typed" style:opacity={on!(1)}><code>{"Api.get_posts({}).read!()"}</code><b>→</b><code>{"List(Post)"}</code></span>
+				<span class="served" style:opacity={on!(2)}><code>{served!().get(2) ?? ""}</code><code>{served!().get(1) ?? ""}</code><code class="new">{served!().get(0) ?? ""}</code></span>
+				<span class="nodes" style:opacity={on!(3)}><i class:lit={lit!() == 0}></i><i class:lit={lit!() == 1}></i><i class:lit={lit!() == 2}></i><i class:lit={lit!() == 3}></i><i class:lit={lit!() == 4}></i></span>
+				<span class="flow" style:opacity={on!(4)}><code>HTML</code><i style:--flow={flow!().to_str()}></i><code>wasm</code></span>
+				<span class="pill" style:opacity={on!(5)}>{package!()}</span>
+			</div>
+			<EndCard shown={end!()} line="Everything a web app needs, in one language." />
+		</div>
+	}
+
+	## The `n`th request in the server's log, as its line says it.
+	request : U64 -> Str
+	request = |n| ["GET /  200", "GET /api/posts  200", "POST /api/posts  201", "GET /posts/42  200", "GET /api/me  200"].get(n % 5) ?? ""
+
+	<style>
+		.frame {
+			position: relative;
+			width: 1280px;
+			height: 720px;
+			overflow: hidden;
+			background: radial-gradient(70% 70% at 50% 0%, #1a1430, #0a0910 70%);
+			color: #f1eefc;
+			font-family: var(--font);
+		}
+
+		.grid {
+			position: absolute;
+			inset: 60px 70px;
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			grid-template-rows: 1fr 1fr;
+			gap: 22px;
+		}
+
+		.card {
+			display: flex;
+			flex-direction: column;
+			justify-content: flex-end;
+			gap: 6px;
+			padding: 24px;
+			border-radius: 20px;
+			background: #15131f;
+			box-shadow: 0 0 0 1px rgb(255 255 255 / 0.09);
+		}
+
+		.card strong {
+			font-size: 28px;
+			letter-spacing: -0.02em;
+		}
+
+		.card span {
+			color: #aca6c8;
+			font-size: 17px;
+			line-height: 1.35;
+		}
+
+		.visual {
+			flex: 1;
+		}
+
+		/* Each card in its cell, and its motion drawn over the cell's top. */
+		.c0 {
+			grid-area: 1 / 1;
+			background: linear-gradient(160deg, #241a44, #15131f 60%);
+		}
+
+		.c1 {
+			grid-area: 1 / 2;
+		}
+
+		.c2 {
+			grid-area: 1 / 3;
+		}
+
+		.c3 {
+			grid-area: 2 / 1;
+		}
+
+		.c4 {
+			grid-area: 2 / 2;
+		}
+
+		.c5 {
+			grid-area: 2 / 3;
+			background: linear-gradient(200deg, #3a1235, #15131f 60%);
+		}
+
+		.roc,
+		.typed,
+		.served,
+		.nodes,
+		.flow,
+		.pill {
+			position: relative;
+			z-index: 1;
+			align-self: start;
+			justify-self: start;
+			margin: 26px;
+		}
+
+		.roc {
+			grid-area: 1 / 1;
+			background: linear-gradient(90deg, #2ee8ff, #a99bff 55%, #ff4fd0);
+			background-clip: text;
+			color: transparent;
+			font-size: 96px;
+			font-weight: 900;
+			letter-spacing: -0.05em;
+			line-height: 1;
+		}
+
+		.typed {
+			grid-area: 1 / 2;
+			display: grid;
+			gap: 10px;
+			font: 600 19px var(--mono);
+		}
+
+		.typed code {
+			width: fit-content;
+			padding: 6px 10px;
+			border-radius: 8px;
+			background: rgb(255 255 255 / 0.07);
+		}
+
+		.typed b {
+			color: #5ef0a5;
+		}
+
+		.served {
+			grid-area: 1 / 3;
+			display: grid;
+			gap: 6px;
+			color: #8a84ab;
+			font: 600 19px var(--mono);
+		}
+
+		.served .new {
+			color: #a99bff;
+		}
+
+		.nodes {
+			grid-area: 2 / 1;
+			display: flex;
+			gap: 14px;
+		}
+
+		.nodes i {
+			width: 40px;
+			height: 40px;
+			border-radius: 50%;
+			background: rgb(255 255 255 / 0.12);
+			transition:
+				background-color 200ms,
+				box-shadow 200ms;
+		}
+
+		.nodes i.lit {
+			background: #2ee8ff;
+			box-shadow: 0 0 22px #2ee8ff;
+		}
+
+		.flow {
+			grid-area: 2 / 2;
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			font: 700 22px var(--mono);
+		}
+
+		.flow code {
+			padding: 8px 12px;
+			border-radius: 8px;
+			background: rgb(255 255 255 / 0.07);
+		}
+
+		.flow i {
+			width: 130px;
+			height: 4px;
+			border-radius: 4px;
+			background: linear-gradient(90deg, #5ef0a5 calc(var(--flow, 0) * 100%), rgb(255 255 255 / 0.12) 0);
+		}
+
+		.pill {
+			grid-area: 2 / 3;
+			padding: 10px 18px;
+			border-radius: 999px;
+			background: #ff4fd0;
+			color: #0a0910;
+			font-size: 32px;
+			font-weight: 800;
+		}
+	</style>
+}
