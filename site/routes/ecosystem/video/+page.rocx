@@ -9,7 +9,7 @@ import ../../../Generated/Paths
 import ../../../Generated/Sources
 
 ## The video package: a composition made of components, played live by <Player> and rendered to a
-## file by render.mjs; installing it, the demo (site/Demos/VideoDemo.rocx, hydrated), writing a
+## file by `rocx render`; installing it, the demo (site/Demos/VideoDemo.rocx, hydrated), writing a
 ## scene, the player, sequences, Timeline, rendering, the stories' transport, and what isn't there yet.
 meta = {
 	title: "Video",
@@ -164,15 +164,15 @@ view! = |_|
 			<Heading id="render">Rendering a file</Heading>
 			<Code
 				title="a shell, with the app running"
-				source={"node packages/video/render.mjs http://localhost:8091/ -o walk.mp4 -o walk.webm\nnode packages/video/render.mjs http://localhost:8091/__rocx/stories/Demos/VideoDemo/a-bar-to-scrub -o frames/"}
+				source={"rocx render http://localhost:8091/ -o walk.mp4 -o walk.webm\nrocx render http://localhost:8091/__rocx/stories/Demos/VideoDemo/a-bar-to-scrub -o frames/"}
 				numbers={Bool.False}
 			/>
 			<p>
-				<code>render.mjs</code> opens the page in Chromium's headless shell and lets it load and hydrate. Then it
+				<code>rocx render</code> opens the page in Chromium's headless shell and lets it load and hydrate. Then it
 				takes the page's clock over: <code>performance.now()</code>, <code>Date</code>, timers and animation
 				frames move only when it says. For each frame, it moves the clock on a frame, seeks the player there,
 				waits for the page to settle, and puts every running animation where the clock says. That includes the
-				platform's transitions and CSS's. Then it photographs the player's stage and hands the picture to ffmpeg.
+				platform's transitions and CSS's. Then it photographs the player's stage, and ffmpeg makes the pictures a video.
 			</p>
 			<p>
 				So a frame doesn't depend on how long it took to film, and two renders of one composition are the same,

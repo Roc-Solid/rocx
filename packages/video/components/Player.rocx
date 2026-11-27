@@ -4,7 +4,7 @@ import pf.Solid exposing [create_signal!, use_context!]
 
 ## A video made of components, played in the page: `frames` frames, `fps` a second, its moment a
 ## signal that its composition reads (`Player.clock!`), so each frame is what the components inside
-## render for it. The same composition is a file once rendered (packages/video's `render.mjs` films
+## render for it. The same composition is a file once rendered (`rocx render` films
 ## a `<Player>` a frame at a time), and stays live in the page: when a component changes, the video
 ## does too.
 ##

@@ -202,9 +202,9 @@ test("stories: videos shown together play in step from one transport, which paus
 			{ id: "Intro/tall", file: "Intro.rocx", component: "Intro", name: "Tall", line: 9 },
 			{ id: "Ui/Badge/label", file: "Ui/Badge.rocx", component: "Badge", name: "Label", line: 4 },
 		],
-		{ title: "site", root: "/app", render: "/rocx/packages/video/render.mjs" },
+		{ title: "site", root: "/app", render: "/rocx/bin/rocx" },
 	);
-	assert.match(html, /const RENDER = "\/rocx\/packages\/video\/render.mjs";/);
+	assert.match(html, /const RENDER = "\/rocx\/bin\/rocx";/);
 	// A story with a player as packages/video renders one: live, its scrubber seeks it and pauses it,
 	// and its element says where it is.
 	const player = (frames, scaled = false) =>

@@ -45,6 +45,7 @@ Help := [].{
 				{ usage: "generate [dir]…", what: "write Generated/ and the browser's copy, and build nothing" },
 				{ usage: "upgrade [version]", what: "move the app to another version of rocx" },
 				{ usage: "agents [dir]", what: "rocx's rules for coding agents, in the app's AGENTS.md" },
+				{ usage: "render <url>", what: "a video on the page (packages/video's <Player>) as MP4 and WebM" },
 				{ usage: "qr <text>", what: "a QR code in the terminal" },
 				{ usage: "--version", what: "this rocx's version, and the Roc compiler it runs" },
 			],
@@ -215,6 +216,28 @@ Help := [].{
 					],
 					"\n",
 				)
+			"render" =>
+				Str.join_with(
+					[
+						"rocx render <url> [-o out.mp4] [-o out.webm] [-o frames/] [--player n|label]",
+						"                  [--scale 2] [--from n] [--to n] [--crf 18]",
+						"",
+						"Films the video on the page at `url` (packages/video's <Player>) a frame at a time in",
+						"Chromium's headless shell: each frame is the same however long it took, so two renders",
+						"are the same. ffmpeg writes .mp4 (H.264) and .webm (VP9); a folder gets PNGs.",
+						"Chromium is $CHROME, or Playwright's headless shell; ffmpeg is $FFMPEG, the one on",
+						"PATH, or Nix's (nixpkgs#ffmpeg-headless). The stories' catalog copies this command.",
+						"",
+						"  -o PATH          a file to write (again for more): .mp4, .webm, or a folder ending",
+						"                   in / for the frames as PNGs; video.mp4 when none is given",
+						"  --player N|L     the page's player to film: its index from 0, or its aria-label",
+						"                   (the first by default)",
+						"  --scale N        device pixels to a CSS pixel (2 by default: 1280 wide is 2560)",
+						"  --from N, --to N the stretch to film, by frame (the whole video by default)",
+						"  --crf N          H.264's quality (18 by default; lower is better and bigger)",
+					],
+					"\n",
+				)
 			"qr" =>
 				Str.join_with(
 					[
@@ -256,5 +279,6 @@ Help := [].{
 }
 
 expect Help.knows("build")
+expect Help.knows("render")
 expect !Help.knows("nope")
 expect Help.overview(Bool.False).contains("  rocx build [dir]")

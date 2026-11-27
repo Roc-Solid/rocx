@@ -12,6 +12,7 @@ mod abi;
 mod events;
 mod http;
 mod watch;
+mod websocket;
 
 use abi::{RocHost, RocList, RocStr};
 use std::collections::HashMap;
@@ -35,6 +36,8 @@ type TextTag = abi::HostReadResultTag;
 type Ran = abi::AnonStruct4789a1b2f954e45c;
 /// `{ kind : U8, paths : List(Str), child : U64, code : I32 }`.
 type Next = abi::AnonStruct40c3f27e6ea250c6;
+/// `{ kind : U8, text : Str }`.
+type Taken = abi::AnonStruct6c247d592941e0f4;
 
 // ---- Roc's memory ----
 
@@ -568,4 +571,41 @@ pub extern "C" fn roc_host_next(timeout_ms: u64) -> Next {
         Some(events::Event::Exited { child, code }) => Next { child, paths: empty(), code, kind: 2 },
         Some(events::Event::Signal(signal)) => Next { child: 0, paths: empty(), code: signal, kind: 3 },
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_ws_connect(url: RocStr) -> abi::HostSpawnResult {
+    match websocket::connect(&taken(url)) {
+        Ok(id) => abi::HostSpawnResult { payload: abi::HostSpawnResultPayload { ok: ManuallyDrop::new(id) }, tag: abi::HostSpawnResultTag::Ok },
+        Err(why) => abi::HostSpawnResult { payload: abi::HostSpawnResultPayload { err: ManuallyDrop::new(roc_str(&why)) }, tag: abi::HostSpawnResultTag::Err },
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_ws_send(socket: u64, text: RocStr) -> UnitResult {
+    unit_result(websocket::send(socket, &taken(text)))
+}
+
+fn taken_message(got: websocket::Taken) -> Taken {
+    match got {
+        websocket::Taken::Message(text) => Taken { text: roc_str(&text), kind: 0 },
+        websocket::Taken::Timeout => Taken { text: roc_str(""), kind: 1 },
+        websocket::Taken::Closed(why) => Taken { text: roc_str(&why), kind: 2 },
+        websocket::Taken::NotAnObject => Taken { text: roc_str(""), kind: 3 },
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_ws_request(socket: u64, object: RocStr, timeout_ms: u64) -> Taken {
+    taken_message(websocket::request(socket, &taken(object), timeout_ms))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_ws_receive(socket: u64, timeout_ms: u64) -> Taken {
+    taken_message(websocket::receive(socket, timeout_ms))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn roc_host_ws_close(socket: u64) {
+    websocket::close(socket);
 }

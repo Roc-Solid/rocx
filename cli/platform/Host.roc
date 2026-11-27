@@ -126,4 +126,25 @@ Host := [].{
 	## changed (`paths`, absolute); 2, a child ended (`child`, its exit `code`); 3, a signal came
 	## (`code`: 1 SIGHUP, 2 SIGINT, 15 SIGTERM).
 	next! : U64 => { kind : U8, paths : List(Str), child : U64, code : I32 }
+
+	## Opens a WebSocket to `url` (`ws://host:port/path`, plain: a server on this machine): its id.
+	## A thread reads its messages and keeps them until `ws_request!` or `ws_receive!` takes them.
+	ws_connect! : Str => Try(U64, Str)
+
+	## Sends a text message on the socket.
+	ws_send! : U64, Str => Try({}, Str)
+
+	## Sends `object` (a JSON object) on the socket with the socket's next `id` (1, 2, 3…) put first
+	## in it, and waits for the message answering it (a JSON object whose top-level `id` is that
+	## number), wherever it is among those waiting, up to `timeout_ms` (0: as long as it takes): kind
+	## 0 with its `text`; 1, nothing in that time; 2, the socket closed (`text`: why); 3, `object`
+	## isn't a JSON object (nothing sent). Messages that came before the answer stay, in order.
+	ws_request! : U64, Str, U64 => { kind : U8, text : Str }
+
+	## The oldest message still waiting on the socket, up to `timeout_ms` (0: only one there already):
+	## kinds as `ws_request!`'s.
+	ws_receive! : U64, U64 => { kind : U8, text : Str }
+
+	## Closes the socket (a close frame, then the connection) and forgets it.
+	ws_close! : U64 => {}
 }

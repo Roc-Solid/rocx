@@ -1,14 +1,14 @@
 ## The command-line platform rocx is built on (`bin/rocx`): its output and input, the environment,
 ## files, commands run to their end or beside it, directory trees watched, the signals it is sent,
-## and GETs of a server on this machine. Whatever happens while a program waits (a file changed, a
-## child ended, a signal) is an event, and `Events.next!` waits for the next one: a program that
-## watches is one plain loop.
+## GETs of a server on this machine, and WebSockets to one (a browser, driven). Whatever happens
+## while a program waits (a file changed, a child ended, a signal) is an event, and `Events.next!`
+## waits for the next one: a program that watches is one plain loop.
 ## The host is Rust (../host), on the C library alone.
 platform ""
 	requires {
 		main! : List(Str) => Try({}, [Exit(I32), ..])
 	}
-	exposes [Child, Cmd, Env, Events, File, Http, Stderr, Stdin, Stdout, Time, Watch]
+	exposes [Child, Cmd, Env, Events, File, Http, Stderr, Stdin, Stdout, Time, Watch, WebSocket]
 	packages {}
 	provides {
 		"roc_main": main_for_host!,
@@ -49,6 +49,11 @@ platform ""
 		"roc_host_write": Host.write!,
 		"roc_host_write_bytes": Host.write_bytes!,
 		"roc_host_write_file": Host.write_file!,
+		"roc_host_ws_close": Host.ws_close!,
+		"roc_host_ws_connect": Host.ws_connect!,
+		"roc_host_ws_receive": Host.ws_receive!,
+		"roc_host_ws_request": Host.ws_request!,
+		"roc_host_ws_send": Host.ws_send!,
 	}
 	targets: {
 		inputs_dir: "targets/",
@@ -70,6 +75,7 @@ import Stdin
 import Stdout
 import Time
 import Watch
+import WebSocket
 
 ## The app's `main!`, given the arguments (not the program's name): its exit code. An error the app
 ## didn't handle is said, and exits 1.

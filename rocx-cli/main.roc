@@ -1,4 +1,4 @@
-app [main!] { pf: platform "../cli/platform/main.roc", qr: "../packages/qr/main.roc" }
+app [main!] { headless: "../packages/headless/main.roc", pf: platform "../cli/platform/main.roc", qr: "../packages/qr/main.roc", tools: "../packages/tools/main.roc" }
 
 import pf.Stdin
 import pf.Stdout
@@ -28,6 +28,7 @@ import Image
 import Versions
 import New
 import Help
+import Render
 import BuildArgs
 import Term
 import qr.Qr
@@ -84,6 +85,7 @@ main! = |args| {
 		Ok("self-build") if !Hosts.is_clone!(home) => clone_only!("rocx self-build", home)
 		Ok("self-build") => self_build!(home)
 		Ok("qr") if words.len() >= 2 => qr!(words.drop_first(1))
+		Ok("render") => Render.run!(words.drop_first(1))
 		Ok("fmt") if words.drop_first(1).any(|arg| arg != "--check") => fmt!(words.drop_first(1), home)
 		Ok(command) => usage!(command)
 	}

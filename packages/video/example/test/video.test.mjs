@@ -1,18 +1,20 @@
 // packages/video's example app in a browser: `<Player>` shows its poster frame as the server
 // renders it, plays from the start once the page is live, pauses and plays from its button, and
 // seeks with its scrubber, `<Sequence>` showing each scene in its stretch; the stories catalog lists
-// the compositions; and render.mjs films the same frames twice (a frame doesn't depend on how long it
-// took), and writes MP4 and WebM files when there is ffmpeg.
+// the compositions; and `rocx render` films the same frames twice (a frame doesn't depend on how long
+// it took), and writes MP4 and WebM files when there is ffmpeg.
 // Run it with `node --test 'packages/video/example/test/*.test.mjs'`; ROCX_TEST_OPT=speed builds the
 // server optimized (`--opt=speed`), as a release is.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildForTests, launchBrowser, startServer, testSqlite } from "../../../testing/index.mjs";
-import { findFfmpeg, render } from "../../render.mjs";
+import { rocxBinary } from "../../../../server/build.mjs";
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), "..");
 let built;
@@ -91,34 +93,66 @@ test("the stories catalog lists the compositions, and each story page has its pl
 	}
 });
 
-test("render.mjs films the same frames twice, whatever the time it takes", async (t) => {
-	if (!browser) return t.skip("no Chromium");
-	const once = await render({ url: `${app.url}/`, outputs: [], from: 0, to: 45, scale: 1, browser });
-	const again = await render({ url: `${app.url}/`, outputs: [], from: 0, to: 45, scale: 1, browser });
-	assert.equal(once.frames, 46);
-	assert.equal(once.fps, 30);
-	assert.deepEqual(once.hashes, again.hashes);
-	// Frames change as the composition does: the title types itself out.
-	assert.ok(new Set(once.hashes).size > 20, `${new Set(once.hashes).size} different frames`);
-	assert.deepEqual(once.errors, []);
-});
+/** `rocx render` run with `args` (the example's page first), to its end: its code and what it said. */
+const render = (args) =>
+	new Promise((resolve) => {
+		const child = spawn(rocxBinary(), ["render", `${app.url}/`, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+		let stdout = "";
+		let stderr = "";
+		child.stdout.on("data", (chunk) => (stdout += chunk));
+		child.stderr.on("data", (chunk) => (stderr += chunk));
+		child.on("close", (code) => resolve({ code, stdout, stderr }));
+	});
 
-test("render.mjs writes an MP4 and a WebM", async (t) => {
+/** Each PNG in `dir`, in order, by its SHA-256. */
+const hashes = (dir) => readdirSync(dir).sort().map((name) => createHash("sha256").update(readFileSync(join(dir, name))).digest("hex"));
+
+test("rocx render films the same frames twice, whatever the time it takes", async (t) => {
 	if (!browser) return t.skip("no Chromium");
-	try {
-		findFfmpeg();
-	} catch {
-		return t.skip("no ffmpeg");
-	}
 	const out = mkdtempSync(join(tmpdir(), "rocx-video-"));
 	try {
-		const made = await render({ url: `${app.url}/`, outputs: [join(out, "launch.mp4"), join(out, "launch.webm")], from: 0, to: 29, scale: 1, browser });
-		assert.equal(made.frames, 30);
+		const once = await render(["-o", join(out, "once") + "/", "--from", "0", "--to", "45", "--scale", "1"]);
+		assert.equal(once.code, 0, once.stdout + once.stderr);
+		assert.match(once.stdout, /filming 46 frames at 30 a second/);
+		const again = await render(["-o", join(out, "again") + "/", "--from", "0", "--to", "45", "--scale", "1"]);
+		assert.equal(again.code, 0, again.stdout + again.stderr);
+		const first = hashes(join(out, "once"));
+		assert.equal(first.length, 46);
+		assert.equal(readdirSync(join(out, "once")).sort()[0], "frame-00000.png");
+		assert.deepEqual(hashes(join(out, "again")), first);
+		// Frames change as the composition does: the title types itself out.
+		assert.ok(new Set(first).size > 20, `${new Set(first).size} different frames`);
+		assert.equal(once.stderr, "", "the page threw nothing");
+	} finally {
+		rmSync(out, { recursive: true, force: true });
+	}
+});
+
+test("rocx render writes an MP4 and a WebM", async (t) => {
+	if (!browser) return t.skip("no Chromium");
+	const out = mkdtempSync(join(tmpdir(), "rocx-video-"));
+	try {
+		const made = await render(["-o", join(out, "launch.mp4"), "-o", join(out, "launch.webm"), "--from", "0", "--to", "29", "--scale", "1"]);
+		if (made.code !== 0 && made.stderr.includes("needs ffmpeg")) return t.skip("no ffmpeg");
+		assert.equal(made.code, 0, made.stdout + made.stderr);
+		assert.match(made.stdout, /30 frames, 1280 by \d+/);
 		const mp4 = readFileSync(join(out, "launch.mp4"));
 		assert.equal(mp4.subarray(4, 8).toString("latin1"), "ftyp");
 		const webm = readFileSync(join(out, "launch.webm"));
 		assert.deepEqual([...webm.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3]);
+		// The PNGs it wrote for ffmpeg are gone.
+		assert.deepEqual(readdirSync(out).sort(), ["launch.mp4", "launch.webm"]);
 	} finally {
 		rmSync(out, { recursive: true, force: true });
 	}
+});
+
+test("rocx render says what is wrong: a page with no player, an option it doesn't know", async (t) => {
+	if (!browser) return t.skip("no Chromium");
+	const none = await render(["--player", "Nothing here", "-o", join(tmpdir(), "rocx-video-none") + "/"]);
+	assert.equal(none.code, 1);
+	assert.match(none.stderr, /has \d+ players? \(<Player>, \[data-rocx-video\]\); none is "Nothing here"/);
+	const unknown = await render(["--fast"]);
+	assert.equal(unknown.code, 2);
+	assert.match(unknown.stderr, /rocx render: no option --fast/);
 });

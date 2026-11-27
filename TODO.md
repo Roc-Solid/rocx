@@ -94,8 +94,9 @@ When an item lands, delete its line here in the same commit.
 - **packages/video's next steps (D-126):** a player that rests on its poster under
   `prefers-reduced-motion` (one host function reading the runtime's `reducedMotion()`; a gap for
   any app today); one that starts as it scrolls into view (an `on:visible` primitive); real input
-  scripted at frames (a demo's clicks dispatched, replayed when scrubbed back); `rocx render` in the
-  CLI (it would drive Chromium itself); an audio track mixed in by ffmpeg; rendering on the server
+  scripted at frames (a demo's clicks dispatched, replayed when scrubbed back); `rocx render`
+  feeding ffmpeg as it films, not after (D-128: the CLI platform can't write to a child's stdin
+  yet); an audio track mixed in by ffmpeg; rendering on the server
   with an app's data (a plugin with Chromium and ffmpeg beside it: a video per post), which the user
   hasn't decided on.
 - **enhanced:src's next steps (D-125):** colours (a photo with an ICC profile, a phone's Display P3,
@@ -234,7 +235,10 @@ When an item lands, delete its line here in the same commit.
 - **What is still Node** (D-062): the tests, `just site`'s full build (it measures the wasm with
   `web/runtime.js`; its static copy is `rocx build --static` since D-073), and the measuring
   scripts. All of `just site` in Roc would need a way to run the wasm, or to drop the measured
-  rendering times.
+  rendering times. The video renderer is Roc since D-128 (`rocx render`, packages/headless);
+  `site/example-shots.mjs` (screenshots of the examples) could move onto packages/headless next, and
+  packages/testing's browser after it (packages/headless/PROPOSALS.md: Gecko over BiDi, drags and
+  touch, `Dom` queries in a tab, an app's tests in Roc).
 - **js-framework-benchmark: what is still slower** (D-074; `just js-bench`, `benchmarks/jsframework/`).
   The five steps of 2026-11-25/26 are in: `create_selector!` (D-083), the host's allocation notes
   without a hash map, `.map` rows as templates (D-084), fewer calls per row (known rows

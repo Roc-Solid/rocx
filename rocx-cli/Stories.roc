@@ -115,8 +115,8 @@ Stories := [].{
 	}
 
 	## Generated/Stories.roc: the catalog's page, which Generated/Routes answers /__rocx/stories with.
-	## `render` is packages/video's renderer (`render.mjs`) when the app names that package, else "":
-	## the catalog's Render copies the command that films a story's video with it.
+	## `render` is the rocx that films a story's video (`<render> render <url> …`) when the app names
+	## packages/video, else "": the catalog's Render copies that command.
 	stories_module : List(Placed), Str, Str, Str -> Str
 	stories_module = |stories, title, root, render| {
 		html = Stories.catalog_html(stories, title, root, render)

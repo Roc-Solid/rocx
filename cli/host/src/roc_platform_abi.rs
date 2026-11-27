@@ -1316,6 +1316,33 @@ const _: () = assert!(core::mem::size_of::<AnonStruct40c3f27e6ea250c6>() == 32, 
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<AnonStruct40c3f27e6ea250c6>() == 8, "AnonStruct40c3f27e6ea250c6 alignment mismatch");
 
+/// Element type for __AnonStruct_6c247d592941e0f4
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStruct6c247d592941e0f4 {
+    pub text: RocStr,
+    pub kind: u8,
+}
+
+/// Element type for __AnonStruct_6c247d592941e0f4
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct AnonStruct6c247d592941e0f4 {
+    pub text: RocStr,
+    pub kind: u8,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<AnonStruct6c247d592941e0f4>() == 32, "AnonStruct6c247d592941e0f4 size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<AnonStruct6c247d592941e0f4>() == 8, "AnonStruct6c247d592941e0f4 alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<AnonStruct6c247d592941e0f4>() == 16, "AnonStruct6c247d592941e0f4 size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<AnonStruct6c247d592941e0f4>() == 4, "AnonStruct6c247d592941e0f4 alignment mismatch");
+
 /// Tag discriminant for Try.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2456,6 +2483,64 @@ const _: () = assert!(core::mem::size_of::<HostNextRetRecord>() == 32, "HostNext
 #[cfg(target_pointer_width = "32")]
 const _: () = assert!(core::mem::align_of::<HostNextRetRecord>() == 8, "HostNextRetRecord alignment mismatch");
 
+/// Return type record for Host.ws_receive!
+/// Fields ordered by compiler-emitted ABI offsets.
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsReceiveRetRecord {
+    pub text: RocStr,
+    pub kind: u8,
+}
+
+/// Return type record for Host.ws_receive!
+/// Fields ordered by compiler-emitted ABI offsets.
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsReceiveRetRecord {
+    pub text: RocStr,
+    pub kind: u8,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<HostWsReceiveRetRecord>() == 32, "HostWsReceiveRetRecord size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<HostWsReceiveRetRecord>() == 8, "HostWsReceiveRetRecord alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<HostWsReceiveRetRecord>() == 16, "HostWsReceiveRetRecord size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<HostWsReceiveRetRecord>() == 4, "HostWsReceiveRetRecord alignment mismatch");
+
+/// Return type record for Host.ws_request!
+/// Fields ordered by compiler-emitted ABI offsets.
+#[cfg(target_pointer_width = "32")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsRequestRetRecord {
+    pub text: RocStr,
+    pub kind: u8,
+}
+
+/// Return type record for Host.ws_request!
+/// Fields ordered by compiler-emitted ABI offsets.
+#[cfg(not(target_pointer_width = "32"))]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsRequestRetRecord {
+    pub text: RocStr,
+    pub kind: u8,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<HostWsRequestRetRecord>() == 32, "HostWsRequestRetRecord size mismatch");
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::align_of::<HostWsRequestRetRecord>() == 8, "HostWsRequestRetRecord alignment mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<HostWsRequestRetRecord>() == 16, "HostWsRequestRetRecord size mismatch");
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::align_of::<HostWsRequestRetRecord>() == 4, "HostWsRequestRetRecord alignment mismatch");
+
 /// Arguments for Host.alive!
 /// Roc signature: U32 => Bool
 /// Refcounted fields are owned by the hosted function.
@@ -2721,6 +2806,55 @@ pub struct HostWriteFileArgs {
     pub arg1: RocStr,
 }
 
+/// Arguments for Host.ws_close!
+/// Roc signature: U64 => {}
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsCloseArgs {
+    pub arg0: u64,
+}
+
+/// Arguments for Host.ws_connect!
+/// Roc signature: Str => Try(U64, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsConnectArgs {
+    pub arg0: RocStr,
+}
+
+/// Arguments for Host.ws_receive!
+/// Roc signature: U64, U64 => { kind : U8, text : Str }
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsReceiveArgs {
+    pub arg0: u64,
+    pub arg1: u64,
+}
+
+/// Arguments for Host.ws_request!
+/// Roc signature: U64, Str, U64 => { kind : U8, text : Str }
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsRequestArgs {
+    pub arg0: u64,
+    pub arg1: RocStr,
+    pub arg2: u64,
+}
+
+/// Arguments for Host.ws_send!
+/// Roc signature: U64, Str => Try({}, Str)
+/// Refcounted fields are owned by the hosted function.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HostWsSendArgs {
+    pub arg0: u64,
+    pub arg1: RocStr,
+}
+
 // Platform Type Aliases
 
 pub type HostDeleteResult = HostCopyResult;
@@ -2753,6 +2887,14 @@ pub type HostWriteBytesResultTag = HostCopyResultTag;
 pub type HostWriteFileResult = HostCopyResult;
 pub type HostWriteFileResultPayload = HostCopyResultPayload;
 pub type HostWriteFileResultTag = HostCopyResultTag;
+pub type HostWsConnectResult = HostSpawnResult;
+pub type HostWsConnectResultPayload = HostSpawnResultPayload;
+pub type HostWsConnectResultTag = HostSpawnResultTag;
+pub type HostWsReceive = AnonStruct6c247d592941e0f4;
+pub type HostWsRequest = AnonStruct6c247d592941e0f4;
+pub type HostWsSendResult = HostCopyResult;
+pub type HostWsSendResultPayload = HostCopyResultPayload;
+pub type HostWsSendResultTag = HostCopyResultTag;
 
 // Generated Refcount Helpers
 
@@ -3264,6 +3406,35 @@ unsafe impl RocRelease<AnonStruct40c3f27e6ea250c6> for AnonStruct40c3f27e6ea250c
     }
 }
 
+impl AnonStruct6c247d592941e0f4 {
+    /// Recursively decrement Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must own one live Roc reference for each refcounted field.
+    pub unsafe fn decref(self, roc_host: &RocHost) {
+        let value = self;
+        unsafe { value.text.decref(roc_host); }
+    }
+
+    /// Increment Roc-owned fields.
+    ///
+    /// # Safety
+    /// `self` must point at live Roc allocations. The retained references must
+    /// be balanced by later decrefs.
+    pub unsafe fn incref(self, amount: isize) {
+        let value = self;
+        unsafe { value.text.incref(amount); }
+    }
+}
+
+pub struct AnonStruct6c247d592941e0f4Release;
+
+unsafe impl RocRelease<AnonStruct6c247d592941e0f4> for AnonStruct6c247d592941e0f4Release {
+    unsafe fn release(value: AnonStruct6c247d592941e0f4, roc_host: &RocHost) {
+        unsafe { value.decref(roc_host); }
+    }
+}
+
 /// Release one owned reference to a `RocList<RocStr>`.
 ///
 /// The allocation's final reference is claimed atomically before any element
@@ -3587,6 +3758,39 @@ unsafe extern "C" {
     ///     unsafe { arg1.decref(roc_host); }
     /// The result is owned by Roc: return exactly one owned reference.
     pub fn roc_host_write_file(arg0: RocStr, arg1: RocStr) -> HostCopyResult;
+
+    /// Hosted symbol for Host.ws_close!
+    /// Roc signature: U64 => {}
+    pub fn roc_host_ws_close(arg0: u64);
+
+    /// Hosted symbol for Host.ws_connect!
+    /// Roc signature: Str => Try(U64, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg0.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_ws_connect(arg0: RocStr) -> HostSpawnResult;
+
+    /// Hosted symbol for Host.ws_receive!
+    /// Roc signature: U64, U64 => { kind : U8, text : Str }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_ws_receive(arg0: u64, arg1: u64) -> AnonStruct6c247d592941e0f4;
+
+    /// Hosted symbol for Host.ws_request!
+    /// Roc signature: U64, Str, U64 => { kind : U8, text : Str }
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_ws_request(arg0: u64, arg1: RocStr, arg2: u64) -> AnonStruct6c247d592941e0f4;
+
+    /// Hosted symbol for Host.ws_send!
+    /// Roc signature: U64, Str => Try({}, Str)
+    /// Owned arguments. Release each exactly once before returning, unless it is
+    /// moved into storage or into the result:
+    ///     unsafe { arg1.decref(roc_host); }
+    /// The result is owned by Roc: return exactly one owned reference.
+    pub fn roc_host_ws_send(arg0: u64, arg1: RocStr) -> HostCopyResult;
 
 }
 

@@ -2,7 +2,7 @@
 
 Videos made of an app's own components, as Remotion makes them of React's. A **composition** is a
 component that reads the frame it is at and renders what that moment looks like. `<Player>` plays
-it live in a page, and `render.mjs` films it a frame at a time into an MP4 or a WebM. The same code
+it live in a page, and `rocx render` films it a frame at a time into an MP4 or a WebM. The same code
 is the landing page's animation and the file you post, and it follows your components: when a
 component changes, so does its video, the next time it plays or is rendered.
 
@@ -15,7 +15,8 @@ plugin either: it adds nothing to the server.
 - `Timeline` (plain Roc, on no platform): where a frame is along a span, eased, sprung or through
   keyframes, and what a number or a text is there.
 - `<Player>` and `<Sequence>`, in `components/`: the clock and its stretches.
-- `render.mjs` and `clock.js`: the renderer, in Node with Chromium's headless shell and ffmpeg.
+- `rocx render` (in rocx, on packages/headless) and `clock.js`, the clock it runs in the page: the
+  renderer, with Chromium's headless shell and ffmpeg.
 - The stories' catalog plays every player it shows from one transport, so videos side by side play
   in step (see [Stories](#stories)).
 
@@ -166,13 +167,14 @@ Every function gives the same answer for the same frame.
 ## Rendering
 
 ```sh
-node packages/video/render.mjs http://localhost:8091/ -o launch.mp4 -o launch.webm
-node packages/video/render.mjs http://localhost:8091/__rocx/stories/Launch/a-bar-to-scrub -o frames/
+rocx render http://localhost:8091/ -o launch.mp4 -o launch.webm
+rocx render http://localhost:8091/__rocx/stories/Launch/a-bar-to-scrub -o frames/
 ```
 
-`render.mjs` opens the page in Chromium's headless shell (the repository's driver, as the tests
-open pages), takes its clock over before the page's own scripts run (`clock.js`), lets it load and
-hydrate in real time, then freezes the clock and films each frame in turn:
+`rocx render` opens the page in Chromium's headless shell (`$CHROME`, or Playwright's), driven from
+Roc by packages/headless. It takes the page's clock over before the page's own scripts run
+(`clock.js`), lets it load and hydrate in real time, then freezes the clock and films each frame in
+turn:
 
 1. the clock moves on a frame: each timer due runs at its time, then each animation frame asked
    for;
@@ -185,10 +187,12 @@ hydrate in real time, then freezes the clock and films each frame in turn:
    frame 0, or from `--from`, doesn't open on the poster fading out;
 5. the player's stage is photographed, its controls hidden, at `--scale` device pixels a CSS pixel.
 
-The photographs go to one ffmpeg, which writes each file: `.mp4` in H.264 and `.webm` in VP9, both
-4:2:0 and their size made even; a path ending in `/` gets a PNG a frame. A frame doesn't depend on
-how long it took to film, so two renders of one composition are the same, frame for frame (the
-example's test renders twice and compares).
+A path ending in `/` gets a PNG a frame (`frame-00000.png`, numbered from the video's start). For
+the video files the photographs wait in a temporary folder, and once the last is taken one ffmpeg
+writes each file: `.mp4` in H.264 and `.webm` in VP9, both 4:2:0 and their size made even. ffmpeg
+is `$FFMPEG`, the one on `PATH`, or Nix's (`nixpkgs#ffmpeg-headless`, built once). A frame doesn't
+depend on how long it took to film, so two renders of one composition are the same, frame for frame
+(the example's test renders twice and compares).
 
 | Option | What it does |
 |---|---|
@@ -214,8 +218,8 @@ has a live player:
 - one clock for every player shown: a component's stories side by side, or stories compared, play
   in step, each sought to its frame at the same time (a shorter one keeps its last frame until the
   longest ends);
-- **Render** copies the command that films each story shown into an MP4 and a WebM named after it,
-  when the app names this package.
+- **Render** copies the command that films each story shown into an MP4 and a WebM named after it
+  (`rocx render`), when the app names this package.
 
 Comparing works for any stories, videos or not: the pin beside a story in the side (or P) picks it,
 and "Compare N side by side" (or C) opens the picked ones together, from any component.

@@ -7291,3 +7291,59 @@ unread: `of!` leaves them out (said on the log) and `has!` doesn't count them un
 updated. The partial index and the upsert on it are untried on Turso.
 
 **Reversible:** yes: the module and its table go; an app's grants are its rows.
+
+## D-128 Chromium driven from Roc: the CLI platform's WebSocket, packages/headless, `rocx render`
+
+**Status.** Built (2026-11-28), on the user's ask: could e2e tests be Roc, and why not move the
+browser driver to Roc too, as a package; first user, the video renderer. A spike that replaces
+packages/video's `render.mjs`.
+
+**Context.** The browser tests drive Chromium's headless shell (and Gecko) from Node, with the
+repository's own driver (web/test/browser.mjs: the DevTools protocol and WebDriver BiDi over Node's
+WebSocket, about 650 lines; Playwright only downloads the browsers). Playwright's clients in other
+languages each run a bundled Node driver, so Roc bindings to it would bring Node back into every
+run. packages/video's renderer (D-126) was Node over that driver, and TODO.md had "`rocx render` in
+the CLI (it would drive Chromium itself)". The CLI platform had HTTP GETs but no WebSocket.
+
+**Decision.**
+
+- **The CLI platform's `WebSocket`** (cli/platform/WebSocket.roc, cli/host/src/websocket.rs, std
+  alone, as the rest of that host): `connect!`, `send!`, `request!`, `receive!`, `close!`. A thread
+  per socket reads its frames, answers pings and keeps each message until Roc takes it. Roc has no
+  mutable counter or queue for a protocol's ids and events, so the host does both: `request!`
+  sends a JSON object with the socket's next `id` put first in it and waits for the message whose
+  top-level `id` is that number (the host reads just enough of each message to find it), wherever
+  it is among those waiting; `receive!` takes the oldest message still waiting. The DevTools
+  protocol, WebDriver BiDi and JSON-RPC all answer so. Past 10,000 waiting events the oldest goes.
+- **packages/headless** names the CLI platform: `Chrome.find!` (`$CHROME`, or Playwright's newest
+  headless shell), `launch!` (a profile in the system's temporary directory, the flags the Node
+  driver passes plus `--no-sandbox` everywhere, as Playwright does; its port read from the profile's
+  `DevToolsActivePort`, so nothing reads its stderr and no port is picked beforehand), `open!`
+  (`Target.createTarget`, then a socket of the tab's own at `/devtools/page/<id>`, so a tab's events
+  are its own and no session ids are needed), `close!`. `Tab`: `goto!`, `eval!` (JSON as
+  packages/tools' `JsonValue`), `wait!`, `before_each_document!`, `click!`/`click_at!`, `type!`,
+  `press!`, `viewport!`, `screenshot!` (the PNG's Base64 read from where it starts, not the
+  answer parsed whole), `errors!`, `call!` for any method.
+- **`rocx render`** (rocx-cli/Render.roc) is render.mjs in Roc, with the same options and output;
+  it embeds packages/video's clock.js. One difference: the PNGs wait in a temporary folder and one
+  ffmpeg encodes them after the last (the platform can't write to a child's stdin), where Node fed
+  ffmpeg as it filmed. render.mjs is deleted; the catalog's Render copies `<this rocx> render <url>
+  -o <story>.mp4 -o <story>.webm`.
+- **Checked against the old one**: on the video example, the 46 frames of `--from 0 --to 45 --scale
+  1` are byte for byte render.mjs's (and the same again on a second run), 3.4 s against 4.0 s; the
+  whole video at `--scale 2` to MP4 and WebM took 26.8 s against 24.2 s (ffmpeg after filming, not
+  during), its MP4 the same bytes (the WebM differs only in the muxer's random segment id).
+- **Tests**: websocket.rs's unit tests (frames of each length, replies by id among events, pings,
+  closing, timeouts; run as the other host modules' are, `hostUnitTests`); packages/headless's
+  checks as a Roc program on a page made for them (`test/main.roc`, built and run by
+  `test/headless.test.mjs`, which skips without Chromium as packages/testing does); the video
+  example's tests run `rocx render` (twice, the same frames; MP4 and WebM; a page with no such
+  player and an unknown option said).
+
+**Not decided here.** Whether packages/testing's browser moves to Roc (its queries in a tab, Gecko
+over BiDi, drags and touch: packages/headless/PROPOSALS.md), and an app's tests written in Roc
+(packages/testing's proposal 8). rocx's own suites stay in Node: they check what the compiler makes
+from outside it.
+
+**Reversible:** yes: render.mjs back from git, the catalog's command with it; the package and the
+platform's module removed.

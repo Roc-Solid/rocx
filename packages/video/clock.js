@@ -1,4 +1,4 @@
-// A clock the renderer moves (packages/video's render.mjs runs this in every document of its tab,
+// A clock the renderer moves (`rocx render` runs this in every document of its tab,
 // before the page's own scripts). Until `freeze()`, it is the page's own: everything runs in real
 // time, so the page loads and hydrates as it would. Frozen, time moves only when `advance(ms)` says,
 // so a frame looks the same however long it took to film:

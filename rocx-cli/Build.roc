@@ -366,15 +366,9 @@ Build := [].{
 			stories_page =
 				match placed {
 					Some(ids) => {
-						# packages/video's renderer, when the app names the package: the catalog's Render.
-						render =
-							match pkgs.find_first(|pkg| pkg.own == "video") {
-								Ok(video) => {
-									first = video.paths.first() ?? ""
-									if (first.is_empty()) "" else Fs.join([Fs.dirname(Fs.dirname(first)), "render.mjs"])
-								}
-								Err(_) => ""
-							}
+						# This rocx, which films a story's video (`rocx render`), when the app names
+						# packages/video: the catalog's Render.
+						render = if (pkgs.any(|pkg| pkg.own == "video")) Fs.join([options.rocx, "bin", "rocx"]) else ""
 						[{ name: "Stories", content: Stories.stories_module(ids, title, dir, render) }]
 					}
 					None => []
