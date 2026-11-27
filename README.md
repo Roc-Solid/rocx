@@ -171,6 +171,7 @@ another directory.
 | `just check` | Checks formatting and that no package is copied into an app by hand (`test/no-copies.test.mjs`), then type-checks the site's two programs (errors at `.rocx` lines) and every example's (`just examples-check`), and lints them |
 | `just test` | Everything, in three parts: `just test-rocx` (the transpiler, routing, the `rocx` commands, every Roc module's `expect`s), `just test-web` (the hosts' shared memory, `web/memory`; the browser platform in Node and Chromium; the docs site in Chromium), `just test-server` (the server platform, the packages' own test suites, and `rocx new`'s template on each database) |
 | `just examples [name…]` | Builds, checks and tests every example app, or the ones named |
+| `just examples-release [name…]` | Every example app and package example as it is deployed: `rocx build`, then its tests against a server built `--opt=speed` (`ROCX_TEST_OPT=speed`), where compiler bugs a dev build hides show. Run it before a compiler pin bump |
 | `just fmt` | Formats the Roc in every `.rocx` file and hand-written `.roc` file |
 | `just db` | A Postgres in Docker for the server platform's Postgres tests; prints its `DATABASE_URL`. SQLite apps need none |
 | `just site` | The docs site as static files in `site/dist`, every page as its server renders it |

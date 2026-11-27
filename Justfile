@@ -490,6 +490,35 @@ examples *names: server-host web-host
         exit 1
     fi
 
+# Every example app, and every package's example (or the ones named: `just examples-release journal
+# packages/auth/example`), as it is deployed: `rocx build` (its server --opt=speed with the database
+# engine its program names, its browser's wasm --opt=size), then its node tests against a server
+# built --opt=speed (`ROCX_TEST_OPT=speed`, which buildForTests reads). The compiler's optimized
+# build meets bugs a dev build doesn't (test/compiler-bugs/), and `rocx check` and `just examples`
+# check the dev build. Slow (each server built for speed twice); run it before a compiler pin bump,
+# and after a change to the platforms or the packages. Every one is run, and those that failed are
+# named at the end.
+examples-release *names: server-host web-host
+    #!/usr/bin/env bash
+    set -uo pipefail
+    all="{{ examples }} $(git ls-files 'packages/*/example/main.roc' | xargs -n1 dirname | tr '\n' ' ')"
+    failed=()
+    for dir in {{ if names == "" { "$all" } else { names } }}; do
+        case "$dir" in examples/*|packages/*) ;; *) dir="examples/$dir" ;; esac
+        echo "== $dir"
+        if ROC={{ roc }} {{ rocx }} build "$dir" --out "$dir/build/release" \
+            && { ! compgen -G "$dir/test/*.test.mjs" >/dev/null || ROCX_TEST_OPT=speed ROC={{ roc }} node --test "$dir/test/*.test.mjs"; }; then
+            echo "== $dir: ok"
+        else
+            echo "== $dir: FAILED" >&2
+            failed+=("$dir")
+        fi
+    done
+    if [ ${#failed[@]} -gt 0 ]; then
+        echo "Examples that failed in release mode: ${failed[*]}" >&2
+        exit 1
+    fi
+
 # The server platform's host (server/host, Rust) as server/platform/targets/<target>/libhost.a, as
 # the tests and rocx build it (cargo does nothing when nothing changed): before the tests, which run
 # at once, so that in a fresh clone (CI's) they don't each build it from nothing, waiting on one

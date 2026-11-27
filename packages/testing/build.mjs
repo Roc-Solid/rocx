@@ -35,10 +35,12 @@ function rocBuild(rocx, compiler, args) {
  * half (no wasm: pages aren't hydrated), as an app of endpoints alone has none; `dev: true` adds the stories (`rocx build --dev`), each a page
  * at `storyPath(…)`; `opt` is the server's optimization (`dev`, quick to build, or `speed`, with boxy
  * lowering unless `specialize` or `ROCX_SPECIALIZE=yes` asks for lambda-set specialization, as
- * server/build.mjs builds an app: D-064). A markup problem, a type error or a warning throws, said
- * at its line in the .rocx file.
+ * server/build.mjs builds an app: D-064), by default what `ROCX_TEST_OPT` says, else `dev`: with
+ * `ROCX_TEST_OPT=speed` an app's tests run against the server a release has (`just
+ * examples-release`), where some compiler bugs show that a dev build hides. A markup problem, a type
+ * error or a warning throws, said at its line in the .rocx file.
  */
-export async function buildForTests(dir, { out = join(dir, "build", "test"), client = true, dev = false, opt = "dev", specialize } = {}) {
+export async function buildForTests(dir, { out = join(dir, "build", "test"), client = true, dev = false, opt = process.env.ROCX_TEST_OPT || "dev", specialize } = {}) {
 	const { nativeTarget, roc, rocxBinary, specializeFlags } = await serverBuild();
 	const compiler = roc();
 	const rocx = rocxBinary();

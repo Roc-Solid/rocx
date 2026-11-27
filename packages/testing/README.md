@@ -87,7 +87,9 @@ needs the runtime; test it through its story instead (section 4).
 of its own. A client then asks it what a browser would: pages with a cookie jar, forms, JSON, the
 endpoints a page reads, and events. Each answer's `dom` has the same queries, with Testing Library's
 names. A markup problem, a type error or a warning makes `buildForTests` throw, with the report at
-its `.rocx` line.
+its `.rocx` line. Its server is built quickly (`--opt=dev`) unless `opt` says otherwise, or
+`ROCX_TEST_OPT=speed` does: then it is optimized as a release's is, where some compiler bugs show
+that a dev build hides (`just examples-release` runs every example's tests so).
 
 ```js
 import { test, before, after } from "node:test";
