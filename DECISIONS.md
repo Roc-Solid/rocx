@@ -6701,3 +6701,35 @@ left unbound; strict hydration in an app's tests catches it. An extension's elem
 app's own elements is still a mismatch.
 
 **Reversible:** yes: `foreignKept = false` makes every hydration exact again.
+
+## D-113 A pretty line's fields: a request's first, durations in their unit
+
+**Status.** Built (2026-11-27), the user's call, reading an app's request lines: "path, then
+method, then status, then duration … `duration=3ms` or `duration=50ns` … and we can drop naked
+`request`".
+
+**Context.** A pretty line's fields came in their names' order: a record is encoded field by
+field in that order, and the host's JSON map sorts them too. A request's line read
+`request  body=text duration_ms=0 method=GET path=/x status=308`: what was asked last, and a
+duration in whole milliseconds, nearly always 0.
+
+**Decision.** In the pretty format only (JSON is as it was):
+
+- `path`, `method` and `status` come first, in that order; then the durations; then the rest, in
+  their order.
+- A duration is a number whose name ends in `_ns`, `_us` or `_ms`: shown without the suffix, in
+  the unit that reads best: below 2 µs in nanoseconds, below 2 ms in microseconds, below 2 s in
+  milliseconds, whole; then seconds, to a tenth (`duration_ns=12345` is `duration=12µs`,
+  `again_in_ms=60000` is `again_in=60.0s`).
+- An event with no message is its fields alone, with no gap: `info  path=/posts method=GET
+  status=200 duration=12µs`. An app's request line may be just that.
+
+**Why.** The line is read left to right, and these are what a person looks for first; a
+duration's number means nothing without its unit, and a unit in the name is for machines.
+
+**Costs.** The formatter knows four names (`path`, `method`, `status`, and the units' suffixes);
+an app that means something else by `path` gets it first anyway. A field named `<x>_ms` that is
+no duration is shown as one.
+
+**Reversible:** yes: `arranged` goes, and the fields come in their order again.
+

@@ -410,17 +410,18 @@ fn line(record: &Record) -> String {
             }
             out.push(' ');
             one_line(&record.message, &mut out);
-            for (index, (name, value)) in fields.iter().enumerate() {
-                out.push_str(if index == 0 { "  " } else { " " });
+            for (index, (name, value)) in arranged(fields).iter().enumerate() {
+                // Two spaces after the message; none before the first field when there is no message.
+                out.push_str(if index > 0 { " " } else if record.message.is_empty() { "" } else { "  " });
                 if colour {
                     out.push_str(DIM);
                 }
-                one_line(&key(name), &mut out);
+                one_line(name, &mut out);
                 out.push('=');
                 if colour {
                     out.push_str(PLAIN);
                 }
-                out.push_str(&pretty(value));
+                out.push_str(value);
             }
         }
         Format::Json => {
@@ -441,6 +442,60 @@ fn line(record: &Record) -> String {
     }
     out.push('\n');
     out
+}
+
+/// The fields a request's line is read by, first, in the order they are read (D-113): where, how,
+/// and what came of it; then the durations; then the rest as they came.
+const LEADING: [&str; 3] = ["path", "method", "status"];
+
+/// A pretty line's fields, each its name and its value as shown (D-113): `path`, `method` and
+/// `status` first, then the durations, then the rest in their order. A duration is a number whose
+/// name ends in `_ns`, `_us` or `_ms`: shown without the suffix, in the unit that reads best
+/// (`duration_ns=12345` is `duration=12µs`). JSON keeps the fields as they are.
+fn arranged(fields: &[(String, Value)]) -> Vec<(String, String)> {
+    let mut leading: Vec<(usize, String, String)> = Vec::new();
+    let mut durations = Vec::new();
+    let mut rest = Vec::new();
+    for (name, value) in fields {
+        if let Some(at) = LEADING.iter().position(|each| *each == name.as_str()) {
+            leading.push((at, key(name).into_owned(), pretty(value)));
+        } else if let Some((short, nanos)) = duration(name, value) {
+            durations.push((short.to_string(), human(nanos)));
+        } else {
+            rest.push((key(name).into_owned(), pretty(value)));
+        }
+    }
+    leading.sort_by_key(|(at, _, _)| *at);
+    leading.into_iter().map(|(_, name, value)| (name, value)).chain(durations).chain(rest).collect()
+}
+
+/// A field that is a duration (D-113): its name without the unit, and the time in nanoseconds.
+fn duration<'a>(name: &'a str, value: &Value) -> Option<(&'a str, f64)> {
+    let amount = value.as_f64().filter(|amount| *amount >= 0.0)?;
+    let (short, per) = if let Some(short) = name.strip_suffix("_ns") {
+        (short, 1.0)
+    } else if let Some(short) = name.strip_suffix("_us") {
+        (short, 1e3)
+    } else if let Some(short) = name.strip_suffix("_ms") {
+        (short, 1e6)
+    } else {
+        return None;
+    };
+    (!short.is_empty()).then_some((short, amount * per))
+}
+
+/// A duration as a person reads it: below 2 µs in nanoseconds, below 2 ms in microseconds, below
+/// 2 s in milliseconds, whole; then seconds, to a tenth.
+fn human(nanos: f64) -> String {
+    if nanos < 2e3 {
+        format!("{}ns", nanos.round())
+    } else if nanos < 2e6 {
+        format!("{}µs", (nanos / 1e3).round())
+    } else if nanos < 2e9 {
+        format!("{}ms", (nanos / 1e6).round())
+    } else {
+        format!("{:.1}s", nanos / 1e9)
+    }
 }
 
 /// A listing, pretty: a line an item, under the message of the line before it, `➜ label  value`,

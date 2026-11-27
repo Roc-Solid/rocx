@@ -259,6 +259,12 @@ route! = |request, context| {
 			text(200, "logged")
 		}
 		# ---- The log: events with fields, at each level ----
+		("GET", "/log/request") => {
+			# A request's line as an app writes it (D-113): no message, its fields in any order.
+			Log.info!("", { status: 200.U64, method: "GET", body: "page", duration_ns: 12_345.U64, path: "/posts" })
+			Log.info!("timings", { quick_ns: 50.U64, wait_us: 1_500.U64, took_ms: 2_500.U64, lag_ms: 61_000.U64, ms: 3.U64 })
+			text(200, "logged")
+		}
 		("GET", "/log/fields") => {
 			Log.info!("an event from Roc", { path: request.path, count: 3.U64, ok: Bool.True, note: "two words", msg: "not the message", level: "not the level" })
 			# One field: `{ run }` alone would be a block (`run`), not a record.

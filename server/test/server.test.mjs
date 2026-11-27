@@ -320,13 +320,28 @@ test("ROCX_LOG=pretty: a line each, the local time, the level (no colour: stderr
 	assert.match(shown[0], /^info  rocx server: http:\/\/127\.0\.0\.1:\d+ \(Roc, native\)$/);
 	// The level in lower case, the fields two spaces after the message (D-111).
 	assert.deepEqual(shown.slice(1), [
-		'info  an event from Roc  count=3 fields.level="not the level" fields.msg="not the message" note="two words" ok=true path=/log/fields',
+		'info  an event from Roc  path=/log/fields count=3 fields.level="not the level" fields.msg="not the message" note="two words" ok=true',
 		"warn  a warning from Roc  run=r1",
 		"error an error from Roc",
 		'debug a detail from Roc  nested="{\\"list\\":[1,2]}"',
 		'error rocx server: Roc crashed  method=GET target=/crash error="on purpose"',
 		"info  rocx server: stopping",
 	]);
+});
+
+test("pretty, a request's fields first in the order they are read (path, method, status), then the durations, each in the unit that reads best, then the rest; no message, no gap (D-113); JSON as it was", { skip }, async () => {
+	const pretty = await start([], app, { ROCX_LOG: "pretty" });
+	assert.equal(await pretty.text("/log/request"), "logged");
+	await pretty.stop();
+	await ended(pretty);
+	const lines = pretty.logged().trimEnd().split("\n").map((line) => line.slice(9));
+	assert.ok(lines.includes("info  path=/posts method=GET status=200 duration=12µs body=page"), lines.join("\n"));
+	assert.ok(lines.includes("info  timings  lag=61.0s quick=50ns took=2.5s wait=1500µs ms=3"), lines.join("\n"));
+	const json = await start([]);
+	assert.equal(await json.text("/log/request"), "logged");
+	const event = events(json).find((each) => each.path === "/posts");
+	await json.stop();
+	assert.deepEqual({ ...event, time: "" }, { time: "", level: "info", msg: "", body: "page", duration_ns: 12345, method: "GET", path: "/posts", status: 200 });
 });
 
 test("a program's `logs: { format: Pretty }` wins over what Auto would guess (JSON, stderr a pipe), and over ROCX_LOG", { skip }, async () => {

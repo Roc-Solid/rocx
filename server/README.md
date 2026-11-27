@@ -1338,6 +1338,18 @@ Pretty (D-111): the local time, the level in lower case, the message, then two s
 fields. At a terminal the time and the fields' names are dimmed and the level coloured (debug
 grey, info cyan, warn yellow, error a bold red), so the message and the values stand out.
 
+The fields (D-113): a request's first, in the order they are read (`path`, `method`, `status`),
+then the durations, then the rest in their order. A duration is a number whose name ends in `_ns`,
+`_us` or `_ms`, shown without the suffix in the unit that reads best: below 2 µs in ns, below
+2 ms in µs, below 2 s in ms, then seconds (`duration_ns=12345` is `duration=12µs`). An event with
+no message is its fields alone, a request's line as an app may write it:
+
+```
+11:04:20 info  path=/posts method=GET status=200 duration=12µs body=page
+```
+
+JSON keeps the fields as they are, numbers with their units in their names.
+
 Under `--dev`, the server lists the places to open under its address as it starts: the app's
 stories, its OpenAPI document, and what each plugin adds (`Plugin.Link`: the mailbox, the sign-in
 page, the jobs page) and what the app names itself (`App.program({ links })`). A path is the
