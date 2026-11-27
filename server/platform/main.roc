@@ -317,7 +317,8 @@ respond_for_host! = |given, boxed| {
 			Ok(early) => (early.answer!)({ ..request, route: early.path })
 			Err(NotEarly) => (program.respond!)(request, context)
 		}
-	answer = Server.for_host(answered)
+	# A redirect answering the browser's runtime comes back as one it can read (D-118).
+	answer = Server.for_host(Endpoint.for_runtime(request, answered))
 	view! = answer.page
 	{
 		status: answer.status,

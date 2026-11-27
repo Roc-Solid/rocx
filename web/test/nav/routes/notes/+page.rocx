@@ -3,9 +3,10 @@ import ../../Api
 
 meta = { title: "Notes", look: "notes" }
 
-## Forms that post, none of whose submissions any component reads (D-095): to this path's endpoint
-## (said well, said with a redirect, refused), to an item's (a path with a param), into a frame, and
-## to a path no endpoint has. What the server says of the notes, read again after a result.
+## Forms that post, none of whose submissions any component reads (D-095, D-118: each answered as a
+## plain form, in place): to this path's endpoint (said well, said with a redirect, refused), to an
+## item's (a path with a param), into a frame, and to a path no endpoint has. What the server says
+## of the notes.
 view! = |_|
 	<section class="notes">
 		<h1>Notes</h1>

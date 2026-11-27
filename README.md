@@ -819,9 +819,12 @@ action's JSON and a plain form post arrive as the same typed record.
 `useSubmission`): `submission.pending!()`, `input!()` (what was typed, as the endpoint reads it),
 `field!("name")`, `result!()`, `error!()`, `clear!()`.
 
-- With the runtime loaded, the form is sent with `fetch` and the page stays: every form that posts
-  to one of the app's endpoints, whether a component reads its submission or not (D-095). One
-  refused that nothing reads shows nothing, and the browser's console says so.
+- With the runtime loaded, the form is sent with `fetch` and only the page changes: every form
+  that posts to one of the app's endpoints (D-095). One a component reads the submission of gets
+  its result or refusal for that component; one nothing reads is answered as a plain form (below)
+  and the runtime goes where that answer goes, in place: back to its page with the flash, or the
+  endpoint's own redirect (D-118). Either way the page shows what it would show without
+  JavaScript.
 - Without it (before it loads, or with JavaScript off), the browser posts the form, and the
   endpoint sends it back to the page with a **flash**: what was typed and the result or refusal,
   kept on the server for a minute (a cookie holds its id) and read once. The submission reads it

@@ -868,9 +868,15 @@ read or not, so a reload doesn't show it again. An app that writes its own progr
 ### Forms the runtime sends, actions and scripts
 
 With the browser runtime, a form posting to one of the app's endpoints is sent with `fetch`
-(`x-rocx-submission: 1`, `accept: application/json`), whether its page reads its submission or not
-(D-095). It gets the endpoint's result as JSON, or its refusal. An endpoint's own redirect comes back as 200 with `x-rocx-redirect` (fetch would follow a
-303 before the runtime could read it), its cookies kept, and the runtime goes there.
+(D-095). One its page reads the submission of goes with `x-rocx-submission: 1` and
+`accept: application/json`, and gets the endpoint's result as JSON, or its refusal. One nothing on
+the page reads goes as the browser would post it (`accept: text/html`, no `x-rocx-submission`), with
+`x-rocx-in-place: 1` (D-118): `Endpoint.posted_by` says `PlainForm`, and it is answered as a plain
+form is, its result or refusal flashed back to the page it came from. A redirect answering either
+(an endpoint's own, a middleware's, a plain form's flash back) comes back as 200 with
+`x-rocx-redirect` (`Endpoint.for_runtime`, which the platform answers every request through: fetch
+would follow a 303 before the runtime could read it), its cookies kept, and the runtime goes there,
+in place.
 
 An action (`Router.use_action!`, D-030) is sent by the runtime as JSON with
 `x-rocx-submission: 1`; on success the runtime re-reads the page's reads. The server sees plain

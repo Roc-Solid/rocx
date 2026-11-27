@@ -153,9 +153,17 @@ async function navSite({ base = "/" } = {}) {
 			return { status: 200, headers: { "content-type": "application/json" }, body: JSON.stringify("now") };
 		}
 		if (method === "POST" && (at === "/notes" || at.startsWith("/items/") || at === "/nowhere")) {
-			site.posted.push({ url: `${at}${new URL(url, "http://x").search}`, body, submission: request.headers["x-rocx-submission"] ?? null });
+			const inPlace = request.headers["x-rocx-in-place"] ?? null;
+			site.posted.push({ url: `${at}${new URL(url, "http://x").search}`, body, submission: request.headers["x-rocx-submission"] ?? null, inPlace });
 			if (at === "/nowhere") return { status: 303, headers: { location: `${base}a` }, body: "" };
 			const note = new URLSearchParams(body).get("note");
+			// A form nothing reads, posted as the browser would (D-118): answered as the server answers a
+			// plain form, back to the page it came from with a flash (its result or refusal), or the
+			// endpoint's own redirect; given back to the runtime as `x-rocx-redirect` (`Endpoint.for_runtime`).
+			if (inPlace) {
+				const back = new URL(request.headers.referer ?? `http://x${base}`);
+				return { status: 200, headers: { "x-rocx-redirect": note === "away" ? "/a" : `${back.pathname}${back.search}` }, body: "" };
+			}
 			if (note === "refuse") return { status: 409, headers: { "content-type": "text/plain" }, body: "no more notes" };
 			const headers = { "content-type": "application/json", ...(note === "away" ? { "x-rocx-redirect": "/a" } : {}) };
 			return { status: 200, headers, body: JSON.stringify(note) };
@@ -426,6 +434,8 @@ test("a submission's redirect (x-rocx-redirect) is followed in place, the layout
 		await tab.wait("document.querySelector('.who').textContent === 'Said: who is Ada'");
 		assert.equal(await tab.eval("window.layout === document.querySelector('nav')"), true, "the layout kept, not made anew");
 		assert.equal(site.asked.filter(({ url }) => url === "/api/say/who").length, 1, "read again once");
+		// And the submission is done (no result: a redirect), not pending for ever.
+		await tab.wait("[...window.ready.runtime.submissions.values()].every((source) => source.list.every((entry) => entry.state !== 'pending'))");
 		await tab.click(".to-home");
 		await tab.wait("document.querySelector('.home h1')");
 		let release;
@@ -1002,49 +1012,52 @@ test("which forms the runtime sends (D-095): one posting to a path the route tab
 	}
 });
 
-test("a form to one of the app's endpoints is sent with fetch though no component reads its submissions (D-095): its result reads the page's reads again, its redirect is followed in place, a refusal is said in the console; a path with a param and fields in its query too; a form into a frame, and one to a path no endpoint has, are the browser's", { skip }, async () => {
+test("a form to one of the app's endpoints that nothing on the page reads is posted as the browser would, answered as a plain form, and followed in place (D-095, D-118): its result and its refusal back to the page it came from, made anew from the server's, its redirect to where it goes; a path with a param and fields in its query too; a form into a frame, and one to a path no endpoint has, are the browser's", { skip }, async () => {
 	const site = await navSite();
 	try {
 		const tab = await open(site, "/notes");
-		const reads = () => site.asked.filter(({ url }) => url === "/api/say/notes").length;
-		// A result: sent by the runtime, the page stays, and what it read is read again.
-		let before = reads();
+		const back = () => site.documents().filter((each) => each === "navigate /notes").length;
+		// A result: posted as the browser would, back to the page, which is fetched and made anew in
+		// place (its document, with what the server says now, a flash among it).
+		let before = back();
 		await tab.click(".fine button");
 		await until(() => site.posted.length === 1);
-		await until(() => reads() > before);
-		assert.deepEqual(site.posted[0], { url: "/notes", body: "note=fine", submission: "1" });
+		await until(() => back() > before);
+		assert.deepEqual(site.posted[0], { url: "/notes", body: "note=fine", submission: null, inPlace: "1" });
 		assert.equal(await kept(tab), true, "no load");
 		assert.equal(await tab.eval("location.pathname"), "/notes");
 		// A param in the endpoint's path, and fields in the form's URL (`with_fields`'s).
-		before = reads();
+		before = back();
 		await tab.click(".item button");
 		await until(() => site.posted.length === 2);
-		await until(() => reads() > before);
-		assert.deepEqual(site.posted[1], { url: "/items/3?star=yes", body: "note=starred", submission: "1" });
+		await until(() => back() > before);
+		assert.deepEqual(site.posted[1], { url: "/items/3?star=yes", body: "note=starred", submission: null, inPlace: "1" });
 		assert.equal(await kept(tab), true);
-		// A refusal nothing reads: nothing on the page, and the console says so.
+		// A refusal nothing reads: back to the page as a plain post's is, where its flash shows it;
+		// nothing for the console to say.
+		before = back();
 		await tab.click(".refused button");
 		await until(() => site.posted.length === 3);
-		await until(() => tab.console.length > 0);
-		assert.deepEqual(tab.console.map(({ type, text }) => [type, text]), [["warning", "rocx: POST /notes was refused (409: no more notes), and nothing on the page reads its submissions: use_submission! or use_submissions! shows it"]]);
+		await until(() => back() > before);
+		assert.deepEqual(tab.console, []);
 		assert.equal(await kept(tab), true);
 		// Into a frame: the browser's, with no x-rocx-submission.
 		await tab.click(".framed button");
 		await until(() => site.posted.length === 4);
-		assert.deepEqual(site.posted[3], { url: "/notes", body: "note=framed", submission: null });
+		assert.deepEqual(site.posted[3], { url: "/notes", body: "note=framed", submission: null, inPlace: null });
 		assert.equal(await kept(tab), true, "the page stays: the frame took the answer");
 		// A redirect of the endpoint's own: followed in place.
 		await tab.click(".away button");
 		await tab.wait("document.querySelector('.a h1') !== null", 5000);
 		assert.equal(await tab.eval("location.pathname"), "/a");
 		assert.equal(await kept(tab), true, "in place");
-		assert.equal(site.posted[4].submission, "1");
+		assert.equal(site.posted[4].inPlace, "1");
 		// A path no endpoint has: the browser posts it, and loads where it is sent.
 		const other = await open(site, "/notes");
 		await other.click(".elsewhere button");
 		await other.wait("location.pathname === '/a' && window.ready !== undefined", 5000);
 		assert.equal(await kept(other), false, "a load");
-		assert.deepEqual(site.posted.at(-1), { url: "/nowhere", body: "note=nowhere", submission: null });
+		assert.deepEqual(site.posted.at(-1), { url: "/nowhere", body: "note=nowhere", submission: null, inPlace: null });
 		assert.deepEqual(tab.errors, []);
 		assert.deepEqual(other.errors, []);
 		await other.close();

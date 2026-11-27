@@ -509,9 +509,24 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		}
 	}
 
+	## An answer to a request the browser's runtime sent: a submission (`x-rocx-submission`), or a
+	## form nothing on the page reads, which it posts as the browser would and follows in place
+	## (`x-rocx-in-place`, D-118). A redirect (a handler's, a middleware's, a plain form's flash back
+	## to its page) comes back as 200 with its `location` as `x-rocx-redirect`, the rest (a cookie it
+	## sets) kept: `fetch` would follow it before the runtime could read where it goes. Any other
+	## answer, or one to any other request, is as it is. The server platform answers every request
+	## through it.
+	for_runtime : Server.Request, Server.Response -> Server.Response
+	for_runtime = |request, given|
+		if Server.header(request, "x-rocx-submission").is_ok() or Server.header(request, "x-rocx-in-place").is_ok() {
+			redirected(given)
+		} else {
+			given
+		}
+
 	## Who sent a request, as `respond!` answers each: `PlainForm`, a browser's form posted without the
-	## runtime (a form's body, for a page: `accept: text/html`), which goes back to its page with a
-	## flash; `Runtime`, a form the runtime sent or an action (`use_action!`: `x-rocx-submission`),
+	## runtime (a form's body, for a page: `accept: text/html`), or the runtime's as the browser would
+	## post it (`x-rocx-in-place`, D-118), which goes back to its page with a flash; `Runtime`, a form the runtime sent or an action (`use_action!`: `x-rocx-submission`),
 	## which gets the result as JSON or the refusal; `Other`, anything else (JSON from a script,
 	## `Endpoint.send!`), which gets them too. A handler that answers its own way asks it: a plain
 	## form's delete sends the browser to the list, where the runtime wants the list's id.
@@ -922,6 +937,11 @@ expect Endpoint.url_of(Endpoint.with_fields(Endpoint.with_query(shout, "weeks=1"
 expect input_of(Server.from_http("POST", "/todos/toggle?id=7", "content-type: application/x-www-form-urlencoded", "done=on".to_utf8())) == Fields([{ name: "id", value: "7" }, { name: "done", value: "on" }])
 expect input_of(Server.from_http("POST", "/photos", "content-type: multipart/form-data; boundary=b", "--b\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"a.png\"\r\n\r\nPNG\r\n--b--".to_utf8())) == Fields([{ name: "photo", value: "a.png" }])
 expect Endpoint.posted_by(Server.from_http("POST", "/photos", "content-type: multipart/form-data; boundary=b\naccept: text/html", [])) == PlainForm
+expect Endpoint.posted_by(Server.from_http("POST", "/shout", "content-type: application/x-www-form-urlencoded\naccept: text/html,*/*;q=0.8\nx-rocx-in-place: 1", [])) == PlainForm
+expect Endpoint.for_runtime(Server.from_http("POST", "/shout", "x-rocx-in-place: 1", []), Server.redirect("/notes")).headers == [{ name: "x-rocx-redirect", value: "/notes" }]
+expect Endpoint.for_runtime(Server.from_http("POST", "/shout", "x-rocx-submission: 1", []), Server.redirect("/sign-in")).status == 200
+expect Endpoint.for_runtime(Server.from_http("POST", "/shout", "accept: text/html", []), Server.redirect("/notes")).status == 303
+expect Endpoint.for_runtime(Server.from_http("POST", "/shout", "x-rocx-in-place: 1", []), Server.response(409, [], "no")).status == 409
 
 ## Rules of an app's own (packages/forms' `Form` is such): an age of at least `min`, and a name.
 Adult := { min : U64 }.{

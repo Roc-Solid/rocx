@@ -341,8 +341,10 @@ view! = |_|
 					what was sent, as the endpoint reads it, and <code>field!(name)</code> one field as it was typed.
 					Only the latest submission counts; <code>clear!()</code>, in an event handler, forgets it. A
 					redirect from the endpoint (<code>{"Ok(Server.redirect(…))"}</code>, setting a cookie, say) sends
-					the browser there. A refusal shows only where the page reads the submission: one that
-					nothing reads shows nothing, and the browser's console says so.
+					the browser there. A form nothing on the page reads is answered as a plain form instead, and
+					the runtime goes where that answer goes, in place: back to its page with the flash (its
+					refusal or result, which the page reads as it would without JavaScript), or the endpoint's
+					own redirect (D-118).
 				</li>
 				<li>
 					<strong>Without JavaScript</strong> (before the runtime loads, or with JavaScript off), the form

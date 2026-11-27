@@ -4230,6 +4230,23 @@ test("form actions: a script's post, or the runtime's, gets the endpoint's answe
 	assert.equal(await until(async () => (await live()) === before), true, `${await live()} allocations, ${before} before`);
 });
 
+test("form actions: a form the runtime posts as the browser would (x-rocx-in-place, D-118) is answered as a plain form, its redirect given to the runtime as 200 and x-rocx-redirect, the cookie kept: back to its page with a flash the page reads, or the endpoint's own", { skip }, async () => {
+	const inPlace = { "content-type": "application/x-www-form-urlencoded", accept: "text/html,application/xhtml+xml,*/*;q=0.8", "x-rocx-in-place": "1", referer: `${server.url}/flash/page?from=form` };
+	const refused = await get("/flash/join", { method: "POST", body: "name=Al", redirect: "manual", headers: inPlace });
+	assert.equal(refused.status, 200, "fetch would follow a 303 before the runtime could read it");
+	assert.equal(refused.headers.get("x-rocx-redirect"), "/flash/page?from=form", "back to the page it came from, as a plain form's");
+	assert.equal(refused.headers.get("location"), null);
+	const page = await text("/flash/page?from=form", { headers: { cookie: flashOf(refused), accept: "text/html" } });
+	assert.match(page, /<p class="flash">\/flash\/join 409 name=Al<\/p>/, "the page the runtime goes to reads the refusal");
+	assert.match(page, /<p class="problem">Al is taken<\/p>/);
+	const welcomed = await get("/flash/join", { method: "POST", body: "name=Ada", redirect: "manual", headers: inPlace });
+	assert.equal(welcomed.headers.get("x-rocx-redirect"), "/flash/page?from=form", "a result goes back with a flash too");
+	const away = await get("/flash/away", { method: "POST", body: "", redirect: "manual", headers: inPlace });
+	assert.equal(away.status, 200);
+	assert.equal(away.headers.get("x-rocx-redirect"), "/members", "the endpoint's own redirect");
+	assert.equal(away.headers.get("set-cookie"), "member=Ada; Path=/; HttpOnly; SameSite=Lax");
+});
+
 test("form actions: a flash nobody read is gone after a minute, though its cookie were sent", { skip }, async () => {
 	assert.match(unread.cookie, /^rocx-flash=[0-9a-f]{32}$/);
 	await sleep(Math.max(0, unread.at + 61_000 - Date.now()));

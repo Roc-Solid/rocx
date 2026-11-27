@@ -719,11 +719,17 @@ a form with `fetch` when the form (D-095):
 - goes into this tab (no `target`, or `_self`);
 - wasn't prevented by a handler (an `on:submit` handler prevents it).
 
-So whether a form goes with `fetch` doesn't depend on whether a component reads its submissions.
-One nobody asks for is kept under its endpoint's path (its query is fields, `with_fields`'). Its
-result reads the page's reads again, and its redirect is followed, as any submission's are. A
-refusal, or no answer, that no component asks for shows nothing on the page, so the console says
-so (`unread`), in every build. Any other form is the browser's: another site's, a path no endpoint
+So whether a form goes with `fetch` doesn't depend on whether a component reads its submissions,
+but how it goes does (D-118). One a component reads (`use_submission!`, `use_submissions!`,
+`use_action!` of its endpoint) goes as the runtime's, for its result or refusal, as below. One nothing
+reads goes as the browser would post it (`accept: text/html`, no `x-rocx-submission`), with
+`x-rocx-in-place: 1`: the endpoint answers it as a plain form (its result or refusal flashed back to
+the page it came from, or its own redirect), the server gives the runtime that redirect, and the
+runtime follows it in place. So the page shows what a plain post would show (a refusal the page
+reads from the flash among it), and only the page changes: the same page again is made anew from
+its document. A submission is kept under its endpoint's path (its query is fields,
+`with_fields`'). A refusal, or no answer, of a runtime's submission that no component asks for
+shows nothing on the page, so the console says so (`unread`), in every build. Any other form is the browser's: another site's, a path no endpoint
 has a `post!` for (a `+server.roc` that answers with `respond!`, such as the one that calls
 packages/auth's `Auth.sign_out_route!` at `/auth/sign-out`), or one posted before the runtime is
 there.
@@ -1571,11 +1577,12 @@ when told to). In Chromium, strictly, the tests check:
   queries, and a plain link to a query, all in place, no document fetched and only the read whose
   URL changed asked again; the layout that read the location once made anew and named (`remade`),
   and a query change under it fetching the document.
-- **Forms to the app's endpoints** (D-095): which form URLs the route table makes an endpoint's (in
-  Node); in Chromium, forms nothing asks about sent with `fetch` (`x-rocx-submission`), the page
-  kept: a result reading the page's read again, a path with a param and fields in its query, a
-  refusal said in the console, a redirect followed in place; a form into a frame and one to a path
-  no endpoint has left to the browser.
+- **Forms to the app's endpoints** (D-095, D-118): which form URLs the route table makes an
+  endpoint's (in Node); in Chromium, forms nothing asks about posted as the browser would
+  (`x-rocx-in-place`), answered as plain forms and followed in place, no load: a result and a refusal
+  back to the page, made anew from its document, a path with a param and fields in its query, a
+  redirect of the endpoint's own; a form into a frame and one to a path no endpoint has left to the
+  browser.
 
 The docs site's own tests (`site/test/`) run the site on the native server and compare each page
 with the browser runtime's render of it, byte for byte outside its `<NoHydration>`s.

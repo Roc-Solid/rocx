@@ -1944,9 +1944,14 @@ export class Runtime {
 	 * A form submitted: sent with fetch if it posts to one of the app's endpoints (the route table's,
 	 * D-095) or to one a component reads the submission of, on this site, into this tab, and no
 	 * handler prevented its submit. Its fields go as a form sends them: URL-encoded, or, a form with
-	 * files (`enctype="multipart/form-data"`), as the browser's `FormData` (D-054); with
-	 * `accept: application/json` and `x-rocx-submission: 1`, so the endpoint answers its result, or
-	 * its refusal, rather than sending the browser back with a flash. A form whose URL is an
+	 * files (`enctype="multipart/form-data"`), as the browser's `FormData` (D-054). One a component
+	 * reads the submissions of goes with `accept: application/json` and `x-rocx-submission: 1`, so the
+	 * endpoint answers its result, or its refusal, for that component to show. One nothing on the page
+	 * reads goes as the browser would post it (`accept: text/html`, no `x-rocx-submission`), with
+	 * `x-rocx-in-place: 1` (D-118): the endpoint answers it as a plain form (its result or refusal
+	 * flashed back to the page it came from, or its own redirect), the server gives the runtime that
+	 * redirect to read (`Endpoint.for_runtime`), and the runtime follows it in place. So the page shows
+	 * what a plain post would have shown, and only the page changes. A form whose URL is an
 	 * endpoint's with fields in its query (`Endpoint.with_fields`) is that endpoint's, those fields
 	 * first in its input. Any other form is the browser's (another site's, a `target`ed one, a path no
 	 * endpoint has: a plugin's own route).
@@ -1972,8 +1977,10 @@ export class Runtime {
 		// file's its name.
 		const own = new URLSearchParams([...data].map(([name, value]) => [name, typeof value === "string" ? value : value.name])).toString();
 		const input = [url.search.slice(1), own].filter(Boolean).join("&");
-		if (enctype === "multipart/form-data") this.submit(key, url.href, { body: data, input, json: false });
-		else this.submit(key, url.href, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(data).toString(), input, json: false });
+		// Nothing on the page reads its submissions: answered as a plain form, in place (D-118).
+		const plain = !this.actions.has(key);
+		if (enctype === "multipart/form-data") this.submit(key, url.href, { body: data, input, json: false, plain });
+		else this.submit(key, url.href, { headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(data).toString(), input, json: false, plain });
 	}
 
 	/** What a form posting to `url` is kept under, its submissions' key: the endpoint a component
@@ -2051,11 +2058,11 @@ export class Runtime {
 	 * server's data and the submission's end changes at once. A redirect of the endpoint's own
 	 * (`x-rocx-redirect`), or one fetch followed (middleware's), is where the browser goes.
 	 */
-	submit(key, href, { method = "POST", headers = {}, body, input, json }) {
+	submit(key, href, { method = "POST", headers = {}, body, input, json, plain = false }) {
 		const source = this.submissionOf(key);
 		const entry = { id: ++ids, state: "pending", input, json, status: 0, body: "" };
 		// What it sent, to send again (`retry!`).
-		entry.request = { href, method, headers, body };
+		entry.request = { href, method, headers, body, plain };
 		source.list.push(entry);
 		source.cleared = false;
 		this.sendSubmission(key, source, entry);
@@ -2066,7 +2073,7 @@ export class Runtime {
 	 * result reads again the reads its answer names (`x-rocx-revalidate`: `Router.revalidate!` in
 	 * its handler), or every one the page read. */
 	sendSubmission(key, source, entry) {
-		const { href, method, headers, body } = entry.request;
+		const { href, method, headers, body, plain = false } = entry.request;
 		const input = entry.input;
 		const transition = this.transition;
 		if (transition) {
@@ -2084,7 +2091,10 @@ export class Runtime {
 			// The transition's last: its optimistic writes go in this same flush.
 			if (transition && --transition.pending === 0) this.endTransition(transition);
 		};
-		fetch(href, { method, headers: { ...headers, accept: "application/json", "x-rocx-submission": "1" }, body: method === "GET" || method === "HEAD" ? undefined : body }).then(
+		// A form nothing on the page reads goes as the browser would post it, to be answered as a plain
+		// form and followed in place (D-118); any other as the runtime's, for its result or refusal.
+		const asked_as = plain ? { accept: "text/html,application/xhtml+xml,*/*;q=0.8", "x-rocx-in-place": "1" } : { accept: "application/json", "x-rocx-submission": "1" };
+		fetch(href, { method, headers: { ...headers, ...asked_as }, body: method === "GET" || method === "HEAD" ? undefined : body }).then(
 			async (response) => {
 				const to = response.headers.get("x-rocx-redirect");
 				if (to !== null || response.redirected) {
@@ -2094,6 +2104,8 @@ export class Runtime {
 					this.pages?.clear();
 					// In place when it is one of the app's pages (D-040), but not if the visitor went to
 					// another page meanwhile: a form sent from one mustn't move them off the next.
+					// The submission is done once there, with no result (200, ""): it succeeded, and its
+					// transition (`create_optimistic!`'s writes) ends with the new data in, not before.
 					if (this.navigations === navigations) {
 						// What the navigation keeps (a layout the two pages share, §4.3) reads again what it
 						// read once the new page is in (D-117), as a result's page does: every read, or the
@@ -2101,8 +2113,8 @@ export class Runtime {
 						// signed in. What it makes anew reads from the server anyway.
 						const before = new Set(this.readers);
 						const keys = Runtime.revalidating(response.headers.get("x-rocx-revalidate"));
-						Promise.resolve(this.navigate(to !== null ? this.urlOf(to) : new URL(response.url))).then(() => this.revalidate(() => {}, keys, before));
-					}
+						Promise.resolve(this.navigate(to !== null ? this.urlOf(to) : new URL(response.url))).then(() => this.revalidate(() => done(200, ""), keys, before));
+					} else done(200, "");
 					return;
 				}
 				const said = await response.text();
@@ -3494,7 +3506,9 @@ export class Runtime {
 			if (!level.disposed && level.holds === key) this.madeAnew(typeof key === "string" ? key.slice(1) : "a <Show>'s part");
 		}
 		this.remade = [];
-		this.refreshRegions(doc);
+		// A root made anew took the document's regions as it was made (`settleDocument`); a kept one's
+		// are the server's for the page loaded before, and follow the document now.
+		if (this.rootKept) this.refreshRegions(doc);
 		if (this.rootKept && doc.head && document.head) this.reconcileHead(document.head, doc.head);
 		this.rootKept = false;
 		this.forgetSubmissions();

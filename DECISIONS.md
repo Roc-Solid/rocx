@@ -5756,7 +5756,8 @@ function (`own_writes!`) on each host.
 
 ## D-095 A form to an endpoint is always sent with `fetch`
 
-**Status.** Built (2026-11-26).
+**Status.** Built (2026-11-26). Changed by D-118: one nothing on the page reads is answered as a
+plain form, and followed in place, instead of its refusal going to the console alone.
 
 **Context.** With the runtime, a `<form method="post" action={Endpoint.url_of(e)}>` went with
 `fetch` only while a component had called `use_submission!` or `use_submissions!` for that endpoint
@@ -6870,3 +6871,48 @@ a sign-in written as a `post!` behaves as one written as a `respond!` (which the
 narrows with `Router.revalidate!`.
 
 **Reversible:** yes.
+
+## D-118 A form nothing on the page reads is answered as a plain form, in place
+
+**Status.** Built (2026-11-27), the user's call: things should work on the plain path, as in Solid
+and SvelteKit.
+
+**Context.** D-095 sends every form that posts to one of the app's endpoints with `fetch`, for the
+endpoint's result or refusal, and said a refusal nothing reads "shows nothing on the page, as it
+showed nothing after a plain post". But a plain post goes back to its page with a flash, which the
+page reads (`Server.flash!`, `use_submission!` before the runtime sends one, an app's own notice):
+the private app's organization page shows "nobody@… doesn't have access yet" that way. With the
+runtime, the same form's refusal went to the console alone, the page didn't move, and its test
+timed out. A result nothing read was read again on the page, but what the flash would have shown
+(a "saved" notice) didn't show either. SvelteKit answers a form it doesn't enhance as the browser's
+post, and Solid takes over only forms bound to an action.
+
+**Decision.**
+
+- **The runtime asks how a form is read.** One a component reads (`use_submission!`,
+  `use_submissions!`, `use_action!` of its endpoint) goes as before (`x-rocx-submission: 1`, JSON),
+  for that component. One nothing reads goes as the browser would post it (`accept: text/html`, no
+  `x-rocx-submission`), with `x-rocx-in-place: 1`.
+- **The server answers it as a plain form**: `Endpoint.posted_by` says `PlainForm`, so its result
+  or refusal is flashed back to the page it came from, and its handler's own redirect is as it is;
+  an app's own plain-form code (a middleware that flashes back) sees a plain form too.
+- **`Endpoint.for_runtime`**, which the platform answers every request through, gives the runtime
+  any redirect answering it (`x-rocx-submission` or `x-rocx-in-place`) as 200 with
+  `x-rocx-redirect`, its cookies kept, whoever made it: a handler, a middleware, a flash back.
+- **The runtime follows it in place**: the page it goes to, the same page again included, is made
+  anew from its document (with the flash), the layouts it keeps reading again what they read
+  (D-117), and the submission done once there (it stayed pending for ever before: the runtime never
+  ended a submission answered with a redirect).
+- A page made anew from its document took that document's `<NoHydration>` regions as it was made;
+  the check of a kept root's regions against the document's no longer runs then (it warned of
+  regions it had already taken).
+
+**Why.** The page shows what it would show without JavaScript, whatever the endpoint and whatever
+reads it, and only the page changes: no load. A component that wants the answer itself says so by
+reading the submission, as Solid binds a form to an action.
+
+**Costs.** A form nothing reads now asks for its page's document after it is answered (one request
+more than a result's revalidation), and its page is made anew: its signals start again, as after a
+plain post.
+
+**Reversible:** yes: every form goes as the runtime's again.
