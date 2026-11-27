@@ -151,20 +151,23 @@ When an item lands, delete its line here in the same commit.
 
 ## The Roc compiler (the fork in `~/roc-fork`)
 
-- **The fork's round of 2026-11-27: branch `rocx-fixes-4`** = `rocx-fixes-3` (the pin bump's
-  c69cdc3fdf) + two-commit fix branches (a failing test, then the fix), each with a repro and a
-  plain-words README in `test/compiler-bugs/` (the index is its README.md):
+- **The fork's round of 2026-11-27: branch `rocx-fixes-5`** = upstream's main at bec95b9f4a (not
+  a nightly: the fixes go upstream as PRs against main) + the fork's earlier fixes (the nested codec,
+  `List.map`'s output) + this round's two-commit fix branches (a failing test, then the fix), each
+  with a repro and a plain-words README in `test/compiler-bugs/` (the index is its README.md):
   `effectful-closure-dec-default`, `nested-lambda-literal-default`, `rigid-others-row`,
   `two-formats-one-where` (a type error by upstream's design: now reported, not a crash; rocx's
   `Endpoint.local` stays), `endpoint-capture-boxy`, `nested-site-evidence-scope`,
-  `huge-frame-opt-speed` (`fix-dispatcher-frame`) and `fix-list-map-test-hygiene` (rocx-fixes-3's
-  own three failing checks). `nested-site-evidence-scope` matters most: on every compiler before
-  it, a component call that leaves out a closure-defaulted prop, inside a local function that
-  captures something and is generalized, crashes a `--specialize=yes` build or **builds a wrong
-  program without a word**, and the browser's wasm is built `--specialize=yes` (D-064).
-  **The pin bump should take `rocx-fixes-4`, not `rocx-fixes-3`:** c69cdc3fdf dropped 4674b5973d's
-  slot-lifetime fix as upstream's, which it isn't, so its specialized frames are about 10× the
-  pin's (the docs site's 2.86 MB against 248 KB; 400 KB with the fix).
+  `huge-frame-opt-speed` (`fix-dispatcher-frame`) and the earlier base's test drift. Upstream's main
+  still has nine of the thirteen bugs. `nested-site-evidence-scope` matters most: on every compiler
+  before it, a component call that leaves out a closure-defaulted prop, inside a local function
+  that captures something and is generalized, crashes a `--specialize=yes` build or **builds a
+  wrong program without a word**, and the browser's wasm is built `--specialize=yes` (D-064).
+  **The pin bump should take `rocx-fixes-5`** (a1714c98de; its compiler is built in
+  `.tools/roc-fork/`), not `rocx-fixes-3` or `rocx-fixes-4`: they sit on the nightly 890d6c8, and
+  c69cdc3fdf dropped 4674b5973d's slot-lifetime fix as upstream's, which it isn't (frames about
+  10× the pin's). A main-based fork has no nightly at its commit, so `roc_commit` (the glue spec,
+  the nightly download) stays a nightly or the glue comes from the fork's own tree.
   Once the pin has it: examples/uptime can write `..others` instead of naming `JobErr`;
   `Endpoint.checked`'s reader can name `endpoint.url` (and its comment goes); an error page can call
   `to_str` in a getter; and `Static.browser_build!`'s fallback can be reconsidered
