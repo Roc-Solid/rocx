@@ -22,6 +22,18 @@ When an item lands, delete its line here in the same commit.
   `start.js` have fixed names and no `ETag` or `Last-Modified`, so every visit downloads them again.
   Named by their content as the stylesheet is, they would be kept for a year.
 
+- **Packages apps reach for, discussed 2026-11-27** (no UI components for now, the user's call):
+  - **packages/teams:** teams, memberships with roles, invitations (auth's `then` already has room
+    for an invite's page), team-owned API keys. Open: the team from the URL or the session; fixed
+    roles or the app's own; a personal team each; whether stripe's customer can be a team's.
+  - **packages/search:** SQLite's FTS5 and Postgres's full-text search behind one index (weights,
+    ranking, snippets, escaped queries, prefix matching), kept by triggers. Open: refusing Turso
+    (no FTS5) or a `LIKE` fallback; the plugin making the index's tables or the app's migration;
+    stemming off by default.
+  - **packages/posthog, analytics:** `PostHog.event!` beside errors, page views from the page
+    script (on load and on each `rocx:navigated`; not from middleware, which prefetches would
+    count), anonymous ids joined to the user at sign-in. Open: cookieless by default or a cookie;
+    our small script or posthog-js.
 - **packages/ai's next users (D-085).** examples/notes' assistant on its MCP tools (`Ai.run!` over
   `Agents.server.tools`, one tool for both), and Plate's meal from words (`Ai.extract!`).
 - **iOS and Android apps (D-063, Proposed).** Background work; the web stays primary. The Android
@@ -78,6 +90,13 @@ When an item lands, delete its line here in the same commit.
   a quiet machine) would measure what ships.
 
 ## Framework work, decided but not built
+
+- **enhanced:src's next steps (D-125):** colours (a photo with an ICC profile, a phone's Display P3,
+  is copied as if sRGB: convert it, qcms or lcms2, or keep the profile in the WebP); AVIF beside WebP
+  (a `<picture>`, slow to encode); photos of listed other hosts (Open Food Facts' in Plate); a
+  `rocx build` that makes the copies of the paths it can see ahead of a deploy; a markdown image and
+  a frontmatter cover through it (packages/markdown, the journal's covers); uploads resized as they
+  come (a `Storage.put!` of a photo, by the same code).
 
 - **Found by the docs audit of 2026-11-26, to check:**
   - The tools page's "the same tools, twice" example types an AI tool list `Tool({})`, but McpHttp

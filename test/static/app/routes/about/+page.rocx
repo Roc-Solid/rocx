@@ -1,9 +1,10 @@
 import pf.Html
 
-## A page every link to it reaches.
+## A page every link to it reaches, with a photo whose copies the copy has (enhanced:src, D-125).
 view! = |_| {
 	<main>
 		<h1>About</h1>
+		<img enhanced:src="/harbour.jpg" alt="A harbour" />
 		<a href="/">Home</a>
 	</main>
 }

@@ -20,6 +20,11 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "client", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "server", "server-graceful", "http1"] }
+# enhanced:src's copies (D-125): JPEG, PNG and WebP read, resized, and written as WebP (libwebp's
+# lossy encoder, built from its C source as SQLite is).
+image = { version = "0.25.10", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
+fast_image_resize = { version = "6", optional = true, features = ["image"] }
+webp = { version = "0.3.1", optional = true, default-features = false }
 libc = "0.2"
 md-5 = "0.11.0"
 ring = "0.17"
@@ -40,8 +45,10 @@ webpki-roots = "1"
 
 # The database engines an app may name besides SQLite, which every host has: `rocx build --release`
 # and `--image` build the host with the one the app's program names alone (rocx dev's has both).
+# `images` is enhanced:src's (D-125): a release has it when the app's markup writes one.
 [features]
-default = ["postgres", "turso"]
+default = ["postgres", "turso", "images"]
+images = ["dep:image", "dep:fast_image_resize", "dep:webp"]
 postgres = ["dep:deadpool-postgres", "dep:tokio-postgres", "dep:tokio-postgres-rustls", "dep:uuid"]
 turso = ["dep:turso_core", "dep:turso_parser"]
 

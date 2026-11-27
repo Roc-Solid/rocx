@@ -210,6 +210,22 @@ test("on: a component's handlers are effects, given what the event says", () => 
 	assert.match(refused(`x = <a onclick="go()">x</a>`), /inline event handlers \(onclick\) aren't allowed: in a component, write on:click=\{…\}/);
 });
 
+test("enhanced:src (D-125): an <img>'s photo, its src and the server's mark, lazy unless it says", () => {
+	assert.equal(roc(`x = <img enhanced:src="/images/harbour.jpg" alt="The harbour" />`), `x = Html.void("img", [Html.attr_literal("src", "/images/harbour.jpg"), Html.enhanced, Html.attr_literal("alt", "The harbour"), Html.attr_literal("loading", "lazy"), Html.attr_literal("decoding", "async"),])`);
+	assert.equal(roc(`x = <img enhanced:src={post.cover} alt="" width="120" />`), `x = Html.void("img", [Html.attr("src", post.cover), Html.enhanced, Html.attr_literal("alt", ""), Html.attr_literal("width", "120"), Html.attr_literal("loading", "lazy"), Html.attr_literal("decoding", "async"),])`);
+	assert.equal(roc(`x = <img enhanced:src={photo!()} alt="" />`), `x = Html.void("img", [Html.attr_of("src", || photo!()), Html.enhanced, Html.attr_literal("alt", ""), Html.attr_literal("loading", "lazy"), Html.attr_literal("decoding", "async"),])`);
+	// The page's first photo loads at once, as written; one that says how it decodes is left so.
+	assert.equal(roc(`x = <img enhanced:src="/a.jpg" alt="" fetchpriority="high" decoding="sync" />`), `x = Html.void("img", [Html.attr_literal("src", "/a.jpg"), Html.enhanced, Html.attr_literal("alt", ""), Html.attr_literal("fetchpriority", "high"), Html.attr_literal("decoding", "sync"),])`);
+	assert.equal(roc(`x = <img enhanced:src="/a.jpg" alt="" loading="eager" />`), `x = Html.void("img", [Html.attr_literal("src", "/a.jpg"), Html.enhanced, Html.attr_literal("alt", ""), Html.attr_literal("loading", "eager"), Html.attr_literal("decoding", "async"),])`);
+	// A plain src is left as it is.
+	assert.equal(roc(`x = <img src="/a.jpg" alt="" />`), `x = Html.void("img", [Html.attr_literal("src", "/a.jpg"), Html.attr_literal("alt", ""),])`);
+	assert.match(failure(`x = <div enhanced:src="/a.jpg" />`).reason, /enhanced:src is an <img>'s: <div> has no photo/);
+	assert.match(failure(`x = <img enhanced:srcset="/a.jpg" />`).reason, /enhanced:srcset: write enhanced:src=\{…\}/);
+	assert.match(failure(`x = <img enhanced:src />`).reason, /enhanced:src needs a path of this site/);
+	assert.match(failure(`x = <img enhanced:src="/a.jpg" src="/b.jpg" />`).reason, /<img> has enhanced:src and src: enhanced:src is its src/);
+	assert.match(failure(`x = <img enhanced:src="/a.jpg" srcset="/b.jpg 2x" />`).reason, /<img> has enhanced:src and srcset: .*the server writes its srcset/);
+});
+
 test("server! is gone (D-023): refused at its line, saying what to write instead", () => {
 	try {
 		transpile("import pf.Server\n\necho! = server!(|_, m| m)\n", "Echo.rocx");

@@ -1203,6 +1203,9 @@ export class Runtime {
 		this.computedClasses = new WeakMap();
 		this.computedStyles = new WeakMap();
 		this.classToggles = new WeakMap();
+		/** An `<img enhanced:src>`'s attributes the server may write beside what its markup says (D-125):
+		 * its photo's copies (`srcset`), and the `sizes`, `width` and `height` the markup doesn't give. */
+		this.enhancedImages = new WeakMap();
 		/** Elements whose in-transition plays once what this flush changes is on the page. */
 		this.entering = [];
 		/** The `<Title>`s there are, by the computation of each one's hole: `{ seq, title }`, the
@@ -3659,12 +3662,44 @@ export class Runtime {
 			if (!level.disposed && level.holds === key) this.madeAnew(typeof key === "string" ? key.slice(1) : "a <Show>'s part");
 		}
 		this.remade = [];
+		this.enhancedFrom(doc);
 		// A root made anew took the document's regions as it was made (`settleDocument`); a kept one's
 		// are the server's for the page loaded before, and follow the document now.
 		if (this.rootKept) this.refreshRegions(doc);
 		if (this.rootKept && doc.head && document.head) this.reconcileHead(document.head, doc.head);
 		this.rootKept = false;
 		this.forgetSubmissions();
+	}
+
+	/**
+	 * The page's `<img enhanced:src>`s, given what the server wrote for each in the document (D-125):
+	 * one a level made in this navigation has its `src` alone. The page and the document render the
+	 * same markup, and a photo's copies are made, or not, for every `<img>` that shows it, so the
+	 * page's of one `src` and the document's of that `src` with a `srcset` match one for one, in
+	 * order. Each gets what its markup doesn't write (`srcset`, `sizes`, `width`, `height`).
+	 */
+	enhancedFrom(doc) {
+		const made = new Map();
+		for (const image of doc.querySelectorAll("img[srcset]")) {
+			const src = image.getAttribute("src");
+			if (!made.has(src)) made.set(src, []);
+			made.get(src).push(image);
+		}
+		if (!made.size) return;
+		const counted = new Map();
+		for (const image of document.querySelectorAll("img")) {
+			const added = this.enhancedImages.get(image);
+			if (!added) continue;
+			const src = image.getAttribute("src");
+			const at = counted.get(src) ?? 0;
+			counted.set(src, at + 1);
+			const from = made.get(src)?.[at];
+			if (!from) continue;
+			for (const name of added) {
+				const value = from.getAttribute(name);
+				if (value !== null && image.getAttribute(name) !== value) image.setAttribute(name, value);
+			}
+		}
 	}
 
 	/**
@@ -4031,6 +4066,9 @@ export class Runtime {
 			if (kind === "text") target.data = value;
 			else if (kind === "attr") {
 				target.setAttribute(name, value);
+				// Another photo in an `<img enhanced:src>`: the copies and size the server wrote are the
+				// old one's (D-125). The new one shows from its `src`; a page the server renders has its own.
+				if (name === "src") this.enhancedImages.get(target)?.forEach((added) => target.removeAttribute(added));
 				// What a field shows is its property once someone has typed in it, not its attribute.
 				if (name === "value" && "value" in target) target.value = value;
 			}
@@ -5894,6 +5932,9 @@ export class Runtime {
 				if (drag && name === "dragenter") drag.enter.push(handler);
 				else if (drag && name === "dragleave") drag.leave.push(handler);
 				else element.addEventListener(name, handler);
+			} else if (kind === "e") {
+				const written = new Set(node.a.filter(([named]) => NAMED.has(named)).map(([, attribute]) => attribute));
+				this.enhancedImages.set(element, ["srcset", "sizes", "width", "height"].filter((added) => !written.has(added)));
 			} else if (kind === "k") this.keys.set(element, name);
 			else if (kind === "ko") this.run(new Computation(this, { kind: "key", runner: this.kept.get(name), owner, scope, target: element }));
 			else if (kind === "onk") element.addEventListener(name, this.listener(kind, name, value, wanted, scope, owner));

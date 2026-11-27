@@ -1,0 +1,9 @@
+import pf.Html
+
+## Another page, whose link goes to the photos in place: the runtime makes them, and takes what the
+## server wrote for them from the page's document.
+view! = |_|
+	<main>
+		<h1>Elsewhere</h1>
+		<a href="/">The photos</a>
+	</main>

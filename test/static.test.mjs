@@ -71,7 +71,7 @@ test("rocx build --static: every page as a file under the base, what a link or a
 	const said = built.err.trimEnd().split("\n");
 	assert.match(said[0], /^  rocx build --static · app → \S+\/ · for \/base\/$/);
 	assert.ok(said.some((line) => /^  ✓ pages rendered\s+\d+\.\d s$/.test(line)), built.err);
-	assert.ok(said.some((line) => /^  \S+\/  4 pages and 1 file$/.test(line)), built.err);
+	assert.ok(said.some((line) => /^  \S+\/  4 pages and 6 files$/.test(line)), built.err);
 	assert.deepEqual(
 		said.filter((line) => line.startsWith("  ! ")),
 		[
@@ -81,7 +81,12 @@ test("rocx build --static: every page as a file under the base, what a link or a
 			"  ! no page of /drafts/[id] was written: link to one from a page, or name it (--route /drafts/<id>)",
 		],
 	);
-	assert.deepEqual(files(copy), ["404.html", "about/index.html", "api/hello", "blog/first-post/index.html", "index.html", "robots.txt", "rocx/app.wasm", "rocx/runtime.js", "rocx/start.js", "tags/roc/index.html"]);
+	const copies = files(copy).filter((file) => file.startsWith("rocx/images/"));
+	assert.deepEqual(files(copy).filter((file) => !copies.includes(file)), ["404.html", "about/index.html", "api/hello", "blog/first-post/index.html", "harbour.jpg", "index.html", "robots.txt", "rocx/app.wasm", "rocx/runtime.js", "rocx/start.js", "tags/roc/index.html"]);
+	// The about page's photo (enhanced:src, D-125): its copies, made as the page rendered, under the base.
+	assert.deepEqual(copies.map((file) => Number(/-(\d+)\.webp$/.exec(file)[1])).sort((a, b) => a - b), [160, 320, 640, 960, 1000]);
+	const about = readFileSync(join(copy, "about/index.html"), "utf8");
+	assert.match(about, /<img src="\/base\/harbour\.jpg" alt="A harbour" loading="lazy" decoding="async" srcset="\/base\/rocx\/images\/[0-9a-f]{16}-160\.webp 160w, \/base\/rocx\/images\/[0-9a-f]{16}-320\.webp 320w, [^"]*" sizes="100vw" width="1000" height="600">/);
 	assert.equal(readFileSync(join(copy, "api/hello"), "utf8"), '"hello"', "the endpoint's answer, as it is");
 	assert.match(readFileSync(join(copy, "tags/roc/index.html"), "utf8"), /<h1>Tag roc<\/h1>/);
 	assert.match(readFileSync(join(copy, "404.html"), "utf8"), /404/);

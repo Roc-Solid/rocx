@@ -597,6 +597,8 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             let (mut secret, mut named) = (false, String::new());
             // A link's `href`, and whether the markup gives it an `aria-current` of its own (D-086).
             let (mut href, mut authored) = (None::<String>, false);
+            // An `<img enhanced:src>` (D-125): its `src`, `width`, `height` and `sizes` as written.
+            let (mut enhanced, mut said) = (false, Vec::<(String, String)>::new());
             for attribute in field("a").as_array().into_iter().flatten() {
                 let part = |index: usize| attribute.get(index).unwrap_or(&Value::Null);
                 let name = part(1).as_str().unwrap_or("");
@@ -632,6 +634,7 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                         if name == "href" {
                             href = Some(value.clone());
                         }
+                        sized(&mut said, name, &value);
                         attributes.push(format!("{name}=\"{}\"", escape(&value)));
                     }
                     "o" => {
@@ -640,6 +643,7 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                             if name == "href" {
                                 href = Some(value.clone());
                             }
+                            sized(&mut said, name, &value);
                             attributes.push(format!("{name}=\"{}\"", escape(&value)));
                         }
                     }
@@ -654,6 +658,7 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                             if name == "href" {
                                 href = Some(value.clone());
                             }
+                            sized(&mut said, name, &value);
                             attributes.push(format!("{name}=\"{}\"", escape(&value)));
                         }
                     }
@@ -679,8 +684,10 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
                         if name == "href" {
                             href = Some(value.clone());
                         }
+                        sized(&mut said, name, &value);
                         attributes.push(format!("{name}=\"{}\"", escape(&value)));
                     }
+                    "e" => enhanced = true,
                     "fo" => {
                         if truthy(&parse(&once(part(2), scope, None)?)?) {
                             attributes.push(name.to_string());
@@ -702,6 +709,11 @@ fn html(node: &Value, scope: &Scope) -> Result<String, Stop> {
             }
             if !styles.is_empty() {
                 attributes.push(format!("style=\"{}\"", escape(&styles.join("; "))));
+            }
+            // A photo's copies, once they are made (D-125): its `srcset`, and what the markup didn't
+            // say of its size.
+            if enhanced && tag.eq_ignore_ascii_case("img") {
+                attributes.extend(enhanced_attributes(&said));
             }
             // A same-app link where the page is, or above it: its `aria-current`, last (D-086).
             if tag == "a"
@@ -988,6 +1000,65 @@ pub extern "C" fn roc_selector_is(id: u64, key: RocStr) -> bool {
         Some(Ok(selected)) => selected == key,
         Some(Err(why)) => roc::fail(why),
         None => roc::fail("rocx: a selector was read after the part that made it went away".into()),
+    }
+}
+
+/// Notes an `<img>`'s `src`, `width`, `height` and `sizes` as written, for `enhanced_attributes`.
+fn sized(said: &mut Vec<(String, String)>, name: &str, value: &str) {
+    if matches!(name, "src" | "width" | "height" | "sizes") {
+        said.push((name.to_string(), value.to_string()));
+    }
+}
+
+/// What an `<img enhanced:src>` gets besides what is written (D-125), once its photo's copies are
+/// made (else nothing: the page shows its `src`, and the copies are being made): their `srcset`;
+/// `sizes`, unless written (its `width`, in pixels, if written, or the window's width); and the
+/// photo's `width` and `height`, or the one not written, in its shape, so the page keeps its room.
+fn enhanced_attributes(said: &[(String, String)]) -> Vec<String> {
+    #[cfg(feature = "images")]
+    {
+        let written = |name: &str| said.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str());
+        let Some(src) = written("src") else { return Vec::new() };
+        // A static build's page waits for its photos, on a blocking thread, the render paused: a
+        // route's photo is asked of the server, which needs a Roc thread to answer it.
+        let found = if crate::images::waits() {
+            let src = src.to_string();
+            crate::hosted::wait(async move { tokio::task::spawn_blocking(move || Ok(crate::images::wait(&src))).await.unwrap_or(Ok(None)) }).ok().flatten()
+        } else {
+            crate::images::lookup(src)
+        };
+        let Some(ready) = found else { return Vec::new() };
+        let number = |name: &str| written(name).and_then(|v| v.trim().parse::<u32>().ok()).filter(|n| *n > 0);
+        let mut out = vec![format!("srcset=\"{}\"", escape(&ready.srcset()))];
+        if written("sizes").is_none() {
+            out.push(match number("width") {
+                Some(width) => format!("sizes=\"{width}px\""),
+                None => "sizes=\"100vw\"".to_string(),
+            });
+        }
+        match (written("width"), written("height")) {
+            (None, None) => {
+                out.push(format!("width=\"{}\"", ready.width));
+                out.push(format!("height=\"{}\"", ready.height));
+            }
+            (Some(_), None) => {
+                if let Some(width) = number("width") {
+                    out.push(format!("height=\"{}\"", crate::images::height_at(ready.width, ready.height, width)));
+                }
+            }
+            (None, Some(_)) => {
+                if let Some(height) = number("height") {
+                    out.push(format!("width=\"{}\"", crate::images::height_at(ready.height, ready.width, height)));
+                }
+            }
+            (Some(_), Some(_)) => {}
+        }
+        out
+    }
+    #[cfg(not(feature = "images"))]
+    {
+        let _ = said;
+        Vec::new()
     }
 }
 

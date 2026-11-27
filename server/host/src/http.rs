@@ -53,6 +53,16 @@ pub struct Config {
     pub actor_idle_ms: u64,
     /// The most the key-value store (`Kv`) keeps, in MiB, before the least recently used goes.
     pub kv_max_mb: u64,
+    /// Where `enhanced:src`'s copies are kept (`--images-dir`, `data/images`), and the most they
+    /// take in MiB before the least recently used go (`--images-max-mb`, 1024) (D-125).
+    #[cfg_attr(not(feature = "images"), allow(dead_code))]
+    pub images_dir: Option<PathBuf>,
+    #[cfg_attr(not(feature = "images"), allow(dead_code))]
+    pub images_max_mb: Option<u64>,
+    /// A page waits for its photos' copies (`--images-wait`): a static build's server, whose pages
+    /// have no next request to get them.
+    #[cfg_attr(not(feature = "images"), allow(dead_code))]
+    pub images_wait: bool,
     /// The most a request's body may be, in bytes (`--max-body`, `MAX_BODY`): 413 beyond.
     pub max_body: usize,
     /// Where the app is, as the world reaches it (`--public-url`, `PUBLIC_URL`): `Env.public_url!`.
@@ -87,6 +97,9 @@ pub const USAGE: &str = "usage: <app> [options]
   --database-url URL                   the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
   --actor-idle-ms 900000               an actor idle this long is let go (0: never; kept in the database)
   --kv-max-mb 64                       the key-value store's limit (KV_MAX_MB): the least recently used goes past it
+  --images-dir data/images             where enhanced:src's copies of photos are kept (D-125)
+  --images-max-mb 1024                 the most they take: the least recently used go past it (and any unused for 30 days)
+  --images-wait                        a page waits for its photos' copies (a static build's server)
   --max-body 16MiB                     the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB; 413 beyond
   --public-url https://app.example     where the app is, for links it sends (PUBLIC_URL; else where it listens)
   --dev                                reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)
@@ -108,6 +121,7 @@ impl Config {
         let mut database_url = env("DATABASE_URL");
         let mut actor_idle_ms = 15 * 60 * 1000;
         let mut kv_max_mb = env("KV_MAX_MB").and_then(|text| text.parse().ok()).unwrap_or(64);
+        let (mut images_dir, mut images_max_mb, mut images_wait) = (None::<PathBuf>, None::<u64>, false);
         let mut max_body = match env("MAX_BODY") {
             Some(given) => size(&given).map_err(|why| format!("MAX_BODY {why}"))?,
             None => MAX_BODY,
@@ -147,6 +161,9 @@ impl Config {
                 "--actor-idle-ms" => actor_idle_ms = value()?.parse().map_err(|_| "--actor-idle-ms needs a number".to_string())?,
                 "--smtp-url" | "--mail-from" => return Err(format!("{arg} is gone: email is a plugin (packages/email, D-035), which reads SMTP_URL and MAIL_FROM from the environment (or its options say)")),
                 "--kv-max-mb" => kv_max_mb = value()?.parse().map_err(|_| "--kv-max-mb needs a number".to_string())?,
+                "--images-dir" => images_dir = Some(PathBuf::from(value()?)),
+                "--images-max-mb" => images_max_mb = Some(value()?.parse().ok().filter(|mb| *mb > 0).ok_or("--images-max-mb needs a number above 0")?),
+                "--images-wait" => images_wait = true,
                 "--max-body" => max_body = size(&value()?).map_err(|why| format!("--max-body {why}"))?,
                 "--public-url" => public_url = Some(value()?),
                 // Read before anything else starts (`dotenv`, in `main`): here only taken.
@@ -167,7 +184,7 @@ impl Config {
         let address = format!("{host}:{port}").parse().map_err(|error| format!("{host}:{port}: {error}"))?;
         let live_beat = Duration::from_millis(live_beat_ms);
         let public_url = public_url.map(|url| public(&url)).transpose()?;
-        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, kv_max_mb, max_body, public_url, dev, debug, live_beat, roc_threads, describe_sql, sql_database })
+        Ok(Config { address, statics, files, context, database_url, actor_idle_ms, kv_max_mb, images_dir, images_max_mb, images_wait, max_body, public_url, dev, debug, live_beat, roc_threads, describe_sql, sql_database })
     }
 }
 
@@ -350,6 +367,10 @@ async fn answer(request: Request<Incoming>, config: Arc<Config>, peer: String) -
         return Ok(full(StatusCode::OK, "text/plain", roc::live_allocations().to_string()));
     }
     if matches!(*request.method(), Method::GET | Method::HEAD) {
+        #[cfg(feature = "images")]
+        if path.starts_with(crate::images::URL_PREFIX) {
+            return Ok(image_copy(&path).await);
+        }
         if let Some(response) = file(&config, &path).await {
             return Ok(response);
         }
@@ -377,6 +398,25 @@ async fn file(config: &Config, path: &str) -> Option<Response<Body>> {
         response.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static(IMMUTABLE));
     }
     Some(response)
+}
+
+/// A copy of a photo `enhanced:src` made (D-125): named by the photo's content and its width, so the
+/// browser keeps it for good, as it keeps the app's stylesheet. 404 for a name the server has no
+/// copy by (one swept: the page that named it is older than the sweep, and shows the photo's `src`).
+#[cfg(feature = "images")]
+async fn image_copy(path: &str) -> Response<Body> {
+    let found = match crate::images::file_for(path) {
+        Some(file) => tokio::fs::read(file).await.ok(),
+        None => None,
+    };
+    match found {
+        Some(bytes) => {
+            let mut response = full(StatusCode::OK, "image/webp", bytes);
+            response.headers_mut().insert(CACHE_CONTROL, HeaderValue::from_static(IMMUTABLE));
+            response
+        }
+        None => full(StatusCode::NOT_FOUND, "text/plain; charset=utf-8", "Not Found".to_string()),
+    }
 }
 
 /// What a file named by its content is answered with: the browser keeps it a year and never asks
@@ -408,6 +448,10 @@ pub fn content_type(path: &Path) -> &'static str {
         Some("txt") => "text/plain; charset=utf-8",
         Some("json") => "application/json",
         Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("avif") => "image/avif",
+        Some("gif") => "image/gif",
         Some("ico") => "image/x-icon",
         // The dev client, which a phone installs from rocx dev's page (`rocx dev --android --lan`).
         Some("apk") => "application/vnd.android.package-archive",

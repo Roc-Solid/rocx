@@ -139,6 +139,7 @@ view! = |_|
 						<tr><td><code>{"style:--name={str}"}</code></td><td>Sets a CSS custom property, for the stylesheet to use.</td></tr>
 						<tr><td><code>{"style:color={str}"}</code></td><td>Sets one CSS property. Its name is letters and dashes.</td></tr>
 						<tr><td><code>{"style=\"…\""}</code></td><td>A static style, which the <code>style:</code> attributes join.</td></tr>
+						<tr><td><code>{"<img enhanced:src={path} />"}</code></td><td>A photo of this site that the server makes smaller copies of. Once they are made, a moment after a page first shows it, pages get their <code>srcset</code>, a <code>sizes</code> and the photo's <code>width</code> and <code>height</code>; until then, its <code>src</code>. It loads lazily unless <code>loading</code> or <code>fetchpriority</code> says otherwise. See <a href={"${Paths.platform_server}#photos"}>the server</a>.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>

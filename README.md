@@ -352,6 +352,7 @@ there is a real file the build compiles.
 | `<input type="checkbox" checked?={bool} required />` | `?=` sets a boolean attribute when the value is true. A bare name (`required`) is always on |
 | `<a rel??={str}>` | `??=` leaves the attribute out when the string is empty |
 | `<li class="row" class:active={bool}>` | `class:name` adds the class when the value is true. All of them end up in one `class` |
+| `<img enhanced:src={path} alt="…" />` | A photo of this site the server makes smaller copies of (D-125): once they are made (in the background, after the first page shows it), the page gets their `srcset`, a `sizes` and the photo's `width` and `height`; until then, its `src`. `loading="lazy"` unless written. See the server's README, "Photos' copies" |
 | `<h1 style:color={str}>`, `<span style:--size={str}>` | Sets one CSS property, or a custom property, joined with any static `style`. A value that could end the declaration, or that loads something (`url(…)`), is left out. Works in `Html.to_str` too (an email's colours) |
 | `{expr}` among children | A **hole**: text (a `Str`, escaped), a number (its digits) or markup (`Html`), chosen by the expression's type. A value it can't show (a record, a `Bool`) is a compile error at its line. `{=expr}` is an older spelling of the same hole |
 | `{...expr}` | A **list hole**: a `List(Html)`, joined |

@@ -60,6 +60,7 @@ Html :: [
 		KeyOf(() => Str),
 		Animate([In, Out, Both, Move], Transition),
 		AnimateOf([In, Out, Both, Move], () => Transition),
+		Enhanced,
 	]
 
 	## A key pressed, and the modifier keys held with it (`on:keydown.keys={|keys| …}`): the key as
@@ -234,6 +235,13 @@ Html :: [
 
 	attr_of : Str, (() => Str) -> Attr
 	attr_of = |name, compute| ValueOf(name, compute)
+
+	## An `<img>` whose `src` is a photo of this site the server makes smaller copies of
+	## (`enhanced:src`, D-125): once they are made, the server writes their `srcset`, `sizes` and the
+	## photo's `width` and `height` beside its `src`; until then, and in the browser, it is its `src`
+	## alone. rocx writes it with the `src`.
+	enhanced : Attr
+	enhanced = Enhanced
 
 	## An attribute that is there only when its value isn't empty (`name??={…}`), as Svelte leaves
 	## out one whose value is undefined.
@@ -979,6 +987,7 @@ attribute! = |tag, attribute|
 		KeyOf(compute) => "[\"ko\",${keep!(|| json_str(compute()))}]"
 		Animate(way, animation) => "[\"tr\",${way_name(way)},${animation.json()}]"
 		AnimateOf(way, compute) => "[\"tro\",${way_name(way)},${keep!(|| compute().json())}]"
+		Enhanced => "[\"e\"]"
 	}
 
 ## An element's attributes, without an `<input type="password">`'s `value`: what was typed in one is

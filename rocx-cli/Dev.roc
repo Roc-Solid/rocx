@@ -486,11 +486,14 @@ Dev := [].{
 	## A path that changed and matters: not a backup or swap file, nor a SQLite database's file (the
 	## server writes its own, `data/app.db` and the WAL beside it, under the app when it runs there:
 	## a change to one would restart it, again and again), nor a .roc file rocx wrote (beside its
-	## .rocx, or ending with rocx's marker). The platform leaves out hidden entries and the output
-	## directories.
+	## .rocx, or ending with rocx's marker), nor a photo's copy the server made (enhanced:src's, in
+	## `data/images/`, D-125). The platform leaves out hidden entries and the output directories.
 	app_edit! : Str => Bool
 	app_edit! = |path| {
 		if [".swp", ".tmp", ".building", "~", ".db", ".db-shm", ".db-wal", ".db-journal"].any(|suffix| path.ends_with(suffix)) {
+			return Bool.False
+		}
+		if path.starts_with("data/images/") or path.contains("/data/images/") {
 			return Bool.False
 		}
 		!(path.ends_with(".roc") and Dev.rocx_wrote!(path))

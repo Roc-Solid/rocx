@@ -1,0 +1,19 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+
+## The photos: one in static/, one a route answers (its width written), one a route refuses a
+## signed-out visitor, one that isn't there, one that isn't a photo, and a plain src beside them;
+## and one a button changes, in the browser.
+view! = |_| {
+	(shown!, show!) = create_signal!("/photo.jpg")
+	<main>
+		<img id="static" enhanced:src="/photo.jpg" alt="A photo in static/" />
+		<img id="route" enhanced:src={"/photos/one"} alt="A photo a route answers" width="200" />
+		<img id="private" enhanced:src="/photos/private" alt="" />
+		<img id="missing" enhanced:src="/missing.jpg" alt="" />
+		<img id="text" enhanced:src="/notes.txt" alt="" />
+		<img id="plain" src="/photo.jpg" alt="" />
+		<img id="switched" enhanced:src={shown!()} alt="The photo the button picks" />
+		<button on:click={|| show!("/photos/one")}>Another photo</button>
+	</main>
+}

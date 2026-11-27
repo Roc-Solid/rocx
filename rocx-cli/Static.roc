@@ -180,7 +180,9 @@ Static := [].{
 		guarded = Static.own_middleware(table, $sources)
 		stage = "${asked.out}.building"
 		Fs.delete_all!(stage)
-		job = { server, served, flags: asked.flags, log: Fs.join([built_at, "static-server.log"]), stage, base: asked.base, routes: asked.routes, pages: Static.plain_pages(table, guarded), guarded }
+		# enhanced:src's copies (D-125) are kept beside the build, from one static build to the next.
+		images = Fs.join([dir, "build", "images"])
+		job = { server, served, flags: asked.flags, log: Fs.join([built_at, "static-server.log"]), stage, base: asked.base, routes: asked.routes, pages: Static.plain_pages(table, guarded), guarded, images }
 		copied = match Term.step!(styled, "pages rendered", |{}| Static.prerender!(job)) {
 			Ok(done) => done
 			Err(Failed(why)) => {
@@ -391,7 +393,7 @@ Static := [].{
 	## The server, the directories it serves files from, its options and its log; where the copy
 	## is made, its base, the `--route`s, the paths of the pages to ask for (`plain_pages`), and the
 	## routes no link is followed to (`guarded`).
-	Run : { server : Str, served : List(Str), flags : List(Str), log : Str, stage : Str, base : Str, routes : List(Str), pages : List(Str), guarded : List(Str) }
+	Run : { server : Str, served : List(Str), flags : List(Str), log : Str, stage : Str, base : Str, routes : List(Str), pages : List(Str), guarded : List(Str), images : Str }
 
 	Copied : { pages : U64, files : U64, written : List(Str), notes : List(Str) }
 
@@ -406,7 +408,9 @@ Static := [].{
 		}
 		statics = job.served.join_map(|each| ["--static", each])
 		# --debug: the server lists the plugins' files (`/__rocx/plugin-files`), for the copy.
-		child = match Cmd.new(job.server).args(["--port", port, "--debug"].concat(statics).concat(job.flags)).env("ROCX_LOG", "pretty").log(job.log).spawn!() {
+		# --images-wait: a page has its photos' copies (enhanced:src, D-125), made as it renders, since
+		# no next request would bring them.
+		child = match Cmd.new(job.server).args(["--port", port, "--debug", "--images-wait", "--images-dir", job.images].concat(statics).concat(job.flags)).env("ROCX_LOG", "pretty").log(job.log).spawn!() {
 			Ok(started) => started
 			Err(CantStart(why)) => return Err(Failed("the app's server: ${why}"))
 		}
@@ -497,6 +501,8 @@ Static := [].{
 		var $pages = 0
 		var $written = []
 		var $notes = []
+		# The photos' copies the pages name (enhanced:src, D-125), each once.
+		var $copies = []
 		var $i = 0
 		while $i < $queue.len() {
 			queued = $queue.get($i) ?? { path: "/", linked_from: "" }
@@ -514,6 +520,11 @@ Static := [].{
 				Static.write!(Fs.join([job.stage, file]), Static.under_base(html, job.base))?
 				$pages = $pages + 1
 				$written = $written.append(path)
+				for copy in Static.image_copies(html) {
+					if !$copies.contains(copy) {
+						$copies = $copies.append(copy)
+					}
+				}
 				for link in Static.links(html) {
 					if !$queue.any(|each| each.path == link) and !job.guarded.any(|route| Routes.matches(route, link)) {
 						$queue = $queue.append({ path: link, linked_from: path })
@@ -526,6 +537,14 @@ Static := [].{
 				$files = $files + 1
 				$written = $written.append(path)
 			}
+		}
+		for copy in $copies {
+			answer = Static.get!(url, copy, [])?
+			if answer.status < 200 or answer.status >= 300 {
+				return Err(Failed("GET ${copy} (a photo's copy a page names) answered ${answer.status.to_str()}"))
+			}
+			Static.write_bytes!(Fs.join([job.stage, Static.file_path(copy)]), answer.body)?
+			$files = $files + 1
 		}
 		# What a path nothing answers shows: static hosts serve 404.html there.
 		missing = Static.get!(url, "/404", [Static.accept])?
@@ -620,6 +639,7 @@ Static := [].{
 		bytes = html.to_utf8()
 		with_base = base.to_utf8()
 		names = ["href=\"/".to_utf8(), "src=\"/".to_utf8(), "action=\"/".to_utf8()]
+		srcset = "srcset=\"".to_utf8()
 		var $out = []
 		var $i = 0
 		while $i < bytes.len() {
@@ -633,11 +653,57 @@ Static := [].{
 						$out = $out.concat(Text.slice(bytes, $i, $i + name.len() - 1)).concat(with_base)
 						$i = $i + name.len()
 					}
-					_ => {}
+					_ =>
+						if Text.starts_with_at(bytes, srcset, $i) {
+							# A `srcset` (enhanced:src's, D-125): each of its URLs that begins with one `/`.
+							$out = $out.concat(srcset)
+							$i = $i + srcset.len()
+							# At a candidate's start: the attribute's, or after a `,` and any spaces.
+							var $start = Bool.True
+							while $i < bytes.len() and Text.at(bytes, $i) != '"' {
+								at = Text.at(bytes, $i)
+								if $start and at == '/' and Text.at(bytes, $i + 1) != '/' {
+									$out = $out.concat(with_base)
+									$start = Bool.False
+								} else {
+									$out = $out.append(at)
+									$start = at == ',' or ($start and at == ' ')
+								}
+								$i = $i + 1
+							}
+						}
 				}
 			}
 		}
 		Str.from_utf8_lossy($out)
+	}
+
+	## The photos' copies a page names (enhanced:src's, D-125): each URL of a `srcset` attribute (after
+	## a space, in double quotes) that is under `/rocx/images/`, once, in order. Text that names the
+	## path (a page about it) isn't a copy.
+	image_copies : Str -> List(Str)
+	image_copies = |html| {
+		bytes = html.to_utf8()
+		attribute = "srcset=\"".to_utf8()
+		prefix = "/rocx/images/".to_utf8()
+		var $found = []
+		var $i = 0
+		while $i < bytes.len() {
+			at = Text.at(bytes, $i)
+			$i = $i + 1
+			if (at == ' ' or at == '\n' or at == '\t' or at == '\r') and Text.starts_with_at(bytes, attribute, $i) {
+				$i = $i + attribute.len()
+				end = Text.run_end(bytes, $i, |b| b != '"')
+				for candidate in Text.cut(bytes, $i, end).split_on(",") {
+					url = Text.trim(candidate).split_on(" ").first() ?? ""
+					if url.starts_with("/rocx/images/") and url.to_utf8().len() > prefix.len() and !$found.contains(url) {
+						$found = $found.append(url)
+					}
+				}
+				$i = end
+			}
+		}
+		$found
 	}
 
 	## The paths a page's links (`<a href="/…">`) lead to on this site, each once, in order: no
@@ -741,6 +807,10 @@ expect !Static.names_a_file("/") and !Static.names_a_file("/about") and !Static.
 
 expect Static.under_base("<a href=\"/syntax\">x</a> <img\nsrc=\"/logo.svg\"> <a href=\"//cdn/x\"> <form action=\"/go\">", "/docs/") == "<a href=\"/docs/syntax\">x</a> <img\nsrc=\"/docs/logo.svg\"> <a href=\"//cdn/x\"> <form action=\"/docs/go\">"
 expect Static.under_base("<a href=\"/\">home</a> data-href=\"/x\"", "/b/") == "<a href=\"/b/\">home</a> data-href=\"/x\""
+expect Static.under_base("<img src=\"/a.jpg\" srcset=\"/rocx/images/0123456789abcdef-160.webp 160w, /rocx/images/0123456789abcdef-320.webp 320w\">", "/docs/") == "<img src=\"/docs/a.jpg\" srcset=\"/docs/rocx/images/0123456789abcdef-160.webp 160w, /docs/rocx/images/0123456789abcdef-320.webp 320w\">"
+expect Static.under_base("<img srcset=\"//cdn/a.webp 1x,/b.webp 2x\">", "/d/") == "<img srcset=\"//cdn/a.webp 1x,/d/b.webp 2x\">"
+expect Static.image_copies("<img srcset=\"/rocx/images/0123456789abcdef-160.webp 160w, /rocx/images/0123456789abcdef-320.webp 320w\"><img srcset=\"/rocx/images/0123456789abcdef-160.webp 160w\">") == ["/rocx/images/0123456789abcdef-160.webp", "/rocx/images/0123456789abcdef-320.webp"]
+expect Static.image_copies("<p>served at <code>/rocx/images/…</code></p><img srcset=\"/a-2x.webp 2x\">") == []
 expect Static.under_base("<a href=\"/x\">", "/") == "<a href=\"/x\">"
 
 expect Static.links("<a href=\"/about\">A</a><a class=\"x\" href=\"/blog/one?x=1#top\">B</a><a href=\"https://roc-lang.org\">R</a><a href=\"/about\">again</a><abbr href=\"/no\"></abbr><a href=\"//cdn/x\"></a><a\nhref=\"/q?a=1&amp;b=2\"></a><a href=\"/rocx/app.wasm\"></a><a data-href=\"/no\"></a>") == ["/about", "/blog/one", "/q"]

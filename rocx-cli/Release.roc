@@ -175,8 +175,11 @@ Release := [].{
 		# The host has the database engine the app's program names alone (D-104): its own platform
 		# copy, put in the platform's place for this build, when that leaves an engine out.
 		engines = Hosts.engines_of(Fs.read_or_empty!(main))
+		# And what makes photos' copies, when the app's markup writes an enhanced:src (D-125).
+		photos = Release.enhances!(dir)
+		features = if (photos) engines.concat(["images"]) else engines
 		own = Fs.join([root, "server", "platform", "main.roc"])
-		linked = Term.step!(styled, "server host · ${Release.engines_said(engines)}", |{}| Hosts.release_platform!(root, target, engines, Hosts.stage_for(root, dir, target)))?
+		linked = Term.step!(styled, "server host · ${Release.engines_said(engines)}${if (photos) " · photos' copies" else ""}", |{}| Hosts.release_platform!(root, target, features, Hosts.stage_for(root, dir, target)))?
 		# Roc knows a dependency by its real path, whichever way the app reached it (a `.rocx` link).
 		replaced = if (linked.main == own) [] else ["--replace-dep", Fs.real!(own), linked.main]
 		server = Fs.join([work, "server"])
@@ -255,6 +258,24 @@ Release := [].{
 	}
 
 	## The database engines a release's host has (D-104), as its message says them.
+	## Whether the app's markup writes an `enhanced:src` (D-125), so its release's host makes photos'
+	## copies: its .rocx files (a package's components among them, in Generated/), not its build's,
+	## its data's or a hidden directory's.
+	enhances! : Str => Bool
+	enhances! = |dir| {
+		for name in Fs.entries!(dir) {
+			path = Fs.join([dir, name])
+			if Fs.is_dir!(path) {
+				if !(name.starts_with(".") or ["build", "dist", "node_modules", "data"].contains(name)) and Release.enhances!(path) {
+					return Bool.True
+				}
+			} else if name.ends_with(".rocx") and Fs.read_or_empty!(path).contains("enhanced:src") {
+				return Bool.True
+			}
+		}
+		Bool.False
+	}
+
 	engines_said : List(Str) -> Str
 	engines_said = |engines| {
 		names = engines.map(|engine| if (engine == "turso") "Turso" else if (engine == "postgres") "Postgres" else engine)

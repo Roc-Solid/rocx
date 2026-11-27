@@ -2079,6 +2079,21 @@ Transpile := [].{
 	## component that takes getters (D-039) is given each value prop as one (`label: || word!()`); with
 	## `framed`, a component's value props are read as a computation's code is (a getter's, or a pure
 	## component's call in a hole of its own).
+	## An `<img enhanced:src>`'s attributes besides what is written (D-125): `loading="lazy"` unless
+	## it says how it loads (`loading`, or `fetchpriority`), and `decoding="async"` unless it says how
+	## it decodes. Its `src` and `srcset` are the server's to write: writing them too is refused.
+	enhanced_defaults : Cfg, List(Str), U64 -> Try(List(Part), [Rocx(RocxError), Crash(Str)])
+	enhanced_defaults = |cfg, names, at_pos| {
+		for refused in ["src", "srcset"] {
+			if names.contains(refused) {
+				return Err(Transpile.fail(cfg, "<img> has enhanced:src and ${refused}: enhanced:src is its src, and the server writes its srcset", at_pos))
+			}
+		}
+		loading = if (names.contains("loading") or names.contains("fetchpriority")) [] else [Item("Html.attr_literal(\"loading\", \"lazy\")")]
+		decoding = if (names.contains("decoding")) [] else [Item("Html.attr_literal(\"decoding\", \"async\")")]
+		Ok(loading.concat(decoding))
+	}
+
 	read_attributes : Cfg, St, Str, Bool, Bool, Bool, U64 -> Try({ st : St, attrs : List(Part), self_closing : Bool, reads_props : Bool }, [Rocx(RocxError), Crash(Str)])
 	read_attributes = |cfg, st0, tag, component, getters, framed, at_pos| {
 		src = cfg.src
@@ -2089,6 +2104,9 @@ Transpile := [].{
 		var $classed = Bool.False
 		var $reads_props = Bool.False
 		var $attrs = []
+		# The names written on an element, and whether one is `enhanced:src` (D-125).
+		var $names = []
+		var $enhanced = Bool.False
 		var $st = st0
 		var $going = Bool.True
 		while $going {
@@ -2110,7 +2128,8 @@ Transpile := [].{
 			match closing {
 				Some(done) => {
 					class_attr = if (scoped and !$classed) [Item(if (component) "class: ${Text.roc_string(scopes)}" else "Html.attr_literal(\"class\", ${Text.roc_string(scopes)})")] else []
-					return Ok({ st: { ..$st, pos: done.end }, attrs: $attrs.concat(class_attr), self_closing: done.self_closing, reads_props: $reads_props })
+					enhanced_attrs = if ($enhanced) Transpile.enhanced_defaults(cfg, $names, at_pos)? else []
+					return Ok({ st: { ..$st, pos: done.end }, attrs: $attrs.concat(class_attr).concat(enhanced_attrs), self_closing: done.self_closing, reads_props: $reads_props })
 				}
 				None => {}
 			}
@@ -2173,6 +2192,23 @@ Transpile := [].{
 					if flag or optional or Text.at(src, eq) != '=' or (Text.at(src, eq + 1) != '{' and !(name == "drag:image" and (Text.at(src, eq + 1) == '"' or Text.at(src, eq + 1) == '\''))) {
 						return Err(oops(if (name == "drag:data") "drag:data needs {a list of (type, value)}: write drag:data={[(\"text/plain\", title)]}" else "drag:image needs an element's id: write drag:image=\"ghost\" or drag:image={id}"))
 					}
+				}
+				# `enhanced:src={…}` (D-125): an `<img>`'s photo, which the server makes smaller copies of.
+				enhanced = !component and name.starts_with("enhanced:")
+				if enhanced {
+					if name != "enhanced:src" {
+						return Err(oops("${name}: write enhanced:src={…}, an <img>'s photo the server makes smaller copies of"))
+					}
+					if tag != "img" {
+						return Err(oops("enhanced:src is an <img>'s: <${tag}> has no photo to make copies of"))
+					}
+					if flag or optional or Text.at(src, eq) != '=' or !(Text.at(src, eq + 1) == '{' or Text.at(src, eq + 1) == '"' or Text.at(src, eq + 1) == '\'') {
+						return Err(oops("enhanced:src needs a path of this site: write enhanced:src=\"/images/harbour.jpg\" or enhanced:src={photo}"))
+					}
+					$enhanced = Bool.True
+				}
+				if !component {
+					$names = $names.append(name)
 				}
 				# `transition={…}`, `transition:in={…}`, `transition:out={…}`: a Transition the element plays.
 				transition = !component and (name == "transition" or name.starts_with("transition:"))
@@ -2255,7 +2291,7 @@ Transpile := [].{
 								decoded0
 							}
 						value = Text.roc_string(decoded)
-						$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else if (drag) "Html.drag_image(${value})" else "Html.attr_literal(${Text.roc_string(name)}, ${value})"))
+						$attrs = $attrs.append(Item(if (component) "${name}: ${Transpile.static_prop(getters, name, value)}" else if (name == "key") "Html.key(${value})" else if (drag) "Html.drag_image(${value})" else if (enhanced) "Html.attr_literal(\"src\", ${value}), Html.enhanced" else "Html.attr_literal(${Text.roc_string(name)}, ${value})"))
 						$st = { ..$st, pos: end + 1 }
 					} else if quote == '{' {
 						effects_before = $st.effects
@@ -2315,6 +2351,8 @@ Transpile := [].{
 							} else if drag {
 								fn_name = if (name == "drag:data") "drag_data" else "drag_image"
 								Ok(if (computed) "Html.${fn_name}_of(|| ${expr})" else "Html.${fn_name}(${expr})")
+							} else if enhanced {
+								Ok(if (computed) "Html.attr_of(\"src\", || ${expr}), Html.enhanced" else "Html.attr(\"src\", ${expr}), Html.enhanced")
 							} else if name == "key" and cfg.row_key == At(name_start) {
 								# The row's own key, on its root: read once, as the row is made (D-071).
 								Ok("Html.key(${expr})")

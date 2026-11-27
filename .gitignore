@@ -43,6 +43,8 @@ server/test/app/Generated/
 server/test/app/build/
 test/static/app/Generated/
 test/static/app/build/
+test/images/app/Generated/
+test/images/app/build/
 
 .DS_Store
 

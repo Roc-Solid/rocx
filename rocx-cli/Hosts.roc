@@ -303,7 +303,8 @@ Hosts := [].{
 	release_platform! = |rocx, target, engines, stage| {
 		modules = Fs.join([rocx, "server", "platform"])
 		host_dir = Fs.join([rocx, "server", "host"])
-		if engines == Hosts.all_engines or !File.is_dir!(host_dir) {
+		# `engines` may name `images` too (D-125: an app that writes enhanced:src), which the full host has.
+		if engines == Hosts.all_engines or engines == Hosts.all_engines.concat(["images"]) or !File.is_dir!(host_dir) {
 			Hosts.server_host!(rocx, target)?
 			return Ok({ main: Fs.join([modules, "main.roc"]), engines: Hosts.all_engines })
 		}

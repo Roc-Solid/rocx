@@ -38,6 +38,8 @@ mod dotenv;
 mod files;
 mod hosted;
 mod http;
+#[cfg(feature = "images")]
+mod images;
 mod kv;
 mod live;
 mod logging;
@@ -101,8 +103,8 @@ async fn described(config: http::Config, mut given: std::collections::HashMap<St
 }
 
 /// The executable's entry: Roc links the app against this library, and the app has no `main` of
-/// its own.
-#[unsafe(no_mangle)]
+/// its own. (Not under `cargo test`, whose harness has the `main`.)
+#[cfg_attr(not(test), unsafe(no_mangle))]
 pub extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
     // Rust's own `main` would do this: a write to a client that has gone must be an error, not a
     // signal that ends the process.
@@ -204,6 +206,28 @@ async fn run(config: http::Config) -> Result<(), String> {
     // What the app's `init!` is given: the text of `--context-file`.
     given.insert("context".to_string(), config.context.clone());
     settings::set(given);
+    // enhanced:src's copies (D-125): their directory read, their workers and sweep started. A route's
+    // photo is read as a signed-out visitor would: a GET of the server itself, no cookies.
+    #[cfg(feature = "images")]
+    {
+        let base = http::listening_url(listening);
+        let handle = tokio::runtime::Handle::current();
+        let read: images::RouteReader = std::sync::Arc::new(move |path: &str| {
+            let outbound = client::Outbound::new("GET", &format!("{base}{path}"), "accept: image/webp,image/png,image/jpeg,image/*\n", Vec::new())?.through("direct")?;
+            let fetched = handle
+                .block_on(client::fetch(outbound, Some(Duration::from_secs(30)), Some(images::MAX_SOURCE_BYTES as u64), false))
+                .map_err(|failure| match failure {
+                    client::Failure::Http(why) => format!("{path}: {why}"),
+                    client::Failure::TimedOut => format!("{path}: no answer in 30 s"),
+                    client::Failure::TooLarge => format!("{path}: over {} MiB", images::MAX_SOURCE_BYTES / 1024 / 1024),
+                })?;
+            if fetched.status != 200 {
+                return Err(format!("{path} answered {} to a signed-out GET", fetched.status));
+            }
+            Ok(fetched.body)
+        });
+        images::start(images::Config::new(config.images_dir.clone(), config.images_max_mb, config.statics.clone(), config.images_wait), read);
+    }
     let (stop, stopping) = tokio::sync::watch::channel(false);
     hosted::set_stop(stopping.clone());
     // Actors: their router, before the platform's start tells it the app's kinds. Kept in the

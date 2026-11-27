@@ -1337,6 +1337,36 @@ An endpoint's handler runs only on the server, so it may use `Db`, `Job` and the
 browser's copy of the app, `Api` is the same contract, there are no handlers
 (`Generated/Handlers` is the server's alone), and route files have no middleware.
 
+### Photos' copies: `enhanced:src` (D-125)
+
+`<img enhanced:src={path} alt="…">` names a photo of this site that the server makes smaller copies
+of. rocx writes it as the `src` and a mark (`["e"]`), with `loading="lazy"` and `decoding="async"`
+unless the markup says otherwise; the host, writing the page (`signals.rs`), asks
+`server/host/src/images.rs` whether the photo's copies are made:
+
+- **Made:** the page gets their `srcset`; `sizes`, unless written (the written `width` in pixels,
+  else `100vw`); and the photo's `width` and `height`, or the one not written, in its shape.
+- **Not yet:** the page gets the `src` alone, and the photo is queued. Two workers (threads of their
+  own, not tokio's or Roc's) make one photo each at a time; a photo many pages ask for is made once.
+  The next page that shows it has its copies. A page never waits, but on a static build's server
+  (`--images-wait`).
+
+| What | Is |
+| --- | --- |
+| The copies | WebP (quality 80) at 160, 320, 640, 960, 1280 and 1920 pixels wide under the photo's own width, and its own (up to 1920); upright by its EXIF orientation, no metadata |
+| What is read | JPEG, PNG and WebP, up to 64 megapixels and 64 MiB; anything else keeps its `src` (said once in the log, remembered until the source changes) |
+| A source | A path of this site: a file in a `--static` directory, or else the app's answer to a signed-out GET of it (the server asks itself, with no cookies; 200 or nothing). Never another site's URL |
+| Where they are kept | `data/images` from where the server starts (`--images-dir`): `<hash>-<width>.webp`, `<hash>.txt` (the photo's size and the widths, written last), and `<path hash>.src` (which photo a source is) |
+| Where they are served | `/rocx/images/<hash>-<width>.webp`, with `cache-control: public, max-age=31536000, immutable`; a name it has no copy by is a 404 |
+| A source that changed | A file whose length or modified time changed is a photo not known yet (its `src` until its copies are made); a route's answer is asked for again when a page shows it 5 minutes after the last time, its copies shown meanwhile |
+| Pruning | A `.txt`'s modified time is when a page last named the photo (written once a day at most). As the server starts, and daily, photos no page named for 30 days are removed, then the least recently used while the directory is over `--images-max-mb` (1024). A removed photo is made again the next time a page shows it |
+
+The directory is its own index: what the server keeps in memory is read from it as it starts, and
+what a crash left half written is removed then. A static build (`rocx build --static`) starts its
+server with `--images-wait` and `--images-dir <app>/build/images`, and copies the copies its pages
+name. The image code (the `images` cargo feature) is in a release only when the app's markup writes
+an `enhanced:src`; without it, an `enhanced:src` is its `src`.
+
 ## The log: `Log`
 
 ```roc
@@ -1730,6 +1760,9 @@ header (with the other platforms' glue).
       --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere
       --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)
       --kv-max-mb 64                      the key-value store's limit (KV_MAX_MB): the least recently used goes past it
+      --images-dir data/images            where enhanced:src's copies of photos are kept (D-125)
+      --images-max-mb 1024                the most they take: the least recently used go past it (and any unused for 30 days)
+      --images-wait                       a page waits for its photos' copies (a static build's server)
       --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB; 413 beyond
       --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)
       --dev                               reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)
@@ -1904,6 +1937,9 @@ its pages with the browser runtime's own render; `test/check-sql.test.mjs` cover
   answer's may come in chunks: `fetch_chunks!`).
 - `Forward`: an upstream's body only, not the other way. An upload is still read whole (16 MiB at
   most unless `--max-body` says more) rather than streamed to S3 as it comes.
+- `enhanced:src` (D-125) copies a photo's pixels as if they were sRGB: one in another colour space
+  (a phone's Display P3, with its ICC profile) comes out slightly paler. No AVIF, no HEIC (an
+  iPhone's own format), and no photos of other sites (a list of allowed hosts would let them in).
 - A stack overflow in Roc still ends the process.
 - The server speaks HTTP/1.1 only, with no TLS: put it behind a proxy. `x64musl` and `x64mac` are
   configured, but haven't been run.

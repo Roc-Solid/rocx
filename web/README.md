@@ -212,6 +212,7 @@ Attributes are arrays, their kind first:
 | `dd`, `ddo` | `Html.drag_data`, `Html.drag_image`, and their computed forms |
 | `k`, `ko` | `Html.key`, `Html.key_of` |
 | `tr`, `tro` | `Html.transition`, `Html.transition_of` |
+| `e` | `Html.enhanced`: `enhanced:src` (D-125), the mark beside the `src` that the server writes a photo's copies (`srcset`) and size for. Here, when the `src` changes, the `srcset`, `sizes`, `width` and `height` the markup doesn't write are taken away: they were the last photo's. After a navigation in place, the page's get them from the document (`enhancedFrom`) |
 
 An element's own `class` (`v`, `o`, `vo`, `oo`) and its `class:name`s (`ci`, `co`) are one `class`
 attribute, in the markup's order, wherever it is written (signals.rs, `renderToString`,

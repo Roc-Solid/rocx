@@ -7040,3 +7040,72 @@ leaves that one to the browser: a load, or a plain post. `data-rocx-reload="off"
 what is inside.
 
 **Reversible:** yes.
+
+## D-125 `enhanced:src`: smaller copies of a photo, made by the server as pages show it
+
+**Status.** Built (2026-11-27), on the user's go (their design: one attribute, made on a request,
+never in the page's way).
+
+**Context.** A photo written as `<img src="/harbour.jpg">` is sent whole to every screen: a phone
+downloads the 2400-pixel original to show it 400 pixels wide, and the page has no room kept for it
+until it comes. SvelteKit's `enhanced:img`, Astro's `<Image>` and Next.js's `next/image` make the
+copies and write the `srcset`; each has a step of its own (a build, a service that resizes on
+request). An app here has a server, and pages are rendered by it.
+
+**Decision.** `<img enhanced:src={…}>` (a quoted path too) is the one way: a plain `src` is never
+touched.
+
+- **rocx** writes it as the `src`, a mark (`Html.enhanced`, `["e"]`), and `loading="lazy"`,
+  `decoding="async"` unless the markup says how it loads (`loading`, `fetchpriority`) or decodes.
+  `src` or `srcset` beside it is refused; only an `<img>` has one.
+- **The server**, writing the page (signals.rs, beside D-086's `aria-current`), asks whether the
+  photo's copies are made (server/host/src/images.rs). If they are, it writes their `srcset`, a
+  `sizes` (the written `width` in pixels, else `100vw`) and the photo's `width` and `height` (or the
+  one not written, in its shape), unless written. If not, the page has the `src` alone, and the
+  photo is queued: the next page that shows it has its copies. A page never waits.
+- **The copies** are WebP (libwebp's lossy encoder, quality 80) at 160, 320, 640, 960, 1280 and
+  1920 pixels wide under the photo's own width, and its own up to 1920; turned upright by its EXIF
+  orientation, its metadata (a location) left out. JPEG, PNG and WebP are read; anything else, more
+  than 64 megapixels or 64 MiB, keeps its `src`, remembered until the source changes. Two workers
+  (threads of their own) make them, one photo each at a time; a photo a hundred pages ask for is
+  made once.
+- **A source is a path of this site**: a file in a `--static` directory, or else what the app
+  answers a signed-out GET of it (the server asks itself, with no cookies). Never another site's
+  URL: a value from data would make the server fetch an address of someone's choosing, and a
+  private photo would get copies anyone may fetch.
+- **Kept** in `data/images` (`--images-dir`), named by the photo's content: `<hash>-<width>.webp`,
+  and `<hash>.txt` (its size, the widths) written last, so the directory is its own index, read as
+  the server starts. `<path hash>.src` says which photo a source is (a file's length and modified
+  time, or a route's), so a server started again has the copies on its first page; a file changed
+  since is a photo not known yet, a route's photo is shown while it is asked again (every 5
+  minutes, as a page shows it).
+- **Served** at `/rocx/images/<hash>-<width>.webp`, `immutable`, as the app's stylesheet is.
+- **Pruned**: a `.txt`'s modified time is when a page last named the photo (written once a day at
+  most); as the server starts and daily, photos no page named for 30 days go, then the least
+  recently used while the directory is over `--images-max-mb` (1024). A photo removed is made again
+  the next time a page shows it, its `src` meanwhile.
+- **A static build** (`rocx build --static`) starts its server with `--images-wait` (a page waits
+  for its photos, since no next request would bring them) and `--images-dir <app>/build/images`
+  (kept from one build to the next), and copies the copies its pages name; `--base` reaches every
+  URL of a `srcset`.
+- **In the browser** the element is its `src`: hydrating keeps what the server wrote (it compares
+  elements, not attributes), and another value in the `src` takes away the `srcset`, `sizes`,
+  `width` and `height` the markup didn't write, which were the last photo's. A page reached in
+  place (D-040) is made by the runtime from its document's answers, so its photos are given what
+  the server wrote for them in the document (`enhancedFrom`: the page's of one `src` and the
+  document's of that `src` with a `srcset`, one for one, in order; a photo's copies are made for
+  every `<img>` showing it, or for none).
+- **Releases** have the image code (cargo's `images` feature: image, fast_image_resize, libwebp)
+  when the app's markup writes an `enhanced:src` (`rocx build --release`, `--image`); `rocx dev`'s
+  and the tests' hosts always have it; `rocx dev` doesn't rebuild for a write in `data/images/`.
+
+**Why.** One rule to learn (the attribute), nothing to wire (no job, no build step, no service), and
+nothing a visitor waits for. Made on the server, it works for photos the app keeps as well as for
+its own, and the server knows what is public.
+
+**Costs.** The first view of a photo after it is added or changed is the original; the server is
+bigger by the image code when an app uses it. A photo whose colours are in another space than sRGB
+(a phone's Display P3) is copied as if it were sRGB: slightly paler (TODO.md). An `<img>` whose
+`src` the browser changes shows that `src` alone.
+
+**Reversible:** yes.
