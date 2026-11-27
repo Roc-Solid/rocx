@@ -9,8 +9,12 @@ import Look
 ## rules and helpers): whole HTML documents answered as they are, their own rules among the shared
 ## ones (`stylesheet`), and a few lines of script: they refresh the page when its stream of events
 ## says something changed (`changes`), keep its times (`3 s ago`) current, say whether the page is
-## live, and close a drawer on Escape. With no script, the page is the same, with a button that
-## refreshes it. Times, links and a query's fields, as those pages show and read them.
+## live, and close a drawer on Escape. A link or a form to the page's own path (another filter, a
+## drawer, an older page, Retry) is answered in place, as a View Transition: the sidebar stays where
+## it is, the rest fades through, a drawer slides in and out, and the stream stays open. With no
+## script, the page is the same, with a button that refreshes it, and its links and forms load
+## whole pages (a View Transition too, where the browser has them across documents). Times, links
+## and a query's fields, as those pages show and read them.
 AdminHtml := [].{
 
 	## A page: its title, the URL of its stream of changes ("" for none), the server's time (`now`,
@@ -271,24 +275,52 @@ indent : U64 -> List(U8)
 indent = |depth| [10].concat(List.repeat(' ', depth * 2))
 
 ## Refreshes the page's live part (`[data-events]`) from the page itself each time its stream of
-## events says something, keeping where the reader is (a drawer's scroll too); says whether the
-## stream is open (`html[data-live]`); counts each `<time datetime>` on from the server's time
-## (`data-now`) every second; and follows a drawer's close link on Escape.
+## events says something, keeping where the reader is (a drawer's scroll too, and the focus on the
+## drawer, the heading or a link to the same place: `twin`); says whether the stream is open
+## (`html[data-live]`); counts each `<time datetime>` on from the server's time (`data-now`) every
+## second; and follows a drawer's close link on Escape.
+##
+## A link to the page's own path, and a form posted to it, are answered in place (`go`): the answer
+## is fetched (a form's redirect followed), its `.shell` (the sidebar and the main part) put in for
+## the page's, its address pushed (replaced when it is the same: Refresh, or an action sent back),
+## and Back and Forward fetch theirs. The swap is a View Transition, where the browser has them and
+## less motion isn't asked for, said on `html[data-moving]` for the stylesheet: `drawer` when only
+## `?id=` changes and a drawer opens or closes, `same` when the address stays, `page` otherwise.
+## A page goes to the top and its heading has the focus; a drawer keeps the scroll and has the
+## focus, and closed, the link to it does. The stream follows the page (`connect`). Any other
+## answer (another path, a guard's sign-in page) is loaded whole; a form whose fetch failed is sent
+## as it would have been. A refresh that started before a navigation is dropped (`seq`). A form's
+## attributes are read as attributes: its hidden `action` field hides `form.action`.
 script : Str
 script =
 	Str.join_with(
 		[
 			"(()=>{const root=document.documentElement;let skew=0;",
-			"const sync=()=>{const s=document.querySelector(\"[data-now]\");if(s)skew=Number(s.dataset.now)-Date.now()};",
-			"const span=ms=>{const s=Math.abs(ms);return s<1e3?s+\" ms\":s<6e4?Math.floor(s/1e3)+\" s\":s<36e5?Math.floor(s/6e4)+\" min\":s<864e5?Math.floor(s/36e5)+\" h\":Math.floor(s/864e5)+\" d\"};",
-			"const tick=()=>{const now=Date.now()+skew;for(const t of document.querySelectorAll(\"time[datetime]\")){const at=Number(t.getAttribute(\"datetime\"));if(!at)continue;const said=at-now>=1e3?\"in \"+span(at-now):now-at>=1e3?span(now-at)+\" ago\":\"now\";if(t.textContent!==said)t.textContent=said}};",
+			"const sync=()=>{const s=document.querySelector('[data-now]');if(s)skew=Number(s.dataset.now)-Date.now()};",
+			"const span=ms=>{const s=Math.abs(ms);return s<1e3?s+' ms':s<6e4?Math.floor(s/1e3)+' s':s<36e5?Math.floor(s/6e4)+' min':s<864e5?Math.floor(s/36e5)+' h':Math.floor(s/864e5)+' d'};",
+			"const tick=()=>{const now=Date.now()+skew;for(const t of document.querySelectorAll('time[datetime]')){const at=Number(t.getAttribute('datetime'));if(!at)continue;const said=at-now>=1e3?'in '+span(at-now):now-at>=1e3?span(now-at)+' ago':'now';if(t.textContent!==said)t.textContent=said}};",
 			"sync();setInterval(tick,1000);",
-			"document.addEventListener(\"keydown\",e=>{if(e.key===\"Escape\"){const c=document.querySelector(\"[data-close]\");if(c)location.assign(c.href)}});",
-			"const live=document.querySelector(\"[data-events]\");if(!live||!window.EventSource)return;",
-			"let busy=false,again=false;",
-			"const refresh=async()=>{if(busy){again=true;return}busy=true;try{const answer=await fetch(location.href,{headers:{accept:\"text/html\"}});if(answer.ok){const fresh=new DOMParser().parseFromString(await answer.text(),\"text/html\").querySelector(\"[data-events]\");const now=document.querySelector(\"[data-events]\");if(fresh&&now){const drawer=now.querySelector(\".drawer\"),top=drawer?drawer.scrollTop:0;now.replaceWith(fresh);const kept=fresh.querySelector(\".drawer\");if(kept)kept.scrollTop=top;sync();tick()}}}catch{}finally{busy=false;if(again){again=false;refresh()}}};",
-			"const source=new EventSource(live.dataset.events);source.onopen=()=>{root.dataset.live=\"on\"};source.onerror=()=>{root.dataset.live=\"off\"};source.onmessage=()=>{root.dataset.live=\"on\";refresh()};",
-			"})()",
+			"const here=()=>location.href.split('#')[0];",
+			"const bare=u=>{const x=new URL(u);x.hash='';x.searchParams.delete('id');return x.href};",
+			"const own=u=>u.origin===location.origin&&u.pathname===location.pathname;",
+			"let seq=0,shown=here(),source=null,stream='',busy=false,again=false,posting=false;",
+			"const focusOn=to=>{if(!to)return;if(!to.hasAttribute('tabindex')&&to.tabIndex<0)to.tabIndex=-1;to.focus({preventScroll:true})};",
+			"const twin=(had,fresh)=>had.matches('.drawer')?fresh.querySelector('.drawer'):had.matches('main h1')?fresh.querySelector('main h1'):had.matches('a[href]')?[...fresh.querySelectorAll('a[href]')].find(a=>a.getAttribute('href')===had.getAttribute('href')):null;",
+			"const refresh=async()=>{if(busy){again=true;return}busy=true;const mine=seq;try{const answer=await fetch(location.href,{headers:{accept:'text/html'}});const text=answer.ok?await answer.text():'';const fresh=text&&new DOMParser().parseFromString(text,'text/html').querySelector('[data-events]');const now=document.querySelector('[data-events]');if(fresh&&now&&mine===seq){const drawer=now.querySelector('.drawer'),top=drawer?drawer.scrollTop:0,had=document.activeElement,inside=had&&now.contains(had);now.replaceWith(fresh);const kept=fresh.querySelector('.drawer');if(kept)kept.scrollTop=top;if(inside)focusOn(twin(had,fresh));sync();tick()}}catch{}finally{busy=false;if(again){again=false;refresh()}}};",
+			"const connect=()=>{const live=document.querySelector('[data-events]'),want=live&&window.EventSource?new URL(live.dataset.events,location.href).href:'';if(want===stream)return;if(source)source.close();source=null;stream=want;delete root.dataset.live;if(want){source=new EventSource(want);source.onopen=()=>{root.dataset.live='on'};source.onerror=()=>{root.dataset.live='off'};source.onmessage=()=>{root.dataset.live='on';refresh()}}};",
+			"const settle=(mode,was)=>{const drawer=document.querySelector('.drawer');focusOn(mode==='page'?document.querySelector('main h1'):drawer?drawer:mode==='drawer'?[...document.querySelectorAll('a[href]')].find(a=>a.href===was):null)};",
+			"const go=async(to,how,init,fallback)=>{const mine=++seq;root.dataset.going='';let answer,doc,fresh;try{answer=await fetch(to,{...init,headers:{accept:'text/html'}});doc=new DOMParser().parseFromString(await answer.text(),'text/html');fresh=doc.querySelector('.shell')}catch{}if(mine!==seq)return;delete root.dataset.going;",
+			"if(!answer)return(fallback||(()=>location.assign(to)))();const at=answer.url;if(!fresh||!own(new URL(at)))return location.assign(at);",
+			"const was=here(),mode=at===was?'same':bare(at)===bare(was)&&(document.querySelector('.drawer')||fresh.querySelector('.drawer'))?'drawer':'page';const y=how==='pop'?(history.state&&history.state.y)||0:mode==='page'?0:scrollY;",
+			"if(how==='pop'){if(at!==was)history.replaceState(history.state,'',at)}else{history.replaceState({...history.state,y:scrollY},'');if(at===was)history.replaceState(history.state,'',at);else history.pushState({y:0},'',at)}shown=at;",
+			"const swap=()=>{try{const now=document.querySelector('.shell');if(now)now.replaceWith(fresh);document.title=doc.title;scrollTo(0,y);sync();tick();connect();settle(mode,was)}catch{location.assign(at)}};",
+			"if(document.hidden||!document.startViewTransition||matchMedia('(prefers-reduced-motion: reduce)').matches)return swap();root.dataset.moving=mode;const t=document.startViewTransition(swap);t.ready.catch(()=>{});t.finished.catch(()=>{}).then(()=>{if(mine===seq)delete root.dataset.moving})};",
+			"document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href]');if(!a||e.defaultPrevented||e.button||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||(a.target&&a.target!=='_self')||a.hasAttribute('download'))return;const to=new URL(a.getAttribute('href'),location.href);if(!own(to)||(to.hash&&to.search===location.search))return;e.preventDefault();go(to.href,'push')});",
+			"document.addEventListener('submit',e=>{const f=e.target,target=f.getAttribute('target');if(e.defaultPrevented||(f.getAttribute('method')||'').toLowerCase()!=='post'||(target&&target!=='_self'))return;const to=new URL(f.getAttribute('action')||'',location.href);if(!own(to))return;e.preventDefault();if(posting)return;posting=true;go(to.href,'push',{method:'POST',body:new URLSearchParams(new FormData(f))},()=>HTMLFormElement.prototype.submit.call(f)).finally(()=>{posting=false})});",
+			"document.addEventListener('keydown',e=>{if(e.key!=='Escape'||e.defaultPrevented)return;const c=document.querySelector('[data-close]');if(c){e.preventDefault();go(new URL(c.getAttribute('href'),location.href).href,'push')}});",
+			"addEventListener('popstate',()=>{if(here()!==shown)go(here(),'pop')});",
+			"history.scrollRestoration='manual';addEventListener('pagehide',()=>{history.scrollRestoration='auto'});addEventListener('pageshow',()=>{history.scrollRestoration='manual'});",
+			"connect()})()",
 		],
 		"",
 	)
@@ -402,6 +434,25 @@ stylesheet =
 			"table.mail td:nth-child(-n+3){white-space:nowrap}",
 			# Narrower screens.
 			Look.shared.narrower,
+			# Page transitions (`script` says each in place one's kind on `html[data-moving]`; a whole page
+			# loaded is one too, where the browser has them across documents). The sidebar stays where it
+			# is and changes only where it differs (not on a narrow screen, where it scrolls away with the
+			# page); a page fades out quickly and the next one fades in, rising a little; a drawer slides
+			# in from the right and out again, the list behind it cross-fading (its scrim blurs in with
+			# it: a named scrim's backdrop-filter would see nothing behind it), as does a page that stays.
+			# Under a drawer's scrim, and while one comes or goes, the sidebar is the page's, not held: a
+			# named one is drawn above the page, so the scrim wouldn't cover it until the end. The drawer
+			# and the heading the script focuses have no ring (a link it focuses keeps its own).
+			"@view-transition{navigation:auto}",
+			".side{view-transition-name:admin-side}.drawer{view-transition-name:admin-drawer}html[data-going]{cursor:progress}",
+			".shell:has(.drawer) .side,html:is([data-moving=drawer],[data-moving=same]) .side{view-transition-name:none}.drawer:focus,main h1:focus{outline:none}",
+			"::view-transition-old(root){animation:90ms ease-in both admin-fade-out}::view-transition-new(root){animation:210ms cubic-bezier(.2,0,0,1) 50ms both admin-enter}",
+			"html:is([data-moving=drawer],[data-moving=same])::view-transition-old(root){animation:180ms ease both admin-fade-out}html:is([data-moving=drawer],[data-moving=same])::view-transition-new(root){animation:180ms ease both admin-fade-in}",
+			"::view-transition-group(admin-side){animation-duration:200ms}",
+			"::view-transition-new(admin-drawer):only-child{animation:260ms cubic-bezier(.2,0,0,1) both admin-drawer-in}::view-transition-old(admin-drawer):only-child{animation:180ms cubic-bezier(.4,0,1,1) both admin-drawer-out}",
+			"@keyframes admin-fade-out{to{opacity:0}}@keyframes admin-fade-in{from{opacity:0}}@keyframes admin-enter{from{opacity:0;transform:translateY(6px)}}",
+			"@keyframes admin-drawer-in{from{transform:translateX(100%)}}@keyframes admin-drawer-out{to{transform:translateX(100%)}}",
+			"@media (max-width:820px){.side{view-transition-name:none}}@media (prefers-reduced-motion:reduce){@view-transition{navigation:none}}",
 		],
 		"",
 	)

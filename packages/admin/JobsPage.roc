@@ -14,7 +14,8 @@ import Look
 ## time limit and jobs; the schedules and when each runs next; and the jobs, newest first, each
 ## opening in a drawer with its input, attempts, times and last error. Retry, cancel and run now
 ## are plain forms, answered with a redirect back. It refreshes itself as jobs change (a stream of
-## events), and works without script too.
+## events), answers its own links and forms in place as View Transitions (`AdminHtml`), and works
+## without script too.
 ##
 ## ```roc
 ## plugins: [

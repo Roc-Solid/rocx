@@ -20,6 +20,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildApp, buildHost, hasRust, roc, root } from "../build.mjs";
+import { findChrome, findGecko, launch, launchGecko } from "../../web/test/browser.mjs";
 import { adminWorks } from "./admin-checks.mjs";
 import { nestedTests } from "./nested-checks.mjs";
 
@@ -420,6 +421,18 @@ function suite({ engine, name, tag, run, server, home }) {
 		assert.match(page, new RegExp(`The queue, in ${name}`));
 	});
 
+	// The jobs page's script (packages/admin's AdminHtml), in a browser: once, on SQLite, in
+	// Chromium and in Gecko (Zen or Firefox).
+	for (const [browserName, find, open] of [
+		["Chromium", findChrome, launch],
+		["Gecko", findGecko, launchGecko],
+	]) {
+		const browserSkip = skip || (engine !== "sqlite" && "once, on SQLite") || (!find() && `no ${browserName}`);
+		test(`the jobs page answers its own links and forms in place, as View Transitions, in ${browserName}: the sidebar held, a page fading through, a drawer sliding in and out; Back and Forward; its stream kept open; none with less motion asked for; a link elsewhere loads its page`, { skip: browserSkip }, async () => {
+			await inPlace(open, server());
+		});
+	}
+
 	test("jobs: finished ones are swept once older than the plugin keeps them (done an hour, failed and canceled two), every half second; queued ones never", { skip }, async () => {
 		const minutes = 60_000;
 		const aged = [
@@ -501,6 +514,135 @@ function suite({ engine, name, tag, run, server, home }) {
 		assert.deepEqual(scratches(), before, "the scratch file's directory is gone");
 	});
 }
+
+/** The jobs page of `server` in a browser `open` launches (`launch`, `launchGecko`): its links, a
+ * job's drawer, Escape, Back and Forward, and a form, each answered in place as a View Transition of
+ * its kind (AdminHtml's script and stylesheet); with less motion asked for, none (where the browser
+ * can be asked: Chromium); and a link to another path loaded whole. */
+async function inPlace(open, server) {
+	const browser = await open();
+	try {
+		const tab = await browser.page();
+		// A desktop's width: on a narrow screen the sidebar is above the page and changes with it.
+		if (tab.send) await tab.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+		else await tab.bidi("browsingContext.setViewport", { context: tab.context, viewport: { width: 1280, height: 900 } });
+		// Before the page's own script: each stream it opens, each form it posts, and each transition,
+		// its kind (`html[data-moving]`) and what it animates once its pseudo-elements are there.
+		await tab.beforeEachDocument(`
+			window.streams = 0; const Source = window.EventSource; window.EventSource = class extends Source { constructor(...args) { super(...args); window.streams++; } };
+			window.posts = []; const fetched = window.fetch; window.fetch = (url, init = {}) => { if (init.method === "POST") window.posts.push(String(init.body)); return fetched(url, init); };
+			window.transitions = []; window.playing = 0; const original = document.startViewTransition.bind(document);
+			document.startViewTransition = (update) => {
+				const transition = original(update), kind = document.documentElement.dataset.moving;
+				window.playing++; const done = () => window.playing--; transition.finished.then(done, done);
+				transition.ready.then(() => window.transitions.push({ kind, animated: document.getAnimations().map((animation) => animation.effect.pseudoElement + " " + animation.animationName).sort() }), () => window.transitions.push({ kind, skipped: true }));
+				return transition;
+			};`);
+		await tab.goto(`${server.url}/admin/jobs`);
+		await tab.eval("window.marker = 'kept'");
+		await tab.wait("document.documentElement.dataset.live === 'on'");
+		// A transition playing covers the page: each step waits for it to end, and for its fetch.
+		const settled = () => tab.wait("window.playing === 0 && !('going' in document.documentElement.dataset)");
+		const last = () => tab.eval("window.transitions.at(-1)");
+		const has = (transition, wanted) => assert.ok(transition.animated.some((animation) => animation.startsWith(wanted)), `${wanted}: ${transition.animated.join(", ")}`);
+
+		// Another state, from the sidebar: a page; the sidebar held, the rest fading out and in.
+		await tab.click('.side-nav a[href="/admin/jobs?state=done"]');
+		await tab.wait("location.search === '?state=done' && document.querySelector('main h1').textContent === 'Done jobs'");
+		await settled();
+		assert.equal(await tab.eval("window.marker"), "kept", "in place, not a page loaded whole");
+		assert.equal(await tab.eval("document.title"), "Done jobs");
+		assert.equal(await tab.eval("document.querySelector('.side-nav a[aria-current=page]').getAttribute('href')"), "/admin/jobs?state=done", "the sidebar says where");
+		assert.equal(await tab.eval("document.activeElement === document.querySelector('main h1')"), true, "its heading has the focus");
+		const page = await last();
+		assert.equal(page.kind, "page");
+		has(page, "::view-transition-old(root) admin-fade-out");
+		has(page, "::view-transition-new(root) admin-enter");
+		has(page, "::view-transition-group(admin-side)");
+
+		// A job, in a drawer: it slides in, the list stays where it was scrolled to.
+		// (Four jobs at least: the schedule queues one each second, and the stream brings them in.)
+		await tab.wait("document.querySelectorAll('table.jobs tbody tr').length >= 4", 10000);
+		await tab.eval("scrollTo(0, 200)");
+		const { x, y } = await tab.center("table.jobs tbody tr:nth-child(4) a.row-link");
+		const scrolled = await tab.eval("scrollY");
+		await tab.clickAt(x, y);
+		await tab.wait("document.querySelector('.drawer') && new URLSearchParams(location.search).has('id')");
+		await settled();
+		const opened = await tab.eval("location.pathname + location.search");
+		const drawer = await last();
+		assert.equal(drawer.kind, "drawer");
+		has(drawer, "::view-transition-new(admin-drawer) admin-drawer-in");
+		has(drawer, "::view-transition-new(root) admin-fade-in");
+		assert.ok(!drawer.animated.some((animation) => animation.includes("admin-side")), `the sidebar the page's, under the scrim with it: ${drawer.animated.join(", ")}`);
+		assert.equal(await tab.eval("scrollY"), scrolled, "the list behind it where it was");
+		assert.equal(await tab.eval("document.activeElement === document.querySelector('.drawer')"), true, "the drawer has the focus");
+		assert.equal(await tab.eval("document.title"), `Job #${new URLSearchParams(opened.split("?")[1]).get("id")} · Jobs`);
+
+		// Escape closes it: it slides out, and the link to it has the focus.
+		await tab.press("Escape");
+		await tab.wait("!document.querySelector('.drawer') && location.search === '?state=done'");
+		await settled();
+		const closed = await last();
+		assert.equal(closed.kind, "drawer");
+		has(closed, "::view-transition-old(admin-drawer) admin-drawer-out");
+		assert.ok(!closed.animated.some((animation) => animation.includes("admin-side")), closed.animated.join(", "));
+		assert.equal(await tab.eval("document.activeElement.getAttribute('href')"), opened, "the link to the job it showed");
+
+		// Back and Forward: each address's page, fetched.
+		await tab.eval("history.back()");
+		await tab.wait(`location.pathname + location.search === ${JSON.stringify(opened)} && document.querySelector('.drawer')`);
+		await settled();
+		await tab.eval("history.back()");
+		await tab.wait("location.search === '?state=done' && !document.querySelector('.drawer')");
+		await settled();
+		await tab.eval("history.back()");
+		await tab.wait("location.search === '' && document.querySelector('main h1').textContent === 'Jobs'");
+		await settled();
+		await tab.eval("history.forward()");
+		await tab.wait("location.search === '?state=done' && document.querySelector('main h1').textContent === 'Done jobs'");
+		await settled();
+		await tab.eval("history.back()");
+		await tab.wait("location.search === '' && document.querySelector('main h1').textContent === 'Jobs'");
+		await settled();
+
+		// A form, posted in place: back where it was sent from, the same address, so no new entry.
+		const entries = await tab.eval("history.length");
+		await tab.click(".schedule form.act button");
+		await tab.wait("window.posts.length === 1");
+		await settled();
+		assert.match(await tab.eval("window.posts[0]"), /^action=run_schedule&name=[^&]+&back=$/);
+		assert.equal((await last()).kind, "same");
+		assert.equal(await tab.eval("location.search"), "");
+		assert.equal(await tab.eval("history.length"), entries, "replaced, not pushed");
+
+		assert.equal(await tab.eval("window.marker"), "kept", "every step in place");
+		assert.equal(await tab.eval("window.streams"), 1, "one stream, open all along");
+		assert.equal(await tab.eval("document.documentElement.dataset.live"), "on");
+
+		// Less motion asked for (Chromium's DevTools protocol emulates it): still in place, with no transition.
+		if (tab.send) await tab.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+		const transitions = await tab.eval("window.transitions.length");
+		await tab.click('.side-nav a[href="/admin/jobs?state=failed"]');
+		await tab.wait("location.search === '?state=failed' && document.querySelector('main h1').textContent === 'Failed jobs'");
+		if (tab.send) assert.equal(await tab.eval("window.transitions.length"), transitions, "none");
+		assert.equal(await tab.eval("window.marker"), "kept");
+
+		// On a narrow screen the sidebar is above the page, scrolling away with it: not held, so it changes with it.
+		assert.equal(await tab.eval("getComputedStyle(document.querySelector('.side')).viewTransitionName"), "admin-side");
+		if (tab.send) await tab.send("Emulation.setDeviceMetricsOverride", { width: 600, height: 900, deviceScaleFactor: 1, mobile: false });
+		else await tab.bidi("browsingContext.setViewport", { context: tab.context, viewport: { width: 600, height: 900 } });
+		await tab.wait("getComputedStyle(document.querySelector('.side')).viewTransitionName === 'none'");
+
+		// The link back to the app is another page's: loaded whole, as it was.
+		await tab.click(".side-nav a.back");
+		await tab.wait("location.pathname === '/' && window.marker === undefined");
+		assert.deepEqual(tab.errors, []);
+	} finally {
+		await browser.close();
+	}
+}
+
 
 /** Waits until `check` (async) is true, or fails after `ms`. */
 async function until(check, ms = 5000) {

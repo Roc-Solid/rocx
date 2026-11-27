@@ -290,8 +290,11 @@ and dark, the shell, the header, panels, tables, buttons, an empty panel, narrow
 helpers (`side`, `nav_link`, `back_link`, `nav_label`, `header`, `panel`, `empty`, `icon`, `button`,
 `button_with`, `escape`). The tables admin's stylesheet is the shared rules plus its own. `AdminHtml`
 (server only) draws the server's pages with the shared rules among theirs, plus a few lines of
-script: a stream of changes that refreshes the page, times that count on, and Escape to close a
-drawer. Without script the page is the same, with a button that refreshes it.
+script: a stream of changes that refreshes the page, times that count on, Escape to close a
+drawer, and its own links and forms answered in place as View Transitions (the sidebar stays still,
+the page fades through, a drawer slides in and out, the stream stays open; none when less motion is
+asked for). Without script the page is the same, with a button that refreshes it, and its links
+load whole pages.
 
 ## Modules
 

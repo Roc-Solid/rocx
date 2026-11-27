@@ -254,7 +254,10 @@ view! = |_|
 				<li>
 					<strong>As jobs change</strong>, it refreshes itself over a stream of events
 					(<code>?events</code>), and its times count on (<code>3 s ago</code>); Escape closes the drawer.
-					Without script it is the same page, with a button that refreshes it. It follows the reader's light
+					Its links and forms are answered in place, as View Transitions: the sidebar stays still while the
+					page fades through, a job's drawer slides in and out, and the stream stays open (none when the
+					reader asks for less motion). Without script it is the same page, with a button that refreshes it,
+					and its links load whole pages. It follows the reader's light
 					or dark scheme and fits a phone. It needs no components and no hydration, so it works whatever your
 					pages are made of.
 				</li>
