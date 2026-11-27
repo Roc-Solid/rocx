@@ -1,5 +1,17 @@
 # `List.map` writes past its items under `--opt=speed` when their closures' captures come from elsewhere
 
+**In one sentence:** Under `--opt=speed`, `List.map` checked whether its new items fit in the old ones' places using the wrong item, then wrote bigger items over their neighbours.
+
+## Like you're five
+
+You have a row of small cups and want to turn each drink into a new one. To save washing up,
+you pour each new drink back into its old cup, but only when it fits. The compiler measured a
+practice drink that was never poured instead of the real one, decided the drinks were small
+enough, and poured big drinks into small cups. They spilled into the next cups and off the end of
+the table: the program wrote over memory that wasn't its own and crashed.
+
+## Details
+
 Found 2026-11-22 on the fork rocx builds with (3f66e242ea), with the docs site's page for each example
 app (site/Ui/ExampleApp.rocx): built with `--opt=speed`, the site's server crashed on `/examples/plate`
 and `/examples/quiz`, in the host's allocator (a page's ring of buffers, a free list walked through a

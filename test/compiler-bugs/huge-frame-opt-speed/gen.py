@@ -2,13 +2,50 @@
 # given the page's meta as a getter, an <Errored> around a keyed part (Html.switched) that makes the
 # page the route names, one of PAGES components, each ITEMS list items with holes that read a signal
 # and a prop (getters, D-039).
-import sys
+import os, sys
+# PLATFORM: the server platform's main.roc (any path; Roc wants it relative, so it is made so).
+platform = os.environ.get('PLATFORM', '../../../server/platform/main.roc')
+if os.path.isabs(platform):
+    platform = os.path.relpath(os.path.realpath(platform), os.path.realpath('.'))
 pages = int(sys.argv[1]) if len(sys.argv) > 1 else 60
 items = int(sys.argv[2]) if len(sys.argv) > 2 else 40
 toc = int(sys.argv[3]) if len(sys.argv) > 3 else 10
+# WIDE=N gives each page a hole whose closure captures a record of N strings (24 bytes each). A
+# closure's size is its lambda set's largest captures', so every `() => Str` the platform's Html
+# holds, and so every Html value (a list literal's element, a child), is that big: the docs site's
+# Html values are 2,304 bytes so. 0 (the default) adds none.
+wide = int(os.environ.get('WIDE') or '0')
+# FANOUT=K puts the items in a tree of lists of at most K (default 0: one list of all of them). A
+# list literal's elements are all alive until the list is made, so one long list needs a slot for each
+# element at once, whatever the backend does; a tree needs few at once, so its frame shows whether
+# the slots of the values made one after another are shared.
+fanout = int(os.environ.get('FANOUT') or '0')
+# SHAPES=mixed gives the holes six different bodies (by the item's number), which LLVM can't fold into
+# one as it folds the same body with other constants (the default: every hole alike but its numbers).
+mixed = os.environ.get('SHAPES', 'same') == 'mixed'
+def attr_hole(p, i):
+    if not mixed: return f'(count!() + {i}).to_str()'
+    return [
+        f'(count!() + {i}).to_str()',
+        f'"${{(count!() * {i + 1}).to_str()}}/${{count!().to_str()}}"',
+        f'Str.join_with([count!().to_str(), "{p}", "{i}"], "-")',
+        f'if (count!() > {i}) "over-${{count!().to_str()}}" else "under-{i}"',
+        f'count!().to_str().concat("-{p}-{i}")',
+        f'Str.repeat("n", count!() % {i + 2})',
+    ][i % 6]
+def text_hole(p, i):
+    if not mixed: return f'"Item {i} of ${{count!().to_str()}}"'
+    return [
+        f'"Item {i} of ${{count!().to_str()}}"',
+        f'"${{count!().to_str()}} and ${{(count!() + {i}).to_str()}} of page {p}"',
+        f'Str.join_with(["a", count!().to_str(), "b{i}"], " ")',
+        f'if (count!() % 2 == 0) "even ${{count!().to_str()}}" else "odd {i}"',
+        f'Str.repeat("*", count!() % {i + 3}).concat(" {i}")',
+        f'"${{"Item"}} {i}: ${{(count!() - {p}).to_str()}}"',
+    ][i % 6]
 out = []
 w = out.append
-w('app [program] { pf: platform "../../../server/platform/main.roc" }')
+w(f'app [program] {{ pf: platform "{platform}" }}')
 w('')
 w('import pf.Html')
 w('import pf.Server')
@@ -23,11 +60,22 @@ for p in range(pages):
     w(f'\tview! : {{ params : () -> {{}} }} => Html')
     w(f'\tview! = |{{ params: _ }}| {{')
     w(f'\t\t(count!, _set_count!) = Solid.create_signal!({p}.U64)')
+    if wide:
+        w('\t\twide = { ' + ', '.join(f'f{k}: "${{count!().to_str()}}.{k}"' for k in range(wide)) + ' }')
     w('\t\tHtml.element("section", [], [')
     w(f'\t\t\tHtml.element("h1", [], [Html.text("Page {p}")]),')
+    if wide:
+        w('\t\t\tHtml.element("p", [], [Html.text_of(|| Str.join_with([' + ', '.join(f'wide.f{k}' for k in range(wide)) + '], count!().to_str()))]),')
+    lis = [f'Html.element("li", [Html.attr("class", "item-{p}-{i}"), Html.attr_of("data-n", || {attr_hole(p, i)})], [Html.element("b", [], [Html.text_of(|| {text_hole(p, i)})]), Html.element("a", [Html.attr("href", "/{p}/{i}")], [Html.text("more")])])' for i in range(items)]
+    if fanout:
+        # The items as a tree, FANOUT children an element: no list holds more than FANOUT values.
+        level = lis
+        while len(level) > fanout:
+            level = [f'Html.element("ul", [], [{", ".join(level[k:k + fanout])}])' for k in range(0, len(level), fanout)]
+        lis = level
     w('\t\t\tHtml.element("ul", [], [')
-    for i in range(items):
-        w(f'\t\t\t\tHtml.element("li", [Html.attr("class", "item-{p}-{i}"), Html.attr_of("data-n", || (count!() + {i}).to_str())], [Html.element("b", [], [Html.text_of(|| "Item {i} of ${{count!().to_str()}}")]), Html.element("a", [Html.attr("href", "/{p}/{i}")], [Html.text("more")])]),')
+    for li in lis:
+        w(f'\t\t\t\t{li},')
     w('\t\t\t]),')
     w('\t\t])')
     w('\t}')
@@ -77,6 +125,7 @@ w('\tHtml.component(|| layout!({ meta: || meta_of(route!()), children: [Errored.
 w('}')
 w('')
 w('program = {')
+w('\tinit!: |started| Ok(started),')
 w('\trespond!: |request, _started| { status: 200, headers: [], body: Page(|{}| render!(request.path)) },')
 w('\tdatabase: Postgres,')
 w('\tmigrations: [],')

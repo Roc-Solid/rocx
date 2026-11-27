@@ -1,5 +1,16 @@
 # Two routes guarded by a capturing middleware crash an `--opt=speed` server at start
 
+**In one sentence:** Under `--opt=speed`, a server whose two routes shared a middleware that remembered something crashed as it started.
+
+## Like you're five
+
+Two doors share one guard, and the guard carries a notebook (what the middleware remembers).
+When the compiler made the program fast, it wrote down the guard's name but not where to find
+them, so the list of guards had empty entries. The first time the server asked a guard anything,
+nobody was there, and it crashed. Now the compiler keeps track of who is in the list.
+
+## Details
+
 Found 2026-11-22 on nightly-2026-11-18-a520eed and on the fork rocx builds with (3f66e242ea), while
 making the jobs page a plugin (D-033, D-034): `JobsPage.plugin({ at, guard })` gives two routes (GET
 and POST at `at`), each a closure that runs the app's `guard` (a `Middleware`) before the page.
@@ -33,7 +44,8 @@ plugin record) doesn't crash: not reduced further.
 
 The same with the nightly and with the fork up to 3f66e242ea.
 
-**Fixed** in the fork since 9fcf362c0c: every program above answers under `--opt=speed` too. The fix is
+**Fixed** in the fork since 9fcf362c0c: every program above answers under `--opt=speed` too. (On 2026-11-27
+the nightly also crashes building NoCapture.roc with `--opt=speed`, SIGSEGV in `lambda_solve`.) The fix is
 upstream's: upstream main 9e28b549e3 answers as well, without the fork's own fix for
 `list-map-reuse-opt-speed`. Most likely it is ae32726512, which the fork took with that fix: under
 `--opt=speed`, a `List.map` over closures (here `plugins.map(Plugin.running)`) read each item as a

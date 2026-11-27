@@ -1,5 +1,17 @@
 # The builtin `Try` has no JSON encoder or parser
 
+**In one sentence:** Roc's own `Try` (an `Ok` or an `Err`) couldn't be written to or read from JSON, though the same type made by an app could.
+
+## Like you're five
+
+Roc has a box called `Try`. Inside is either a present (`Ok`) or a note saying what went wrong
+(`Err`). The JSON helper knew how to pack any box you made yourself, but for Roc's own `Try` it
+only knew two special kinds of note. For every other `Try` it said "I don't know how to pack
+this", even though it's just a box with one of two things inside. Now it packs `Try` like any other
+box.
+
+## Details
+
 Found 2026-11-23 on rocx-fork-9fcf362c0c (the rocx pin), and the same on
 nightly-2026-11-18-a520eed, while asking whether an endpoint could answer a `Try` (D-054, item 5).
 Builtin.roc declares `Try(ok, err) := [Ok(ok), Err(err)].{ parser_for : _, encoder_for : _ }`, and

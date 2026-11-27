@@ -285,9 +285,12 @@ Static := [].{
 			Err(failed) => Err(failed)
 		}
 
-	## Whether a build's output says the compiler crashed, rather than refusing the program.
+	## Whether a build's output says the compiler crashed, rather than refusing the program: a
+	## segfault, a panic (an internal compiler error, "guarded list invalidated" among them) or a
+	## stack overflow, each of which Roc words its own way.
 	compiler_crashed : Str -> Bool
-	compiler_crashed = |said| said.contains("in the Roc compiler") or said.contains("Segmentation fault") or said.contains("panicked")
+	compiler_crashed = |said|
+		["in the Roc compiler", "Segmentation fault", "panicked", "internal compiler error", "overflowed its stack"].any(|words| said.contains(words))
 
 	## The runtime with only what the app's wasm reaches (`Shake`, D-087), minified, in place of the
 	## one `rocx build` wrote; that one, said why, if the runtime can't be read so.
@@ -760,3 +763,5 @@ expect Static.options(["a", "--static", "dist", "--dev"], "/w").is_err()
 
 expect Static.compiler_crashed("Segmentation fault (SIGSEGV) in the Roc compiler.\nFault address: 0x74")
 expect !Static.compiler_crashed("── ✗ type mismatch ── routes/+page.rocx:3:5")
+expect Static.compiler_crashed("Roc hit an internal compiler error. This is a bug in the compiler, not in your code.\nthread 1 panic: guarded list invalidated: monotype_lifted.Program.branches")
+expect Static.compiler_crashed("The Roc compiler overflowed its stack memory and had to exit.")

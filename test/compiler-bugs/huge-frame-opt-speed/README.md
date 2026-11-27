@@ -1,86 +1,109 @@
-# `--opt=speed` inlines every closure of a lambda set into one function, and its stack frame grows with the program
+# `--opt=speed` stack frames that grow with the page
 
-Found 2026-11-23 on the fork rocx builds with (9fcf362c0c), with the docs site and D-040's route
-levels (branch nav-phase2): built with `--opt=speed`, the site's server overflowed the 8 MiB stack a
-render runs on (D-027's coroutines), on every page, before it wrote a byte (`rocx server: a call into
-Roc overflowed its stack (8 MiB)`). `--opt=dev` was fine, and so was `--specialize=no`.
+**In one sentence:** under `--opt=speed` with lambda-set specialization, a procedure that builds a
+page keeps a stack slot for every piece of markup it makes instead of reusing them, so a big page
+needs megabytes of stack. Found 2026-11-23 on the fork (12.4 MB for the docs site), mostly
+fixed at the pin 4674b5973d (248 KB), back on the pin bump's base c69cdc3fdf (2.86 MB), fixed again
+by the fork's branch `fix-dispatcher-frame` (400 KB).
 
-It isn't recursion. Under lldb the fault is in a function's prologue, in its stack probe
-(`sub x9, sp, #0xc17, lsl #12`, then a loop touching each page): a frame of 12.4 MB. Six functions
-had it, specializations of the platform's `Html.serialize!` (Html.roc's lines 446 to 457, about
-3.8 MB of code each). Their DWARF inline records show what is in them: the site's pages' code,
-whole (the Markdown parser, packages/intl's message, plural and date formatting, every page's
-view), inlined through the closures `Html`'s holes and components hold (`() => Html`, the boxes
-`keep!` makes). With lambda-set specialization each closure field's lambda set is every closure
-stored there in the program, and a call through it is a switch over all of them, each case the
-closure's body, inlined (each has one caller). The cases' stack slots aren't shared, so the frame is
-roughly the sum of everything reachable.
+## Like you're five
 
-**The numbers (largest frame, 4 KiB pages):**
+Each time the computer makes a toy (a piece of a web page), it needs a spot on the floor to build
+it before the toy goes into the box. It is supposed to write "done with this spot" so the next toy
+can reuse it. The new version forgot to write that down for most toys, so every toy took a new
+spot, and a big page needed a huge floor. Now it writes it down for every toy again, and the spots
+get reused. A row of 160 toys that all have to sit on the floor at the same time still needs 160
+spots, though.
 
-| Build of the docs site (server) | `--opt=dev` | `--opt=speed` | `--opt=speed --specialize=no` |
+## What goes wrong
+
+rocx's servers are built `--specialize=no` (D-064), which this doesn't touch; a specialized build
+(`--opt=speed`'s default, the browser's wasm, `ROCX_SPECIALIZE=yes`) is where it shows. The site's
+server renders a page on an 8 MiB stack.
+
+Largest frame of a Roc procedure, `--opt=speed`:
+
+| Repro | 4674b5973d (pin) | c69cdc3fdf (the bump's base) | c69cdc3fdf + fix |
 |---|---|---|---|
-| master (fe4651f) | 2 | 350 (1.4 MB) | 7 (28 KB) |
-| with route levels (nav-phase2) | 2 | 3095 (12.4 MB), six functions | 7 (28 KB) |
-| … with `meta` in a memo | | 3095, one function | |
-| … with the levels as `Html.html_of` | | 3133, one function | |
+| `./repro.sh` (the default: `FANOUT=4 WIDE=96`, 4 × 120) | 41,744 B | **276,192 B** | 28,672 B |
+| `./repro.sh 4 480` | 59,952 B | **1,088,368 B** | 38,304 B |
+| `./repro.sh 4 960` | | **2,171,248 B** | 46,640 B |
+| `FANOUT= ./repro.sh 10 120` (one list of 120) | | 279,536 B | 279,280 B |
+| `FANOUT= WIDE=32 ./repro.sh 60 40` | 256,256 B | 32,000 B | 31,744 B |
+| `FANOUT= WIDE= ./repro.sh 60 40` / `120 40` | 4,608 / 7,184 B | 3,104 / 3,104 B | 2,160 / 2,160 B |
+| the docs site (`--specialize=yes`) | 248,304 B | **2,858,560 B** | 399,728 B |
 
-The route levels add closures to `Html`'s lambda sets (each level's case and maker, the layout's
-`meta` getter) and multiply the copies; whatever shape `Root` has, one dispatcher holding every page
-remains, past the stack. Render time is the same either way (the site's 50 pages, a round, 8 rounds:
-386 and 393 ms specialized, 386 and 367 ms boxy on master; 376 and 369 ms boxy with levels).
+Three separate effects show up:
 
-**Bad.roc** (written by gen.py) is the shape reduced: a page as rocx's `Root` renders one, a memo of
-the path, a layout given the page's `meta` as a getter, an `<Errored>` around a keyed part
-(`Html.switched`) that makes one of PAGES components of ITEMS list items with holes. The frame
-grows with the program under `--opt=speed` and not under `--opt=dev`, but at sizes that build in
-minutes it stays far from 8 MiB (what the site inlines is page logic, not just markup):
+1. **The regression on c69cdc3fdf, which the fix closes.** A procedure's frame becomes the sum of
+   the slots of every `Html` value it builds, not the most it holds at once. In the site each
+   `Html` value is 2,304 bytes: a 2.86 MB frame, 9 procedures over 1 MiB. `FANOUT` isolates it:
+   items in a tree of short lists, so few values are alive at once.
+2. **What is left after the fix: the widest list literal.** Every element of a list literal is
+   computed before the list exists, so all of them need a slot at the same time, markers or not.
+   The site's largest remaining frame (399,728 B) is a list literal of 161 `Html` values:
+   161 × 2,304 = 371 KB. It grows with the widest markup list and with the size of `Html`, not
+   with the number of closures.
+3. **The old residual on 4674b5973d.** There the page views are inlined into one dispatcher whose
+   frame is their sum, even with every slot marked (`WIDE=32`: 256 KB for 60 pages). On c69cdc3fdf
+   each page view stays a procedure of its own. (This README's old numbers, 56 KiB at 60 × 40, are
+   4.5 KiB on 4674b5973d now: the platform's `Html` changed.)
 
-    ROC=…/roc ./repro.sh 20 40      Bad --opt=dev -> 8 KiB      Bad --opt=speed -> 8 KiB
-    ROC=…/roc ./repro.sh 60 40      Bad --opt=dev -> 8 KiB      Bad --opt=speed -> 56 KiB
-    ROC=…/roc ./repro.sh 60 120     Bad --opt=dev -> 8 KiB      Bad --opt=speed -> 168 KiB
+## Why it happens
 
-The case that overflows is the site at nav-phase2 before the workaround: `rocx site prepare`, then
-`roc build --opt=speed site/main.roc`, run it, `GET /`.
+**Which slots get lifetime markers.** On c69cdc3fdf, `src/backend/llvm/SlotLifetimes.zig` assumes
+LLVM's SROA removes every slot whose address never escapes, so only slots whose addresses are
+passed to calls get `llvm.lifetime.start`/`end` (upstream's d48d0123aa; `AddressedCallLocals` in
+`MonoLlvmCodeGen.zig` returns nothing for `.assign_list`, `.assign_struct`, `.assign_tag` and the
+other aggregate statements).
 
-## Mostly fixed in the fork since 4674b5973d
+**Why that fails here.** `emitListLiteral` makes the list and then `memcpy`s each element's slot
+into its buffer. The element's address reaches no call, so it gets no markers; SROA can't split a
+slot a `memcpy` reads whole (here also written by a 2,264-byte padding `memset`), so the slot stays
+alive for the whole call. Before optimization, the site's 2.86 MB procedure had 13,536 slots and
+689 lifetime markers.
 
-The 12.4 MB was mostly slots no lifetime marker bounded. The LLVM backend marked only the slots of
-locals whose addresses it passes to Roc procedures and RC helpers, and left those it passes to
-builtin calls (a list literal's `roc_builtins_list_with_capacity`, `Str.concat` and so every
-interpolation, `Num.to_str`, …): when LLVM doesn't inline the builtin, the slot's address escapes,
-and without markers it holds its bytes for the whole activation, so a dispatcher holding every page
-summed them. The fork (branch `rocx-fixes-2`: a failing test 0eb36c9c3b, the fix 4674b5973d) marks
-the slot of every local that has one; upstream's open issue 13320 is the same mechanism with
-interpolations. Largest frames of `--opt=speed` servers built specialized (`ROCX_SPECIALIZE=yes`),
-at e6aec90, against D-064's numbers on 9fcf362c0c:
+**How it got into the bump.** The fork's 4674b5973d marked every slot; the pin bump dropped that
+commit as "the same as upstream's d48d0123aa", which it is not.
 
-| App | 9fcf362c0c | 4674b5973d |
-|---|---|---|
-| the docs site | 12.4 MB (overflows) | 264 KiB (`just site` renders every page with it) |
-| plate | 848 KiB | 164 KiB |
-| journal | 372 KiB | 64 KiB |
-| notes | 192 KiB | 152 KiB |
-| quiz | 132 KiB | 40 KiB |
-| board | 120 KiB | 32 KiB |
-| uptime | 104 KiB | 40 KiB |
-| tasks | 80 KiB | 36 KiB |
+**Why `Html` is 2,304 bytes.** With specialization, a closure value is as big as the largest set of
+values captured by any closure in its lambda set. `Html`'s payloads hold closures
+(`TextOf(() => Str)`, `Component(() => Html)`, …), so one closure anywhere in the app that captures
+a big record makes every `Html` value big. `WIDE=N` does that on purpose.
 
-What's left still grows with the program, more slowly. Bad.roc above shows only that part: its
-frames are the same on both (56 KiB at 60 pages of 40 items, 112 KiB at 120, 168 KiB at 60 of 120).
-It is the dispatcher over a lambda set's closures (here one per hole, 2,400 of them): each closure's
-inlined body keeps a slot of its own, about 24 bytes a closure, though each now has markers. In the
-binary, 2,402 calls of `roc_builtins_int_to_str` write to 511 different places on the stack, so
-LLVM's stack coloring shares those slots only in part. From the same bitcode (9fcf362c0c's, kept
-with `--keep-temp`), LLVM 23's `opt -O3` and `llc` give that dispatcher a frame of 608 bytes; whether
-it inlines less there or colors better, and so whether a newer LLVM in the compiler is the cure,
-wasn't looked into.
+## The fix
 
-## Workaround
+Branch `fix-dispatcher-frame` in the fork (two commits on `rocx-fixes-3`: 8c283ce82d, a failing
+test, "slots of aggregates copied into a list have bounded lifetimes"; af56927097, the fix) marks
+the slot of every local that has one, as 4674b5973d did, with c69cdc3fdf's lifetime code. A dynamic
+local's descriptor keeps its whole-call lifetime (the code generator reads it wherever it touches
+the local), as do procedure arguments.
 
-rocx builds every app's `--opt=speed` server with `--specialize=no` (D-064: server/build.mjs's
-`specializeFlags`, which `buildApp` and packages/testing's `buildForTests` use; `ROCX_SPECIALIZE=yes`
-or `--specialize=yes` asks for specialization back). Since 4674b5973d a specialized build's frames
-are far smaller (above) and the site renders, but they still grow with a lambda set's closures;
-whether specialization is the default again is D-064's call. The wasm-split spike
-(spike/wasm-split/REPORT.md) needs `--specialize=no` in the browser's build for the same reason.
+Checked: the site built with the fix answers all 67 parameterless GET routes byte for byte as the
+unfixed build does; the LLVM backend's tests 41/41 (the new one fails without the fix); the eval
+suite 2,679 passed, 0 failed, 57 skipped.
+
+Not attempted, for what remains (effect 2): build a list literal's elements in place in its buffer
+(LIR and ValuePlan); box large closure captures, so a closure inside `Html` costs a pointer; or have
+the app's closures capture less.
+
+## Running it
+
+    ROC=…/roc ./repro.sh [PAGES ITEMS]
+
+`gen.py` writes `Bad.roc`: a page as rocx's `Root` renders one (the route a memo of the path, a
+layout given the page's meta as a getter, an `<Errored>` around a keyed part that makes one of
+PAGES page components, each ITEMS list items with holes). `repro.sh` builds it with `--opt=speed`
+(`OPTS=` for others) and prints the largest frame of a Roc procedure (`_roc__p…`) and of the whole
+binary, read by `frames.py` from each function's prologue (arm64 macOS, `otool`). Settings:
+
+- `PLATFORM=…/server/platform/main.roc`: the platform to build on (default: this repo's, which needs
+  its host built). The platform must match the compiler: this repo's for 4674b5973d; the pin bump's
+  (glue regenerated) for c69cdc3fdf and the fix.
+- `WIDE=N` (default 96): each page also gets a hole whose closure captures a record of N strings,
+  so every `Html` value is about N × 24 bytes. `WIDE=` for none.
+- `FANOUT=K` (default 4): the items in a tree of lists of at most K instead of one list. `FANOUT=`
+  for one list.
+- `SHAPES=mixed`: six kinds of hole body instead of one (LLVM folds holes that differ only in their
+  constants).
+- `KEEP=1`: keep `Bad.roc` and the binaries in `./out`.

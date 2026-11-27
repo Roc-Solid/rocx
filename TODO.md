@@ -151,40 +151,33 @@ When an item lands, delete its line here in the same commit.
 
 ## The Roc compiler (the fork in `~/roc-fork`)
 
-- **A closure that captures an endpoint segfaults boxy_lowering** (4674b5973d): `Endpoint.checked`'s
-  reader, crashing with words that named `endpoint.url`, crashed `roc test server/platform/Endpoint.roc`
-  (SIGSEGV, post-check boxy_lowering); with constant words it compiles. No repro in
-  test/compiler-bugs yet.
-
-- **Reduced repros in `test/compiler-bugs/`** (`just compiler-bugs` runs them, on the nightly and
-  on the fork). At the pin 4674b5973d all pass but these:
-  - `two-formats-one-where`: a where clause asking for one method at two types (`Json` and D-038's
-    `FormBody`) is a type error that `roc check` reports, but the dev backend and `roc test` crash
-    in `boxy_lowering` instead of reporting it; rocx's form reader is made where the arg's type is
-    known (`Endpoint.local`). The user reports it upstream.
-  - `huge-frame-opt-speed`: mostly fixed at 4674b5973d (slots given to builtin calls get lifetime
-    markers): specialized, the docs site's largest frame is 264 KiB (12.4 MB before) and its pages
-    render; plate 164 KiB (848), journal 64 (372). What's left still grows with a lambda set's
-    closures (about 24 bytes each in their dispatcher; the README says where, and that LLVM 23 gives
-    the same dispatcher 608 bytes). Every app's optimized server is still built `--specialize=no`
-    (D-064, `ROCX_SPECIALIZE=yes` opts back in): whether specialization becomes the default again
-    is D-064's to decide, with those numbers.
-  - `effectful-closure-dec-default` (2026-11-27, the same on every nightly and fork build tried): a
-    closure checked against `() => T` that calls a method on a captured number defaults the number
-    to `Dec`, so a `view!` component's getter prop `"… ${status.to_str()}"` made an error page take
-    a `Dec` status and a release build fail against Root's `U16`. `rocx check` passed: it checks the
-    dev build, whose `Html.read_at!` reads keep the number generic. Workaround: call `to_str` in the
-    body. rocx could also check the release build's program (no dev reads) so a failure only it
-    meets shows in `rocx check`.
-- **Specializing a large app's browser program crashes `lambda_solve`** (D-099, at 4674b5973d):
-  `--target=wasm32 --opt=size --specialize=yes` on a private app's client panics in under 2 s,
-  "guarded list invalidated: monotype_lifted.Program.branches: span … exceeds current_len"
-  (post-check, lambda_solve), and `Static.browser_build!` falls back to a boxy wasm with a note.
-  The fork's builds on nightly 890d6c8 (c69cdc3fdf, 24e2e481a8) build it specialized (2026-11-27),
-  so the pin bump should end it: then try the release's browser build and, if nothing crashes,
-  decide whether the fallback stays. Not reduced (the app is private).
-- **Not reduced yet:** a rigid `..others` beside an app's own error tag in one body doesn't
-  type-check (examples/uptime names `JobErr` instead).
+- **The fork's round of 2026-11-27: branch `rocx-fixes-4`** = `rocx-fixes-3` (the pin bump's
+  c69cdc3fdf) + two-commit fix branches (a failing test, then the fix), each with a repro and a
+  plain-words README in `test/compiler-bugs/` (the index is its README.md):
+  `effectful-closure-dec-default`, `nested-lambda-literal-default`, `rigid-others-row`,
+  `two-formats-one-where` (a type error by upstream's design: now reported, not a crash; rocx's
+  `Endpoint.local` stays), `endpoint-capture-boxy`, `nested-site-evidence-scope`,
+  `huge-frame-opt-speed` (`fix-dispatcher-frame`) and `fix-list-map-test-hygiene` (rocx-fixes-3's
+  own three failing checks). `nested-site-evidence-scope` matters most: on every compiler before
+  it, a component call that leaves out a closure-defaulted prop, inside a local function that
+  captures something and is generalized, crashes a `--specialize=yes` build or **builds a wrong
+  program without a word**, and the browser's wasm is built `--specialize=yes` (D-064).
+  **The pin bump should take `rocx-fixes-4`, not `rocx-fixes-3`:** c69cdc3fdf dropped 4674b5973d's
+  slot-lifetime fix as upstream's, which it isn't, so its specialized frames are about 10× the
+  pin's (the docs site's 2.86 MB against 248 KB; 400 KB with the fix).
+  Once the pin has it: examples/uptime can write `..others` instead of naming `JobErr`;
+  `Endpoint.checked`'s reader can name `endpoint.url` (and its comment goes); an error page can call
+  `to_str` in a getter; and `Static.browser_build!`'s fallback can be reconsidered
+  (`lambda-solve-specialize-wasm`, fixed upstream, was what it caught).
+- **Still open in the compiler:**
+  - `huge-frame-opt-speed`, what is left: a list literal's elements all hold a slot until the list
+    is made (the site's 400 KB is a list of 161 `Html` values of 2,304 bytes each). Options in its
+    README: build the elements in place, box large closure captures, or capture less.
+  - Re-raising a rigid row's error by hand (`match … { Err(e) => Err(e) }`) is still refused
+    (`rigid-others-row`'s README); `?` works.
+- **`rocx check` checks the dev build**, whose `Html.read_at!` reads kept
+  `effectful-closure-dec-default` from showing; a failure only the release program meets shows in
+  `rocx build` alone. rocx could also check the release build's program.
 - **Fixes prepared on the fork wait for the user to open them as PRs** (boxy, `List.map` reuse,
   and the slot lifetimes of branch `rocx-fixes-2`, 0eb36c9c3b and 4674b5973d; its Try commits are
   upstream's). Nothing is pushed from here. Its compiler is, as a binary (D-069): a release of this
