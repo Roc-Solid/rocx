@@ -38,27 +38,23 @@ view! = |_|
 			title="Tests that read a page as a person does"
 		>
 			Helpers for testing a Roc Solid app. A test finds a heading, a link by its name and a field by its
-			label, the way someone using the page finds them, instead of by the page's classes.
+			label, as a person using the page does, not by the page's classes.
 		</PageHero>
 		<p>
-			Use this package to test an app at every level. In Roc, an <code>expect</code> renders a pure
-			component to HTML and asks it questions. From Node's test runner, a test builds the app, starts its
-			server, and talks to it as a browser would: it loads pages, posts forms, reads endpoints and the mail
-			the app sent, gives itself a database of its own, and uses the page in a real browser. The same
-			queries work in all of these places, with the same rules.
+			The same queries, with the same rules, work in a Roc <code>expect</code> and from Node's test runner
+			against the running app, its database and a real browser (<a href="#ways">four ways to test</a>).
 		</p>
 
 		<Heading id="first">A first test</Heading>
 		<p>
-			The package is plain Roc on no platform, so any module of the app can use it. Name it in the app's
-			header, by its directory, as you name any package:
+			The package is plain Roc on no platform, so any module can use it. Name it in the app's header:
 		</p>
 		<Code source={"app [program] { testing: \"../packages/testing/main.roc\", pf: platform \"…\" }"} numbers={Bool.False} />
 		<p>
 			A <a href={"${Paths.components}#kinds"}>pure component</a> (<code>view</code>, no <code>!</code>)
-			makes its markup from its props alone. That means an <code>expect</code> can render it to HTML with
-			<code>Html.to_str</code>, read the HTML with <code>Dom.parse</code>, and ask it what a person would
-			see. Here is a small inbox, and the inbox as it renders:
+			makes its markup from its props alone, so an <code>expect</code> can render it with
+			<code>Html.to_str</code>, read the HTML with <code>Dom.parse</code>, and ask what a person would see.
+			A small inbox, and how it renders:
 		</p>
 		<Specimen file={Sources.testing_inbox.file} code={[<Code source={Sources.testing_inbox.rocx} numbers={Bool.False} />]} label="As it renders (a picture: it does nothing here)">
 			<div inert><TestingInbox name="Ada" unread={["Lunch?", "Re: the plan"]} /></div>
@@ -66,17 +62,15 @@ view! = |_|
 		<p>Its tests sit in the same file, under the component:</p>
 		<Code title={Sources.testing_inbox_expects.file} source={Sources.testing_inbox_expects.rocx} numbers={Bool.False} />
 		<p>
-			After <code>rocx build</code>, <code>roc test main.roc</code> runs them along with every other
-			<code>expect</code> in the app. Run it as <code>rocx check -- roc test main.roc</code> and a failing
+			After <code>rocx build</code>, <code>roc test main.roc</code> runs them with every other
+			<code>expect</code> in the app. Through <code>rocx check -- roc test main.roc</code>, a failing
 			<code>expect</code> is reported at its line in the <code>.rocx</code> file
-			(<a href={"${Paths.tooling}#errors"}>errors at your lines</a>). This site's own tests run the ones
-			above.
+			(<a href={"${Paths.tooling}#errors"}>errors at your lines</a>). This site's tests run the ones above.
 		</p>
 		<p>
-			A query that finds exactly one element answers <code>Ok</code> with it. One that finds none, or more
-			than one, answers an error that also says what the page has instead, so a failing test tells you
-			what went wrong. Here is what <code>page.get</code> answered for a few queries of the inbox above,
-			asked when this page was rendered:
+			A query that finds exactly one element answers <code>Ok</code> with it. Finding none or several, it
+			answers an error that says what the page has instead, so a failing test tells you what went wrong.
+			What <code>page.get</code> answered for a few queries of the inbox, as this page rendered:
 		</p>
 		<TableWrap><TestingAnswers /></TableWrap>
 		<details>
@@ -94,28 +88,29 @@ view! = |_|
 			</Feature>
 			<Feature title="The app, over HTTP, from Node">
 				<p>
-					A <code>node:test</code> file builds the app as a deploy does, starts its server on a port of its
-					own, and asks it what a browser would: pages, forms, endpoints, events, and the mail it sent.
+					A <code>node:test</code> file builds the app as a deploy does, starts its server on its own port,
+					and asks what a browser would: pages, forms, endpoints, events, and the mail it sent.
 				</p>
 			</Feature>
 			<Feature title="Its database and its jobs">
 				<p>
-					Each test gets a database of its own, Postgres or SQLite, which the server migrates when it
-					starts. A test can wait until the jobs it caused have run, and see how each one ended.
+					Each test gets its own database, Postgres or SQLite, migrated by the server. A test can wait for
+					the jobs it caused and see how each ended.
 				</p>
 			</Feature>
 			<Feature title="A real browser">
 				<p>
-					Chromium's headless shell, or Firefox. The page hydrates strictly, and the test clicks and types in
-					it as a person does. A component with signals is tested through its story.
+					Chromium's headless shell, or Firefox. The page hydrates strictly, and the test clicks and types as
+					a person does. A component with signals is tested through its story.
+
 				</p>
 			</Feature>
 		</FeatureGrid>
 
 		<Heading id="queries">The queries</Heading>
 		<p>
-			Roc and JavaScript have the same queries, with the same rules. The JavaScript ones use Testing
-			Library's names, so a test reads like one written for React or Solid.
+			Roc and JavaScript share the queries and their rules. The JavaScript ones use Testing Library's
+			names.
 		</p>
 		<TableWrap>
 			<table>
@@ -154,20 +149,20 @@ view! = |_|
 			</table>
 		</TableWrap>
 		<p>
-			Text is compared as a reader sees it: whitespace collapsed, and trimmed at the ends. Roles, names, text
-			and labels skip what a reader can't see. That is an element marked <code>hidden</code> or
-			<code>aria-hidden="true"</code>, one whose <code>style</code> says <code>display: none</code> or
-			<code>visibility: hidden</code>, and everything inside it; also <code>{"<head>"}</code>,
-			<code>{"<script>"}</code>, <code>{"<style>"}</code>, <code>{"<template>"}</code> and
-			<code>{"<noscript>"}</code>. In JavaScript, a name or a text may also be a <code>RegExp</code>, and
-			<code>getByRole</code> also takes a heading's <code>level</code> and <code>{"{ hidden: true }"}</code>.
+			Text is compared as a reader sees it: whitespace collapsed and trimmed. Roles, names, text and labels
+			skip what a reader can't see: an element marked <code>hidden</code> or <code>aria-hidden="true"</code>,
+			or styled <code>display: none</code> or <code>visibility: hidden</code>, with everything inside it;
+			and <code>{"<head>"}</code>, <code>{"<script>"}</code>, <code>{"<style>"}</code>,
+			<code>{"<template>"}</code> and <code>{"<noscript>"}</code>. In JavaScript, a name or text may also be
+			a <code>RegExp</code>, and <code>getByRole</code> also takes a heading's <code>level</code> and
+			<code>{"{ hidden: true }"}</code>.
 		</p>
 
 		<Heading id="dom">Dom, in Roc</Heading>
 		<p>
-			<code>Dom.parse(html)</code> reads HTML into a tree. It expects HTML that closes its elements, which
-			is how Roc Solid writes it and how a browser serializes it. A query on an element looks only inside
-			that element, and two <code>Dom</code>s compare with <code>==</code>.
+			<code>Dom.parse(html)</code> reads HTML into a tree. It expects closed elements, as Roc Solid writes
+			them and a browser serializes them. A query on an element looks only inside it, and two
+			<code>Dom</code>s compare with <code>==</code>.
 		</p>
 		<TableWrap>
 			<table>
@@ -186,18 +181,16 @@ view! = |_|
 
 		<Heading id="node">From Node</Heading>
 		<p>
-			For everything a pure component can't show (pages, forms, endpoints, the database), test the running
-			app from <code>node:test</code>. <code>buildForTests</code> builds the app the way a deploy does:
-			<code>rocx build</code>, the browser's wasm, and the server. A markup problem, a type error or a
-			warning throws, with the report at its line in the <code>.rocx</code> file.
-			<code>startServer</code> starts that server on a free port. A test file usually starts one server
-			for all its tests, and stops it at the end:
+			For what a pure component can't show (pages, forms, endpoints, the database), test the running app
+			from <code>node:test</code>. <code>buildForTests</code> builds the app as a deploy does
+			(<code>rocx build</code>, the browser's wasm, the server); a markup problem, type error or warning
+			throws, reported at its line in the <code>.rocx</code> file. <code>startServer</code> starts that
+			server on a free port, usually once for a file's tests:
 		</p>
 		<Code title={Sources.testing_node_setup.file} source={Sources.testing_node_setup.rocx} numbers={Bool.False} />
 		<p>
-			<code>app.client()</code> stands for one person at a browser, with a cookie jar of their own. Every
-			answer has its <code>status</code>, its <code>text</code>, and a <code>dom</code> that has the
-			queries:
+			<code>app.client()</code> is one person at a browser, with their own cookie jar. Every answer has its
+			<code>status</code>, its <code>text</code>, and a <code>dom</code> with the queries:
 		</p>
 		<Code title={Sources.testing_node_page.file} source={Sources.testing_node_page.rocx} numbers={Bool.False} />
 		<p>
@@ -205,10 +198,10 @@ view! = |_|
 		</p>
 		<ul>
 			<li>
-				<code>post</code> sends it as a browser does without the runtime. The endpoint answers with
-				a redirect back to the page, and a flash that holds its result. The test sees the redirect and can
-				read the flash with <code>client.flash</code>. (The server keeps the flash and, because a test's
-				server runs with <code>--debug</code>, tells the test what it holds.)
+				<code>post</code> sends it as a browser does without the runtime: the endpoint answers with a
+				redirect back to the page and a flash holding its result, which the test reads with
+				<code>client.flash</code> (a test's server runs with <code>--debug</code>, so it tells the test what
+				the flash holds).
 			</li>
 			<li>
 				<code>submit</code> sends it as the runtime does once the page has hydrated, and gets the
@@ -221,61 +214,60 @@ view! = |_|
 		</p>
 		<Code title={Sources.testing_node_form.file} source={Sources.testing_node_form.rocx} numbers={Bool.False} />
 		<p>
-			When no <code>SMTP_URL</code> is set, the <a href={"${Paths.ecosystem_email}#mailbox"}>email
-			plugin</a> keeps the mail it would send instead of sending it, under <code>--debug</code> (which
-			<code>startServer</code> passes) as under <code>--dev</code>: the last 100 messages, in the server's
-			memory. Every server a test starts therefore begins with an empty mailbox. <code>app.mail()</code>
-			reads the messages (each with its <code>to</code>, <code>cc</code>, <code>bcc</code>,
-			<code>reply_to</code>, <code>headers</code>, <code>subject</code>, <code>text</code>,
-			<code>html</code>, and the <code>raw</code> message, in which no header names the Bcc),
-			<code>waitForMail</code> waits for one that matches (a list such as <code>cc</code> matches when one
-			of its addresses does), and <code>links</code> finds the links in a message:
+			With no <code>SMTP_URL</code>, the <a href={"${Paths.ecosystem_email}#mailbox"}>email plugin</a> keeps
+			the last 100 messages in the server's memory instead of sending them, under <code>--debug</code>
+			(which <code>startServer</code> passes) as under <code>--dev</code>. So each test server starts with
+			an empty mailbox. <code>app.mail()</code> reads the messages (each with <code>to</code>,
+			<code>cc</code>, <code>bcc</code>, <code>reply_to</code>, <code>headers</code>, <code>subject</code>,
+			<code>text</code>, <code>html</code>, and the <code>raw</code> message, in which no header names the
+			Bcc); <code>waitForMail</code> waits for one that matches (a list such as <code>cc</code> matches when
+			one of its addresses does); <code>links</code> finds a message's links:
 		</p>
 		<Code title={Sources.testing_node_mail.file} source={Sources.testing_node_mail.rocx} numbers={Bool.False} />
 
 		<Heading id="database">A database, and jobs</Heading>
 		<p>
-			A test can have a database of its own, so tests never see each other's rows. The server runs the
-			app's migrations into it when it starts.
+			Each test can have its own database, so tests never see each other's rows. The server migrates it
+			as it starts.
 		</p>
 		<ul>
 			<li>
-				For an app on Postgres, <code>testDatabase()</code> makes a new database in the Postgres at
+				On Postgres, <code>testDatabase()</code> makes a new database in the Postgres at
 				<code>DATABASE_URL</code>.
 			</li>
 			<li>
-				For an app on SQLite, <code>testSqlite()</code> makes a database file in a temporary directory of
-				its own, and reads and writes it with Node's <code>node:sqlite</code>. Pass the database itself to
-				the server, <code>{"startServer(server, { database: db })"}</code>, so it can wake the server's job
-				workers (SQLite can't tell another process that a row changed).
+				On SQLite, <code>testSqlite()</code> makes a database file in its own temporary directory, read and
+				written with Node's <code>node:sqlite</code>. Pass the database itself to the server,
+				<code>{"startServer(server, { database: db })"}</code>, so it can wake the server's job workers
+				(SQLite can't tell another process that a row changed).
 			</li>
 		</ul>
 		<p>
-			Both have <code>sql</code> (a tagged template whose values are escaped), <code>query</code>,
-			<code>jobs</code>, <code>enqueue</code>, <code>settleJobs</code> and <code>drop</code>, which removes
-			the database when the test is done.
+			Both have <code>sql</code> (a tagged template that escapes its values), <code>query</code>,
+			<code>jobs</code>, <code>enqueue</code>, <code>settleJobs</code> and <code>drop</code> (which removes
+			the database when the test is done).
 		</p>
 		<p>
-			<code>settleJobs()</code> waits until every <a href={Paths.ecosystem_jobs}>job</a> that is due has run,
-			along with the jobs those queued, and answers how each one ended. A job that fails is retried later,
-			which <code>settleJobs()</code> doesn't wait for; <code>{"settleJobs({ later: true })"}</code> runs
-			retries and jobs queued for later right away, until their attempts are spent. <code>enqueue</code>
-			queues a job the way a cron would at its time.
+			<code>settleJobs()</code> waits until every due <a href={Paths.ecosystem_jobs}>job</a> has run, with
+			the jobs those queued, and answers how each one ended. It doesn't wait for a failed job's later
+			retry; <code>{"settleJobs({ later: true })"}</code> runs retries and jobs queued for later at once,
+			until their attempts are spent. <code>enqueue</code> queues a job as a cron would at its time.
 		</p>
 		<Code title={Sources.testing_node_jobs.file} source={Sources.testing_node_jobs.rocx} numbers={Bool.False} />
 
 		<Heading id="browser">In a browser</Heading>
 		<p>
-			<code>launchBrowser()</code> starts Chromium's headless shell (<code>$CHROME</code>, or the one
-			Playwright keeps in its cache). When there is none it answers <code>null</code>, so the test can skip,
-			and the run says so once on the console. In CI (<code>CI</code> set, as GitHub Actions sets it), or
-			with <code>ROCX_BROWSERS=required</code>, a missing browser is an error instead: a CI whose browser
-			install broke fails, rather than passing with its browser tests skipped.
-			<code>ROCX_BROWSERS=optional</code> lets them skip in CI too.
-			<code>browser.open(url)</code> opens a tab and waits until the page has hydrated, strictly: if the page
-			the server sent isn't what the browser's half renders, it throws. The tab has the same queries, and
-			each element found can be clicked, typed in and filled through the browser's own input.
-			<code>findBy…</code> keeps looking until the page shows what it asks for.
+			<code>launchBrowser()</code> starts Chromium's headless shell (<code>$CHROME</code>, or Playwright's
+			cached one). With none, it answers <code>null</code> so the test can skip, and the run says so once.
+			In CI (<code>CI</code> set, as GitHub Actions does) or with <code>ROCX_BROWSERS=required</code>, a
+			missing browser is an error, so a broken browser install fails CI instead of skipping its browser
+			tests. <code>ROCX_BROWSERS=optional</code> lets them skip in CI too.
+		</p>
+		<p>
+			<code>browser.open(url)</code> opens a tab and waits until the page hydrates, strictly: if the server's
+			page isn't what the browser's half renders, it throws. The tab has the same queries; each element
+			found can be clicked, typed in and filled through the browser's own input. <code>findBy…</code> keeps
+			looking until the page shows what it asks for.
 		</p>
 		<Code title={Sources.testing_node_browser.file} source={Sources.testing_node_browser.rocx} numbers={Bool.False} />
 		<p>
@@ -286,22 +278,22 @@ view! = |_|
 		<p>
 			<code>{"tab.drag(source, target)"}</code> drags one element onto another as a mouse does, firing
 			dragstart, drag, dragenter, dragover, drop (if the target accepts it) and dragend, each with its
-			coordinates. In Chromium that is the browser's own drag and drop. Gecko never finishes a drag that
-			WebDriver starts, so there <code>drag</code> fires the DOM's drag events itself, with one
-			<code>DataTransfer</code> carried through them. <code>{"tab.touchDrag(source, target)"}</code> drags
-			with a finger, as on a phone, using real touch input in both browsers.
+			coordinates. Chromium uses its own drag and drop. Gecko never finishes a drag that WebDriver starts,
+			so there <code>drag</code> fires the DOM's drag events itself, carrying one <code>DataTransfer</code>.
+			<code>{"tab.touchDrag(source, target)"}</code> drags with a finger, with real touch input in both
+			browsers.
 		</p>
 		<p>
-			<code>Html.to_str</code> can't render a component with signals, because its holes need the runtime.
-			Test such a component through its <a href={"${Paths.tooling}#stories"}>story</a> instead:
-			<code>{"buildForTests(dir, { dev: true })"}</code> serves each story as a page, at
-			<code>{"storyPath(\"Counter\", \"At ten\")"}</code>, for a test to fetch or to open in a tab.
+			<code>Html.to_str</code> can't render a component with signals: its holes need the runtime. Test it
+			through its <a href={"${Paths.tooling}#stories"}>story</a>: <code>{"buildForTests(dir, { dev: true })"}</code>
+			serves each story as a page, at <code>{"storyPath(\"Counter\", \"At ten\")"}</code>, to fetch or open
+			in a tab.
 		</p>
 
 		<Heading id="javascript">The JavaScript modules</Heading>
 		<p>
-			Plain <code>.mjs</code> files with no dependencies, each usable on its own. <code>index.mjs</code>
-			exports all of them. The package's <a href="https://github.com/Roc-Solid/rocx/blob/master/packages/testing/README.md">README</a>
+			Plain <code>.mjs</code> files with no dependencies, each usable alone; <code>index.mjs</code> exports
+			them all. The package's <a href="https://github.com/Roc-Solid/rocx/blob/master/packages/testing/README.md">README</a>
 			lists every function and option.
 		</p>
 		<TableWrap>
@@ -359,15 +351,14 @@ view! = |_|
 
 		<Heading id="status">Status and limits</Heading>
 		<p>
-			Everything above works today, and the package tests it: <code>roc test packages/testing/main.roc</code>
-			runs <code>Dom</code>'s <code>expect</code>s, and <code>node --test</code> runs its JavaScript against
-			a small app it builds, using Postgres and Chromium when they are there. Several of the examples'
-			tests use it too, such as <a href={Paths.examples_tasks}>tasks</a> and
-			<a href={Paths.examples_board}>board</a>.
+			Everything above works and is tested: <code>roc test packages/testing/main.roc</code> runs
+			<code>Dom</code>'s <code>expect</code>s, and <code>node --test</code> runs the JavaScript against a
+			small app it builds, with Postgres and Chromium when they are there. The examples' tests use it too,
+			such as <a href={Paths.examples_tasks}>tasks</a> and <a href={Paths.examples_board}>board</a>.
 		</p>
 		<p>
-			Not yet. Each of these needs a change outside the package, written up in
-			<code>packages/testing/PROPOSALS.md</code>:
+			Not yet (each needs a change outside the package, written up in
+			<code>packages/testing/PROPOSALS.md</code>):
 		</p>
 		<ul>
 			<li>A clock a test sets, and randomness it seeds: a test mode for the server.</li>
@@ -401,9 +392,10 @@ view! = |_|
 				<code>{"<p>one<p>two"}</code> is read as one paragraph inside another.
 			</li>
 			<li>
-				The JavaScript uses the Roc Solid repository it is in, or the one <code>ROCX_ROOT</code> names. It
-				builds with that repository's compiler and drives browsers with its driver, and the platforms' hosts
-				must be built there first (<code>just test</code> builds them).
+				The JavaScript uses the Roc Solid repository it is in (or the one <code>ROCX_ROOT</code> names): its
+				compiler, its browser driver, and its platforms' hosts, which must be built first (<code>just test</code>
+				builds them).
+
 			</li>
 		</ul>
 	</NoHydration>

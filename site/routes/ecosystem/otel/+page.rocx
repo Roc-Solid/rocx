@@ -30,20 +30,14 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/otel</code>]}
 				title="Metrics and logs, for any OpenTelemetry backend"
 			>
-				Time every request by its route, count whatever your app cares about, and send it all over OTLP to
-				an OpenTelemetry Collector or to a backend that accepts it (Grafana Cloud, Honeycomb, Datadog, and
+				Time every request by its route, count what your app cares about, and send it over OTLP to an
+				OpenTelemetry Collector or a backend that accepts it (Grafana Cloud, Honeycomb, Datadog, and
 				others). For logs, a collector reads the server's JSON log; the app adds nothing.
 			</PageHero>
 			<p>
-				Use this package when you run an app in production and want to see how it behaves: how long
-				requests take, which routes are slow or failing, and numbers of your own, such as signups or
-				checks that failed. It speaks OpenTelemetry, the standard most monitoring tools accept, and it
-				is configured with the same environment variables as every OpenTelemetry SDK. With no collector
-				configured it does nothing, so it costs nothing while you develop.
-			</p>
-			<p>
-				The <a href={Paths.examples_uptime}>uptime example</a> uses it: a histogram of each check's latency,
-				and a gauge of whether each monitor is up.
+				OpenTelemetry is the standard most monitoring tools accept. The
+				<a href={Paths.examples_uptime}>uptime example</a> uses this package: a histogram of each check's
+				latency, and a gauge of whether each monitor is up.
 			</p>
 
 			<Heading id="setup">Setting up</Heading>
@@ -53,7 +47,11 @@ view! = |_|
 					List its plugin, <code>Otel.plugin({"{}"})</code>, in the program's <code>plugins</code>, and
 					<code>import otel.Otel</code> where you record. Nothing is copied into the app.
 				</li>
-				<li>Put <code>Otel.middleware({"{}"})</code> first in the app's middleware, <code>routes/+middleware.roc</code>.</li>
+				<li>
+					Put <code>Otel.middleware({"{}"})</code> first in the app's
+					<a href={"${Paths.routing}#middleware"}>middleware</a>, <code>routes/+middleware.roc</code>, so it
+					times the rest too.
+				</li>
 				<li>
 					Start the server with <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> set to your collector, such as
 					<code>http://localhost:4318</code>.
@@ -67,9 +65,9 @@ view! = |_|
 				numbers={Bool.False}
 			/>
 			<p>
-				<code>Otel.middleware({"{}"})</code> times every request that passes through it. It records
-				<code>http.server.request.duration</code>, a histogram in seconds, with the attributes
-				OpenTelemetry's HTTP conventions name:
+				<code>Otel.middleware({"{}"})</code> times every request through it as
+				<code>http.server.request.duration</code>, a histogram in seconds, with the attributes of
+				OpenTelemetry's HTTP conventions:
 			</p>
 			<ul>
 				<li><code>http.request.method</code>, or <code>_OTHER</code> for a method HTTP doesn't define;</li>
@@ -80,15 +78,11 @@ view! = |_|
 				</li>
 				<li><code>http.response.status_code</code>.</li>
 			</ul>
-			<p>
-				Put it first in the <a href={"${Paths.routing}#middleware"}>middleware</a> chain, so its time
-				includes the rest of the middleware too.
-			</p>
 
 			<Heading id="instruments">Measuring your own</Heading>
 			<p>
-				An instrument is something your app measures. Define one with <code>Metric</code>, then record
-				values with <code>Otel.record!</code> anywhere on the server, with attributes that label the value:
+				An instrument is something your app measures. Define one with <code>Metric</code>, and record values
+				with <code>Otel.record!</code> anywhere on the server, with attributes that label each value:
 			</p>
 			<Code
 				title="Anywhere on the server"
@@ -97,30 +91,28 @@ view! = |_|
 			/>
 			<ul>
 				<li>
-					A <strong>counter</strong> adds up what it is given, such as signups or emails sent. It never goes
-					down: a negative value is dropped.
+					A <strong>counter</strong> adds up what it is given (signups, emails sent). It never goes down: a
+					negative value is dropped.
 				</li>
 				<li>
-					A <strong>histogram</strong> counts values into buckets and sums them, such as how long a
-					checkout took. <code>Metric.seconds</code> is OpenTelemetry's buckets for durations, from 5 ms to
-					10 s.
+					A <strong>histogram</strong> counts values into buckets and sums them (how long a checkout took).
+					<code>Metric.seconds</code> is OpenTelemetry's buckets for durations, from 5 ms to 10 s.
 				</li>
 				<li>
-					A <strong>gauge</strong> keeps the last value set, negative values too, such as whether a service
-					is up or how many jobs are waiting. It is sent again at each export until it is set to another
-					value.
+					A <strong>gauge</strong> keeps the last value set, negative too (whether a service is up, how many
+					jobs wait), and is sent at each export until set again.
 				</li>
 			</ul>
 			<p>
-				Each combination of attribute values is a separate series, so keep the values few. A user's id or
-				a full URL as an attribute would make a series per user or per URL. To protect memory, an
-				instrument keeps at most 2000 series and drops new ones past that. One name is one kind of
-				instrument: a value recorded under a name already used by another kind is dropped.
+				Each combination of attribute values is a separate series, so keep the values few: a user's id or a
+				full URL would make a series per user or URL. An instrument keeps at most 2000 series and drops new
+				ones past that. A name is one kind of instrument: a value recorded under a name another kind uses is
+				dropped.
 			</p>
 
 			<Heading id="where">Where they go</Heading>
 			<p>
-				The package reads the standard environment variables, as every OpenTelemetry SDK does:
+				It reads the standard environment variables, as every OpenTelemetry SDK does:
 			</p>
 			<TableWrap>
 				<table>
@@ -135,41 +127,39 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				With no endpoint, metrics are off: nothing is measured, kept or sent. That is the default while
-				you develop. The package's README lists the other variables it reads (a metrics-only endpoint and
+				With no endpoint, metrics are off: nothing is measured, kept or sent, so it costs nothing while you
+				develop. The package's README lists the other variables it reads (a metrics-only endpoint and
 				headers, the send timeout, <code>OTEL_METRICS_EXPORTER=none</code>).
 			</p>
 
 			<Heading id="logs">Logs</Heading>
 			<p>
-				Logs need nothing from this package. When the server's <a href={"${Paths.platform_server}#logging"}>log</a>
-				is JSON, each line is one object, the platform's lines and the app's alike. The log is JSON when
-				stderr isn't a terminal (where a log is collected), when <code>ROCX_LOG=json</code> is set, or when
-				the program says <code>{"logs: { format: Json }"}</code>. The OpenTelemetry Collector's
-				<code>filelog</code> receiver turns each line into a log record: its time, its level as the
-				severity, its message as the body, and its fields as attributes. The package's README has the
-				collector's configuration.
+				Logs need nothing from this package. The server's <a href={"${Paths.platform_server}#logging"}>log</a>
+				is JSON, one object a line (the platform's and the app's alike), when stderr isn't a terminal (as
+				where logs are collected), with <code>ROCX_LOG=json</code>, or when the program says
+				<code>{"logs: { format: Json }"}</code>. The Collector's <code>filelog</code> receiver turns each line
+				into a log record: time, level as severity, message as body, and fields as attributes. The package's
+				README has the collector's configuration.
 			</p>
 
 			<Heading id="how">How it works</Heading>
 			<p>
 				Recording a value puts it in the server's memory (<a href={Paths.platform_kv}>Kv</a>), so a request
-				never waits for it. The plugin's loop takes what is there each second and adds it to the sums it
-				keeps; every export interval, and once more as the server stops, it sends them all in one request,
-				as OTLP over HTTP, in JSON.
+				never waits. Each second, the plugin's loop adds what is there to its sums; every export interval,
+				and once more as the server stops, it sends them all in one request (OTLP over HTTP, in JSON).
 			</p>
 			<p>
-				The sums are cumulative: each send says what has added up since the loop started. So a send that
-				fails loses nothing; the next one carries it all, and the failure is logged as a warning. Nothing is
-				written to the database: a restart starts the sums again, with a new start time, which a collector
-				reads as a reset counter.
+				The sums are cumulative, since the loop started, so a failed send loses nothing: the next carries it
+				all, and the failure is logged as a warning. Nothing goes to the database: a restart starts the sums
+				again with a new start time, which a collector reads as a reset counter.
 			</p>
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong>Traces.</strong> They need to know which request a query or a fetch runs for, without the
-					app passing it by hand, and Roc has no such context yet.
+					<strong>Traces.</strong> They need to know which request a query or fetch runs for without the app
+					passing it by hand; Roc has no such context yet.
+
 				</li>
 				<li>Up-down counters, exemplars, and Prometheus's <code>/metrics</code> for pulling.</li>
 				<li>A job's duration and outcome.</li>

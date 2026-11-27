@@ -40,19 +40,19 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/guard</code>]}
 				title="Rate limits, feature flags and guards, as middleware"
 			>
-				Guard protects an app's routes. A login form takes 5 tries a minute from each address, a new
-				checkout goes to staff first and then to a quarter of everyone, every answer carries security
-				headers, and an admin can put the whole site into maintenance. Each guard is
-				<a href={"${Paths.routing}#middleware"}>middleware</a>, and what it decides is plain Roc, so the
-				tables on this page are the package's own answers, worked out when the site was built.
+				Guard protects an app's routes: 5 login tries a minute from each address, a new checkout for staff
+				first and then a quarter of everyone, security headers on every answer, and maintenance mode for
+				the whole site. Each guard is <a href={"${Paths.routing}#middleware"}>middleware</a> that decides in
+				plain Roc, so the tables on this page are the package's own answers, worked out when the site was
+				built.
 			</PageHero>
 
 			<Heading id="install">Installing it</Heading>
 			<p>
-				Name the package in your app's header, <code>main.roc</code>:
-				<code>{"guard: \"../packages/guard/main.roc\""}</code>. Its middleware uses the server platform,
-				so your app must be on it; the browser's half of the app sees only the modules that need no
-				platform (the logic, and the <code>{"<Flagged>"}</code> component).
+				Name the package in your app's header (<code>main.roc</code>):
+				<code>{"guard: \"../packages/guard/main.roc\""}</code>. Its middleware needs the server platform; the
+				browser's half sees only the modules that need no platform (the logic, and the
+				<code>{"<Flagged>"}</code> component).
 			</p>
 			<ul>
 				<li>In the server's modules (your middleware, your endpoints): <code>import guard.Guard</code>, and <code>guard.FlagStore</code> for flags.</li>
@@ -67,52 +67,48 @@ view! = |_|
 			<Heading id="first">A first guard</Heading>
 			<p>
 				A guard goes in the <a href={"${Paths.routing}#middleware"}>middleware</a> of the directory it
-				guards: <code>routes/+middleware.roc</code> runs around every request, and a directory's
-				<code>+middleware.roc</code> around the routes in it and below it. Here every answer gets security
-				headers, a body over a megabyte is refused, the site can be put into maintenance, everything under
-				<code>/api</code> is limited for each user, and the login route is limited for each address:
+				guards: <code>routes/+middleware.roc</code> runs around every request, a directory's
+				<code>+middleware.roc</code> around the routes in and below it. Here every answer gets security
+				headers, a body over a megabyte is refused, the site can go into maintenance, <code>/api</code> is
+				limited per user, and the login route per address:
 			</p>
 			<Code title={Sources.guard_middlewares.file} source={Sources.guard_middlewares.rocx} />
 			<Code title={Sources.guard_api_middleware.file} source={Sources.guard_api_middleware.rocx} />
 			<Code title={Sources.guard_route.file} source={Sources.guard_route.rocx} />
 			<p>
-				The sixth try in a minute is answered <code>429 Too Many Requests</code>, with
-				<code>Retry-After</code> and the <code>RateLimit-*</code> headers. Every guard hands on the
-				context it is given, unchanged, so you can put guards anywhere in a chain.
-			</p>
-			<p>
-				This code is from <code>packages/guard/example/</code>, a whole app that builds and runs, and
-				that its tests ask over HTTP.
+				The sixth try in a minute gets <code>429 Too Many Requests</code>, with <code>Retry-After</code> and
+				the <code>RateLimit-*</code> headers. Every guard hands on its context unchanged, so guards go
+				anywhere in a chain. The code is from <code>packages/guard/example/</code>, a whole app its tests
+				ask over HTTP.
 			</p>
 
 			<Heading id="limits">Rate limits</Heading>
 			<p>
-				A limit says how many requests a client may send, and in how long.
-				<code>RateLimit.per_minute(5)</code> is a token bucket: a client may send 5 at once, then one
-				every 12 seconds. <code>.sliding()</code> counts the same limit in a sliding window instead: never
-				more than 5 in any minute. Both are plain functions. A client's state and the time go in, and
-				whether the request may go on, with the client's next state, comes out.
+				A limit says how many requests a client may send, in how long. <code>RateLimit.per_minute(5)</code>
+				is a token bucket: 5 at once, then one every 12 seconds. <code>.sliding()</code> counts a sliding
+				window instead: never more than 5 in any minute. Both are plain functions: a client's state and
+				the time go in; whether the request may go on, and the client's next state, come out.
 			</p>
 			<Code title={Sources.guard_limits.file} source={Sources.guard_limits.rocx} numbers={Bool.False} />
 			<p>
-				Here are the same eleven requests under each limit, as <code>RateLimit.check</code> answered them
-				when this page was built. The clock is a list of seconds, as it is in the package's tests.
+				The same eleven requests under each limit, as <code>RateLimit.check</code> answered them when this
+				page was built (the clock is a list of seconds, as in the package's tests):
 			</p>
 			<TableWrap>
 				<GuardLimits />
 			</TableWrap>
 			<p>
-				The bucket lets the first five through, refuses the sixth, and gives a token back every 12
-				seconds. A refused request costs nothing, so hammering doesn't push the next allowed one back.
-				The sliding window refuses everything after the fifth until the five weigh less. Its count is this
-				minute's requests plus last minute's, weighted by how much of last minute the window still
-				covers. So it keeps two numbers for each client, however high the limit.
+				In the bucket, a refused request costs nothing, so hammering doesn't delay the next allowed one. The
+				sliding window refuses
+				everything after the fifth until the five weigh less: its count is this minute's requests plus last
+				minute's, weighted by how much of last minute the window still covers. So it keeps two numbers per
+				client, however high the limit.
 			</p>
 
 			<Heading id="try">Try a limit</Heading>
 			<p>
-				The same <code>RateLimit.check</code>, in your browser, with a clock you move by hand. Nothing
-				is sent anywhere: each line is what the server's middleware would answer.
+				The same <code>RateLimit.check</code>, in your browser, with a clock you move by hand. Nothing is
+				sent: each line is what the middleware would answer.
 			</p>
 		</NoHydration>
 		<Demo>
@@ -145,116 +141,108 @@ view! = |_|
 
 			<h3>What a client is told</h3>
 			<p>
-				An allowed request's answer says where the client stands: <code>RateLimit-Limit</code>,
-				<code>RateLimit-Remaining</code>, <code>RateLimit-Reset</code> (seconds until the whole limit is
-				back) and <code>RateLimit-Policy</code> (<code>5;w=60</code>: 5 in 60 seconds). A refused one is
-				a <code>429</code> with those headers, <code>Retry-After</code> (exactly how many seconds until
-				one more would be allowed), and a line of text. A form posted without the runtime is refused the
-				way an endpoint refuses one: it goes back to its page with what was typed and a flash of the
-				<code>429</code>, so the form shows it where it shows any refusal.
+				An allowed answer carries <code>RateLimit-Limit</code>, <code>RateLimit-Remaining</code>,
+				<code>RateLimit-Reset</code> (seconds until the whole limit is back) and
+				<code>RateLimit-Policy</code> (<code>5;w=60</code>: 5 in 60 seconds). A refusal is a <code>429</code>
+				with those headers, <code>Retry-After</code> (seconds until one more is allowed) and a line of text.
+				A form posted without the runtime goes back to its page with what was typed and a flash of the
+				<code>429</code>, shown where the form shows any refusal.
 			</p>
 
 			<h3>Memory stays bounded</h3>
 			<p>
 				Each limit keeps at most 10,000 clients (<code>Guard.rate_limit_with</code> takes another number).
-				A client whose limit is whole again is forgotten first, which changes nothing. Past the limit, the
-				client seen longest ago is forgotten, and starts again. Each limit's clients are split into 64
-				tallies, so a request reads and writes about 150 of them at most.
+				Clients whose limit is whole again are forgotten first, which changes nothing; past that, the client
+				seen longest ago is forgotten and starts again. Each limit's clients are split into 64 tallies, so a
+				request reads and writes about 150 of them at most.
 			</p>
 			<p>
-				The counts live in the server's memory, in <a href={Paths.platform_kv}>Kv</a>, never in the
-				database. A request reads its tally and swaps the next one in; when another request changed it
-				first, it reads again, so no hit is lost. If a tally can't be changed after many tries, the
-				request goes on and the log says why: a limiter that fails shouldn't take the site down. A restart
-				starts every limit again.
+				The counts live in the server's memory (<a href={Paths.platform_kv}>Kv</a>), never in the database.
+				A request reads its tally and swaps the next one in, reading again if another request changed it
+				first, so no hit is lost. If a tally can't be changed after many tries, the request goes on and the
+				log says why: a failing limiter shouldn't take the site down. A restart resets every limit.
 			</p>
 
 			<Heading id="proxies">Behind a proxy</Heading>
 			<p>
-				Most apps are served behind a proxy, which connects to the server for the client and adds the
-				address it saw to <code>X-Forwarded-For</code>. A client can write anything it likes in that
-				header too, so the header is read only as far as the app says its own proxies wrote it. Take one
-				request: it came from 10.0.0.2, the app's proxy, and its <code>X-Forwarded-For</code> is
-				<code>6.6.6.6, 198.51.100.4</code>. The client wrote the first address itself; the proxy added
-				the second, the address it saw. Here is who the client is, by each way to trust, as
+				Most apps sit behind a proxy, which adds the address it saw to <code>X-Forwarded-For</code>. A
+				client can write anything in that header too, so it is read only as far as the app says its own
+				proxies wrote it. Take a request from 10.0.0.2, the app's proxy, whose
+				<code>X-Forwarded-For</code> is <code>6.6.6.6, 198.51.100.4</code>: the client wrote the first
+				address, the proxy added the second. Who the client is, by each way to trust, as
 				<code>ClientIp.of</code> worked it out when this page was built:
 			</p>
 			<TableWrap>
 				<GuardClients />
 			</TableWrap>
 			<ul>
-				<li><code>Direct</code> takes the address the connection came from, and ignores the headers. Use it when nothing is in front of the server.</li>
+				<li><code>Direct</code> takes the connection's address and ignores the headers: for when nothing is in front of the server.</li>
 				<li><code>Hops(1)</code> says one proxy is in front, and finds the address it saw. <code>Hops(2)</code> claims two, so here it trusts what the client wrote.</li>
 				<li>
 					<code>Proxies</code> walks the list from the right, past the app's own proxies
 					(<code>Ip.private</code>: the loopback and private ranges, or <code>{"Ip.cidrs([\"10.0.0.0/8\"])"}</code>).
-					It also checks that the connection came from one of them, so a client that reaches the server
-					directly can't name anyone it likes.
+					It checks the connection came from one of them, so a client reaching the server directly can't
+					name anyone it likes.
 				</li>
 				<li><code>Header(name)</code> reads one header a proxy sets, such as <code>fly-client-ip</code> or <code>cf-connecting-ip</code>.</li>
 			</ul>
 			<p>
-				<code>Proxies(Ip.private)</code> is right with no proxy in front and behind one in the server's
-				own network, which is why the app <code>rocx new</code> makes uses it. <code>Hops(1)</code> with
-				no proxy in front believes what the client wrote, so anyone could name a new address each time
-				and never be limited.
+				<code>Proxies(Ip.private)</code> is right both with no proxy in front and behind one in the server's
+				own network, so the app <code>rocx new</code> makes uses it. <code>Hops(1)</code> with no proxy in
+				front believes the client, who could name a new address each time and never be limited.
 			</p>
 
 			<Heading id="flags">Feature flags</Heading>
 			<p>
-				A flag is defined in code: its name, what it is for, and who has it on. A rule is on or off for
+				A flag is defined in code: its name, what it's for, and who has it on. A rule is on or off for
 				everyone (off is a kill switch), plus the users and groups it lists, plus a share of everyone else
-				who is signed in. Each user falls in or out of a rollout the same way every time, by a hash of
-				the flag's name and theirs, so raising the share only adds people. An environment can have a rule
-				of its own.
+				signed in. A hash of the flag's name and the user's puts each user in or out of a rollout the same
+				way every time, so raising the share only adds people. An environment can have its own rule.
 			</p>
 			<Code title={Sources.guard_flag.file} source={Sources.guard_flag.rocx} numbers={Bool.False} />
 			<p>
-				Here is who has it on, as <code>Flags.is_on</code> answered when this page was built. A user's
-				bucket, 0 to 99, is that hash (<code>Flags.bucket</code>): a rollout of 25 takes those below 25.
+				Who has it on, as <code>Flags.is_on</code> answered when this page was built. A user's bucket, 0 to
+				99, is that hash (<code>Flags.bucket</code>): a rollout of 25 takes those below 25.
 			</p>
 			<TableWrap>
 				<GuardFlags />
 			</TableWrap>
 			<p>
-				ada is listed and bea is in staff, so they have it whatever their bucket. jo and max fall in the
-				quarter; cy, dee and kai don't. A visitor who isn't signed in has no id to be counted by, so a
-				rollout reaches them only at 100. The environment is <code>APP_ENV</code> if it is set, or else
-				<code>dev</code> when the server was started with <code>--dev</code>, or else
-				<code>production</code>.
+				ada is listed and bea is in staff, so they have it whatever their bucket. A signed-out visitor has
+				no id to hash, so a rollout reaches them only at 100.
+ The environment is <code>APP_ENV</code> if set, else <code>dev</code> under
+				<code>--dev</code>, else <code>production</code>.
 			</p>
 
 			<h3>Changed while the server runs</h3>
 			<p>
-				What the code says is the default. An admin page can set a rule in its place, until it is reset.
-				The server keeps that override in its memory (<a href={Paths.platform_kv}>Kv</a>), so a restart
-				brings back the code's rules. An app with a database can keep overrides across restarts and
-				deploys: list the package's plugin, <code>{"FlagStore.plugin({})"}</code>, and each override is
-				also a row of its table (<code>guard_flags</code>, for Postgres, SQLite and Turso), read back as
-				the server starts. The endpoint that sets a rule is for admins only: in the example,
-				<code>Middlewares.admins</code> answers anyone else <code>403</code>.
+				The code's rule is the default; an admin page can override it until it is reset. Overrides live in
+				the server's memory (<a href={Paths.platform_kv}>Kv</a>), so a restart brings back the code's rules.
+				To keep them across restarts and deploys, an app with a database lists
+				<code>{"FlagStore.plugin({})"}</code>: each override is also a row of its table
+				(<code>guard_flags</code>, for Postgres, SQLite and Turso), read back as the server starts. Only
+				admins may set a rule: in the example, <code>Middlewares.admins</code> answers anyone else
+				<code>403</code>.
 			</p>
 			<Code title={Sources.guard_overrides.file} source={Sources.guard_overrides.rocx} />
 			<p>
 				On the server, <code>{"FlagStore.is_on!(flag, { user, groups })"}</code> answers in an endpoint,
-				and <code>Guard.feature(flag, who)</code> keeps a route from anyone who doesn't have the flag on:
-				they get a 404, as if it weren't there.
+				and <code>Guard.feature(flag, who)</code> answers 404 to anyone without the flag, as if the route
+				weren't there.
 			</p>
 
 			<h3>In a page</h3>
 			<p>
-				The server decides the flags once for the visitor, in a GET endpoint the layout reads, and a
-				<code>{"<Flagged>"}</code> shows its children only when its flag is on. The server renders the
-				page with the flags and puts them in it, so the browser hydrates with the same values, without
-				asking again.
+				The server decides the visitor's flags once, in a GET endpoint the layout reads; a
+				<code>{"<Flagged>"}</code> shows its children only when its flag is on. The flags travel in the
+				rendered page, so the browser hydrates with the same values without asking again.
 			</p>
 			<Code title={Sources.guard_visitor.file} source={Sources.guard_visitor.rocx} />
 			<Code title={Sources.guard_layout.file} source={Sources.guard_layout.rocx} />
 			<Code title={Sources.guard_page.file} source={Sources.guard_page.rocx} />
 			<p>
-				This site has no server to ask, so the example below decides the flags where the page is
-				rendered, when the site is built. ada is listed for the new checkout; cy isn't, and isn't in the
-				quarter the rollout reaches:
+				This site has no server, so below the flags are decided as the site is built. ada is listed for the
+				new checkout; cy isn't, nor in the rollout's quarter:
 			</p>
 			<div class="guard-checkouts">
 				<GuardCheckout who={{ user: "ada", groups: [] }} />
@@ -273,9 +261,9 @@ view! = |_|
 			</TableWrap>
 			<p>
 				<code>{"<FlagsContext value={…}>"}</code> is a <a href={"${Paths.components}#contexts"}>context</a>
-				that provides the flags to every <code>{"<Flagged>"}</code> under it; the file that writes it needs
-				<code>import pf.Context</code>. Where nothing provides them, every flag is off.
-				<code>Flags.enabled(values, name)</code> reads one flag, where an <code>if</code> reads better.
+				that provides the flags to every <code>{"<Flagged>"}</code> under it (its file needs
+				<code>import pf.Context</code>). Without one, every flag is off. <code>Flags.enabled(values, name)</code>
+				reads one flag, where an <code>if</code> reads better.
 			</p>
 
 			<Heading id="guards">Other guards</Heading>
@@ -300,14 +288,13 @@ view! = |_|
 			</p>
 			<Code title="Security.headers(Security.defaults, { dev: Bool.False })" source={GuardHeaders.text} plain numbers={Bool.False} />
 			<p>
-				The Content-Security-Policy fits a Roc Solid app. Scripts and WebAssembly come from the site's
-				own origin: a page needs <code>'wasm-unsafe-eval'</code> to start its wasm under a CSP. Styles may
-				be inline too, as components write <code>{"style=\"…\""}</code>, and calls go to the site's own
-				server. <code>Security.directive</code> changes one directive (to allow images from another host,
-				say). Under <code>--dev</code> there is no <code>Strict-Transport-Security</code>, and the CSP only
-				reports: while you work, a violation shows in the console instead of breaking the page. The dev
-				server's reload script is a file of the site's own (<code>/__reload.js</code>), so it is no
-				violation.
+				The Content-Security-Policy fits a Roc Solid app: scripts and WebAssembly from the site's own
+				origin (a page needs <code>'wasm-unsafe-eval'</code> to start its wasm under a CSP), inline styles
+				(components write <code>{"style=\"…\""}</code>), and calls to the site's own server.
+				<code>Security.directive</code> changes one directive (to allow images from another host, say).
+				Under <code>--dev</code> there is no <code>Strict-Transport-Security</code>, and the CSP only
+				reports: a violation shows in the console instead of breaking the page. The dev server's reload
+				script is the site's own file (<code>/__reload.js</code>), so it is no violation.
 			</p>
 
 			<Heading id="modules">The modules</Heading>
@@ -332,9 +319,8 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				The middleware is the package's server half: <code>Guard</code> holds the guards,
-				<code>FlagStore</code> holds the flags while the server runs, and <code>Kept</code> keeps the rate
-				limits' tallies. Only the server compiles these three.
+				The server half: <code>Guard</code> holds the guards, <code>FlagStore</code> the flags while the
+				server runs, and <code>Kept</code> the rate limits' tallies. Only the server compiles these three.
 			</p>
 			<Code title={Sources.guard_middleware_api.file} source={Sources.guard_middleware_api.rocx} numbers={Bool.False} />
 			<Code title={Sources.guard_flagstore_api.file} source={Sources.guard_flagstore_api.rocx} numbers={Bool.False} />
@@ -345,12 +331,13 @@ view! = |_|
 
 			<Heading id="status">Tested, and limits</Heading>
 			<p>
-				Every module of the package is tested by its <code>expect</code>s. The middleware is tested in
-				<code>packages/guard/example/</code>, which builds, runs and is asked over HTTP. Its login limit
-				answers <code>429</code> on the sixth try, with the headers above, also to clients whose
-				<code>X-Forwarded-For</code> isn't an address, who share one count. Its admin endpoint answers
-				<code>403</code> to anyone but an admin. Its flags' overrides turn its feature route and its
-				maintenance mode on and off while it runs, and outlive a restart in its SQLite file.
+				Every module is tested by its <code>expect</code>s, and the middleware in
+				<code>packages/guard/example/</code>, asked over HTTP. Its login limit answers <code>429</code> on
+				the sixth try with the headers above, also to clients whose <code>X-Forwarded-For</code> isn't an
+				address (they share one count). Its admin endpoint answers <code>403</code> to anyone but an admin.
+				Flag overrides turn its feature route and maintenance mode on and off while it runs, and outlive a
+				restart in its SQLite file.
+
 			</p>
 			<Note>
 				The server reads a request's body, up to 16 MiB (or its <code>--max-body</code>), before any

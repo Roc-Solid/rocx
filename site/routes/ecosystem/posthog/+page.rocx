@@ -30,17 +30,16 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/posthog</code>]}
 				title="Errors in PostHog, grouped into issues, from the app itself"
 			>
-				Every 5xx answer, every error the app handles but wants seen, every job that failed for good, and every
-				uncaught error in a browser, sent to <a href="https://posthog.com/docs/error-tracking">PostHog's error
-				tracking</a> with where it happened and who it reached.
+				5xx answers, errors the app handles but wants seen, jobs that failed for good, and uncaught errors in
+				a browser, sent to <a href="https://posthog.com/docs/error-tracking">PostHog's error tracking</a> with
+				where they happened and who they reached.
 			</PageHero>
 			<p>
-				Use this package when you want to hear about an app's errors in production without reading its log.
-				It is a <a href={"${Paths.platform_server}#plugins"}>plugin</a> plus a
-				<a href={"${Paths.routing}#middleware"}>middleware</a> and two route handlers, written in Roc on top of
-				what any app can do: the platform has no error-reporting hook of its own. The middleware notices failed
-				answers, the app's routes take errors from the browser with the package's handlers, and a background
-				loop sends everything to PostHog in batches, so a request never waits on PostHog.
+				The package is a <a href={"${Paths.platform_server}#plugins"}>plugin</a>, a
+				<a href={"${Paths.routing}#middleware"}>middleware</a> and two route handlers, written in Roc on what
+				any app can do (the platform has no error-reporting hook). The middleware notices failed answers,
+				your routes take the browser's errors with the package's handlers, and a background loop sends
+				everything to PostHog in batches, so a request never waits on PostHog.
 			</p>
 
 			<Heading id="install">Installing it</Heading>
@@ -53,16 +52,16 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>The middleware</strong>, <code>PostHog.middleware(user)</code>, goes in
-					<code>routes/+middleware.roc</code>, after the middleware that knows who is asking. <code>user</code> is a function from that middleware's context to the person's
-					id. Return <code>""</code> when nobody is known; with no such middleware, put PostHog's first, with
-					<code>{"|_| \"\""}</code>.
+					<code>routes/+middleware.roc</code>, after the middleware that knows who is asking. <code>user</code>
+					maps that middleware's context to the person's id, or <code>""</code> when nobody is known. With no
+					such middleware, put PostHog's first, with <code>{"|_| \"\""}</code>.
 				</li>
 				<li>
-					<strong>The plugin</strong>, <code>{"PostHog.plugin({})"}</code>, goes in the app's plugins. It reads
-					its key from the environment (see <a href="#where">where they go</a>).
+					<strong>The plugin</strong>, <code>{"PostHog.plugin({})"}</code>, goes in the app's plugins; it reads
+					its key from the environment (<a href="#where">where they go</a>).
 				</li>
 				<li>
-					<strong>The routes</strong> for the browser's errors are yours (D-116):
+					<strong>The routes</strong> for the browser's errors are yours:
 					<code>routes/rocx-errors/+server.roc</code> answers with
 					<code>{"PostHog.errors_route!(request)"}</code>, and <code>routes/rocx-errors.js/+server.roc</code>
 					with <code>{"PostHog.script_route(request)"}</code>, the page's script, which sends to its own path
@@ -74,8 +73,8 @@ view! = |_|
 				</li>
 			</ul>
 			<p>
-				For errors in the browser, add one line to the layout:
-				<code>{"<script src=\"/rocx-errors.js\" defer></script>"}</code>. Your route serves that script.
+				For the browser's errors, add your route's script to the layout:
+				<code>{"<script src=\"/rocx-errors.js\" defer></script>"}</code>.
 			</p>
 
 			<Heading id="what">What it reports</Heading>
@@ -92,32 +91,32 @@ view! = |_|
 			</TableWrap>
 			<p>
 				A 5xx report carries the route's pattern (<code>/posts/[id]</code>, not the path with its ids), the
-				method, the status, the first line of the answer's text (unless the answer is HTML), and who asked. An
-				error from nobody known creates no person in PostHog.
+				method, the status, the first line of the answer's text (unless it is HTML), and who asked. An error
+				from nobody known creates no person in PostHog.
 			</p>
 			<p>
-				Each error is first kept in the server's memory (<a href={Paths.platform_kv}>Kv</a>, the newest 1,000).
-				A background loop sends what is kept every ten seconds, and once more as the server stops, as
-				<code>$exception</code> events to PostHog's batch endpoint.
+				Errors wait in the server's memory (<a href={Paths.platform_kv}>Kv</a>, the newest 1,000). The loop
+				sends them every ten seconds, and once more as the server stops, as <code>$exception</code> events to
+				PostHog's batch endpoint.
 			</p>
 
 			<Heading id="capture">An error the app handles</Heading>
 			<p>
 				Most of what goes wrong in a Roc app is a value, not a crash: a refusal, a database error, a fetch that
-				timed out. When the app handles one but still wants it seen, it calls <code>PostHog.capture!</code>:
+				timed out. To report one the app handles, call <code>PostHog.capture!</code>:
 			</p>
 			<Code title={"${Sources.posthog_capture.file}, in part"} source={Sources.posthog_capture.rocx} numbers={Bool.False} />
 			<p>
-				<code>capture!</code> takes a message and a record of fields, as <code>Log.error!</code> does. When it is
-				called while answering a request, the report also carries that request's path and method.
-				<code>{"PostHog.capture_for!(user, message, fields)"}</code> does the same and says which person it
-				reached, so PostHog can count the people an issue affects.
+				<code>capture!</code> takes a message and a record of fields, as <code>Log.error!</code> does. Called
+				while answering a request, it adds that request's path and method.
+				<code>{"PostHog.capture_for!(user, message, fields)"}</code> also names the person it reached, so
+				PostHog can count the people an issue affects.
 			</p>
 
 			<Heading id="where">Where they go</Heading>
 			<p>
-				Each option can be given to <code>{"PostHog.plugin({ … })"}</code> or, for the first three, set in the
-				environment. An option given in code wins.
+				Give each option to <code>{"PostHog.plugin({ … })"}</code>, or set the first three in the environment;
+				code wins.
 			</p>
 			<TableWrap>
 				<table>
@@ -131,8 +130,8 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				Without a key nothing is kept or sent, which is what you want while developing. Once the server has
-				started, it logs where errors go, or that reporting is off.
+				Without a key nothing is kept or sent, as you want while developing. At start, the server logs where
+				errors go, or that reporting is off.
 			</p>
 
 			<Heading id="issues">Issues</Heading>
@@ -147,23 +146,23 @@ view! = |_|
 				<li>a browser's error, by its type and message.</li>
 			</ul>
 			<p>
-				Parts that change from one occurrence to the next are taken out first. A word with a digit in it counts
-				as any other, so <code>user 1234 not found</code> and <code>user 77 not found</code> are one issue, and
-				so does text in double quotes or backticks.
+				Parts that change between occurrences are taken out first: any word with a digit counts as the same
+				(<code>user 1234 not found</code> and <code>user 77 not found</code> are one issue), and so does text
+				in double quotes or backticks.
 			</p>
 			<p>
-				So that a loop of errors can't flood the project, one issue is sent at most 20 times a minute, and all
-				browsers together send at most 120 errors a minute. If PostHog doesn't take a batch (it answers 5xx, or
-				doesn't answer), the batch is sent again next time. If it refuses one (a 4xx, such as a wrong key), the
-				batch is dropped and the log says so.
+				So a loop of errors can't flood the project, one issue is sent at most 20 times a minute, and all
+				browsers together send at most 120 errors a minute. A batch PostHog doesn't take (a 5xx, or no
+				answer) is sent again next time; one it refuses (a 4xx, such as a wrong key) is dropped, and the log
+				says so.
 			</p>
 
 			<Heading id="digest">A daily digest</Heading>
 			<p>
-				Errors are worth sending somewhere only if something reads them. PostHog's MCP server lists the issues
-				and how many people each reached. A scheduled agent can read it once a day, write a digest of what is
-				new or came back, and for each top issue: check out its <code>release</code>, write a failing test from
-				its route, method and fields, fix the bug on a branch and open a pull request for a person to review.
+				PostHog's MCP server lists the issues and how many people each reached. A scheduled agent can read it
+				once a day, write a digest of what is new or came back, and for each top issue check out its
+				<code>release</code>, write a failing test from its route, method and fields, fix the bug on a branch
+				and open a pull request for a person to review.
 				The <a href="https://github.com/Roc-Solid/rocx/tree/master/packages/posthog">package's README</a> has
 				the steps.
 			</p>
@@ -172,9 +171,9 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>A crash in Roc while answering a request.</strong> It ends the call before the middleware sees
-					an answer. The host answers 500 and logs <code>rocx server: Roc crashed</code>, so crashes are on the
-					server's log, not in PostHog. (A job that crashes is reported: to the jobs plugin, a crash is a
-					failure.)
+					an answer; the host answers 500 and logs <code>rocx server: Roc crashed</code>. (A job that crashes is
+					reported: to the jobs plugin, a crash is a failure.)
+
 				</li>
 				<li>
 					<strong>Some failures in the browser.</strong> A computation that fails with no
