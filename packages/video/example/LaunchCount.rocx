@@ -1,0 +1,44 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import video.Player
+import video.Timeline
+
+## A count that climbs to a thousand, eased, and a bar that fills with it.
+LaunchCount := [].{
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, .. } = Player.clock!({})
+		share! = create_memo!(|| Timeline.eased(frame!(), 0, 60, Out))
+		<div class="count">
+			<p class="number">{Timeline.round(share!() * 1000.0).to_str()} launches</p>
+			<div class="bar"><span style:width={"${(share!() * 100.0).to_str()}%"}></span></div>
+		</div>
+	}
+
+	<style>
+		.count {
+			display: grid;
+			gap: 12px;
+			width: 320px;
+		}
+
+		.number {
+			margin: 0;
+			font-size: 28px;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.bar {
+			height: 8px;
+			border-radius: 999px;
+			background: rgb(255 255 255 / 0.15);
+			overflow: hidden;
+		}
+
+		.bar span {
+			display: block;
+			height: 100%;
+			background: #a99bff;
+		}
+	</style>
+}

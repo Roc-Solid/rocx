@@ -1,0 +1,32 @@
+import pf.Html
+import video.Sequence
+import VideoChart
+import VideoTitle
+
+## A morning walk, in eight seconds at 30 frames a second: the title (frames 0 to 71), then the chart
+## (from 66, the two crossing). A composition for packages/video's `<Player>`, made of the site's own
+## components and the charts package's: the docs' video page plays it.
+VideoWalk := [].{
+	view! : {} => Html
+	view! = |{}|
+		<div class="walk">
+			<Sequence frames={72}><VideoTitle /></Sequence>
+			<Sequence from={66}><VideoChart /></Sequence>
+		</div>
+
+	<style>
+		.walk {
+			display: grid;
+			place-items: center;
+			min-height: 380px;
+			padding: var(--space-5);
+			border-radius: var(--radius);
+			background: var(--bg-sunken);
+		}
+
+		/* The scenes stack, so one fades out where the next fades in. */
+		.walk > :global(*) {
+			grid-area: 1 / 1;
+		}
+	</style>
+}

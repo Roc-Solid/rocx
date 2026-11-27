@@ -150,6 +150,32 @@ body.full .grid { padding: 1rem; }
 .exit:hover, .exit:focus-visible { opacity: 1; }
 .exit kbd { border-color: rgb(255 255 255 / 0.25); background: rgb(255 255 255 / 0.12); color: rgb(255 255 255 / 0.85); }
 body.full .exit { display: inline-flex; }
+/* A story to compare: a pin beside it in the side, and a line above the list while some are picked. */
+.stories li { position: relative; }
+.stories li > a { padding-right: 2rem; }
+.pin { position: absolute; top: 50%; right: 0.25rem; display: grid; place-items: center; width: 1.5rem; height: 1.5rem; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--faint); cursor: pointer; opacity: 0; transform: translateY(-50%); }
+.stories li:hover .pin, .pin:focus-visible, .pin.on { opacity: 1; }
+.pin:hover { background: var(--panel); color: var(--ink); }
+.pin.on { color: var(--accent); }
+.compare { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: 0 0.75rem 0.5rem; padding: 0.2rem; border-radius: 8px; background: var(--accent-soft); }
+.compare[hidden] { display: none; }
+.compare a, .compare button { display: inline-flex; align-items: center; gap: 0.45rem; height: 1.6rem; padding: 0 0.5rem; border: 0; border-radius: 6px; background: none; color: var(--accent-ink); font-weight: 600; text-decoration: none; cursor: pointer; }
+.compare a:hover, .compare button:hover { background: var(--panel); }
+.compare button { color: var(--muted); font-size: 12px; font-weight: 500; }
+
+/* Videos (packages/video's <Player>): one transport drives every player shown, so stories side by
+   side play in step. */
+.transport { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.6rem; padding: 0.45rem 0.75rem 0.45rem 1rem; border-bottom: 1px solid var(--rule); background: var(--panel); }
+.transport[hidden] { display: none; }
+.transport .play { display: grid; flex: none; place-items: center; width: 2.1rem; height: 2.1rem; padding: 0; border: 0; border-radius: 999px; background: var(--accent); color: var(--panel); cursor: pointer; }
+.transport .play:hover { background: var(--accent-ink); }
+.transport .play svg { fill: currentColor; stroke: none; }
+.transport input[type="range"] { flex: 1 1 12rem; min-width: 8rem; accent-color: var(--accent); }
+.transport .clock { color: var(--muted); font: 12px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.transport .clock strong { color: var(--ink); font-weight: 600; }
+.transport select { height: 2rem; padding: 0 0.4rem; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; }
+.transport .in-step { color: var(--faint); font-size: 12px; white-space: nowrap; }
+body.full .transport { display: none; }
 </style>
 </head>
 <body>
@@ -164,20 +190,40 @@ body.full .exit { display: inline-flex; }
 		<button class="next" id="next-new" title="Open the next story you haven't seen (N)"><span class="dot"></span><span id="new-count"></span></button>
 		<button class="seen" id="seen-all" title="Take every story's dot away">Mark all seen</button>
 	</div>
+	<div class="compare" id="compare-line" hidden>
+		<a id="compare-open" href="#" title="These stories side by side (C)"></a>
+		<button id="compare-clear" title="Take every story out of the comparison">Clear</button>
+	</div>
 	<nav id="list"></nav>
 	<a class="to-app" id="to-app" href="/"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m11 18-6-6 6-6"/><path d="M19 12H5"/></svg>Back to the app</a>
-	<div class="keys"><span><kbd>↑↓</kbd> move</span><span><kbd>N</kbd> next new</span><span><kbd>F</kbd> full screen</span><span><kbd>S</kbd> side</span></div>
+	<div class="keys"><span><kbd>↑↓</kbd> move</span><span><kbd>N</kbd> next new</span><span><kbd>P</kbd> compare</span><span><kbd>F</kbd> full screen</span><span><kbd>S</kbd> side</span><span><kbd>Space</kbd> play</span></div>
 	<div class="grip" id="grip" role="separator" aria-orientation="vertical" aria-label="The side's width" aria-valuemin="180" aria-valuemax="640" tabindex="0" title="Drag to widen; double-click to put it back"></div>
 </aside>
 <main>
 	<div class="bar" id="bar"></div>
+	<div class="transport" id="transport" hidden>
+		<button class="play" id="play" title="Play (Space)" aria-label="Play"></button>
+		<button class="icon" id="back" title="A frame back (←; a second with Shift)" aria-label="A frame back"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+		<button class="icon" id="ahead" title="A frame on (→; a second with Shift)" aria-label="A frame on"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+		<input type="range" id="scrub" min="0" max="0" step="1" value="0" aria-label="Time">
+		<span class="clock" id="clock"></span>
+		<select id="speed" aria-label="Speed" title="Speed"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+		<button class="tool on" id="loop" aria-pressed="true" title="At the end, play again from the start">Loop</button>
+		<span class="in-step" id="in-step"></span>
+		<button class="tool" id="render" title="Copy the command that renders it to MP4 and WebM (packages/video's render.mjs)" hidden>Render</button>
+	</div>
 	<div class="stage" id="stage"></div>
 </main>
 <button class="exit" id="exit" title="Leave full screen (Esc)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4"/></svg>Exit full screen <kbd>Esc</kbd></button>
 <script>
 const STORIES = @@DATA@@;
 const BASE = "/__rocx/stories";
+// packages/video's renderer, when the app names the package ("" when it doesn't).
+const RENDER = @@RENDER@@;
 const ICONS = {"chevron":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg>","panel":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M9 4v16\"/></svg>","search":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg>","expand":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4\"/></svg>","shrink":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 4v4a1 1 0 0 1-1 1H4M20 9h-4a1 1 0 0 1-1-1V4M15 20v-4a1 1 0 0 1 1-1h4M4 15h4a1 1 0 0 1 1 1v4\"/></svg>","component":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 3 20 7.5v9L12 21l-8-4.5v-9Z\"/><path d=\"m4 7.5 8 4.5 8-4.5M12 12v9\"/></svg>","draft":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M3 9h18M9 21V9\"/></svg>","book":"<svg viewBox=\"0 0 24 24\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z\"/><path d=\"M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5\"/></svg>"};
+ICONS.compare = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/></svg>';
+ICONS.play = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z"/></svg>';
+ICONS.pause = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
 const $ = (tag, attrs = {}, ...children) => {
 	const node = document.createElement(tag);
 	for (const [key, value] of Object.entries(attrs)) key.startsWith("on") ? node.addEventListener(key.slice(2), value) : node.setAttribute(key, value);
@@ -202,6 +248,11 @@ const groupOf = (key) => STORIES.filter((story) => componentKey(story) === key);
 function picked() {
 	const hash = decodeURIComponent(location.hash.slice(1));
 	if (hash.startsWith("side/") && groupOf(hash.slice(5)).length) return { side: groupOf(hash.slice(5)) };
+	if (hash.startsWith("compare/")) {
+		const ids = hash.slice(8).split(",");
+		const stories = ids.map((id) => STORIES.find((story) => story.id === id)).filter(Boolean);
+		if (stories.length) return { side: stories, compare: true };
+	}
 	return { story: STORIES.find((story) => story.id === hash) ?? STORIES[0] };
 }
 const state = (name) => sessionStorage.getItem("rocx-stories-" + name) === "yes";
@@ -323,7 +374,9 @@ function list() {
 					stories = $("ul", { class: "stories" });
 					if (open(key)) part.append(stories);
 				}
-				stories.append($("li", {}, $("a", { href: "#" + story.id, class: now.story === story ? "on" : "", title: story.name }, $("span", { class: "name" }, story.name), ...(isNew(story) ? [dot()] : []))));
+				const pinned = compared.includes(story.id);
+				const pin = $("button", { class: "pin" + (pinned ? " on" : ""), "aria-pressed": String(pinned), "aria-label": (pinned ? "Don't compare " : "Compare ") + story.name, title: pinned ? "Take it out of the comparison" : "Compare it with others (P)", onclick: () => pick(story.id) }, svg("compare"));
+				stories.append($("li", {}, $("a", { href: "#" + story.id, class: now.story === story ? "on" : "", title: story.name }, $("span", { class: "name" }, story.name), ...(isNew(story) ? [dot()] : [])), pin));
 			}
 		}
 		nav.append(part);
@@ -332,6 +385,19 @@ function list() {
 	const unseen = STORIES.filter(isNew).length;
 	document.getElementById("news").hidden = unseen === 0;
 	document.getElementById("new-count").textContent = unseen + " new";
+	document.getElementById("compare-line").hidden = compared.length === 0;
+	const opener = document.getElementById("compare-open");
+	opener.replaceChildren(svg("compare"), compared.length === 1 ? "Compare 1: pick another" : "Compare " + compared.length + " side by side");
+	opener.href = "#compare/" + compared.join(",");
+}
+// Stories picked to compare, from any component and either kind: opened side by side as a
+// component's are (videos among them play in step). Kept for the app, as what is seen is.
+let compared = kept("compare", []).filter((id) => STORIES.some((story) => story.id === id));
+function pick(id) {
+	compared = compared.includes(id) ? compared.filter((each) => each !== id) : [...compared, id];
+	keep("compare", compared.length ? compared : null);
+	if (picked().compare) location.hash = compared.length ? "compare/" + compared.join(",") : (STORIES.find((story) => story.id === id)?.id ?? "");
+	list();
 }
 // The bar: what is open (its kind, the bar in that kind's colour; its component and name), where it
 // is written, and what to do with it.
@@ -366,15 +432,18 @@ function show() {
 		stage.replaceChildren(empty);
 		return;
 	}
+	video.reset();
 	if (now.side) {
 		const first = now.side[0];
-		bar(first, [$("span", { class: "of" }, first.component), $("span", { class: "sep" }, "/"), $("strong", {}, "side by side")], $("span", { class: "where" }, first.file), []);
+		if (now.compare) bar(null, [$("strong", {}, "Comparing " + now.side.length + (now.side.length === 1 ? " story" : " stories"))], $("span", { class: "where" }, [...new Set(now.side.map((story) => story.component))].join(", ")), []);
+		else bar(first, [$("span", { class: "of" }, first.component), $("span", { class: "sep" }, "/"), $("strong", {}, "side by side")], $("span", { class: "where" }, first.file), []);
 		const grid = $("div", { class: "grid" });
 		for (const story of now.side) {
 			const frame = $("iframe", { src: BASE + "/" + story.id, title: story.name });
 			frame.addEventListener("load", () => fit(frame));
 			keysIn(frame);
-			grid.append($("section", { class: "cell" }, $("header", {}, $("span", {}, $("a", { href: "#" + story.id }, story.name), ...fresh(story)), $("span", { class: "line" }, ":" + story.line)), frame));
+			const named = now.compare ? [$("span", { class: "line" }, story.component + " /"), $("a", { href: "#" + story.id }, story.name)] : [$("a", { href: "#" + story.id }, story.name)];
+			grid.append($("section", { class: "cell" }, $("header", {}, $("span", {}, ...named, ...fresh(story)), $("span", { class: "line" }, ":" + story.line)), frame));
 		}
 		stage.replaceChildren(grid);
 		return;
@@ -392,6 +461,180 @@ function show() {
 	keysIn(frame);
 	stage.replaceChildren($("div", { class: "one" }, frame));
 }
+// Videos: a story whose page has a <Player> (packages/video) is a video, and the transport above the
+// stage drives every player shown from one clock, so stories side by side (or compared) play in
+// step: a time in milliseconds, each player sought to its frame at that time through its own
+// scrubber (`.video-seek`, as the renderer seeks it), and paused there, so a player's own clock never
+// runs. A player is driven once it is live (`data-live`: its first animation frame, so the page has
+// hydrated). Players of different lengths keep their last frame until the longest ends.
+const video = (() => {
+	const node = document.getElementById("transport");
+	const scrub = document.getElementById("scrub");
+	const play = document.getElementById("play");
+	const loop = document.getElementById("loop");
+	const speed = document.getElementById("speed");
+	const render = document.getElementById("render");
+	const clock = { t: 0, playing: true, last: 0, live: [] };
+	const fpsOf = (player) => Number(player.dataset.fps) || 30;
+	const lengthOf = (player) => (Number(player.dataset.frames) / fpsOf(player)) * 1000;
+	const players = () => {
+		const found = [];
+		for (const frame of document.querySelectorAll("#stage iframe")) {
+			let page = null;
+			try {
+				page = frame.contentDocument;
+			} catch {}
+			for (const player of page?.querySelectorAll('[data-rocx-video][data-live="yes"]') ?? []) found.push(player);
+		}
+		return found;
+	};
+	const frameAt = (player, t) => Math.max(0, Math.min(Number(player.dataset.frames) - 1, Math.floor((t * fpsOf(player)) / 1000 + 1e-6)));
+	function seek(player, t) {
+		const frame = String(frameAt(player, t));
+		if (player.dataset.frame === frame && player.dataset.playing === "no") return;
+		const input = player.querySelector(".video-seek");
+		if (!input) return;
+		input.value = frame;
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+	}
+	const time = (ms) => {
+		const seconds = Math.max(0, ms) / 1000;
+		return Math.floor(seconds / 60) + ":" + String(Math.floor(seconds % 60)).padStart(2, "0") + "." + String(Math.floor((seconds % 1) * 100)).padStart(2, "0");
+	};
+	function paint(length) {
+		const first = clock.live[0];
+		const fps = fpsOf(first);
+		scrub.max = String(Math.round(length));
+		scrub.value = String(Math.round(clock.t));
+		const said = clock.playing ? "Pause" : "Play";
+		if (play.getAttribute("aria-label") !== said || !play.firstChild) {
+			play.replaceChildren(svg(clock.playing ? "pause" : "play"));
+			play.setAttribute("aria-label", said);
+			play.title = said + " (Space)";
+		}
+		const clockText = document.getElementById("clock");
+		clockText.replaceChildren($("strong", {}, time(clock.t)), " / " + time(length) + " · frame " + frameAt(first, clock.t) + " of " + Number(first.dataset.frames) + " at " + fps + " fps");
+		document.getElementById("in-step").textContent = clock.live.length > 1 ? clock.live.length + " videos in step" : "";
+	}
+	function drive(now) {
+		const dt = clock.last ? Math.min(now - clock.last, 100) : 0;
+		clock.last = now;
+		clock.live = players();
+		node.hidden = clock.live.length === 0;
+		if (clock.live.length) {
+			const length = Math.max(...clock.live.map(lengthOf));
+			if (clock.playing) {
+				clock.t += dt * Number(speed.value);
+				if (clock.t >= length) {
+					if (loop.getAttribute("aria-pressed") === "true") clock.t = 0;
+					else {
+						clock.t = length - 1;
+						clock.playing = false;
+					}
+				}
+			}
+			clock.t = Math.max(0, Math.min(clock.t, length - 1));
+			for (const player of clock.live) seek(player, clock.t);
+			paint(length);
+			// A video at its own size gets a frame that wide, shrunk to fit (its page's media queries
+			// see the video's width, as a render does); side by side, a cell follows what it shows as
+			// its scenes come and go.
+			for (const frame of document.querySelectorAll("#stage iframe")) if (!natural(frame) && frame.closest(".cell")) fit(frame);
+			const now = picked();
+			render.hidden = !RENDER;
+			render.dataset.stories = JSON.stringify((now.side ?? [now.story]).map((story) => story.id));
+		}
+		requestAnimationFrame(drive);
+	}
+	// A story whose player lays its composition out at the video's size (`fit={Scale}`, its
+	// `data-width`) and is wider than its place: its frame is laid out at that width, and scaled down
+	// to fit (a cell as tall as the result; the one story shown, the stage's height).
+	function natural(frame) {
+		let player = null;
+		try {
+			player = frame.contentDocument?.querySelector("[data-rocx-video].video-scale");
+		} catch {}
+		const place = frame.parentElement;
+		const want = player ? Number(player.dataset.width) + 64 : 0;
+		if (!player || !place || want <= place.clientWidth) {
+			if (frame.dataset.natural) {
+				delete frame.dataset.natural;
+				for (const name of ["width", "transform", "transformOrigin", "marginBottom"]) frame.style[name] = "";
+				if (!frame.closest(".cell")) frame.style.height = "";
+			}
+			return false;
+		}
+		const scale = place.clientWidth / want;
+		frame.dataset.natural = "yes";
+		frame.style.width = want + "px";
+		frame.style.transformOrigin = "0 0";
+		frame.style.transform = "scale(" + scale + ")";
+		if (frame.closest(".cell")) {
+			let tall = 0;
+			try {
+				tall = frame.contentDocument.documentElement.scrollHeight;
+			} catch {}
+			const height = Math.min(tall || 400, 2000);
+			frame.style.height = height + "px";
+			frame.style.marginBottom = height * scale - height + "px";
+		} else frame.style.height = place.clientHeight / scale + "px";
+		return true;
+	}
+	const step = (frames) => {
+		if (!clock.live.length) return;
+		const fps = fpsOf(clock.live[0]);
+		clock.playing = false;
+		clock.t = ((frameAt(clock.live[0], clock.t) + frames) * 1000) / fps;
+	};
+	play.addEventListener("click", () => (clock.playing = !clock.playing));
+	document.getElementById("back").addEventListener("click", () => step(-1));
+	document.getElementById("ahead").addEventListener("click", () => step(1));
+	scrub.addEventListener("input", () => {
+		clock.playing = false;
+		clock.t = Number(scrub.value);
+	});
+	loop.addEventListener("click", () => {
+		const on = loop.getAttribute("aria-pressed") !== "true";
+		loop.setAttribute("aria-pressed", String(on));
+		loop.classList.toggle("on", on);
+	});
+	// The command that films each video shown, a file of each kind named after its story.
+	render.addEventListener("click", async () => {
+		const ids = JSON.parse(render.dataset.stories ?? "[]");
+		const quote = (text) => "'" + text.replaceAll("'", "'\\''") + "'";
+		const name = (id) => id.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+		const command = ids.map((id) => ["node", quote(RENDER), quote(location.origin + BASE + "/" + id), "-o", quote(name(id) + ".mp4"), "-o", quote(name(id) + ".webm")].join(" ")).join("\n");
+		try {
+			await navigator.clipboard.writeText(command);
+			render.textContent = "Copied";
+		} catch {
+			prompt("The command that renders it:", command);
+		}
+		setTimeout(() => (render.textContent = "Render"), 1500);
+	});
+	requestAnimationFrame(drive);
+	return {
+		/** Another story (or set) is shown: from the start, playing. */
+		reset() {
+			clock.t = 0;
+			clock.playing = true;
+		},
+		/** The transport's keys, while a video is shown: Space plays and pauses, ← and → step a frame
+		 * (a second with Shift), Home goes to the start. Whether it took the key. */
+		keys(event) {
+			if (!clock.live.length) return false;
+			const on = event.target?.closest?.("button, a, select, summary");
+			if (event.key === " " && !on) clock.playing = !clock.playing;
+			else if (event.key === "ArrowLeft" || event.key === "ArrowRight") step((event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? fpsOf(clock.live[0]) : 1));
+			else if (event.key === "Home") {
+				clock.playing = false;
+				clock.t = 0;
+			} else return false;
+			event.preventDefault();
+			return true;
+		},
+	};
+})();
 // Side by side, each frame is its cell's width, as a component is wherever it is put, and as tall
 // as what it shows, up to a screen's height (it scrolls past that).
 function fit(frame) {
@@ -452,6 +695,9 @@ function keys(event) {
 	else if (event.key === "f") set("full", !document.body.classList.contains("full"));
 	else if (event.key === "s") set("folded", !document.body.classList.contains("folded"));
 	else if (event.key === "n") nextNew();
+	else if (event.key === "p" && picked().story) pick(picked().story.id);
+	else if (event.key === "c" && compared.length) location.hash = "compare/" + compared.join(",");
+	else if (video.keys(event)) return;
 	else if (event.key === "/") {
 		if (document.body.classList.contains("folded")) set("folded", false);
 		document.getElementById("find").focus();
@@ -470,6 +716,11 @@ document.getElementById("find").addEventListener("keydown", (event) => {
 	if (event.key === "Enter") document.querySelector("#list a")?.click();
 });
 document.getElementById("next-new").addEventListener("click", nextNew);
+document.getElementById("compare-clear").addEventListener("click", () => {
+	compared = [];
+	keep("compare", null);
+	list();
+});
 document.getElementById("seen-all").addEventListener("click", () => {
 	see(STORIES, false);
 	list();

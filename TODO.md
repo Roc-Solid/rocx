@@ -91,6 +91,13 @@ When an item lands, delete its line here in the same commit.
 
 ## Framework work, decided but not built
 
+- **packages/video's next steps (D-126):** a player that rests on its poster under
+  `prefers-reduced-motion` (one host function reading the runtime's `reducedMotion()`; a gap for
+  any app today); one that starts as it scrolls into view (an `on:visible` primitive); real input
+  scripted at frames (a demo's clicks dispatched, replayed when scrubbed back); `rocx render` in the
+  CLI (it would drive Chromium itself); an audio track mixed in by ffmpeg; rendering on the server
+  with an app's data (a plugin with Chromium and ffmpeg beside it: a video per post), which the user
+  hasn't decided on.
 - **enhanced:src's next steps (D-125):** colours (a photo with an ICC profile, a phone's Display P3,
   is copied as if sRGB: convert it, qcms or lcms2, or keep the profile in the WebP); AVIF beside WebP
   (a `<picture>`, slow to encode); photos of listed other hosts (Open Food Facts' in Plate); a

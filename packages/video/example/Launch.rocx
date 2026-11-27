@@ -1,0 +1,45 @@
+import pf.Html
+import video.Player
+import video.Sequence
+import LaunchTitle
+import LaunchCount
+
+## Acme's launch, in four seconds at 30 frames a second: its name springs in and is typed, then a
+## count climbs. A composition is a component like any other; it reads the frame through its
+## scenes (`Player.clock!`), and `<Sequence>` gives each scene its stretch.
+Launch := [].{
+	view! : {} => Html
+	view! = |{}|
+		<div class="launch">
+			<Sequence frames={80}><LaunchTitle /></Sequence>
+			<Sequence from={40}><LaunchCount /></Sequence>
+		</div>
+
+	<story name="A bar to scrub">
+		<Player frames={120} label="Acme's launch" controls={Bar}><Launch /></Player>
+	</story>
+
+	<story name="A button in its corner">
+		<Player frames={120} label="Acme's launch"><Launch /></Player>
+	</story>
+
+	<story name="Scaled, at 640 by 360">
+		<div style="max-width: 420px">
+			<Player frames={120} width={640} height={360} fit={Scale} label="Acme's launch" controls={Bar}><Launch /></Player>
+		</div>
+	</story>
+
+	<style>
+		.launch {
+			display: grid;
+			place-content: center;
+			gap: 16px;
+			min-height: 360px;
+			padding: 32px;
+			background: linear-gradient(135deg, #10131c, #23173a);
+			color: #f5f3ff;
+			font-family: system-ui, sans-serif;
+			text-align: center;
+		}
+	</style>
+}

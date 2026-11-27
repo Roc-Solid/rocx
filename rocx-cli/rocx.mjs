@@ -80,8 +80,8 @@ export const rocFmt = (code, { roc = "roc", file = "<stdin>" } = {}) => call("ro
 export const STORIES_PATH = "/__rocx/stories";
 export const STORIES_DIR = "stories";
 export const storyIds = (stories) => call("storyIds", stories);
-export const storiesModule = (stories, { title = "app", root = process.cwd() } = {}) => call("storiesModule", stories, { title, root });
-export const catalogHtml = (stories, { title = "app", root = process.cwd() } = {}) => call("catalogHtml", stories, { title, root });
+export const storiesModule = (stories, { title = "app", root = process.cwd(), render = "" } = {}) => call("storiesModule", stories, { title, root, render });
+export const catalogHtml = (stories, { title = "app", root = process.cwd(), render = "" } = {}) => call("catalogHtml", stories, { title, root, render });
 
 // ---- routes (Routes.roc) ----
 

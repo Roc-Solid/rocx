@@ -365,7 +365,18 @@ Build := [].{
 			endpoints = !table.servers.is_empty()
 			stories_page =
 				match placed {
-					Some(ids) => [{ name: "Stories", content: Stories.stories_module(ids, title, dir) }]
+					Some(ids) => {
+						# packages/video's renderer, when the app names the package: the catalog's Render.
+						render =
+							match pkgs.find_first(|pkg| pkg.own == "video") {
+								Ok(video) => {
+									first = video.paths.first() ?? ""
+									if (first.is_empty()) "" else Fs.join([Fs.dirname(Fs.dirname(first)), "render.mjs"])
+								}
+								Err(_) => ""
+							}
+						[{ name: "Stories", content: Stories.stories_module(ids, title, dir, render) }]
+					}
 					None => []
 				}
 			# The contract (Api), and each of its endpoints with its handler (Handlers, the server's alone).

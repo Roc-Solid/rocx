@@ -1,0 +1,24 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import video.Player
+import video.Timeline
+
+## The name: it springs up into place, and is typed as it does.
+LaunchTitle := [].{
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, fps, .. } = Player.clock!({})
+		rise! = create_memo!(|| Timeline.spring(frame!(), fps))
+		<h1 class="title" style:transform={"translateY(${((1.0 - rise!()) * 48.0).to_str()}px)"} style:opacity={Timeline.keys(frame!(), [(0, 0.0), (8, 1.0), (70, 1.0), (80, 0.0)]).to_str()}>
+			{Timeline.typed("Acme Rockets", Timeline.progress(frame!(), 4, 28))}
+		</h1>
+	}
+
+	<style>
+		.title {
+			margin: 0;
+			font-size: 56px;
+			letter-spacing: -0.02em;
+		}
+	</style>
+}

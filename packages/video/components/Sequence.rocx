@@ -1,0 +1,40 @@
+import pf.Html
+import pf.Context
+import pf.Solid exposing [create_memo!, use_context!]
+import Player
+import video.Timeline
+
+## A stretch of a video: what is inside shows from frame `from` for `frames` frames (to the end
+## when it says none), and reads its own clock there, its frames counted from its start. A scene
+## written for frame 0 plays wherever a sequence puts it, and sequences nest.
+##
+## ```rocx
+## <Player frames={300}>
+##     <Sequence frames={90}><Title /></Sequence>
+##     <Sequence from={90}><Demo /></Sequence>
+## </Player>
+## ```
+##
+## What is inside is made as its stretch starts and goes as it ends, so its transitions in and out
+## play there, as an `if` plays them. With `hold`, it shows all along instead: before its stretch
+## as at its first frame, after it as at its last, as three steps side by side each wait for their
+## turn and then stay done.
+Sequence := [].{
+	Props := { from : U64 ?? 0, frames : U64 ?? 0, hold : Bool ?? Bool.False, children : List(Html) }
+
+	view! : Props => Html
+	view! = |{ from, frames, hold, children }| {
+		outer = use_context!(Player.clock_context)
+		start = from
+		length = if (frames > 0) frames else if (outer.frames > start) outer.frames - start else 0
+		last = if (length == 0) 0 else length - 1
+		local! = create_memo!(|| U64.min(Timeline.since((outer.frame!)(), start), last))
+		shown! = create_memo!(
+			|| {
+				at = (outer.frame!)()
+				hold or (at >= start and at < start + length)
+			},
+		)
+		<>{=if (shown!()) <ClockContext value={{ frame!: local!, fps: outer.fps, frames: length }}>{...children}</ClockContext> else <></>}</>
+	}
+}

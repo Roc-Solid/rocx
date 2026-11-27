@@ -366,10 +366,20 @@ view! = |_|
 				</li>
 				<li>A component's name shows all its stories side by side.</li>
 				<li>
+					The pin beside a story (<kbd>P</kbd>) picks it to compare, from any component, and
+					"Compare … side by side" (<kbd>C</kbd>) opens the picked ones together.
+				</li>
+				<li>
+					A story with a <a href={Paths.ecosystem_video}>video</a> in it gets a transport: play and pause
+					(<kbd>Space</kbd>), a frame at a time (<kbd>←</kbd> and <kbd>→</kbd>), a scrubber, a speed and
+					looping. Every video shown follows it, so videos side by side play in step. Render copies the
+					command that films them.
+				</li>
+				<li>
 					A dot marks a story the browser hasn't shown yet, and its component and part: <kbd>N</kbd>
 					opens the next, and searching for <code>new</code> lists them.
 				</li>
-				<li>The browser remembers what it has seen, what is folded and the width.</li>
+				<li>The browser remembers what it has seen, what is folded, what is picked and the width.</li>
 			</ul>
 			<p>
 				Each story is the app's page at its own path (<code>/__rocx/stories/…</code>), rendered in the root

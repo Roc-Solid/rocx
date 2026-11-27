@@ -20,8 +20,8 @@ Roc Solid has three parts:
   GitHub, OpenID Connect), payments and subscriptions through Stripe, Claude from the server (streamed
   answers, typed answers, the app's functions as tools, agents as tools), charts, forms, Markdown, intl, an admin, guards (rate limits, feature
   flags), jobs and cron, email, MCP, presence, Web Push, OpenTelemetry, PostHog error tracking,
-  storage (S3, files, memory), crypto, QR codes, audio, vibration, testing helpers and virtual
-  lists.
+  storage (S3, files, memory), crypto, QR codes, audio, vibration, testing helpers, virtual
+  lists, and videos made of components (played live, or rendered to MP4 and WebM).
 
 ## How it works
 
@@ -317,6 +317,12 @@ a story by its path (`/__rocx/stories/…`).
 An app's `stories/` directory holds modules of stories alone, such as drafts of a page side by side.
 Only a dev build includes it, so nothing in it is published (`site/stories/Landing.rocx` holds the
 front page and drafts of it in other themes).
+
+Any stories can be compared side by side: the pin beside a story (or `P`) picks it, from any
+component, and "Compare … side by side" (`C`) opens the picked ones. A story with a video in it
+([packages/video](packages/video)'s `<Player>`) gets a transport: play and pause (`Space`), a frame
+at a time (`←`, `→`), a scrubber, a speed and looping. Every video shown follows that one clock, so
+videos side by side play in step, and Render copies the command that films them to MP4 and WebM.
 
 ### Packages with components
 
@@ -1141,7 +1147,7 @@ browser runtime's engine. See `spike/native-apps/README.md` and `examples/pomodo
 | `packages/ai` | Claude from the server, through Anthropic's Messages API: an answer whole (`Ai.ask!`), streamed to a page as it is written (`Ai.stream!`), read into a Roc type (`Ai.extract!`), a model that uses the app's functions as tools, packages/tools' `Tool`s (`Ai.run!`), and agents, each usable as another's tool (`Agent`); conversations kept exactly (`Message`), each turn's tokens on the log (`Ai.plugin`) |
 | `packages/tools` | What a tool is, for a model to use (`Tool`, what it answers, `Content`, and any JSON, `JsonValue`), on no platform: packages/ai gives tools to Claude and packages/mcp serves the same tools over MCP |
 | `packages/storage`, `crypto`, `qr` | Files in a bucket whose URL says where (S3, a directory, memory) with signed URLs; SHA-256, HMAC, HKDF, Base64 and hex in plain Roc (and SHA-1 and Base32, for authenticator codes); QR codes and `<QrCode>` |
-| `packages/admin`, `guard`, `intl`, `markdown`, `mcp`, `otel`, `posthog`, `presence`, `testing`, `virtual` | A Django-style admin for the app's tables (and the jobs page); rate limits, feature flags and request guards; formatting and translations; Markdown with typed frontmatter; an MCP server; OpenTelemetry metrics and logs; PostHog error tracking; who is here; test helpers; virtual lists |
+| `packages/admin`, `guard`, `intl`, `markdown`, `mcp`, `otel`, `posthog`, `presence`, `testing`, `video`, `virtual` | A Django-style admin for the app's tables (and the jobs page); rate limits, feature flags and request guards; formatting and translations; Markdown with typed frontmatter; an MCP server; OpenTelemetry metrics and logs; PostHog error tracking; who is here; test helpers; videos made of components, played live or rendered to MP4 and WebM; virtual lists |
 | `packages/dbcheck` | What `rocx check --sql` checks rows with; apps don't import it |
 | `examples/` | Whole apps, each with its README and tests ([Examples](#examples)) |
 | `templates/` | The app `rocx new` copies (`templates/app`), and its tests (`templates/test`) |

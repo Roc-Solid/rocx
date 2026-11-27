@@ -1,0 +1,52 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import video.Player
+import video.Timeline
+import ../Ui/Logo
+
+## The video's first scene: the site's own mark springs in, and the title and its line are typed.
+VideoTitle := [].{
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, fps, .. } = Player.clock!({})
+		pop! = create_memo!(|| Timeline.spring(frame!(), fps))
+		<div class="scene" style:opacity={Timeline.keys(frame!(), [(0, 0.0), (6, 1.0), (62, 1.0), (72, 0.0)]).to_str()}>
+			<span class="mark" style:transform={"scale(${pop!().to_str()})"}><Logo /></span>
+			<p class="title">{Timeline.typed("Birds on a morning walk", Timeline.progress(frame!(), 8, 34))}</p>
+			<p class="line">{Timeline.typed("Three mornings, one chart", Timeline.progress(frame!(), 34, 54))}</p>
+		</div>
+	}
+
+	<style>
+		.scene {
+			display: grid;
+			justify-items: center;
+			gap: var(--space-2);
+			text-align: center;
+		}
+
+		.mark {
+			display: block;
+			width: 72px;
+			height: 72px;
+		}
+
+		.mark :global(.logo) {
+			width: 100%;
+			height: 100%;
+		}
+
+		.title {
+			min-height: 1.2em;
+			margin: var(--space-2) 0 0;
+			font: 700 var(--size-2xl) / 1.15 var(--font);
+			letter-spacing: -0.02em;
+		}
+
+		.line {
+			min-height: 1.4em;
+			margin: 0;
+			color: var(--text-muted);
+		}
+	</style>
+}

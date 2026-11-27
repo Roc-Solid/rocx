@@ -115,9 +115,11 @@ Stories := [].{
 	}
 
 	## Generated/Stories.roc: the catalog's page, which Generated/Routes answers /__rocx/stories with.
-	stories_module : List(Placed), Str, Str -> Str
-	stories_module = |stories, title, root| {
-		html = Stories.catalog_html(stories, title, root)
+	## `render` is packages/video's renderer (`render.mjs`) when the app names that package, else "":
+	## the catalog's Render copies the command that films a story's video with it.
+	stories_module : List(Placed), Str, Str, Str -> Str
+	stories_module = |stories, title, root, render| {
+		html = Stories.catalog_html(stories, title, root, render)
 		quoted = Str.join_with(html.split_on("\n").map(|line| "\t\t${Text.roc_string(line)},"), "\n")
 		Str.join_with(
 			[
@@ -161,16 +163,18 @@ Stories := [].{
 
 	## The catalog: a page of its own (rocx-cli/catalog.html), whose script needs nothing but the list it
 	## is given.
-	catalog_html : List(Placed), Str, Str -> Str
-	catalog_html = |stories, title, root| {
+	catalog_html : List(Placed), Str, Str, Str -> Str
+	catalog_html = |stories, title, root, render| {
 		titled = Stories.escape_html(title)
 		data = Stories.catalog_data(stories, root)
+		renderer = Value.encode(Text(render)).replace_each("<", "\\u003c")
 		# The template's places, filled once each, in order: what fills one isn't read for the next.
 		around_title = catalog_template.split_on("@@TITLE@@")
 		head = around_title.get(0) ?? ""
 		middle = around_title.get(1) ?? ""
 		around_data = (around_title.get(2) ?? "").split_on("@@DATA@@")
-		head.concat(titled).concat(middle).concat(titled).concat(around_data.get(0) ?? "").concat(data).concat(around_data.get(1) ?? "")
+		around_render = (around_data.get(1) ?? "").split_on("@@RENDER@@")
+		head.concat(titled).concat(middle).concat(titled).concat(around_data.get(0) ?? "").concat(data).concat(around_render.get(0) ?? "").concat(renderer).concat(around_render.get(1) ?? "")
 	}
 
 	## A story from the JSON rocx internal is given.
@@ -216,6 +220,7 @@ Stories := [].{
 		options = arg(1)
 		title = Value.str_or(Value.field(options, "title"), "app")
 		root = Value.str_or(Value.field(options, "root"), ".")
+		render = Value.str_or(Value.field(options, "render"), "")
 		match name {
 			"storyIds" => {
 				given = Value.items(arg(0))
@@ -224,8 +229,8 @@ Stories := [].{
 					Err(Problem(message)) => Err(Failed(Value.problem(message)))
 				}
 			}
-			"storiesModule" => Ok(Text(Stories.stories_module(Value.items(arg(0)).map(Stories.listed_of), title, root)))
-			"catalogHtml" => Ok(Text(Stories.catalog_html(Value.items(arg(0)).map(Stories.listed_of), title, root)))
+			"storiesModule" => Ok(Text(Stories.stories_module(Value.items(arg(0)).map(Stories.listed_of), title, root, render)))
+			"catalogHtml" => Ok(Text(Stories.catalog_html(Value.items(arg(0)).map(Stories.listed_of), title, root, render)))
 			_ => Err(Unknown(name))
 		}
 	}

@@ -100,6 +100,8 @@ SiteSources := [].{
 		Picks("charts_use_sparkline", "site/Demos/SparkDemo.rocx", [["import charts.Format", "import charts.Sparkline"], ["<Sparkline data!="]]),
 		Picks("charts_use_heatmap", "site/Demos/HeatDemo.rocx", [["import charts.Format", "import charts.Heatmap"], ["<Heatmap data!="]]),
 		Picks("virtual_use", "site/Demos/RowsDemo.rocx", [["import virtual.Rows", "import virtual.VirtualList"], ["<VirtualList count=", "{|row|", "</VirtualList>"]]),
+		Whole("video_title", "site/Demos/VideoTitle.rocx"),
+		Whole("video_walk", "site/Demos/VideoWalk.rocx"),
 		Picks("qr_use", "site/Demos/QrDemo.rocx", [["import qr.Qr", "import qr.QrCode"], ["<QrCode text="]]),
 		Picks("charts_use_scatter", "site/Demos/ScatterDemo.rocx", [["import charts.Format", "import charts.ScatterChart"], ["<ScatterChart", "data!=", "label=", "format_x=", "format_y=", "/>"]]),
 		Whole("demo_shuffle", "site/Demos/Shuffle.rocx"),

@@ -1,0 +1,22 @@
+import pf.Html
+import video.Player
+import VideoWalk
+
+## The video page's demo: the walk (`VideoWalk`) in a player with a bar to play, pause and scrub it.
+## Its stories play it as a page would, and at a video's size.
+VideoDemo := [].{
+	view! : {} => Html
+	view! = |{}| <Player frames={240} controls={Bar} label="Birds on a morning walk, in eight seconds"><VideoWalk /></Player>
+
+	<story name="A bar to scrub">
+		<VideoDemo />
+	</story>
+
+	<story name="A button in its corner">
+		<Player frames={240} label="Birds on a morning walk, in eight seconds"><VideoWalk /></Player>
+	</story>
+
+	<story name="At 1280 by 720, scaled">
+		<Player frames={240} width={1280} height={720} fit={Scale} controls={Bar} label="Birds on a morning walk, in eight seconds"><VideoWalk /></Player>
+	</story>
+}

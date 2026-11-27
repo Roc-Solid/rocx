@@ -1,0 +1,268 @@
+import pf.Html
+import pf.Context
+import pf.Solid exposing [create_signal!, use_context!]
+
+## A video made of components, played in the page: `frames` frames, `fps` a second, its moment a
+## signal that its composition reads (`Player.clock!`), so each frame is what the components inside
+## render for it. The same composition is a file once rendered (packages/video's `render.mjs` films
+## a `<Player>` a frame at a time), and stays live in the page: when a component changes, the video
+## does too.
+##
+## ```rocx
+## <Player frames={360} fps={30} label="How it works">
+##     <HowItWorks />
+## </Player>
+## ```
+##
+## The server renders the poster frame (`poster`, the last unless it says), and so does the browser
+## as it hydrates. Then, with `autoplay` (the default), it plays from the start on its first
+## animation frame, again from the start when it ends (`loop`, the default), or stops on its last.
+## Its controls: a button in its corner that plays and pauses (`Corner`, the default: anything
+## that moves for more than five seconds by itself needs one), a bar with a scrubber and the time
+## (`Bar`), or none (`Hidden`). Every player has a scrubber, shown with `Bar` and hidden otherwise,
+## which drives it from outside: the stories' catalog and the renderer seek with it, once the player
+## is live (`data-live="yes"`, from its first animation frame). Its element says where it is
+## (`data-frame`, `data-playing`) and what it plays (`data-fps`, `data-frames`, `data-width`,
+## `data-height`).
+##
+## `fit`: `Flow` lays the composition out as any markup at the player's width, and `width` and
+## `height` are only the size a render films it at; `Scale` lays it out at `width` by `height`
+## pixels and scales it to the player's width, as a video is.
+Player := [].{
+
+	## What a composition reads to know its moment: the frame shown (from 0; a getter that tracks,
+	## so read it in a hole or a memo), how many frames a second, and how many frames in all. Inside a
+	## `<Sequence>`, the sequence's: its frames from its start.
+	Clock : { frame! : () => U64, fps : U64, frames : U64 }
+
+	clock_context : Context(Clock)
+	clock_context = create_context()
+
+	## The clock of the `<Player>`, or the `<Sequence>`, around the component calling it, in its
+	## body. Nothing around it is an error, which the nearest `<Errored>` shows.
+	clock! : {} => Clock
+	clock! = |{}| use_context!(clock_context)
+
+	## The frame shown before it plays, by the server and as the page hydrates, and when nothing
+	## plays it: the first, the last, or another.
+	Poster : [Start, End, Frame(U64)]
+
+	## How it is played and paused: a button in its corner, a bar with a scrubber and the time, or
+	## nothing to see.
+	Controls : [Corner, Bar, Hidden]
+
+	## How the composition is laid out: as any markup, at the player's width (`Flow`), or at the
+	## video's size and scaled to the player's width (`Scale`).
+	Fit : [Flow, Scale]
+
+	Props := {
+		frames : U64,
+		fps : U64 ?? 30,
+		width : U64 ?? 1280,
+		height : U64 ?? 720,
+		autoplay : Bool ?? Bool.True,
+		loop : Bool ?? Bool.True,
+		poster : Poster ?? End,
+		controls : Controls ?? Corner,
+		fit : Fit ?? Flow,
+		label : Str ?? "",
+		class : Str ?? "",
+		children : List(Html),
+	}
+
+	view! : Props => Html
+	view! = |{ frames, fps, width, height, autoplay, loop, poster, controls, fit, label, class, children }| {
+		rate = if (fps == 0) 30 else fps
+		last = if (frames == 0) 0 else frames - 1
+		still =
+			match poster {
+				Start => 0
+				End => last
+				Frame(at) => U64.min(at, last)
+			}
+		(frame!, set_frame!) = create_signal!(still)
+		(playing!, set_playing!) = create_signal!(Bool.False)
+		# Read by nothing shown: whether it has had its first animation frame (it is in a browser, and
+		# hydrated), and how far into the video it is, in milliseconds, between frames.
+		(started!, set_started!) = create_signal!(Bool.False)
+		(elapsed!, set_elapsed!) = create_signal!(0.0)
+		(scale!, set_scale!) = create_signal!(1.0)
+		go_to! = |at| {
+			set_frame!(at)
+			set_elapsed!(at.to_f64() * 1000.0 / rate.to_f64())
+		}
+		tick! = |ms| {
+			if !started!() {
+				set_started!(Bool.True)
+				if autoplay {
+					go_to!(0)
+					set_playing!(Bool.True)
+				}
+			} else if playing!() {
+				ahead = elapsed!() + ms
+				reached = Player.whole(ahead * rate.to_f64() / 1000.0)
+				if reached <= last {
+					set_elapsed!(ahead)
+					if (reached != frame!()) set_frame!(reached) else {}
+				} else if loop {
+					go_to!(0)
+				} else {
+					go_to!(last)
+					set_playing!(Bool.False)
+				}
+			}
+		}
+		toggle! = || {
+			set_started!(Bool.True)
+			if playing!() {
+				set_playing!(Bool.False)
+			} else {
+				if (frame!() >= last) go_to!(0) else {}
+				set_playing!(Bool.True)
+			}
+		}
+		# The scrubber's, and what drives the player from outside: a frame, and paused there.
+		seek! = |text| {
+			set_started!(Bool.True)
+			set_playing!(Bool.False)
+			go_to!(U64.min(Player.digits(text), last))
+		}
+		measured! = |view| {
+			if fit == Scale and width > 0 and view.width > 0 {
+				set_scale!(view.width.to_f64() / width.to_f64())
+			}
+		}
+		<div
+			class={"video ${if (fit == Scale) "video-scale" else "video-flow"} ${class}"}
+			role="group"
+			aria-roledescription="video"
+			aria-label??={label}
+			data-rocx-video=""
+			data-fps={rate.to_str()}
+			data-frames={frames.to_str()}
+			data-width={width.to_str()}
+			data-height={height.to_str()}
+			data-frame={frame!().to_str()}
+			data-playing={if (playing!()) "yes" else "no"}
+			data-live={if (started!()) "yes" else "no"}
+			style:--video-width={"${width.to_str()}px"}
+			style:--video-height={"${height.to_str()}px"}
+			style:--video-ratio={Player.ratio(width, height)}
+			style:--video-scale={scale!().to_str()}
+			on:viewport={measured!}
+		>
+			<div class="video-stage" on:frame.ms={tick!}>
+				<ClockContext value={{ frame!: frame!, fps: rate, frames: frames }}>{...children}</ClockContext>
+			</div>
+			<div class={"video-controls video-controls-${Player.controls_name(controls)}"}>
+				<button class="video-toggle" type="button" on:click={toggle!} aria-label={if (playing!()) "Pause" else "Play"} hidden?={controls == Hidden}>
+					{=if (playing!())
+						<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+					else
+						<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" /></svg>}
+				</button>
+				<input class="video-seek" type="range" min="0" max={last.to_str()} step="1" value={frame!().to_str()} aria-label="Position" aria-valuetext={Player.time(frame!(), rate)} on:input.value={seek!} hidden?={controls != Bar} />
+				<span class="video-time" hidden?={controls != Bar}>{"${Player.time(frame!(), rate)} / ${Player.time(frames, rate)}"}</span>
+			</div>
+		</div>
+	}
+
+	## `value` rounded down to a whole number, 0 below 0.
+	whole : F64 -> U64
+	whole = |value| if (value <= 0.0) 0 else (value.div_floor_by(1.0).round_to_u64_try() ?? 0)
+
+	## A width over a height, as CSS's `aspect-ratio` takes it: one number (a `/` doesn't pass
+	## through a computed style).
+	ratio : U64, U64 -> Str
+	ratio = |width, height| if (height == 0) "1" else (width.to_f64() / height.to_f64()).to_str()
+
+	## The whole number `text` writes (its digits alone; none is 0): the scrubber's value.
+	digits : Str -> U64
+	digits = |text| text.to_utf8().fold(0, |n, b| if (b >= '0' and b <= '9') n * 10 + (b - '0').to_u64() else n)
+
+	## A frame as the time it is shown at, in minutes and seconds: `0:04`.
+	time : U64, U64 -> Str
+	time = |frame, fps| {
+		seconds = frame // (if (fps == 0) 30 else fps)
+		minutes = seconds // 60
+		rest = seconds % 60
+		"${minutes.to_str()}:${if (rest < 10) "0" else ""}${rest.to_str()}"
+	}
+
+	controls_name : Controls -> Str
+	controls_name = |controls|
+		match controls {
+			Corner => "corner"
+			Bar => "bar"
+			Hidden => "hidden"
+		}
+
+	<style>
+		.video {
+			position: relative;
+		}
+
+		.video-scale {
+			overflow: hidden;
+			aspect-ratio: var(--video-ratio);
+		}
+
+		.video-scale > .video-stage {
+			width: var(--video-width);
+			height: var(--video-height);
+			transform: scale(var(--video-scale));
+			transform-origin: 0 0;
+		}
+
+		.video-controls-corner {
+			position: absolute;
+			right: 10px;
+			bottom: 10px;
+		}
+
+		.video-controls-bar {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 8px 2px 0;
+			font: 500 13px / 1 system-ui, sans-serif;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.video-toggle {
+			display: grid;
+			place-items: center;
+			width: 32px;
+			height: 32px;
+			padding: 0;
+			border: 0;
+			border-radius: 999px;
+			background: color-mix(in srgb, currentColor 14%, transparent);
+			color: inherit;
+			cursor: pointer;
+			opacity: 0.55;
+			transition: opacity 0.15s;
+		}
+
+		.video-toggle svg {
+			fill: currentColor;
+		}
+
+		.video:hover .video-toggle,
+		.video-toggle:focus-visible,
+		.video-controls-bar .video-toggle {
+			opacity: 1;
+		}
+
+		.video-seek {
+			flex: 1;
+			min-width: 0;
+			accent-color: var(--video-accent, currentColor);
+		}
+
+		.video-time {
+			opacity: 0.75;
+			white-space: nowrap;
+		}
+	</style>
+}

@@ -195,6 +195,86 @@ test("stories: the catalog marks the stories this browser hasn't shown as new, f
 	}
 });
 
+test("stories: videos shown together play in step from one transport, which pauses, seeks and steps them; stories from anywhere are compared side by side", { skip: !findChrome() && "no Chromium (set CHROME)" }, async () => {
+	const html = catalogHtml(
+		[
+			{ id: "Intro/wide", file: "Intro.rocx", component: "Intro", name: "Wide", line: 5 },
+			{ id: "Intro/tall", file: "Intro.rocx", component: "Intro", name: "Tall", line: 9 },
+			{ id: "Ui/Badge/label", file: "Ui/Badge.rocx", component: "Badge", name: "Label", line: 4 },
+		],
+		{ title: "site", root: "/app", render: "/rocx/packages/video/render.mjs" },
+	);
+	assert.match(html, /const RENDER = "\/rocx\/packages\/video\/render.mjs";/);
+	// A story with a player as packages/video renders one: live, its scrubber seeks it and pauses it,
+	// and its element says where it is.
+	const player = (frames, scaled = false) =>
+		`<!doctype html><div class="video${scaled ? " video-scale" : ""}" data-rocx-video="" data-live="yes" data-fps="30" data-frames="${frames}" data-width="1920" data-frame="${frames - 1}" data-playing="yes"><input class="video-seek" type="range" hidden></div>` +
+		`<script>const p = document.querySelector("[data-rocx-video]"); p.querySelector("input").addEventListener("input", (e) => { p.dataset.frame = e.target.value; p.dataset.playing = "no"; });</script>`;
+	const pages = { "/__rocx/stories": html, "/__rocx/stories/Intro/wide": player(90, true), "/__rocx/stories/Intro/tall": player(60) };
+	const server = createServer((request, response) => {
+		response.setHeader("content-type", "text/html; charset=utf-8");
+		response.end(pages[request.url] ?? `<!doctype html><title>${request.url}</title><p>a story</p>`);
+	});
+	await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const url = `http://127.0.0.1:${server.address().port}/__rocx/stories`;
+	const browser = await launch();
+	try {
+		const page = await browser.page();
+		const frames = () => page.eval(`[...document.querySelectorAll("#stage iframe")].map((frame) => Number(frame.contentDocument.querySelector("[data-rocx-video]")?.dataset.frame ?? -1))`);
+		const seek = (ms) => page.eval(`(() => { const scrub = document.getElementById("scrub"); scrub.value = "${ms}"; scrub.dispatchEvent(new Event("input")); })()`);
+		// Both of Intro's stories side by side: the transport shows, and plays them from the start in step.
+		await page.goto(`${url}#side/Intro.rocx%23Intro`);
+		await page.wait(`!document.getElementById("transport").hidden && document.getElementById("play").getAttribute("aria-label") === "Pause"`);
+		assert.equal(await page.eval(`document.getElementById("in-step").textContent`), "2 videos in step");
+		// The one laid out at 1920 pixels (fit={Scale}) gets a frame that wide, shrunk to its cell; the
+		// other is its cell's width.
+		await page.wait(`document.querySelector("#stage iframe").dataset.natural === "yes"`);
+		assert.deepEqual(await page.eval(`[...document.querySelectorAll("#stage iframe")].map((frame) => [frame.style.width, frame.style.transform.startsWith("scale(0.")])`), [["1984px", true], ["", false]]);
+		await page.wait(`(() => { const f = [...document.querySelectorAll("#stage iframe")].map((frame) => Number(frame.contentDocument.querySelector("[data-rocx-video]").dataset.frame)); return f[0] > 3 && f[0] < 50; })()`);
+		await page.click("#play");
+		const paused = await frames();
+		assert.equal(paused[0], paused[1], `in step: ${paused}`);
+		await new Promise((resolve) => setTimeout(resolve, 150));
+		assert.deepEqual(await frames(), paused, "paused, they stay");
+		// Seeking: a second in is frame 30 of each; a frame on with →, a second on with Shift+→.
+		await seek(1000);
+		await page.wait(`document.querySelector("#stage iframe").contentDocument.querySelector("[data-rocx-video]").dataset.frame === "30"`);
+		assert.deepEqual(await frames(), [30, 30]);
+		await page.press("ArrowRight");
+		await page.wait(`document.querySelector("#stage iframe").contentDocument.querySelector("[data-rocx-video]").dataset.frame === "31"`);
+		assert.deepEqual(await frames(), [31, 31]);
+		// Past the shorter one's end, it keeps its last frame while the longer plays on.
+		await seek(2500);
+		await page.wait(`document.querySelector("#stage iframe").contentDocument.querySelector("[data-rocx-video]").dataset.frame === "75"`);
+		assert.deepEqual(await frames(), [75, 59]);
+		assert.match(await page.eval(`document.getElementById("clock").textContent`), /^0:02\.50 \/ 0:03\.00 · frame 75 of 90 at 30 fps$/);
+		assert.equal(await page.eval(`document.getElementById("render").hidden`), false);
+		assert.deepEqual(JSON.parse(await page.eval(`document.getElementById("render").dataset.stories`)), ["Intro/wide", "Intro/tall"]);
+
+		// Comparing: a story from one component and one from another, picked in the side, then opened.
+		await page.goto(`${url}#Ui/Badge/label`);
+		await page.eval(`document.querySelector('#list .pin[aria-label="Compare Label"]').click()`);
+		await page.eval(`document.querySelector('#list .pin[aria-label="Compare Wide"]').click()`);
+		assert.equal(await page.eval(`document.getElementById("compare-open").textContent`), "Compare 2 side by side");
+		await page.click("#compare-open");
+		await page.wait(`document.querySelectorAll("#stage .cell").length === 2`);
+		assert.deepEqual(await page.eval(`[...document.querySelectorAll("#stage .cell header a")].map((a) => a.textContent)`), ["Label", "Wide"]);
+		assert.match(await page.eval(`document.getElementById("bar").textContent`), /Comparing 2 stories/);
+		// One video among them: the transport drives it alone.
+		await page.wait(`!document.getElementById("transport").hidden`);
+		assert.equal(await page.eval(`document.getElementById("in-step").textContent`), "");
+		// Kept for the app: a reload still has both picked; Clear takes them out.
+		await page.goto(url);
+		assert.equal(await page.eval(`document.getElementById("compare-line").hidden`), false);
+		await page.click("#compare-clear");
+		assert.equal(await page.eval(`document.getElementById("compare-line").hidden`), true);
+		assert.deepEqual(page.errors, [], "the catalog threw nothing");
+	} finally {
+		await browser.close();
+		server.close();
+	}
+});
+
 test("stories: a dev build's Routes answers them: the catalog, and each story, the app's page, which Root renders in the root layout; another build's has none", () => {
 	const table = routeTable(["+layout.rocx", "+page.rocx"]);
 	const sources = new Map([

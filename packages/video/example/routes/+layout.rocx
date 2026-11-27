@@ -1,0 +1,20 @@
+import pf.Html
+import ../Generated/Styles
+
+## Every page: the document around it, with the stylesheet every component's `<style>` is in
+## (`Generated/Styles`): the player's and the composition's.
+view! = |{ children, .. }|
+	<>
+		<!doctype html>
+		<html lang="en">
+			<head>
+				<meta charset="utf-8" />
+				<meta name="viewport" content="width=device-width, initial-scale=1" />
+				<title>Video</title>
+				<NoHydration>{Styles.style}</NoHydration>
+			</head>
+			<body>
+				{...children}
+			</body>
+		</html>
+	</>

@@ -1,0 +1,9 @@
+# Written by rocx build, beside each component's .rocx
+Launch.roc
+LaunchCount.roc
+LaunchTitle.roc
+Generated/
+dist/
+# Written by the tests (buildForTests), and the database a run makes
+build/
+data/

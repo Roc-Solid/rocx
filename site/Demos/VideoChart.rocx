@@ -1,0 +1,41 @@
+import pf.Html
+import pf.Solid exposing [create_memo!]
+import charts.BarChart
+import charts.Format
+import video.Player
+import video.Timeline
+import BarDemo
+
+## The video's second scene: three mornings' counts (the charts page's walks), a new one every two
+## seconds. Nothing here moves the bars: the chart glides to each morning by its own animation, as
+## it does on the charts page, and a render plays that on the renderer's clock.
+VideoChart := [].{
+	mornings : List(BarDemo.Walk)
+	mornings = [BarDemo.walk(2026), BarDemo.walk(41), BarDemo.walk(7)]
+
+	view! : {} => Html
+	view! = |{}| {
+		{ frame!, .. } = Player.clock!({})
+		morning! = create_memo!(|| U64.min(frame!() // 60, 2))
+		<div class="scene" style:opacity={Timeline.keys(frame!(), [(0, 0.0), (8, 1.0)]).to_str()}>
+			<p class="caption">{"Morning ${(morning!() + 1).to_str()} of 3"}</p>
+			<BarChart
+				data!={(VideoChart.mornings.get(morning!()) ?? BarDemo.walk(2026)).birds}
+				label="Birds counted on three morning walks, by kind"
+				format={|count| Format.num(count, 0)}
+			/>
+		</div>
+	}
+
+	<style>
+		.scene {
+			width: min(100%, 560px);
+		}
+
+		.caption {
+			margin: 0 0 var(--space-2);
+			color: var(--text-muted);
+			font-variant-numeric: tabular-nums;
+		}
+	</style>
+}

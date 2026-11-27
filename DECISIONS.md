@@ -7110,3 +7110,58 @@ bigger by the image code when an app uses it. A photo whose colours are in anoth
 `src` the browser changes shows that `src` alone.
 
 **Reversible:** yes.
+
+## D-126 Videos made of components: packages/video, a player, a renderer, and the stories' transport
+
+**Status.** Built (2026-11-27), on the user's ask: a Remotion-like way to make videos of an app's
+real components, so a video changes when they do; both motion pieces (written from the frame) and
+demos of the real screens; MP4 and WebM; live motion embedded in a page too; and the catalog making
+it easy to compare videos side by side, playing at once. Whether to render on the server with an
+app's data is open.
+
+**Context.** Remotion makes videos of React components: `useCurrentFrame()`, `<Sequence>`,
+`interpolate` and `spring`, a `<Player>` for a page, and a renderer that films each frame in a
+headless Chrome and encodes it with ffmpeg. It forbids CSS animations, since its renderer can't seek
+them. The stories (`<story>`, the dev build's catalog) already render a component in isolation, in
+the app's layout, at a URL of its own, only in a dev build: what a composition needs, but for time.
+
+**Decision.** A package, not the platform (the app-layer-first rule): nothing in it needs the host.
+
+- `video.Timeline`, plain Roc: `progress`, `ease` (`Linear`, `In`, `Out`, `InOut`, `Back`),
+  `eased`, `mix`, `tween`, `keys`/`keys_with`, `spring`/`spring_with` (the analytic damped spring,
+  Remotion's defaults), `since`, `typed`, `round`. The same answer for the same frame.
+- `<Player>` (a component the build copies into the app, as the charts are): the frame a signal,
+  provided as a context (`Player.clock!` gives `{ frame!, fps, frames }`); the server renders the
+  poster frame and the browser hydrates the same; live, `on:frame.ms` adds up the time and plays
+  from 0 (autoplay, loop, a corner button by default: WCAG 2.2.2). Its scrubber
+  (`input.video-seek`, hidden unless `controls={Bar}`) is how anything drives it from outside:
+  set a frame and dispatch `input`, and it goes there, paused. Its element says `data-frame`,
+  `data-playing`, `data-live`. `fit={Scale}` lays a composition out at the video's size and scales
+  it.
+- `<Sequence from frames hold>`: a stretch with its own clock; without `hold` what is inside is
+  made and goes with it (its transitions play), with `hold` it waits at its first frame and stays at
+  its last.
+- `render.mjs` (Node, Chromium through the repository's driver, ffmpeg): the page loads and
+  hydrates in real time, then `clock.js` (run before the page's scripts) freezes time:
+  `performance.now()`, `Date`, timers and animation frames move only by the renderer, and every
+  animation (`document.getAnimations()`: the platform's transitions, CSS transitions and
+  animations) is held and put where the clock says. Each frame: the clock moves a frame, the player
+  is sought, the page settles, the stage is photographed, ffmpeg encodes. So a frame doesn't depend
+  on the time it took, and unlike Remotion a component's own CSS transitions and `on:frame`
+  animations are in the file.
+- The stories: a story with a live player gets a transport in the catalog, one clock for every
+  player shown, so a component's stories side by side (or stories compared) play in step; Render
+  copies the command (rocx build puts render.mjs's path in the catalog when the app names the
+  package). Comparing any stories side by side (a pin per story, `#compare/<ids>`) is new for every
+  story, not only videos.
+
+A demo of real screens is a composition that drives them by their props from the frame (a pointer
+drawn moving, a box ticked at a frame); a pure component is given a memo, so it is made once per
+change and its transitions play. A computed style can't multiply (`safe_css` takes no `*` or `/`):
+numbers go in custom properties, the arithmetic in the stylesheet.
+
+**Not built.** Reduced motion (Roc can't read a media query; one host function would do),
+starting when it scrolls into view, real input scripted at frames, `rocx render` in the CLI, audio,
+and rendering on the server with an app's data (TODO.md).
+
+**Reversible:** yes.

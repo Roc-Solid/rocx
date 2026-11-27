@@ -1,0 +1,207 @@
+import pf.Html
+import ../../../Demos/VideoDemo
+import ../../../Ui/Code
+import ../../../Ui/Demo
+import ../../../Ui/Heading
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Generated/Paths
+import ../../../Generated/Sources
+
+## The video package: a composition made of components, played live by <Player> and rendered to a
+## file by render.mjs; installing it, the demo (site/Demos/VideoDemo.rocx, hydrated), writing a
+## scene, the player, sequences, Timeline, rendering, the stories' transport, and what isn't there yet.
+meta = {
+	title: "Video",
+	description: "The video package for Roc Solid apps: videos made of your own components, played live in a page by <Player> or rendered frame by frame to MP4 and WebM, as Remotion does for React.",
+	toc: [
+		{ id: "install", label: "Installing it" },
+		{ id: "demo", label: "A walk in eight seconds" },
+		{ id: "scene", label: "Writing a scene" },
+		{ id: "player", label: "The player" },
+		{ id: "sequence", label: "Sequences" },
+		{ id: "timeline", label: "Timeline" },
+		{ id: "render", label: "Rendering a file" },
+		{ id: "stories", label: "In the stories" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<>
+		<NoHydration>
+			<PageHero
+				kicker={[<>{"The ecosystem · "}</>, <code>packages/video</code>]}
+				title="Videos made of your components"
+			>
+				A composition is a component that reads the frame it is at and renders that moment. The same
+				composition plays live in a page and renders, a frame at a time, to an MP4 or a WebM. It is made of
+				your real components, so when one of them changes, its videos change with it.
+			</PageHero>
+			<p>
+				This is Remotion's idea, for Roc Solid. Use it for a landing page's animation that shows the product's
+				real screens, for the same thing as a file to post, and for a short video of a release. A frame is
+				worked out from its number, so it looks the same however it is reached: played, scrubbed to, or
+				rendered.
+			</p>
+
+			<Heading id="install">Installing it</Heading>
+			<p>Name the package in the app's header:</p>
+			<Code
+				title="main.roc's header"
+				source={"app [program] { pf: platform \"…/server/platform/main.roc\", video: \"…/packages/video/main.roc\" }"}
+				numbers={Bool.False}
+			/>
+			<p>
+				Then import <code>video.Player</code>, <code>video.Sequence</code> and <code>video.Timeline</code> in a
+				<code>.rocx</code> file. <code>rocx build</code> copies the two components into the app
+				(<code>Generated/video/</code>), as it does for the <a href={Paths.ecosystem_charts}>charts</a>.
+				The package isn't a plugin: it adds nothing to the server. Rendering a file needs Node, Chromium's
+				headless shell and ffmpeg on the machine that renders.
+			</p>
+
+			<Heading id="demo">A walk in eight seconds</Heading>
+			<p>
+				The video below is made of this site's own mark and the charts package's
+				<code>{"<BarChart>"}</code>, fed the counts from the <a href={Paths.ecosystem_charts}>charts page</a>.
+				The bars glide by the chart's own animation; the video only changes which morning it shows. Play it,
+				pause it, or drag the bar.
+			</p>
+		</NoHydration>
+		<Demo>
+			<div data-demo="video"><VideoDemo /></div>
+		</Demo>
+		<NoHydration>
+			<p>
+				The composition puts two scenes on a timeline, each in a <code>{"<Sequence>"}</code>. The title
+				plays for frames 0 to 71, and the chart from frame 66, so the two cross:
+			</p>
+			<Code title={Sources.video_walk.file} source={Sources.video_walk.rocx} markup />
+
+			<Heading id="scene">Writing a scene</Heading>
+			<p>
+				A scene reads its clock with <code>{"Player.clock!({})"}</code> in its body: the frame, as a getter, and
+				the frames a second. It reads the frame where it is tracked, in a hole, a computed attribute or a
+				memo, so only what depends on it changes each frame. Inside a sequence, the frame counts from the
+				sequence's start, so a scene is written as if it starts at 0:
+			</p>
+			<Code title={Sources.video_title.file} source={Sources.video_title.rocx} markup />
+			<p>Three things are worth knowing:</p>
+			<ul>
+				<li>
+					<strong>Give a pure component a memo, not the frame.</strong> A pure component given a value made from
+					the frame is made again when that value changes. Write <code>{"ticked! = create_memo!(|| frame!() >= 14)"}</code>
+					and pass <code>{"ticked!()"}</code>: a memo compares its value with <code>==</code>, so the component is
+					made once per change, and its own CSS transitions play.
+				</li>
+				<li>
+					<strong>A computed style doesn't multiply.</strong> A style's value may hold letters, digits, spaces
+					and <code>.,%#()-+</code>, so <code>calc(… * …)</code> is dropped. Pass the number as a custom property
+					(<code>{"style:--row={row!().to_str()}"}</code>) and do the arithmetic in the stylesheet.
+				</li>
+				<li>
+					<strong>Components keep their own motion.</strong> CSS transitions, <code>transition:in</code> and
+					<code>transition:out</code>, and a component's own <code>on:frame</code> animation (the chart's glide)
+					all play: in a page in real time, and in a render on the renderer's clock.
+				</li>
+			</ul>
+
+			<Heading id="player">The player</Heading>
+			<p>
+				<code>{"<Player>"}</code> holds the frame and plays it. The server renders its poster frame, and so does
+				the browser as it hydrates. On its first animation frame it plays from the start, again and again,
+				unless told otherwise.
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>What it is</th></tr></thead>
+					<tbody>
+						<tr><td><code>frames</code></td><td>How long it is, in frames.</td></tr>
+						<tr><td><code>fps</code></td><td>Frames a second. 30 unless you set it.</td></tr>
+						<tr><td><code>width</code>, <code>height</code></td><td>The video's size, in CSS pixels: what a render films, and the stage's size when it is scaled. 1280 by 720 unless you set them.</td></tr>
+						<tr><td><code>fit</code></td><td><code>Flow</code> (the default) lays the composition out as any markup, at the player's width. <code>Scale</code> lays it out at its width and height and scales it to fit, as a video is.</td></tr>
+						<tr><td><code>autoplay</code>, <code>loop</code></td><td>Plays from the start once the page is live, and again when it ends. Both on unless you turn them off; without <code>loop</code>, it stops on its last frame.</td></tr>
+						<tr><td><code>poster</code></td><td>The frame shown before it plays, and where nothing plays it: <code>Start</code>, <code>End</code> (the default) or <code>{"Frame(n)"}</code>.</td></tr>
+						<tr><td><code>controls</code></td><td><code>Corner</code> (the default): a play and pause button in its corner. <code>Bar</code>: the button, a scrubber and the time. <code>Hidden</code>: nothing to see. Anything that moves by itself for more than five seconds needs a way to pause it, so keep one on a page.</td></tr>
+						<tr><td><code>label</code></td><td>Its <code>aria-label</code>.</td></tr>
+						<tr><td>its children</td><td>The composition.</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				Its element says where it is: <code>data-frame</code>, <code>data-playing</code>, and
+				<code>data-live</code> once the page is live. Its scrubber, <code>input.video-seek</code>, is there even
+				when hidden: set it to a frame and dispatch <code>input</code>, and the player goes there and pauses. The
+				stories' catalog, the renderer and tests drive it that way.
+			</p>
+
+			<Heading id="sequence">Sequences</Heading>
+			<p>
+				<code>{"<Sequence from={90} frames={60}>"}</code> shows what is inside from frame 90 for 60 frames, and
+				gives it a clock that counts from 0 there. Without <code>frames</code>, it lasts to the end. What is inside
+				is made as its stretch starts and goes as it ends, so its transitions in and out play there. With
+				<code>hold</code>, it shows all along instead: before its stretch as at its first frame, after it as at its
+				last. Three steps side by side use that to wait their turn and then stay done. Sequences nest.
+			</p>
+
+			<Heading id="timeline">Timeline</Heading>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Function</th><th>What it gives</th></tr></thead>
+					<tbody>
+						<tr><td><code>{"progress(frame, from, to)"}</code></td><td>How far along the span the frame is: 0 at <code>from</code> and before, 1 at <code>to</code> and after.</td></tr>
+						<tr><td><code>{"eased(frame, from, to, Out)"}</code></td><td>The same, eased: <code>Linear</code>, <code>In</code>, <code>Out</code>, <code>InOut</code> or <code>Back</code> (past the goal and back).</td></tr>
+						<tr><td><code>{"tween(frame, from, to, a, b, easing)"}</code></td><td>A value going from <code>a</code> to <code>b</code> over the span.</td></tr>
+						<tr><td><code>{"keys(frame, [(0, 0.0), (10, 1.0)])"}</code></td><td>A value through keyframes, steadily from each to the next; <code>keys_with</code> eases each move.</td></tr>
+						<tr><td><code>{"spring(frame, fps)"}</code></td><td>A spring let go at frame 0: past 1 a little, settled in about a second. <code>spring_with</code> takes its stiffness, damping and mass.</td></tr>
+						<tr><td><code>{"since(frame, 30)"}</code></td><td>The frames since frame 30, and 0 before it: to start a spring there.</td></tr>
+						<tr><td><code>{"typed(text, share)"}</code></td><td>The first share of a text's characters, typed a character at a time.</td></tr>
+						<tr><td><code>mix</code>, <code>round</code>, <code>frames_of</code></td><td>A share of the way between two values, a count as it climbs, and seconds in frames.</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+
+			<Heading id="render">Rendering a file</Heading>
+			<Code
+				title="a shell, with the app running"
+				source={"node packages/video/render.mjs http://localhost:8091/ -o walk.mp4 -o walk.webm\nnode packages/video/render.mjs http://localhost:8091/__rocx/stories/Demos/VideoDemo/a-bar-to-scrub -o frames/"}
+				numbers={Bool.False}
+			/>
+			<p>
+				<code>render.mjs</code> opens the page in Chromium's headless shell and lets it load and hydrate. Then it
+				takes the page's clock over: <code>performance.now()</code>, <code>Date</code>, timers and animation
+				frames move only when it says. For each frame, it moves the clock on a frame, seeks the player there,
+				waits for the page to settle, and puts every running animation where the clock says. That includes the
+				platform's transitions and CSS's. Then it photographs the player's stage and hands the picture to ffmpeg.
+			</p>
+			<p>
+				So a frame doesn't depend on how long it took to film, and two renders of one composition are the same,
+				frame for frame. ffmpeg writes H.264 into <code>.mp4</code> and VP9 into <code>.webm</code>. A path ending
+				in <code>/</code> gets one PNG for each frame. <code>--scale 2</code> (the default) films at twice the CSS
+				size. <code>--player</code> picks a player by index or label, and <code>--from</code> and <code>--to</code>
+				film part of it. ffmpeg is <code>$FFMPEG</code>, the one on PATH, or Nix's.
+			</p>
+
+			<Heading id="stories">In the stories</Heading>
+			<p>
+				A story with a player in it is a video; nothing else marks it. In the
+				<a href={"${Paths.tooling}#stories"}>stories' catalog</a>, a transport appears above it. It has play and
+				pause (Space), a frame back and on (← and →; a second with Shift), a scrubber, the time and the frame,
+				a speed and looping. Every player the catalog shows follows that one clock. A component's stories side by
+				side therefore play in step, and so do stories you compare.
+			</p>
+			<p>
+				To compare stories, pin any of them in the side (or press P on one), from any component and of either
+				kind. Then open "Compare … side by side". <strong>Render</strong> copies the command that films each
+				video shown into an MP4 and a WebM.
+			</p>
+
+			<Heading id="limits">Not yet</Heading>
+			<ul>
+				<li>A player plays whatever the reader's <code>prefers-reduced-motion</code> says, since Roc can't read a media query yet. Its button pauses it.</li>
+				<li>A player starts when the page goes live, not when it scrolls into view.</li>
+				<li>A demo is driven by its props from the frame, not by real clicks sent at given frames.</li>
+				<li>Rendering is a Node script, not a <code>rocx</code> command. It renders on your machine, not on the server with an app's data, and videos are silent.</li>
+			</ul>
+		</NoHydration>
+	</>

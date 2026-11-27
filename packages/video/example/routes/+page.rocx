@@ -1,0 +1,9 @@
+import pf.Html
+import video.Player
+import ../Launch
+
+## Acme's launch, four seconds of it, with a bar to play, pause and scrub it.
+view! = |_|
+	<main>
+		<Player frames={120} label="Acme's launch" controls={Bar}><Launch /></Player>
+	</main>
