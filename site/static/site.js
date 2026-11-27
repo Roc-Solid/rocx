@@ -78,6 +78,27 @@ document.addEventListener("rocx:navigated", ({ detail: { ms } }) => {
 	awake(ms, { navigated: true });
 });
 
+// A button that points at a place on this page (the front page's Get started, the components
+// page's ways in) glides there, where the browser would jump: the address takes the hash as the
+// jump's would, and Tab goes on from the place, as after the jump. Not for a visitor who asks for
+// less motion, nor a click with a key held. The runtime leaves such a link to the browser (D-040).
+document.addEventListener("click", (event) => {
+	if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+	const link = event.target.closest?.('a.button[href^="#"]');
+	const place = link && link.hash.length > 1 ? document.getElementById(decodeURIComponent(link.hash.slice(1))) : null;
+	if (!place || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+	event.preventDefault();
+	if (location.hash !== link.hash) history.pushState(null, "", link.hash);
+	place.scrollIntoView({ behavior: "smooth", block: "start" });
+	// Focused without a scroll of its own, so the next Tab starts there; a heading takes focus only
+	// while it has it.
+	if (!place.hasAttribute("tabindex")) {
+		place.setAttribute("tabindex", "-1");
+		place.addEventListener("blur", () => place.removeAttribute("tabindex"), { once: true });
+	}
+	place.focus({ preventScroll: true });
+});
+
 /** Which demo reads which endpoint as the page renders: the start of its URL, and the demo. */
 const READS = [
 	["/api/echo/", "echo"],

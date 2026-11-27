@@ -37,8 +37,6 @@ view! = |_| {
 						actions={[
 							<Button href="#start" primary>Get started</Button>,
 							<Button href={Paths.rocx}>Read the guide</Button>,
-							<Button href={Paths.platform_}>The platform</Button>,
-							<Button href={Paths.showcase}>Play Snake, watch the birds</Button>,
 						]}
 					>
 					</PageHero>
