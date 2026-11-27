@@ -18,7 +18,7 @@
 // nixpkgs#ffmpeg-headless`); Chromium is `$CHROME`, else Playwright's, as the tests find it.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -110,6 +110,7 @@ export async function render({ url, outputs = ["launch.mp4"], player = 0, scale 
 				seek.value = "${index}";
 				seek.dispatchEvent(new Event("input", { bubbles: true }));
 				await clock.settle();
+				${index === first ? "clock.finishAll();" : ""}
 				clock.sync();
 			})()`);
 			const { data } = await tab.page.send("Page.captureScreenshot", { format: "png", clip, captureBeyondViewport: true });
@@ -202,7 +203,16 @@ export function parseArgs(argv) {
 	return options;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Run as a command: by its own path, or through a link to it (an app's `.rocx`, which the catalog's
+// Render names), whose path Node resolves for import.meta.url.
+const run = (() => {
+	try {
+		return Boolean(process.argv[1]) && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url));
+	} catch {
+		return false;
+	}
+})();
+if (run) {
 	try {
 		const options = parseArgs(process.argv.slice(2));
 		const started = Date.now();

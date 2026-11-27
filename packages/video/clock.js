@@ -135,6 +135,16 @@
 				}
 			}
 		},
+		/** Ends every animation running now (one that never ends is left): the page at rest, as the
+		 * first frame filmed is, whatever its seek started (a transition from the poster frame). */
+		finishAll() {
+			for (const animation of document.getAnimations()) {
+				const end = animation.effect?.getComputedTiming?.().endTime ?? Infinity;
+				if (!Number.isFinite(end)) continue;
+				seen.set(animation, now - end);
+				animation.finish();
+			}
+		},
 		/** Waits for the page to catch up: a few turns of its tasks (what a write runs is patched),
 		 * its fonts, and its images. */
 		async settle() {

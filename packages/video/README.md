@@ -180,7 +180,9 @@ hydrate in real time, then freezes the clock and films each frame in turn:
 3. the page settles: a few turns of its tasks, its fonts and images;
 4. every animation is put where the clock says (`document.getAnimations()`: the platform's
    transitions, CSS transitions and animations, `element.animate`), held still that far in since
-   it was first seen, or finished once past its end;
+   it was first seen, or finished once past its end. The first frame filmed is at rest: what its
+   seek started (a transition away from the poster frame) is finished first, so a render from
+   frame 0, or from `--from`, doesn't open on the poster fading out;
 5. the player's stage is photographed, its controls hidden, at `--scale` device pixels a CSS pixel.
 
 The photographs go to one ffmpeg, which writes each file: `.mp4` in H.264 and `.webm` in VP9, both
