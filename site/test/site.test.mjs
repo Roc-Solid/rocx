@@ -269,8 +269,14 @@ test("the counter counts, and resets", { skip }, async () => {
 	assert.equal(await text(page, ".counter output"), "0");
 	assert.equal(await page.eval("document.querySelector('.counter .reset').disabled"), true);
 	await page.click('.counter [aria-label="One less"]');
-	// Its own class, then its <style>'s (scoped to it), then the one a signal turned on.
-	assert.match(await page.eval("document.querySelector('.counter').className"), /^counter rx-[0-9a-z]{6} negative$/);
+	// Its own class, then its <style>'s (scoped to it), then the one a signal turned on; and, for a
+	// moment, the ring site.js puts on what was patched (the front page's counter has data-flash).
+	assert.match(await page.eval("document.querySelector('.counter').className"), /^counter rx-[0-9a-z]{6} negative( signals-flash-patch)?$/);
+	// The stepper above it: a click on the counter shows the last step, the runtime's log of the click.
+	assert.equal(await text(page, ".journey .panel.current .file"), "What the runtime did");
+	const logged = await text(page, '[data-inspect-signals="counter"] li');
+	assert.match(logged, /^click “−”/);
+	assert.match(logged, /patched text in <output>/);
 	assert.equal(await page.eval("getComputedStyle(document.querySelector('.counter')).display"), "grid", "its <style> applies, from the page's head");
 	assert.match(await text(page, '[data-stat="hydrated"]'), /^Awake \d+ ms/);
 });

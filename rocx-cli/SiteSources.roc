@@ -84,6 +84,8 @@ SiteSources := [].{
 		Whole("route_fixture_page", "test/e2e/routes/routes/blog/[slug]/+page.rocx"),
 		FixturePaths,
 		Pick("home_update", "site/Demos/Counter.rocx", ["view! = |{ start_value }| {", "(count!, set_count!) = create_signal!(start_value)", "<div class=\"counter\"", "<button type=\"button\" on:click={|| set_count!(count!() - 1)}", "<output>", "<button type=\"button\" on:click={|| set_count!(count!() + 1)}", "</div>", "}"]),
+		Pick("home_built", "site/Demos/Counter.roc", ["view! = |{ start_value: start_value! }| {", "(count!, set_count!) = create_signal!(", "Html.element(\"div\"", "Html.element(\"button\", [Html.attr_literal(\"type\", \"button\"), Html.on(\"click\", || set_count!(count!() - 1))", "Html.element(\"output\"", "Html.element(\"button\", [Html.attr_literal(\"type\", \"button\"), Html.on(\"click\", || set_count!(count!() + 1))", "}"]),
+		Whole("home_rendered", "site/snippets/counter-server.html"),
 		Excerpt("home_signals", "site/Demos/Echo.rocx", HomeSignals),
 		Whole("demo_todos", "site/Demos/Todos.rocx"),
 		Whole("demo_escape_lab", "site/Demos/EscapeLab.rocx"),

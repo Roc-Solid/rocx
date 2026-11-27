@@ -5,7 +5,7 @@ import ../Ui/Heading
 import ../Ui/PageHero
 import ../Ui/Logo
 import ../Ui/Button
-import ../Ui/Specimen
+import ../Ui/Journey
 import ../Ui/Stats
 import ../Ui/Way
 import ../Generated/Sources
@@ -48,52 +48,118 @@ view! = |_| {
 				</aside>
 			</div>
 		</NoHydration>
-		<Specimen file="Counter.rocx" code={[<NoHydration><Code source={Sources.home_update.rocx} numbers={Bool.False} /></NoHydration>]}>
-			<div data-demo="counter"><Counter start_value={3} /></div>
-			<NoHydration><p class="awake" data-stat="hydrated">Waiting for the counter to wake up…</p></NoHydration>
-		</Specimen>
 		<NoHydration>
 			<Heading id="what">What Roc Solid is</Heading>
 			<p>
 				Roc Solid is a web framework for <a href="https://www.roc-lang.org">Roc</a>, a functional
-				language that compiles to native code and to WebAssembly. You write pages and components in
-				<code>.rocx</code> files: Roc with HTML-like markup wherever an expression can go. The counter
-				above is one. The server, your Roc compiled to native code, rendered it to HTML along with this
-				page. Then your browser loaded the same component, compiled to WebAssembly, and took over that
-				HTML without building it again. This is called <em>hydration</em>. Now a click on
-				<b>+</b> runs the handler, in Roc, and only what reads the count is updated: the number, its
-				colour, and whether Reset is disabled.
+				language that compiles to native code and to WebAssembly. You write components in
+				<code>.rocx</code> files: Roc with HTML-like markup. The counter below is one. Step through how
+				it gets from its file to your screen.
 			</p>
-			<p>An app written with Roc Solid gets:</p>
+		</NoHydration>
+		<Journey
+			steps={[
+				{
+					name: "Write",
+					file: "Counter.rocx",
+					panel: [
+						<NoHydration>
+							<p class="say">
+								Roc, with markup wherever an expression can go. <code>count!</code> reads a signal;
+								<code>set_count!</code> changes it.
+							</p>
+							<Code source={Sources.home_update.rocx} numbers={Bool.False} />
+						</NoHydration>,
+					],
+				},
+				{
+					name: "Build",
+					file: "Counter.roc",
+					panel: [
+						<NoHydration>
+							<p class="say">
+								<code>rocx build</code> turns the markup into plain Roc, line for line, so the Roc
+								compiler checks every value in it.
+							</p>
+							<Code source={Sources.home_built.rocx} numbers={Bool.False} />
+						</NoHydration>,
+					],
+				},
+				{
+					name: "Render",
+					file: "What the server sends",
+					panel: [
+						<NoHydration>
+							<p class="say">
+								The server runs that Roc, compiled to native code, and sends plain HTML: readable
+								before any script runs. <code>{"<!--x-->"}</code> marks the text the count changes.
+							</p>
+							<Code source={Sources.home_rendered.rocx} markup={Bool.True} numbers={Bool.False} />
+						</NoHydration>,
+					],
+				},
+				{
+					name: "Hydrate",
+					file: "In your browser",
+					panel: [
+						<NoHydration>
+							<p class="say">
+								The browser runs the same component, compiled to WebAssembly, over that HTML. It
+								attaches handlers and signals to the nodes already there, and builds nothing again.
+							</p>
+							<Code source={"<div class=\"counter\">      ← class:negative reads count\n  <button>−</button>       ← on:click\n  <output>3</output>       ← its text reads count\n  <button>+</button>       ← on:click\n  <button>Reset</button>   ← on:click; disabled reads count\n</div>"} numbers={Bool.False} plain />
+							<p class="awake" data-stat="hydrated">Waiting for the counter to wake up…</p>
+						</NoHydration>,
+					],
+				},
+				{
+					name: "Click",
+					file: "What the runtime did",
+					panel: [
+						<NoHydration>
+							<p class="say">
+								Press − or +. The handler sets the signal, and only what reads it runs again,
+								patching its own node. Newest first:
+							</p>
+							<div class="inspector" data-inspect-signals="counter">
+								<ol><li class="empty">Nothing yet: press − or + below.</li></ol>
+							</div>
+						</NoHydration>,
+					],
+				},
+			]}
+		>
+			<div data-demo="counter" data-flash="yes"><Counter start_value={3} /></div>
+		</Journey>
+		<NoHydration>
+			<p>An app gets:</p>
 			<ul>
 				<li>
 					<strong>Pages from files.</strong> <code>routes/blog/[slug]/+page.rocx</code> is the page at
-					<code>/blog/…</code>, inside the layouts of the folders above it, and every route has a typed
-					link.
+					<code>/blog/…</code>, inside its folders' layouts. Every route has a typed link.
 				</li>
 				<li>
-					<strong>Components with signals</strong>, as in SolidJS: a component runs once, and when a signal
-					(a value that changes) changes, only the bits of markup that read it run again.
+					<strong>Signals, as in SolidJS.</strong> A component runs once. When a signal changes, only
+					the markup that reads it runs again.
 				</li>
 				<li>
-					<strong>Typed endpoints.</strong> A route's <code>+server.roc</code> answers HTTP. A page reads
-					one as a plain value while the server renders it, and the answer travels to the browser inside
-					the page.
+					<strong>Typed endpoints.</strong> A <code>+server.roc</code> answers HTTP. A page reads one as a
+					plain value while the server renders it, and the answer ships inside the page.
 				</li>
 				<li>
-					<strong>Forms and live updates</strong>: actions with optimistic updates, channels that send a
-					page live messages, and server-sent events.
+					<strong>Forms and live updates</strong>: actions with optimistic updates, channels and
+					server-sent events.
 				</li>
 				<li>
-					<strong>A native server in one executable</strong>, with Postgres or SQLite, migrations, a
-					key-value store and actors.
+					<strong>One native server executable</strong>, with Postgres or SQLite, migrations, a key-value
+					store and actors.
 				</li>
 				<li>
 					<strong>Packages</strong> for jobs and cron, email, charts, forms, Markdown, an admin and more.
 				</li>
 				<li>
-					<strong>Errors at your lines.</strong> The Roc compiler checks every value you put in a page,
-					and reports each mistake at its line in your <code>.rocx</code> file.
+					<strong>Errors at your lines.</strong> The compiler checks every value you put in a page, and
+					reports each mistake at its line in your <code>.rocx</code> file.
 				</li>
 			</ul>
 
@@ -104,16 +170,16 @@ view! = |_| {
 					<div>
 						<h3>Install</h3>
 						<p>
-							One command puts <code>rocx</code>, the Roc compiler it builds with and both platforms,
-							prebuilt, in <code>~/.rocx</code>, on macOS on Apple silicon and on Linux (arm64 or x86_64).
-							You need no Rust, Zig or Node. It checks each download, and adds <code>~/.rocx/bin</code> to
-							your shell's <code>PATH</code>. With Nix: <code>nix profile install github:Roc-Solid/rocx</code>.
+							One command installs <code>rocx</code>, its Roc compiler and both platforms, prebuilt, into
+							<code>~/.rocx</code> (macOS on Apple silicon, Linux on arm64 or x86_64). No Rust, Zig or Node
+							needed. It verifies each download and adds <code>~/.rocx/bin</code> to your
+							<code>PATH</code>. With Nix: <code>nix profile install github:Roc-Solid/rocx</code>.
 						</p>
 						<Code source={"curl -fsSL https://github.com/Roc-Solid/rocx/releases/latest/download/install.sh | sh"} numbers={Bool.False} plain />
 						<p>
-							The first release isn't out yet. Until it is, build from a clone: you need git and
-							<a href="https://just.systems">just</a>, and <code>just setup</code> puts the rest in the
-							clone's <code>.tools/</code> folder and builds <code>bin/rocx</code>.
+							The first release isn't out yet. Until then, build from a clone with git and
+							<a href="https://just.systems">just</a>: <code>just setup</code> fetches the rest into
+							<code>.tools/</code> and builds <code>bin/rocx</code>.
 						</p>
 						<Code source={"git clone https://github.com/Roc-Solid/rocx\ncd rocx\njust setup\nexport PATH=\"$PWD/bin:$PATH\""} numbers={Bool.False} plain />
 					</div>
@@ -123,21 +189,19 @@ view! = |_| {
 					<div>
 						<h3>Make an app</h3>
 						<p>
-							<code>rocx new</code> makes an app in a folder of its own, ready to grow: people sign in by a
-							link mailed to them (or at Google and GitHub, once their keys are set), with an authenticator
-							app's code too once they turn on two-factor sign-in, its users are in its own table, other
-							sites' posts are refused, and the sign-in mail is rate limited. It asks
-							which database: SQLite (the default, a file beside the server), Postgres, or Turso.
+							<code>rocx new</code> makes an app in its own folder and asks which database: SQLite (the
+							default, a file beside the server), Postgres or Turso. It comes with sign-in by a mailed link
+							(or Google and GitHub, once their keys are set), optional two-factor codes, a users table,
+							refusal of other sites' posts, and rate-limited sign-in mail.
 						</p>
 						<Code source={"rocx new my-app\ncd my-app\nrocx dev"} numbers={Bool.False} plain />
 						<p>
-							<code>rocx dev</code> serves it at <code>http://localhost:8080</code>, and builds it again,
-							restarts the server and reloads your open pages each time you save a file. A mistake is
-							reported at its line in your file, and the last good build keeps running until you fix it.
-							Sign in with any address: under <code>rocx dev</code>, the dev sign-in needs no mail. The
-							app's <code>README.md</code> says what to change first, and how to test it
-							(<code>rocx test</code>), deploy it (<code>rocx build</code>, or <code>rocx build --image</code>) and upgrade it
-							(<code>rocx upgrade</code>).
+							<code>rocx dev</code> serves it at <code>http://localhost:8080</code>. Each save rebuilds it,
+							restarts the server and reloads your open pages; a mistake shows at its line, and the last
+							good build keeps running. Under <code>rocx dev</code>, sign in with any address, no mail
+							needed. The app's <code>README.md</code> says what to change first, and how to test
+							(<code>rocx test</code>), deploy (<code>rocx build</code> or <code>rocx build --image</code>) and
+							upgrade (<code>rocx upgrade</code>).
 						</p>
 					</div>
 				</li>
@@ -146,111 +210,53 @@ view! = |_| {
 					<div>
 						<h3>Add a page, or an endpoint</h3>
 						<p>
-							Each file in the app's <code>routes/</code> folder answers the URL its folders spell (an app
-							needs no more than that folder: <code>rocx dev</code> serves any folder with one). A <code>+page.rocx</code> is a page: the server renders it to HTML, and the
-							browser makes it live. A <code>+server.roc</code> is an endpoint: functions named after HTTP
-							methods (<code>get!</code>, <code>post!</code>) that answer requests with JSON.
+							Each file in <code>routes/</code> answers the URL its folders spell; that folder is all an app
+							needs. A <code>+page.rocx</code> is a page: rendered to HTML on the server, made live in the
+							browser. A <code>+server.roc</code> is an endpoint: functions named after HTTP methods
+							(<code>get!</code>, <code>post!</code>) that answer with JSON.
 						</p>
 						<Code title="my-app/routes/+page.rocx" source={Sources.start_page.rocx} numbers={Bool.False} />
 						<Code title="my-app/routes/hello/+server.roc" source={Sources.start_server.rocx} numbers={Bool.False} />
 						<p>
-							The page is a component. <code>view!</code> runs once: it makes a signal, the count
-							(<code>count!</code> reads it, <code>set_count!</code> changes it), and returns markup. The
-							button's text reads the count, so it is updated each time the count changes.
-							<code>get!</code> answers <code>GET /hello</code> with a string, as JSON.
+							<code>view!</code> runs once: it makes a signal and returns markup. The button's text reads
+							the count, so it updates when the count does. <code>get!</code> answers
+							<code>GET /hello</code> with a JSON string.
 						</p>
 					</div>
 				</li>
 			</ol>
 			<p>
-				Next, <a href={Paths.rocx}>rocx</a> explains pages, components and routes, the
-				<a href={Paths.syntax}>syntax</a> page lists everything you can write in markup, and
-				<a href={Paths.tooling}>tooling</a> covers every command. <a href={Paths.platform_}>The platform</a>
-				describes what the server and the browser give an app, and the <a href={Paths.examples}>examples</a>
-				are complete apps to read.
+				Next: <a href={Paths.rocx}>rocx</a> covers pages, components and routes;
+				<a href={Paths.syntax}>syntax</a> lists everything markup can hold; <a href={Paths.tooling}>tooling</a>
+				covers every command; <a href={Paths.platform_}>the platform</a> is what the server and the browser
+				give an app; and the <a href={Paths.examples}>examples</a> are complete apps to read.
 			</p>
 
 			<Heading id="parts">Three parts</Heading>
 			<Way kind="rocx" href={Paths.rocx} more="rocx →" code={[<Code source={Sources.home_update.rocx} numbers={Bool.False} />]}>
-				What an app is written in: Roc with markup wherever an expression can go. Pages, layouts and
-				components are files, and <code>rocx build</code> turns each into plain Roc with the same line
-				numbers, so the Roc compiler checks every value you put in a page.
+				What you write: Roc with markup wherever an expression can go. <code>rocx build</code> turns each
+				page, layout and component into plain Roc with the same line numbers, for the compiler to check.
 			</Way>
 			<Way kind="Platform" href={Paths.platform_} more="The platform →" code={[<Code source={Sources.platform_query.rocx} numbers={Bool.False} />]}>
-				What an app runs on. On the server: Roc compiled to native code in a Rust host, with Postgres or
-				SQLite, a key-value store, live rooms and channels, actors, and plugins, through which packages
-				add routes and jobs. In the browser: the same components compiled to WebAssembly, and a small
-				JavaScript runtime.
+				What an app runs on. On the server: native Roc in a Rust host, with Postgres or SQLite, a key-value
+				store, live channels, actors, and plugins that let packages add routes and jobs. In the browser:
+				the same components in WebAssembly, and a small JavaScript runtime.
 			</Way>
 			<Way kind="Ecosystem" href={Paths.ecosystem} more="The ecosystem →" code={[<Code source={Sources.charts_use.rocx} numbers={Bool.False} />]}>
-				What an app can use: packages of plain Roc and components, which work in both halves of an app.
-				Twenty-four so far: sign-in, payments through Stripe, Claude from the server, charts, crypto, file
-				storage (S3, disk or memory), email, forms, Markdown, intl, an admin, audio, guards, jobs and cron,
-				MCP, tools for models, OpenTelemetry, PostHog, presence, Web Push, QR codes, vibration, testing
-				and virtual lists.
+				Packages of plain Roc and components, for both halves of an app. Twenty-four so far: sign-in,
+				Stripe payments, Claude, charts, crypto, file storage (S3, disk or memory), email, forms, Markdown,
+				intl, an admin, audio, guards, jobs and cron, MCP, tools for models, OpenTelemetry, PostHog,
+				presence, Web Push, QR codes, vibration, testing and virtual lists.
 			</Way>
 
-			<Heading id="pipeline">From a .rocx file to a running page</Heading>
-			<ol class="pipeline">
-				<li>
-					<span class="pipeline-file">Counter.rocx</span>
-					<span class="pipeline-step">markup in Roc</span>
-				</li>
-				<li>
-					<span class="pipeline-file">Counter.roc</span>
-					<span class="pipeline-step"><code>rocx build</code>: plain Roc, same lines</span>
-				</li>
-				<li class="pipeline-fork">
-					<div>
-						<span class="pipeline-file">the server</span>
-						<span class="pipeline-step">native code: renders every page to HTML, answers endpoints</span>
-					</div>
-					<div>
-						<span class="pipeline-file">app.wasm</span>
-						<span class="pipeline-step">the same pages, in the browser: hydrates them and runs them</span>
-					</div>
-				</li>
-			</ol>
-			<p>An app is two programs, one on each platform, talking over HTTP. A page goes through them like this:</p>
-			<ol>
-				<li>
-					<strong><code>rocx build</code></strong> turns each <code>.rocx</code> file into plain Roc: the
-					markup becomes calls to the platform's <code>Html</code> module, and every line stays where it
-					was. From <code>routes/</code> it also writes the app's router, its typed links and its API
-					contract, in <code>Generated/</code>.
-				</li>
-				<li>
-					<strong>The server's program</strong> is that Roc compiled to native code and linked with a Rust
-					host into one executable. For each request it runs the app's middleware and renders the page,
-					in its layouts, to HTML. When the page reads an endpoint, the server answers the read as it
-					renders and puts the answer in the page.
-				</li>
-				<li>
-					<strong>The browser's program</strong> is the same pages compiled to WebAssembly, with a small
-					Rust host, and a JavaScript runtime. The script at the end of the page loads both. Each component
-					runs once, over the HTML the server sent, and attaches to it: handlers to their elements, and
-					each hole that reads a signal to the node it shows. No element is built again, and the endpoint
-					reads are answered from the page, not fetched again.
-				</li>
-				<li>
-					<strong>From then on</strong>, a click runs its handler in Roc. When the handler sets a signal,
-					only the holes that read it run again, and each patches its own node. Markup wrapped in
-					<code>{"<NoHydration>"}</code> stays the server's HTML and isn't in the wasm at all.
-				</li>
-			</ol>
-			<p>
-				<a href={Paths.platform_}>The platform</a> describes both programs, and the browser's page follows
-				<a href={"${Paths.platform_browser}#click"}>one click all the way</a>.
-			</p>
-
-			<Heading id="numbers">The numbers, measured on this build</Heading>
+			<Heading id="numbers">Measured on this build</Heading>
 		</NoHydration>
 		<Stats
 			stats={[
 				{ label: "Wasm for the whole site", value: Facts.get(facts, "client_brotli"), note: "brotli; ${Facts.get(facts, "client_gzip")} gzip, ${Facts.get(facts, "client_bytes")} raw" },
 				{ label: "JavaScript runtime", value: Facts.get(facts, "runtime_gzip"), note: "gzip; no framework, no dependencies" },
-				{ label: "The front page, rendered", value: "${Facts.get(facts, "client_render_us")} µs", note: "every component and hole run once, by the browser's wasm, in Node" },
-				{ label: "The server", value: Facts.get(facts, "server_bytes"), note: "one executable: every page, and its Rust host" },
+				{ label: "The front page, rendered", value: "${Facts.get(facts, "client_render_us")} µs", note: "by the browser's wasm, in Node" },
+				{ label: "The server", value: Facts.get(facts, "server_bytes"), note: "one executable, every page in it" },
 			]}
 		/>
 	</>
@@ -326,72 +332,6 @@ view! = |_| {
 		text-wrap: balance;
 	}
 
-	/* From a file to the page: the file and the Roc it becomes on one row, and under them the two
-	   builds it goes into, side by side. Never more than two blocks in a row. */
-	.pipeline {
-		max-width: none;
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: var(--space-5);
-		padding: 0;
-		list-style: none;
-	}
-
-	.pipeline > li {
-		position: relative;
-		margin: 0;
-		padding: var(--space-4);
-		border-radius: var(--radius);
-		background: var(--bg-raised);
-	}
-
-	/* The arrows: from the file to its Roc, then down from them into the builds. */
-	.pipeline > li:first-child::after,
-	.pipeline-fork::before {
-		position: absolute;
-		color: var(--accent);
-		font-weight: 700;
-		text-shadow: var(--glow-text);
-	}
-
-	.pipeline > li:first-child::after {
-		content: "→";
-		top: 50%;
-		right: calc(var(--space-5) / -2);
-		translate: 50% -50%;
-	}
-
-	.pipeline-fork::before {
-		content: "↓";
-		top: calc(var(--space-5) / -2);
-		left: 50%;
-		translate: -50% -50%;
-	}
-
-	.pipeline-fork {
-		grid-column: 1 / -1;
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: var(--space-3) var(--space-5);
-	}
-
-	.pipeline-fork > div + div {
-		padding-left: var(--space-5);
-		border-left: 1px dashed var(--rule-strong);
-	}
-
-	.pipeline-file {
-		display: block;
-		color: var(--accent);
-		font: 700 var(--size-sm) var(--mono);
-	}
-
-	.pipeline-step {
-		display: block;
-		color: var(--text-muted);
-		font-size: var(--size-sm);
-	}
-
 	/* Getting started: three steps down the page, each its number beside what to do. */
 	.start {
 		display: grid;
@@ -429,13 +369,11 @@ view! = |_| {
 		margin: 0 0 var(--space-3);
 	}
 
-	/* How long the counter took to wake up: site.js writes it, and marks it awake. Under the
-	   counter, in the middle, as the counter is. */
+	/* How long the counter took to wake up, in the Hydrate step: site.js writes it. */
 	.awake {
 		margin: var(--space-3) 0 0;
 		color: var(--text-faint);
 		font-size: var(--size-xs);
-		text-align: center;
 	}
 
 	/* On a phone, each step's number above it, and the code the whole width. */
@@ -443,29 +381,6 @@ view! = |_| {
 		.start > li {
 			grid-template-columns: minmax(0, 1fr);
 			gap: 0;
-		}
-	}
-
-	/* On a phone, the pipeline is one column, its arrows pointing down. */
-	@media (max-width: 40rem) {
-		.pipeline,
-		.pipeline-fork {
-			grid-template-columns: minmax(0, 1fr);
-		}
-
-		.pipeline > li:first-child::after {
-			content: "↓";
-			top: auto;
-			right: auto;
-			bottom: calc(var(--space-5) / -2);
-			left: 50%;
-			translate: -50% 50%;
-		}
-
-		.pipeline-fork > div + div {
-			padding: var(--space-3) 0 0;
-			border-top: 1px dashed var(--rule-strong);
-			border-left: 0;
 		}
 	}
 </style>

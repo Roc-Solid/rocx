@@ -122,8 +122,8 @@ function awake(total, { navigated = false } = {}) {
 	}
 	for (const element of document.querySelectorAll('[data-stat="hydrated"]')) {
 		element.textContent = navigated
-			? `Rendered in place ${total.toFixed(0)} ms after the click: its document fetched, the wasm already running made the page from it.`
-			: `Awake ${total.toFixed(0)} ms after the page asked: fetching and compiling the wasm, then hydrating this page, the server's nodes kept.`;
+			? `Rendered in place ${total.toFixed(0)} ms after the click, from the page's document.`
+			: `Awake ${total.toFixed(0)} ms after the page asked: the wasm fetched and compiled, the page hydrated.`;
 		element.classList.add("awake");
 	}
 }
