@@ -27,125 +27,116 @@ view! = |_|
 				eyebrow="Tooling"
 				title="A few commands, and the compiler you already have"
 			>
-				Everything Roc Solid does for you as you work goes through one command, <code>rocx</code>
-				(in <code>~/.rocx/bin</code> once installed, or <code>bin/rocx</code> in a clone of the
-				repository; itself written in Roc). It turns markup into Roc,
-				builds and serves your app while you edit it, and points the Roc compiler's reports at your
-				<code>.rocx</code> lines. The Roc compiler does the rest. This page covers each command, how
-				errors are reported, editor support, stories, and how to build an app for production by hand.
+				<code>rocx</code> turns markup into Roc, builds and serves your app as you edit, and points the
+				Roc compiler's reports at your <code>.rocx</code> lines. It is written in Roc, and lives in
+				<code>~/.rocx/bin</code> once installed, or at <code>bin/rocx</code> in a clone of the repository.
 			</PageHero>
 
 			<Heading id="commands">Commands</Heading>
 			<p>
-				A <code>dir</code> is an app's folder, the one with <code>routes/</code> in it; without one, a
-				command works on the current folder. Run <code>rocx</code> alone (or <code>rocx --help</code>) for
-				the commands, and <code>rocx help build</code> (or <code>rocx build --help</code>) for one's options.
-				At a terminal each step of a build is drawn as it runs, a <code>✓</code> and its time when done;
-				in a pipe, in CI or with <code>NO_COLOR</code> set, the same lines are plain text.
+				<code>dir</code> is an app's folder (the one with <code>routes/</code>), the current one by
+				default. <code>rocx</code> or <code>rocx --help</code> lists the commands; <code>rocx help build</code>
+				or <code>rocx build --help</code> shows one command's options. At a terminal, each build step
+				shows a <code>✓</code> and its time; in a pipe, in CI or with <code>NO_COLOR</code> set, the
+				output is plain text.
 			</p>
 			<div class="commands">
 				<div class="command">
 					<p class="command-usage">rocx new {"[dir]"}<span>--db sqlite|postgres|turso</span></p>
 					<p>
-						Makes a new app in <code>dir</code> (asked for at a terminal when not given), which must be
-						empty or new, from rocx's template: people
-						sign in through the <a href={Paths.ecosystem_auth}>auth package</a> (a link by email, Google and
-						GitHub once their keys are set, any address under <code>rocx dev</code>), its users are in its
-						own table, other sites' posts are refused, guard's security headers are on, and the sign-in
-						mail is rate limited. It asks which database (SQLite unless you say otherwise; off a terminal,
-						SQLite), names the app's version of rocx in <code>.rocx-version</code> (commit it), and makes
-						<code>.rocx</code>, the link through which the app's header reaches the platform and the
-						packages (gitignore it). A rocx run from a clone of the repository writes no
-						<code>.rocx-version</code>, and links <code>.rocx</code> to the clone. Its
-						<code>README.md</code> says what to change first.
+						Makes an app from rocx's template in <code>dir</code>, which must be empty or new (asked for
+						at a terminal). People sign in with the <a href={Paths.ecosystem_auth}>auth package</a> (an
+						email link; Google and GitHub once their keys are set; any address under
+						<code>rocx dev</code>), into the app's own users table. Other sites' posts are refused,
+						guard's security headers are on, and sign-in mail is rate limited. The database is SQLite
+						unless you pick another (it asks at a terminal). <code>.rocx-version</code> names the app's
+						rocx version (commit it); <code>.rocx</code> is the link the app's header reaches the platform
+						and packages through (gitignore it). From a clone of the repository, <code>.rocx</code> links
+						to the clone and there is no <code>.rocx-version</code>. The app's <code>README.md</code> says
+						what to change first.
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx dev {"[dir]"}<span>--port 8080</span><span>--android {"[--lan]"}</span><span>-- {"<server options>"}</span></p>
 					<div>
 						<p>
-							Builds the app and serves it at <code>http://localhost:8080</code> in development mode.
-							Each time you save a file, it builds the app again, restarts the server and reloads its
-							open pages. While a build fails, its errors are shown at their <code>.rocx</code> lines
-							and the last good build keeps running. The first run writes a <code>main.roc</code> if the
-							app has none: the smallest program, yours to change afterwards. After each start it checks
-							the app's SQL, as <code>rocx check --sql</code> does.
+							Serves the app at <code>http://localhost:8080</code> in development mode. Each save rebuilds
+							it, restarts the server and reloads open pages. A failing build's errors show at their
+							<code>.rocx</code> lines while the last good build keeps running. The first run writes the
+							smallest <code>main.roc</code> if there is none. Each start also checks the app's SQL
+							(<code>rocx check --sql</code>).
 						</p>
 						<p>
-							The port is <code>--port</code>, else <code>PORT</code>, else 8080. What follows
-							<code>--</code> goes to the server (<code>--database-url postgres://…</code>), which also
-							reads its environment (<code>DATABASE_URL</code>), and a <code>.env</code> file in the
-							folder you run it from (<code>SMTP_URL=…</code>, a line each; a variable the environment
-							has keeps its value). Development mode serves the
-							<a href="#stories">stories</a> at <code>/__rocx/stories</code>, plugins' development pages
-							(the email package's <a href={"${Paths.ecosystem_email}#mailbox"}>mailbox</a>), and a
-							crash's message in its 500 answer. Builds use Roc's development backend, which compiles
-							fast; <a href="#setup">building it yourself</a> makes an optimized one.
+							The port is <code>--port</code>, else <code>PORT</code>, else 8080. Options after
+							<code>--</code> go to the server (<code>--database-url postgres://…</code>), which also reads
+							its environment (<code>DATABASE_URL</code>) and a <code>.env</code> file in the current
+							folder (<code>SMTP_URL=…</code> lines; the environment wins). Development mode adds the
+							<a href="#stories">stories</a> (<code>/__rocx/stories</code>), plugins' development pages
+							(the email package's <a href={"${Paths.ecosystem_email}#mailbox"}>mailbox</a>) and crash
+							messages in 500 answers. Builds use Roc's fast-compiling development backend;
+							<a href="#setup">building it yourself</a> makes an optimized one.
 						</p>
 						<p>
-							<code>--android</code> builds each change for an Android phone too: it installs a
-							development client on an emulator or a phone on USB, and reloads it at each save.
-							<code>--lan</code> serves the app on your network as well, and prints a QR code that a
-							phone on the same Wi-Fi scans. It needs the Android SDK and NDK; the
-							<a href={Paths.examples_pomodoro}>pomodoro</a> example runs this way.
+							<code>--android</code> also builds for Android: it installs a development client on an
+							emulator or a USB-connected phone, and reloads it on each save. <code>--lan</code> also
+							serves the app on your network and prints a QR code for a phone on the same Wi-Fi. This
+							needs the Android SDK and NDK; the <a href={Paths.examples_pomodoro}>pomodoro</a> example
+							runs this way.
 						</p>
 					</div>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx build {"[dir]"}<span>--out dist</span><span>--target arm64musl</span></p>
 					<p>
-						The app built to deploy: <code>dist/server</code>, its server optimized for speed, and
-						<code>dist/static</code>, the app's <code>static/</code> folder and the browser's files, its wasm
-						optimized for size. Run <code>dist/server --static dist/static</code> behind a proxy that speaks
-						TLS (Caddy, say). <code>--target</code> builds for another machine: <code>arm64mac</code>,
-						<code>x64mac</code>, or <code>arm64musl</code> and <code>x64musl</code>, static Linux executables
-						for a container. The server's host has the database engine the app's program names alone
-						(<code>database</code>; SQLite when it names none), and a Linux one has no debug info. The
-						build is made beside <code>dist</code> (or <code>--out</code>) and replaces it only once it is
-						complete; the folder must be empty, or an earlier build (it has a <code>server</code>).
+						Builds the app to deploy: <code>dist/server</code>, optimized for speed, and
+						<code>dist/static</code>, the app's <code>static/</code> and the browser's files (wasm
+						optimized for size). Run <code>dist/server --static dist/static</code> behind a TLS proxy
+						(Caddy, say). <code>--target</code> is <code>arm64mac</code>, <code>x64mac</code>, or
+						<code>arm64musl</code> or <code>x64musl</code> (static Linux executables for a container). The
+						server has only the database engine the program names (SQLite if none); a Linux build has no
+						debug info. The build replaces <code>dist</code> (or <code>--out</code>) only when complete;
+						that folder must be empty or an earlier build (with a <code>server</code>).
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx build {"[dir]"} --image<span>--out {"<name>.tar"}</span><span>--tag name:tag</span></p>
 					<p>
-						The release as a container image, which rocx writes itself: no Dockerfile, and no Docker to
-						build it. The server is a static Linux executable with its TLS roots inside, so the image has
-						no base, only one layer: <code>/app/server</code>, <code>/app/static</code>, a user to run as
-						(65532), <code>/tmp</code>, and <code>/app/data</code> for a volume (a SQLite app's
-						<code>data/app.db</code>). It runs in <code>/app</code> on <code>PORT</code> 8080. The file is an
-						OCI image in a tar, <code>{"<name>.tar"}</code> (the app's folder's name) unless
-						<code>--out</code> says: <code>docker load -i</code> takes it, as does podman. <code>--tag</code>
-						names it (the directory's name, <code>:latest</code>, by default); <code>--target</code> is
-						<code>arm64musl</code> or <code>x64musl</code>, this machine's processor by default.
+						The release as a container image, which rocx writes itself: no Dockerfile, no Docker. The
+						server is a static Linux executable with its TLS roots inside, so the image has no base and
+						one layer: <code>/app/server</code>, <code>/app/static</code>, a user to run as (65532),
+						<code>/tmp</code>, and <code>/app/data</code> for a volume (a SQLite app's
+						<code>data/app.db</code>). It runs in <code>/app</code> on <code>PORT</code> 8080. The output is
+						an OCI image tar, <code>{"<name>.tar"}</code> after the app's folder (or <code>--out</code>),
+						for <code>docker load -i</code> or podman. <code>--tag</code> defaults to the folder's name,
+						<code>:latest</code>; <code>--target</code> is <code>arm64musl</code> or <code>x64musl</code>
+						(default: this machine's).
 					</p>
 				</div>
 				<div class="command" id="static">
 					<p class="command-usage">rocx build {"[dir]"} --static<span>--out dist</span><span>--base /path/</span><span>--route {"<path>"}</span><span>--built {"<build>"}</span><span>-- {"<server options>"}</span></p>
 					<div>
 						<p>
-							Writes the app as static files into <code>dist/</code> (or <code>--out</code>), for a host with no server:
-							GitHub Pages, a CDN, any folder a web server serves. It builds the app for production,
-							starts its server on a free port, and asks it for every page: <code>/</code>, each page
-							whose path has no params, and every page those link to. Each page becomes
-							<code>{"<path>/index.html"}</code>. Beside them go <code>404.html</code> (what a path
-							nothing answers shows), the app's <code>static/</code>, and <code>rocx/</code> with the
-							runtime and the wasm. A page carries the answers to the reads it made while it rendered,
-							so its data is there without a server. This site is built this way.
+							Writes the app as static files into <code>dist/</code> (or <code>--out</code>) for a host
+							with no server: GitHub Pages, a CDN, any web server. It builds for production, runs the
+							server on a free port, and saves <code>/</code>, every page whose path has no params, and
+							every page they link to, each as <code>{"<path>/index.html"}</code>. Beside them go
+							<code>404.html</code> (for paths nothing answers), the app's <code>static/</code>, and
+							<code>rocx/</code> (the runtime and the wasm). Each page carries the answers to its reads, so
+							its data needs no server. This site is built this way.
 						</p>
 						<p>
-							<code>--base</code> puts every URL under a path, for a site served there
-							(<code>example.github.io/docs/</code> is <code>--base /docs/</code>). <code>--route</code>
-							asks for a path no page links to: a page with params (<code>/blog/hello</code>), or an
-							endpoint's answer, written as a file (<code>/feed.xml</code>). <code>--built</code> uses a
-							build you made (its <code>server</code> and <code>client/static</code>) instead of building
-							one. The copy is made beside its folder and replaces it only once it is complete; the folder
-							must be empty, or an earlier copy.
+							<code>--base</code> puts every URL under a path (<code>--base /docs/</code> for
+							<code>example.github.io/docs/</code>). <code>--route</code> adds a path no page links to: a
+							page with params (<code>/blog/hello</code>) or an endpoint's answer as a file
+							(<code>/feed.xml</code>). <code>--built</code> uses a build you made (its
+							<code>server</code> and <code>client/static</code>). The copy replaces its folder only when
+							complete; the folder must be empty or an earlier copy.
 						</p>
 						<p>
-							What only a server can answer isn't in the copy, and the build lists it: a method that
-							writes (<code>post!</code>), events and channels, a page behind a directory's middleware
-							(it answers each request as it comes), a page with params that no link or
-							<code>--route</code> reached, and a link to a path that answered an error.
+							The build lists what only a server can answer, which the copy leaves out: methods that write
+							(<code>post!</code>), events and channels, pages behind a directory's middleware (it runs per
+							request), pages with params no link or <code>--route</code> reached, and links to paths that
+							answered an error.
 						</p>
 					</div>
 				</div>
@@ -153,35 +144,32 @@ view! = |_|
 					<p class="command-usage">rocx generate {"[dir]…"}<span>--client {"<out>"}</span><span>--dev</span></p>
 					<div>
 						<p>
-							What <code>rocx build</code> and <code>rocx dev</code> do first, and nothing else, for
-							editors and scripts. Turns each <code>.rocx</code> file under the folders into the <code>.roc</code> file beside
-							it, its markup written as calls to the platform's <code>Html</code>. For an app it also
-							writes <code>Generated/</code>: <code>Routes.roc</code> (the router), <code>Paths.roc</code>
-							(a typed link for each route), <code>Api.roc</code> and <code>Handlers.roc</code> (the
-							endpoints' contract, and their handlers), <code>Styles.roc</code> (the stylesheet),
-							<code>App.roc</code> (the program that <code>main.roc</code> completes) and, for an app with
-							pages, <code>Root.roc</code> (the page at the browser's path, in its layouts). A route
-							file's own Roc goes there too. A package's components are copied into
-							<code>{"Generated/<package>/"}</code>, and each folder under <code>content/</code> becomes
-							<code>{"Generated/Content/<Name>.roc"}</code>, its Markdown files listed.
+							Only the code generation <code>rocx build</code> and <code>rocx dev</code> start with, for
+							editors and scripts. Each <code>.rocx</code> file under the folders becomes a
+							<code>.roc</code> file beside it, its markup as calls to the platform's <code>Html</code>.
+							For an app it also writes <code>Generated/</code>: <code>Routes.roc</code> (the router),
+							<code>Paths.roc</code> (typed links), <code>Api.roc</code> and <code>Handlers.roc</code> (the
+							endpoints' contract and handlers), <code>Styles.roc</code> (the stylesheet),
+							<code>App.roc</code> (which <code>main.roc</code> completes), <code>Root.roc</code> for an app
+							with pages (the page at the browser's path, in its layouts), and route files' own Roc.
+							Packages' components are copied into <code>{"Generated/<package>/"}</code>, and each folder
+							under <code>content/</code> becomes <code>{"Generated/Content/<Name>.roc"}</code>, listing its
+							Markdown files.
 						</p>
 						<p>
 							<code>--client</code> also writes the browser's copy of the app into
-							<code>{"<out>"}</code>. In it, an endpoint keeps its method, URL and types but not its
-							handler, a <code>{"<NoHydration>"}</code> has no children, and the imports only those used
-							are gone. For an app with pages, the copy has the browser's <code>main.roc</code> and
-							<code>static/rocx/</code>: <code>start.js</code>, the runtime, and the app's stylesheet,
-							named by its content (<code>styles-<var>hash</var>.css</code>). The runtime is minified
-							(its comments and indentation gone: about half its size with brotli), but in a
-							<code>--dev</code> build, which keeps it as it is written, to read and debug. A
-							<code>--static</code> or <code>--release</code> build ships only what the app uses of it:
-							the host functions its wasm imports and the code they and the page reach; navigating in
-							place only for an app of more than one page (or one that navigates), and drags, a
-							pointer's point and glides only where its markup has them. An app of endpoints alone
-							has no browser program, and the build says so. If the browser's copy reaches a module that
-							imports what only the server has (<code>pf.Db</code>, directly or through another module),
-							the build warns at the import a page or component makes, before the browser's build would
-							fail far from it.
+							<code>{"<out>"}</code>: endpoints without their handlers (method, URL and types kept),
+							<code>{"<NoHydration>"}</code>s without children, and no imports only those used. For an app
+							with pages, it adds the browser's <code>main.roc</code> and <code>static/rocx/</code>:
+							<code>start.js</code>, the runtime, and the stylesheet named by its content
+							(<code>styles-<var>hash</var>.css</code>). The runtime is minified (about half the size with
+							brotli), except in a <code>--dev</code> build. A <code>--static</code> or
+							<code>--release</code> build ships only the runtime code the app's wasm and pages reach:
+							in-place navigation only for an app of several pages (or one that navigates), and drags,
+							pointer positions and glides only where its markup has them. An app of endpoints alone has no
+							browser program, and the build says so. When the browser's copy reaches a module that
+							imports something server-only (<code>pf.Db</code>, directly or not), the build warns at the
+							page's or component's import, before the browser's build fails far from it.
 						</p>
 						<p><code>--dev</code> also builds the <a href="#stories">stories</a> and their catalog.</p>
 					</div>
@@ -189,47 +177,46 @@ view! = |_|
 				<div class="command">
 					<p class="command-usage">rocx check {"[dir]"}</p>
 					<p>
-						Checks the app from its sources: it builds the app as <code>rocx dev</code> does, then
-						type-checks the server's program and, for an app with pages, the browser's. Every problem is
-						shown at its <code>.rocx</code> line, and nothing an older build left behind is read. It
-						exits 0 when all is well, 1 on an error, and 2 on warnings alone, rocx's own among them: a
-						<code>match</code> arm's value or a list row's item given to a component that reads it only
-						once (<a href={"${Paths.components}#control"}>if, match and .map</a>). The app needs a
-						<code>main.roc</code>. Run it in CI.
+						Builds the app from its sources (never an older build's files) as <code>rocx dev</code> does,
+						then type-checks the server's program and, for an app with pages, the browser's. Each problem
+						shows at its <code>.rocx</code> line. Exits 0 when clean, 1 on an error, 2 on warnings only,
+						rocx's own included: a <code>match</code> arm's value or a list row's item given to a
+						component that reads it once (<a href={"${Paths.components}#control"}>if, match and .map</a>).
+						Needs a <code>main.roc</code>. Run it in CI.
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx test {"[dir]"}</p>
 					<p>
-						Builds the app as <code>rocx check</code> does, then runs its <code>expect</code>s with the
-						compiler rocx has, each failure at its <code>.rocx</code> line. It exits 1 when one fails.
+						Builds the app as <code>rocx check</code> does, then runs its <code>expect</code>s with rocx's
+						compiler, each failure at its <code>.rocx</code> line. Exits 1 if one fails.
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx check -- {"<command>"}</p>
 					<p>
 						Runs a command (<code>roc check</code>, <code>roc build</code>, <code>just check</code>) and
-						points the compiler reports it prints into the <code>.rocx</code> files
-						(<a href="#errors">errors at your lines</a>). It exits with the command's code.
+						points the compiler reports it prints at the <code>.rocx</code> files
+						(<a href="#errors">errors at your lines</a>). Exits with the command's code.
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx check --sql {"[dir]"}<span>--engine sqlite|turso</span><span>--verbose</span><span>-- {"<server options>"}</span></p>
 					<div>
 						<p>
-							Checks the app's SQL with its own database engine, and the rows it reads with the compiler.
-							Each statement written as a string at a <code>Db.all!</code>, <code>Db.one!</code> or
-							<code>Db.run!</code> is prepared on a scratch database built from the app's migrations: for SQLite or Turso, a file
-							it deletes afterwards; for Postgres, a database it creates on the server
-							<code>--database-url</code> (or <code>DATABASE_URL</code>) names, and drops afterwards.
-							Reported at their lines: what the engine refuses, a call whose parameters don't match its
-							statement, and a row type that doesn't fit the columns. It exits 1 if anything is wrong
-							(<a href={"${Paths.platform_database}#checked"}>how it works</a>).
+							Checks the app's SQL with its own database engine, and its row types with the compiler.
+							Each string statement at a <code>Db.all!</code>, <code>Db.one!</code> or
+							<code>Db.run!</code> is prepared on a scratch database built from the migrations: a
+							temporary file for SQLite or Turso, or a database created, then dropped, on the Postgres
+							server <code>--database-url</code> (or <code>DATABASE_URL</code>) names. It reports SQL the
+							engine refuses, parameters that don't match their statement and row types that don't fit,
+							at their lines, and exits 1 (<a href={"${Paths.platform_database}#checked"}>how it
+							works</a>).
 						</p>
 						<p>
 							<code>--engine</code> checks a SQLite app on Turso, or a Turso app on SQLite.
 							<code>--verbose</code> also lists the calls it couldn't check, such as SQL built at run
-							time. <code>rocx dev</code> runs this check after each build.
+							time.
 						</p>
 					</div>
 				</div>
@@ -237,59 +224,55 @@ view! = |_|
 					<p class="command-usage">rocx lint {"<dir>…"}</p>
 					<p>
 						Refuses <code>Html.source_text</code> in hand-written <code>.roc</code> files under the
-						folders: it would put any string in a page as markup
-						(<a href={"${Paths.safety}#lint"}>why</a>). A comment or a string that only mentions it
-						doesn't count. It exits 1 if a file calls it.
+						folders: it puts any string in a page as markup (<a href={"${Paths.safety}#lint"}>why</a>).
+						Mentions in comments or strings don't count. Exits 1 if a file calls it.
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx routes {"[dir]"}<span>--server</span><span>--client</span></p>
 					<p>
-						Lists an app's routes: each method and path, and the middleware that runs around it,
-						outermost first (<a href={"${Paths.routing}#middleware"}>what runs, in what order</a>).
-						<code>--server</code> lists only the endpoints, and <code>--client</code> only the pages
-						(the error page too).
+						Lists an app's routes: each method and path, and the middleware around it, outermost first
+						(<a href={"${Paths.routing}#middleware"}>what runs, in what order</a>). <code>--server</code>
+						lists only the endpoints; <code>--client</code> only the pages (the error page too).
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx fmt {"<path>…"}<span>--check</span></p>
 					<p>
 						Formats the Roc in each <code>.rocx</code> file, and each <code>.roc</code> file rocx didn't
-						write, under the paths, with <code>roc fmt</code>: the compiler rocx builds with (an installed
-						version's, a clone's <code>.tools/roc-active</code>, else the one <code>ROC</code> names), or
-						else the <code>roc</code> on your <code>PATH</code>. Markup, and the Roc in its holes, stay as
-						written: a piece of markup moves only with the code around it, and the text of a
-						<code>{"<pre>"}</code> or <code>{"<textarea>"}</code> never moves. <code>--check</code> only
-						lists the files that aren't formatted, and exits 1 if there are any.
+						write, under the paths, with <code>roc fmt</code>: rocx's compiler (an installed version's, a
+						clone's <code>.tools/roc-active</code>, else the one <code>ROC</code> names), else the
+						<code>roc</code> on your <code>PATH</code>. Markup and the Roc in its holes stay as written:
+						markup moves only with the code around it, and <code>{"<pre>"}</code> or
+						<code>{"<textarea>"}</code> text never moves. <code>--check</code> lists unformatted files, and
+						exits 1 if there are any.
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx qr {"<text>"}<span>--pbm</span></p>
 					<p>
-						Prints the text as a QR code in the terminal, as <code>rocx dev --android --lan</code> does
-						for a phone, or as a PBM image with <code>--pbm</code>. A code holds 2,331 bytes at most.
+						Prints the text as a QR code in the terminal (as <code>rocx dev --android --lan</code> does),
+						or as a PBM image with <code>--pbm</code>. A code holds at most 2,331 bytes.
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx upgrade {"[version]"}</p>
 					<p>
-						Installs a version of rocx (the latest unless you name one) into <code>~/.rocx</code> and
-						makes it the default. In an app, it also moves the app onto it: its
-						<code>.rocx-version</code> and its <code>.rocx</code> link. Every command on an app runs the
-						version the app names, installing it first if it isn't, so a team shares one version through
-						the app's repository. A rocx from Nix leaves upgrading to Nix.
+						Installs rocx (the latest, or the version you name) into <code>~/.rocx</code> as the default.
+						In an app, it also moves the app's <code>.rocx-version</code> and <code>.rocx</code> link to
+						it. Every command on an app runs the version the app names, installing it if needed, so a team
+						shares one version through the repository. A rocx from Nix leaves upgrading to Nix.
 					</p>
 				</div>
 				<div class="command">
 					<p class="command-usage">rocx agents {"[dir]"}<span>--force</span></p>
 					<p>
-						Writes rocx's rules for coding agents into the app's <code>AGENTS.md</code>, as a block between two
-						markers, and a <code>CLAUDE.md</code> that imports <code>AGENTS.md</code> where there is none. The
-						block points at <code>.rocx/agents/guide.md</code>, the guide for the version the app builds with.
-						Run it again after an upgrade: it rewrites the block and nothing outside it, so the app's own notes
-						stay. It refuses a block someone edited unless given <code>--force</code>, and{" "}
-						<code>rocx check</code> says when the block is from another version. <code>rocx new</code> writes both
-						files.
+						Writes rocx's rules for coding agents into the app's <code>AGENTS.md</code>, as a block
+						between two markers, and a <code>CLAUDE.md</code> that imports it if there is none. The block
+						points at <code>.rocx/agents/guide.md</code>, the guide for the app's rocx version. Run it again
+						after an upgrade: it rewrites only the block, so the app's own notes stay. It refuses an edited
+						block without <code>--force</code>. <code>rocx check</code> says when the block is from
+						another version. <code>rocx new</code> writes both files.
 					</p>
 				</div>
 				<div class="command">
@@ -302,14 +285,14 @@ view! = |_|
 				</div>
 			</div>
 			<p>
-				<code>rocx build</code> writes a file only when its content changes, so a watcher that sees it
-				doesn't rebuild forever. It deletes the <code>.roc</code> files it wrote whose
-				<code>.rocx</code> file is gone, and stops at the first markup problem, with its line and column.
-				The files it writes end with a <code># rocx: generated from …</code> line. Keep them out of
-				version control: ignore <code>Generated/</code>, <code>build/</code> and the <code>.roc</code>
-				files beside your <code>.rocx</code> files.
+				<code>rocx build</code> writes a file only when its content changes, so watchers don't loop. It
+				deletes the <code>.roc</code> files it wrote whose <code>.rocx</code> file is gone, and stops at
+				the first markup problem, with its line and column. Generated files end with a
+				<code># rocx: generated from …</code> line. Keep them out of version control: ignore
+				<code>Generated/</code>, <code>build/</code> and the <code>.roc</code> files beside your
+				<code>.rocx</code> files.
 			</p>
-			<p>Here is what <code>rocx routes</code> prints for the <a href={Paths.examples_hello}>hello</a> example:</p>
+			<p><code>rocx routes</code> on the <a href={Paths.examples_hello}>hello</a> example:</p>
 			<Code
 				source={"$ rocx routes examples/hello\nMETHOD  PATH    MIDDLEWARE (outermost first)\nGET     /       -\nGET     /hello  -"}
 				numbers={Bool.False}
@@ -318,151 +301,145 @@ view! = |_|
 
 			<Heading id="errors">Errors at your lines</Heading>
 			<p>
-				There are two kinds of mistake. A markup mistake (a tag that is never closed, an attribute rocx
-				refuses) is rocx's own: <code>rocx build</code> reports it at its line and column, with a caret
-				under it, and stops. Everything else is the Roc compiler's. Because line <var>N</var> of the
-				generated file is line <var>N</var> of yours, the compiler's reports already name the right line.
-				<code>rocx check</code> (and <code>rocx dev</code>) go further and make them read as if the
-				compiler had seen your file: they rewrite the location, quote your line instead of the generated
-				one, and move the caret onto the same code. A mistake in a route file's Roc
-				(<code>+server.roc</code>) is reported at its line too.
+				Markup mistakes (an unclosed tag, an attribute rocx refuses) are rocx's: <code>rocx build</code>
+				reports each at its line and column, with a caret, and stops. The rest are the Roc compiler's.
+				Line <var>N</var> of a generated file is line <var>N</var> of yours, so its reports already name
+				your line. <code>rocx check</code> and <code>rocx dev</code> also rewrite the location, quote your
+				line, and move the caret onto your code. A route file's Roc (<code>+server.roc</code>) is reported
+				at its lines too.
 			</p>
-			<p>Here is a file with a type mistake in it:</p>
+			<p>A file with a type mistake:</p>
 			<Code title="Posts.rocx" source={Sources.check_source} />
 			<p>and what <code>rocx check -- roc check Posts.roc</code> printed for it when this page was built:</p>
 			<div class="report"><Code title="The compiler, through rocx check" source={Sources.check_report} numbers={Bool.False} plain /></div>
 			<Callout kind="tip" title="Reading a report">
 				<p>
-					The location is your <code>.rocx</code> file's line and column, the line quoted is yours, and
-					the caret is under your own code. Fix it there: the generated <code>.roc</code> file is
+					Fix the mistake in your <code>.rocx</code> file: the generated <code>.roc</code> file is
 					written again on the next build.
 				</p>
 			</Callout>
 
 			<Heading id="editors">In an editor</Heading>
 			<p>
-				The repository's <code>editors/</code> folder has one grammar for <code>.rocx</code> files. It
-				colours Roc by the official Roc grammar; markup (an element's tag, a component's as a type,
-				attributes like <code>class:active</code> and <code>on:click.prevent</code>); the Roc in holes,
-				and markup inside that Roc; and CSS in a <code>{"<style>"}</code>. The one guess it makes is
-				whether a <code>{"<"}</code> starts markup: it does before a letter, unless a value is right
-				before it. So <code>{"a <b"}</code>, a comparison with a space before <code>{"<"}</code> and none
-				after, is coloured as markup.
+				The repository's <code>editors/</code> folder has a grammar for <code>.rocx</code> files. It
+				colours Roc (by the official Roc grammar), markup (tags, a component's tag as a type, attributes
+				like <code>class:active</code> and <code>on:click.prevent</code>), the Roc in holes and markup
+				inside it, and CSS in a <code>{"<style>"}</code>. Its one guess: a <code>{"<"}</code> before a
+				letter starts markup, unless a value comes right before it. So <code>{"a <b"}</code> (a comparison
+				with a space before <code>{"<"}</code> and none after) is coloured as markup.
 			</p>
 			<p>
-				<strong>VS Code</strong>: <code>just vscode-extension</code> installs the extension, for every
-				workspace (it needs <code>code</code> on your <code>PATH</code>, and Node). Besides the
-				highlighting, it adds a task type. <em>Terminal → Run Task… → rocx</em> lists two tasks for each
-				app in the workspace: <code>dev</code>, which runs <code>rocx dev</code> in a terminal of its
-				own, and <code>check</code>, which runs <code>rocx check</code> once. What rocx and the compiler
-				report shows at its <code>.rocx</code> line and in the Problems panel, and stays until the next
-				run. A task of your own in <code>.vscode/tasks.json</code> runs any command the same way
-				(<code>{"{ \"type\": \"rocx\", \"command\": \"just check\" }"}</code>). There is no language
-				server yet: what the editor shows is what the build says.
+				<strong>VS Code</strong>: <code>just vscode-extension</code> installs the extension for every
+				workspace (it needs <code>code</code> on your <code>PATH</code>, and Node). Besides highlighting,
+				it adds a task type: <em>Terminal → Run Task… → rocx</em> lists <code>dev</code> (runs
+				<code>rocx dev</code> in its own terminal) and <code>check</code> (runs <code>rocx check</code>
+				once) for each app. Their reports show at the <code>.rocx</code> line and in the Problems panel
+				until the next run. A task of your own in <code>.vscode/tasks.json</code> runs any command the same
+				way (<code>{"{ \"type\": \"rocx\", \"command\": \"just check\" }"}</code>). There is no language
+				server yet: the editor shows what the build reports.
 			</p>
 			<p>
 				<strong>Orca</strong>: <code>just orca-plugin</code> installs a plugin that highlights
-				<code>.rocx</code> and <code>.roc</code> files. It runs nothing, so it installs without asking
-				for access. It shows no errors, since Orca has no way for a plugin to show them: use
-				<code>rocx check</code>.
+				<code>.rocx</code> and <code>.roc</code> files. It runs nothing, so it needs no access. Orca
+				plugins can't show errors: use <code>rocx check</code>.
 			</p>
 
 			<Heading id="stories">Stories</Heading>
 			<p>
-				A component's stories are the ways it looks, written beside it, as Storybook's are. A
-				<code>{"<story name=\"…\">"}</code> in the component's block, among its definitions, holds the
-				markup of one. rocx makes each a definition in its place (<code>story_tip!</code> for
-				<code>{"<story name=\"Tip\">"}</code>), so every build checks it against the component, but only a
-				development build shows it: <code>rocx dev</code> (or <code>rocx build --dev</code>) serves a
-				catalog at <code>/__rocx/stories</code>.
+				A component's stories are the ways it looks, written beside it, as in Storybook. Each
+				<code>{"<story name=\"…\">"}</code> among the component's definitions holds one story's markup.
+				rocx makes each a definition (<code>story_tip!</code> for <code>{"<story name=\"Tip\">"}</code>),
+				so every build checks it against the component. Only a development build shows them:
+				<code>rocx dev</code> (or <code>rocx build --dev</code>) serves a catalog at
+				<code>/__rocx/stories</code>.
 			</p>
 			<Code title={Sources.ui_callout.file} source={Sources.ui_callout.rocx} />
+			<p>The catalog lists every story in a sidebar:</p>
+			<ul>
+				<li>
+					<kbd>S</kbd> folds the sidebar, <kbd>/</kbd> searches it, and <kbd>↑</kbd> and <kbd>↓</kbd>
+					step through it. Its parts and components fold, and its edge drags wider.
+				</li>
+				<li>
+					The story you pick shows in a frame, with the line it is written at. <kbd>F</kbd> fills the
+					window with it; <kbd>Esc</kbd> comes back.
+				</li>
+				<li>A component's name shows all its stories side by side.</li>
+				<li>
+					A dot marks a story the browser hasn't shown yet, and its component and part: <kbd>N</kbd>
+					opens the next, and searching for <code>new</code> lists them.
+				</li>
+				<li>The browser remembers what it has seen, what is folded and the width.</li>
+			</ul>
 			<p>
-				The catalog lists every story down the side, which folds away (<kbd>S</kbd>); <kbd>/</kbd>
-				searches it, and <kbd>↑</kbd> and <kbd>↓</kbd> step through it. The story you pick shows in a
-				frame, with the line it is written at, and can fill the window (<kbd>F</kbd>, and
-				<kbd>Esc</kbd> to come back). A component's name shows all its stories side by side. A story the
-				browser hasn't shown yet has a dot beside it, and so do its component and its part, so one just
-				written stands out: <kbd>N</kbd> opens the next, and searching for <code>new</code> lists them.
-				The side's parts and components fold, and its edge drags it wider; the browser keeps what it
-				has seen, what is folded and the width from one visit to the next. Each story
-				is the app's page at its own path (<code>/__rocx/stories/…</code>), rendered in the root layout
-				and hydrated, so it works as it would in the app; a layout can tell it is a story by its path
-				(this site shows a story with nothing around it). An app with no pages has nowhere to show one,
-				and its stories are an error.
+				Each story is the app's page at its own path (<code>/__rocx/stories/…</code>), rendered in the root
+				layout and hydrated, so it works as in the app. A layout can tell a story by its path (this site
+				shows one with nothing around it). An app with no pages can't show stories, so they are an error
+				there.
 			</p>
 			<p>
-				An app's <code>stories/</code> folder holds modules of stories alone: drafts of something new, each
-				a component with its own <code>{"<style>"}</code>, side by side in the catalog. Only a
-				development build compiles that folder, so nothing in it is published, its styles included. This
-				site's <code>site/stories/Landing.rocx</code> has the front page as it is, and drafts of it in six
-				themes.
+				An app's <code>stories/</code> folder holds modules of stories only: drafts, each a component with
+				its own <code>{"<style>"}</code>, side by side in the catalog. Only a development build compiles
+				it, so none of it is published, styles included. This site's <code>site/stories/Landing.rocx</code>
+				has the front page as it is, and drafts of it in six themes.
 			</p>
 
 			<Heading id="setup">Building an app yourself</Heading>
 			<p>
-				<code>rocx dev</code> builds both of an app's programs for you
-				(<a href={"${Paths.root}#start"}>getting started</a>), and <code>rocx build --release</code> builds
-				one that ships (below). An app is two programs (<a href={Paths.platform_}>the platform</a>): the server's, on the
-				server platform (native code in a Rust host), and the browser's, the same pages on the browser
-				platform (WebAssembly). <code>rocx build</code> writes the server's program,
-				<code>Generated/App.roc</code>: every request goes through the app's middleware
-				(<code>routes/+middleware.roc</code>) to the router rocx writes, which every URL is a file of. The app's own <code>main.roc</code> says only what rocx can't
-				know:
+				An app is two programs (<a href={Paths.platform_}>the platform</a>): the server's, native code in a
+				Rust host, and the browser's, the same pages in WebAssembly. <code>rocx dev</code> builds both
+				(<a href={"${Paths.root}#start"}>getting started</a>); <code>rocx build --release</code> builds
+				them to ship (below). The server's program, <code>Generated/App.roc</code>, is rocx's: every
+				request goes through the app's middleware (<code>routes/+middleware.roc</code>) to the router,
+				where every URL is a file. The app's <code>main.roc</code> says only what rocx can't know:
 			</p>
 			<Code
 				title="main.roc"
 				source={"app [program] { pf: platform \"../rocx/server/platform/main.roc\" }\n\nimport Generated/App\n\nprogram = App.program({\n\tinit!: |_started| Ok({}),\n})"}
 			/>
 			<ul>
+				<li><code>init!</code> makes the app's context once, at start; every request's middleware gets it.</li>
 				<li>
-					<code>init!</code> makes the app's context once, when the server starts, and every request's
-					middleware is given it.
-				</li>
-				<li>
-					Middleware isn't here: a <code>+middleware.roc</code> under <code>routes/</code> runs around the
-					routes in its directory, <code>routes/+middleware.roc</code> around every request
-					(<a href={"${Paths.routing}#middleware"}>middleware</a>). Changes sent by other sites' pages are
-					refused before it (<a href={"${Paths.safety}#origin"}>why</a>), unless the app says
+					Middleware isn't here: a <code>+middleware.roc</code> under <code>routes/</code> runs around its
+					directory's routes, <code>routes/+middleware.roc</code> around every request
+					(<a href={"${Paths.routing}#middleware"}>middleware</a>). Before it, changes sent from other
+					sites' pages are refused (<a href={"${Paths.safety}#origin"}>why</a>) unless the app says
 					<code>cross_site: Allowed</code>.
 				</li>
 				<li>
-					It may also say <code>database</code> (<code>Postgres</code> unless it says
-					<code>Sqlite(path)</code> or <code>Turso(path)</code>) and <code>plugins</code> (what packages
-					add: tables, jobs, loops, scripts; never a route).
+					It may also say <code>database</code> (<code>Sqlite("data/app.db")</code> unless it says
+					<code>Postgres</code>, <code>Sqlite(path)</code> or <code>Turso(path)</code>) and
+					<code>plugins</code> (what packages add: tables, jobs, loops, scripts; never a route).
 				</li>
 			</ul>
 			<p>
-				The browser's program is rocx's to write (<code>rocx build --client</code>): its root is the page
-				at the browser's path, which the browser hydrates. This site's:
+				rocx writes the browser's program too (<code>rocx build --client</code>): its root is the page at
+				the browser's path, which the browser hydrates. This site's:
 			</p>
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 			<p>
-				<code>rocx build</code> does all of it for a release: the browser's copy, its wasm
-				(<code>--opt=size --specialize=yes</code>), and the server's program with its host, one
-				executable (<code>--opt=speed</code>), with what it serves beside it. <code>--target arm64musl</code>
-				or <code>x64musl</code> makes a static Linux executable for a container, from a Mac too
-				(<a href={"${Paths.platform_server}#deploying"}>deploying</a>). The executable takes its port,
-				database and the rest as flags or environment variables
+				For a release, <code>rocx build</code> compiles the browser's wasm with
+				<code>--opt=size --specialize=yes</code>, and the server's program and host into one executable
+				with <code>--opt=speed</code>, with what it serves beside it. Its <code>--target</code> works from
+				a Mac too (<a href={"${Paths.platform_server}#deploying"}>deploying</a>). The executable takes its
+				port, database and the rest as flags or environment variables
 				(<a href={"${Paths.platform_server}#running"}>running it</a>).
 			</p>
 			<Code source={"rocx build --target arm64musl\ndist/server --port 8080 --static dist/static"} numbers={Bool.False} plain />
 			<p>
-				The two programs are optimized differently. The server's, <code>--opt=speed</code>, is built with
-				boxy lowering (<code>--specialize=no</code>) by default. With lambda-set specialization, Roc's
-				default, the function that renders an app's pages gets a stack frame that grows with the app,
-				and a large app's could outgrow the stack a render runs on. Boxy keeps it small, renders about as
-				fast and builds much faster. <code>--specialize=yes</code> (or <code>ROCX_SPECIALIZE=yes</code>)
-				asks for specialization. The browser's wasm is better specialized: it is smaller with brotli and
-				renders faster, which is why <code>--release</code> builds it with <code>--specialize=yes</code>.
+				The server is built with boxy lowering (<code>--specialize=no</code>) by default. With Roc's
+				default, lambda-set specialization, the function that renders pages gets a stack frame that grows
+				with the app, and a large app's could outgrow its stack. Boxy lowering renders about as fast and
+				builds much faster; <code>--specialize=yes</code> (or <code>ROCX_SPECIALIZE=yes</code>) opts back
+				in. Specializing the browser's wasm makes it smaller with brotli, and faster.
 			</p>
 			<p>
-				Requests, routes, endpoints, events and middleware are both platforms'
-				(<code>pf.Server</code>, <code>pf.Endpoint</code>, <code>pf.Middleware</code>,
-				<code>pf.Events</code>, <code>pf.OpenApi</code>), and so are the modules components are written
-				with, so the same component compiles on both. The database (Postgres or SQLite), the key-value
-				store, channels, live rooms and actors are the server platform's alone; jobs, cron and email are
-				packages for it (<a href={Paths.ecosystem}>the ecosystem</a>).
+				Both platforms have requests, routes, endpoints, events and middleware (<code>pf.Server</code>,
+				<code>pf.Endpoint</code>, <code>pf.Middleware</code>, <code>pf.Events</code>,
+				<code>pf.OpenApi</code>) and the modules components are written with, so a component compiles on
+				both. The database, the key-value store, channels, live rooms and actors are the server
+				platform's alone; jobs, cron and email are packages for it (<a href={Paths.ecosystem}>the
+				ecosystem</a>).
 			</p>
 
 			<Heading id="repository">This repository</Heading>
@@ -470,12 +447,12 @@ view! = |_|
 				<table>
 					<thead><tr><th>Where</th><th>What</th></tr></thead>
 					<tbody>
-						<tr><td><code>rocx-cli/</code></td><td>rocx, in Roc: the transpiler and every command, <code>rocx dev</code> and <code>just dev</code>'s loop included, built into <code>bin/rocx</code></td></tr>
-						<tr><td><code>cli/</code></td><td>the command-line platform rocx is built on: files, commands, a watched directory tree, signals, and one wait for whichever comes first; a Rust host</td></tr>
-						<tr><td><code>web/</code></td><td>the browser's platform: its Roc modules (those both platforms share among them: components', and requests, endpoints, events, middleware), the Rust host (built for wasm32), and the JavaScript runtime</td></tr>
+						<tr><td><code>rocx-cli/</code></td><td>rocx, in Roc: the transpiler and every command (<code>just dev</code>'s loop too), built into <code>bin/rocx</code></td></tr>
+						<tr><td><code>cli/</code></td><td>the command-line platform rocx is built on (a Rust host): files, commands, a watched directory tree, signals, and one wait for whichever comes first</td></tr>
+						<tr><td><code>web/</code></td><td>the browser's platform: its Roc modules (with those both platforms share: components', requests, endpoints, events, middleware), the Rust host (built for wasm32), and the JavaScript runtime</td></tr>
 						<tr><td><code>server/</code></td><td>the server's platform: its Roc modules, the Rust host, and the build</td></tr>
 						<tr><td><code>packages/</code>, <code>examples/</code></td><td>the <a href={Paths.ecosystem}>ecosystem</a>'s packages, and complete <a href={Paths.examples}>example apps</a></td></tr>
-						<tr><td><code>site/</code></td><td>this site, in rocx: its pages in <code>routes/</code>; <code>just dev</code> serves them as you edit, and <code>site/build.mjs</code> (<code>just site</code>) builds the static site</td></tr>
+						<tr><td><code>site/</code></td><td>this site, in rocx (pages in <code>routes/</code>): <code>just dev</code> serves it as you edit, <code>site/build.mjs</code> (<code>just site</code>) builds it static</td></tr>
 						<tr><td><code>templates/</code></td><td>the app <code>rocx new</code> copies, and its tests</td></tr>
 						<tr><td><code>release/</code></td><td>a release of rocx: what is built per target, the archives, the install script and its test</td></tr>
 						<tr><td><code>editors/</code></td><td>the <code>.rocx</code> grammar, the VS Code extension and the Orca plugin</td></tr>
@@ -484,26 +461,24 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				To work on Roc Solid itself, clone the repository. <code>just setup</code> takes Zig 0.17.1 and
-				Rust 1.85 or newer from your system (from Nix, say) when it has them, and downloads them into
-				<code>.tools/</code> when it doesn't. Rust needs its <code>wasm32-unknown-unknown</code> target,
-				for the browser's host: <code>just setup</code> adds it with <code>rustup</code> when it is
-				missing. Roc is a fork of
-				a pinned nightly with the compiler fixes Roc Solid needs. <code>just setup</code> builds it from
-				a clone of the fork when there is one, or downloads it prebuilt from the repository's releases
-				(for macOS on Apple silicon and Linux on arm64). Scripts use that compiler, never the <code>roc</code> on
-				your <code>PATH</code>. Node is needed only for the repository's checks and tests, the site's
-				build and the VS Code extension: rocx and your apps don't need it.
+				To work on Roc Solid itself, clone the repository and run <code>just setup</code>. It uses your
+				system's Zig 0.17.1 and Rust 1.85 or newer (from Nix, say), else downloads them into
+				<code>.tools/</code>, and adds Rust's <code>wasm32-unknown-unknown</code> target (for the browser's
+				host) with <code>rustup</code>. Roc is a fork of a pinned nightly with the compiler fixes Roc Solid
+				needs: <code>just setup</code> builds it from a clone of the fork if there is one, else downloads
+				it prebuilt from the repository's releases (macOS on Apple silicon, Linux on arm64). Scripts use
+				that compiler, never the <code>roc</code> on your <code>PATH</code>. Only the repository's checks
+				and tests, the site's build and the VS Code extension need Node; rocx and your apps don't.
 			</p>
 			<Code
 				source={"just setup   # the Roc fork, the pinned nightly, Zig and Rust if need be, into .tools/; then bin/rocx\njust db      # a Postgres in Docker, for the server platform (prints its DATABASE_URL)\njust test    # everything: the transpiler, both platforms, the packages, rocx new's template, the site in Chromium\njust check   # formatting, no package copied by hand, lint, and the site's and examples' type checks\njust dev     # this site, rendered per request, rebuilt and reloaded on save\njust site    # the static site, in site/dist"}
 				numbers={Bool.False}
 			/>
 			<p>
-				<code>bin/rocx</code> also has commands for the repository's own scripts: <code>rocx site dev</code>
-				and <code>rocx site prepare</code> (this site), <code>rocx self-build</code> (builds
-				<code>bin/rocx</code> again when its Roc changed) and <code>rocx internal</code> (the tests'
-				calls into rocx's functions).
+				<code>bin/rocx</code> also has commands for the repository's scripts: <code>rocx site dev</code>
+				and <code>rocx site prepare</code> (this site), <code>rocx self-build</code> (rebuilds
+				<code>bin/rocx</code> when its Roc changed) and <code>rocx internal</code> (the tests' calls into
+				rocx's functions).
 			</p>
 		</NoHydration>
 	</>

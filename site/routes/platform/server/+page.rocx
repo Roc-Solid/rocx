@@ -33,18 +33,16 @@ view! = |_|
 				eyebrow="The platform · the server"
 				title="Roc compiled to native code, in a Rust host"
 			>
-				An app's server is one executable: your Roc, compiled to machine code, linked with a host written
-				in Rust (on tokio and hyper). The host answers HTTP, runs your code for each request, catches a
-				crash so it ends only that request, and frees the memory it used. Your Roc decides what every
-				request gets; the host carries it out. This page covers running the server, then how it works
-				inside.
+				An app's server is one executable: your Roc compiled to machine code, linked with a Rust host
+				(tokio and hyper). The host answers HTTP, runs your code for each request, keeps a crash to its
+				request, and frees the memory used. Your Roc decides what each request gets; the host carries it
+				out.
 			</PageHero>
 
 			<Heading id="running">Running it</Heading>
 			<p>
-				While you develop, <code>rocx dev</code> builds the server and runs it for you, with
-				<code>--dev</code>. A built executable takes these options; the environment variable in
-				parentheses, where there is one, does the same as the flag:
+				<code>rocx dev</code> runs the server with <code>--dev</code>. A built executable takes these
+				options (with the environment variable that does the same in parentheses):
 			</p>
 			<Code
 				title="The app's executable"
@@ -54,52 +52,48 @@ view! = |_|
 			/>
 			<ul>
 				<li>
-					<strong>Request bodies.</strong> The host reads a request's body whole before your code runs, so
-					there is always a limit: 16 MiB by default, or what <code>--max-body</code> says (a number of
-					bytes, or of KiB, MiB or GiB, such as <code>64MiB</code>). A larger body is answered 413.
+					<strong>Request bodies.</strong> The host reads a body whole before your code runs: up to
+					16 MiB, or <code>--max-body</code> (bytes, KiB, MiB or GiB, as in <code>64MiB</code>). A larger
+					body gets 413.
 				</li>
 				<li>
-					<strong>Static files.</strong> <code>--static</code> and <code>--file</code> serve files as they
-					are, typed by their extension (with <code>cache-control: no-store</code> under
-					<code>--dev</code>). A file directly under <code>/rocx/</code> whose name ends in a dash and 16
-					hex digits (<code>styles-0123456789abcdef.css</code>, the stylesheet rocx build writes) is named
-					by its content, so the browser may keep it for a year
-					(<code>cache-control: public, max-age=31536000, immutable</code>).
+					<strong>Static files.</strong> <code>--static</code> and <code>--file</code> serve files typed by
+					their extension (<code>cache-control: no-store</code> under <code>--dev</code>). A file directly
+					under <code>/rocx/</code> whose name ends in a dash and 16 hex digits
+					(<code>styles-0123456789abcdef.css</code>, as rocx build names the stylesheet) is cached for a
+					year (<code>cache-control: public, max-age=31536000, immutable</code>).
 				</li>
 				<li>
-					<strong>Proxies.</strong> Requests the app makes to other servers go through
-					<code>HTTPS_PROXY</code> or <code>HTTP_PROXY</code> when set, except to hosts
-					<code>NO_PROXY</code> names (<a href={"${Paths.platform_http}#connections"}>HTTP</a>).
+					<strong>Proxies.</strong> Outgoing requests use <code>HTTPS_PROXY</code> or
+					<code>HTTP_PROXY</code> when set, except to hosts in <code>NO_PROXY</code>
+					(<a href={"${Paths.platform_http}#connections"}>HTTP</a>).
 				</li>
 				<li>
-					<strong>Starting.</strong> The server first reads <code>.env</code>, if there is one, into its
-					environment (<a href={Paths.platform_settings}>settings</a>). Then it takes its port: if the port
-					is in use, it stops there, before it opens the database or runs anything. Then it opens the
-					database, checks the plugins, applies the migrations, runs the app's <code>init!</code>, starts
-					the background loops, and answers requests.
+					<strong>Starting.</strong> The server reads <code>.env</code> into its environment
+					(<a href={Paths.platform_settings}>settings</a>) and takes its port, stopping if the port is in
+					use. Then it opens the database, checks the plugins, applies migrations, runs the app's
+					<code>init!</code>, starts the background loops, and answers requests.
 				</li>
 				<li>
-					<strong>Stopping.</strong> On SIGTERM or Ctrl-C, the server stops listening and taking new jobs,
-					then waits up to ten seconds for the requests, streams and jobs still running.
+					<strong>Stopping.</strong> On SIGTERM or Ctrl-C, it stops listening and taking jobs, then waits
+					up to ten seconds for running requests, streams and jobs.
 				</li>
 				<li>
 					<strong>Without a database</strong> (a Postgres app with no URL), a server whose app or plugins
-					have tables (migrations) doesn't start, and says which have them, rather than start and fail at
-					every query. Under <code>--dev</code> or <code>--debug</code> it starts, and a line on the log
-					says so. An app with no tables starts either way; what needs the database says so when it is
-					used.
+					have tables doesn't start, and says which have them; under <code>--dev</code> or
+					<code>--debug</code> it starts and logs a line. Without tables, it starts, and what needs the
+					database says so when used.
 				</li>
 			</ul>
 
 			<Heading id="logging">The log</Heading>
 			<p>
-				Every line the server writes to stderr is an event: a level, a message, and fields. Your app's
-				lines, the host's (starting, stopping, a crash with its method, URL and error) and the plugins'
-				(a migration applied, a job that failed) all go through one formatter. Messages stay fixed and
-				the details go in fields, so a log collector can filter on them. Log with <code>Log.info!</code>,
-				<code>Log.debug!</code>, <code>Log.warn!</code> or <code>Log.error!</code>, giving a message and a
-				record of fields (<code>{"{}"}</code> for none); <code>Log.line!</code> logs a message alone. The
-				format is set in the program:
+				Every line on stderr is an event: a level, a message and fields, from your app, the host
+				(starting, stopping, a crash with its method, URL and error) or a plugin (a migration applied, a
+				failed job). Keep messages fixed and details in fields, for log collectors to filter on. Log with
+				<code>Log.info!</code>, <code>Log.debug!</code>, <code>Log.warn!</code> or
+				<code>Log.error!</code>, a message and a record of fields (<code>{"{}"}</code> for none);
+				<code>Log.line!</code> logs a message alone. The program sets the format:
 			</p>
 			<Code
 				title="An event, and the log's format"
@@ -112,115 +106,104 @@ view! = |_|
 				plain={Bool.True}
 			/>
 			<p>
-				<code>Auto</code>, the default, uses <code>ROCX_LOG</code> (<code>pretty</code> or
-				<code>json</code>) if it is set. Otherwise it writes pretty lines, with the level in colour, when
-				stderr is a terminal, and JSON when it isn't (a server whose log is collected). A field named
-				<code>time</code>, <code>level</code> or <code>msg</code> is written as <code>fields.msg</code> and
-				so on, so it can't replace the line's own.
+				<code>Auto</code>, the default, follows <code>ROCX_LOG</code> (<code>pretty</code> or
+				<code>json</code>) if set; otherwise pretty lines, the level in colour, to a terminal, and JSON
+				elsewhere. A field named <code>time</code>, <code>level</code> or <code>msg</code> is written as
+				<code>fields.msg</code> and so on, so it can't replace the line's own.
 			</p>
 			<p>
-				Logging never waits for stderr. Each event goes on a queue, and a thread of its own writes the
-				lines in order, flushing when the queue is empty and before the process exits. If the queue is
-				full (64k events), the caller waits rather than lose a line.
+				Logging never waits for stderr: a thread of its own writes queued events in order, flushing when
+				the queue empties and before exit. When the queue is full (64k events), the caller waits rather
+				than lose a line.
 			</p>
 
 			<Heading id="deploying">Deploying</Heading>
 			<p>
-				A release build is one command: <code>rocx build</code> writes
-				<code>dist/server</code> and <code>dist/static</code> (<a href={"${Paths.tooling}#commands"}>rocx</a>).
+				<code>rocx build</code> writes <code>dist/server</code>, migrations inside, and
+				<code>dist/static</code> (<a href={"${Paths.tooling}#commands"}>rocx</a>).
 				<code>--target arm64musl</code> (or <code>x64musl</code>) makes a static Linux executable, from
-				macOS too: the platform's prebuilt host carries musl's C library and unwinder. The migrations are
-				inside the executable. To deploy:
+				macOS too: the prebuilt host carries musl's C library and unwinder. To deploy:
 			</p>
 			<ul>
-				<li>Put it in a container with the app's static files: <code>rocx build --image</code> writes an image with nothing else in it, no Dockerfile needed, for <code>docker load -i my-app.tar</code> (<a href={"${Paths.tooling}#commands"}>rocx</a>). Its server has the database engine the app's program names alone, and no debug info: a hello world's image is 3.7 MB to send.</li>
-				<li>Give it its database: a Postgres app a <code>DATABASE_URL</code>; a SQLite app a file on a volume (<code>--database-url sqlite:/data/app.db</code>).</li>
-				<li>Give it its settings (<code>APP_SECRET</code>, <code>SMTP_URL</code>, an API's key) as environment variables, or in a file it reads as it starts (<code>--env-file</code>; the environment wins). A plugin whose setting is missing stops the start, saying which.</li>
-				<li>Put a proxy in front of it for TLS, and tell the app its public address with <code>PUBLIC_URL</code>, so the links it sends point there (<a href={Paths.platform_settings}>settings</a>).</li>
+				<li>Put it in a container with the app's static files: <code>rocx build --image</code> writes an image of nothing else, without a Dockerfile, for <code>docker load -i my-app.tar</code> (<a href={"${Paths.tooling}#commands"}>rocx</a>). With only the app's database engine and no debug info, a hello world's image is 3.7 MB to send.</li>
+				<li>Give a Postgres app a <code>DATABASE_URL</code>, a SQLite app a file on a volume (<code>--database-url sqlite:/data/app.db</code>).</li>
+				<li>Pass settings (<code>APP_SECRET</code>, <code>SMTP_URL</code>, an API's key) as environment variables, or in a file read at start (<code>--env-file</code>; the environment wins). A plugin missing a setting stops the start, naming it.</li>
+				<li>Put a TLS proxy in front, and set <code>PUBLIC_URL</code> to the public address for the links the app sends (<a href={Paths.platform_settings}>settings</a>).</li>
 			</ul>
+			<p>The platform's test app runs all its tests this way, in a container against a Postgres.</p>
 			<p>
-				The platform's test app, built this way, runs all of its tests in a container against a Postgres.
-			</p>
-			<p>
-				An app whose pages need no server once they are rendered (docs, a blog, a landing page) can be
-				deployed as files instead: <code>rocx build app --static dist</code> writes every page, its data
-				and what it loads, for GitHub Pages or a CDN (<a href={"${Paths.tooling}#static"}>a static
-				copy</a>).
+				An app whose pages need no server once rendered (docs, a blog, a landing page) can be deployed as
+				files: <code>rocx build app --static dist</code> writes every page, its data and what it loads, for
+				GitHub Pages or a CDN (<a href={"${Paths.tooling}#static"}>a static copy</a>).
 			</p>
 
 			<Heading id="layers">What is Rust, what is Roc</Heading>
 			<p>
-				The host gives Roc general building blocks. Everything an app is built from on top of them is Roc,
-				in the platform or in packages, and an app could write its own the same way:
+				The host gives Roc general building blocks. Everything built on them is Roc, in the platform or
+				packages, and an app could write its own:
 			</p>
 			<ul>
 				<li>
 					<strong>Rust</strong> (<code>server/host</code>): HTTP; threads; the database (a pool of
-					Postgres connections plus one that listens for notifications, or SQLite's file in the
-					process, its calls on threads of their own); time zones; TCP and TLS sockets; live topics and
-					rooms; channels' streams; background loops and isolated calls; actors' mailboxes and timers;
-					values in memory (<code>Kv</code>); secure random numbers, AES-GCM and P-256; reading
-					<code>.env</code>; and rendering pages of components.
+					Postgres connections plus one listening for notifications, or SQLite's file in the process, its
+					calls on threads of their own); time zones; TCP and TLS sockets; live topics and rooms;
+					channels' streams; background loops and isolated calls; actors' mailboxes and timers; values in
+					memory (<code>Kv</code>); secure random numbers, AES-GCM and P-256; reading <code>.env</code>;
+					rendering pages of components.
 				</li>
 				<li>
 					<strong>Roc</strong> (<code>server/platform/*.roc</code>): migrations, plugins (checking and
-					running them), actors' state and messages, and decoding database rows. Jobs and cron, and email
-					(an SMTP client, MIME), are Roc too, built on the same effects, in packages
+					running them), actors' state and messages, decoding database rows. Jobs, cron and email (an SMTP
+					client, MIME) are Roc packages on the same effects
 					(<a href={Paths.ecosystem_jobs}>packages/jobs</a>, <a href={Paths.ecosystem_email}>packages/email</a>).
 				</li>
 			</ul>
-			<p>
-				Every effect each module offers, with its type, is in the <a href={Paths.platform_reference}>platform
-				reference</a>.
-			</p>
+			<p>The <a href={Paths.platform_reference}>platform reference</a> lists every effect, with its type.</p>
 
 			<Heading id="calls">A call pauses while it waits</Heading>
 			<p>
-				Your Roc runs on threads of its own: one per CPU core, unless <code>--roc-threads</code> (or
-				<code>ROCX_ROC_THREADS</code>) says otherwise. They sit beside tokio's threads, which handle HTTP
-				and every socket and timer. Each call into Roc (a request and the page it renders, a stream, an
-				actor's turn, a background loop) runs as a <strong>coroutine</strong> on one of Roc's threads,
-				with a stack of its own.
+				Your Roc runs on threads of its own (one per CPU core, or <code>--roc-threads</code> /
+				<code>ROCX_ROC_THREADS</code>), beside tokio's, which handle HTTP, sockets and timers. Each call
+				into Roc (a request and its page, a stream, an actor's turn, a background loop) is a
+				<strong>coroutine</strong> with its own stack.
 			</p>
 			<p>
-				When an effect has to wait (a query, a socket, another server, a sleep), the call pauses. Its stack
-				stays as it is, its thread runs other calls meanwhile, and the call resumes where it left off, on
-				the same thread, once what it waited for is done. So a waiting call holds no thread, and any number
-				of calls can wait at once. The tests check this: eight requests that each wait 0.3 s on Postgres
-				take about 0.3 s together, and 2,000 requests that each wait a second, on two threads, take about a
+				When an effect waits (a query, a socket, another server, a sleep), the call pauses and its thread
+				runs other calls; it resumes on the same thread when the wait ends. A waiting call holds no
+				thread, so any number can wait at once. In the tests, eight requests each waiting 0.3 s on
+				Postgres take about 0.3 s together, and 2,000 each waiting a second, on two threads, about a
 				second.
 			</p>
-			<p>This has costs:</p>
+			<p>The costs:</p>
 			<ul>
 				<li>
-					Roc that computes for a long time without an effect (a long pure loop) can't pause, so the calls
-					queued on its thread wait for it. New calls go to Roc's other threads.
+					Roc computing for long without an effect (a long pure loop) can't pause, so calls queued on its
+					thread wait. New calls go to Roc's other threads.
 				</li>
 				<li>
-					A call with a time limit (a job's) is still ended when its time is up: the server interrupts its
-					thread and, when the thread is in the app's code, ends the call as a crash would.
+					A call with a time limit (a job's) still ends on time: the server interrupts its thread and, in
+					the app's code, ends the call as a crash would.
 				</li>
 				<li>
-					Each stack reserves 8 MiB (Roc's default, since a page is a deep tree to render), but a paused
-					call costs only the memory pages its stack actually touched.
+					Each stack reserves 8 MiB (Roc's default; a page is a deep tree to render), but a paused call
+					costs only the memory its stack touched.
 				</li>
-				<li>Profilers and debuggers see calls on stacks of their own rather than on threads.</li>
-				<li>A call that overflows its stack still ends the process, saying so on stderr first.</li>
+				<li>Profilers and debuggers see calls on their own stacks, not on threads.</li>
+				<li>A stack overflow still ends the process, saying so on stderr first.</li>
 			</ul>
 			<p>
-				Each call has its own context: its open transaction, the rooms it joined, the topics it listens
-				to, and its sockets. All of it is given back when the call ends. A value Roc makes belongs to its
-				call until the call returns; after that the host owns it and may move it to another call (a
-				stream, to the call that sends it), but never shares it.
+				Each call has its own context (its open transaction, rooms joined, topics listened to, sockets),
+				given back when it ends. A value Roc makes belongs to its call until the call returns; then the host
+				owns it, and may move it to another call (a stream's, to the call that sends it) but never shares
+				it.
 			</p>
 
 			<Heading id="crashes">A crash ends one call</Heading>
 			<p>
-				In Roc, a <code>crash</code> or an integer overflow stops the program. Roc's ABI lets the host
-				decide what that means: <code>roc_crashed</code> must never return, so it may either end the
-				process or jump out of the Roc code that called it. This host does the second. A guard
-				(<code>server/host/src/guard.c</code>) sets a jump target around every call into Roc; a crash jumps
-				back to it, and only that call ends:
+				In Roc, a <code>crash</code> or an integer overflow stops the program, but Roc's ABI lets the host
+				choose how: <code>roc_crashed</code> must never return, so it can end the process or jump out of
+				the Roc code that called it. This host jumps. A guard (<code>server/host/src/guard.c</code>) sets a
+				jump target around every call into Roc, so a crash ends only that call:
 			</p>
 			<ul>
 				<li><strong>A request</strong> is answered 500 (with the crash's message under <code>--dev</code>).</li>
@@ -229,68 +212,59 @@ view! = |_|
 				<li><strong>An actor's turn</strong> is logged and reported to whoever asked; the actor's state stays as it was.</li>
 				<li><strong>A transaction</strong> the call had open is rolled back.</li>
 			</ul>
-			<p>
-				The frames a crash skips are only Roc's and a small trampoline's, never the host's, so no Rust
-				destructor is skipped.
-			</p>
+			<p>A crash skips only Roc's frames and a small trampoline's, so no Rust destructor is skipped.</p>
 
 			<Heading id="memory">Memory</Heading>
 			<p>
-				A crash must not leak memory. While a call runs, every allocation it makes is linked into a list
-				that belongs to the call. If the call returns, the answer's strings are copied out and the list
-				is freed (a stream keeps its list until the call that sends it is done). If the call crashes,
-				everything in its list is freed. Roc's reference counts are atomic in native builds, so a value
-				moved to another thread stays correct.
+				So that a crash leaks nothing, every allocation a call makes goes into a list the call owns. When
+				the call returns, the answer's strings are copied out and the list is freed (a stream's once the
+				call sending it is done); when it crashes, everything in the list is freed. Roc's reference counts
+				are atomic in native builds, so a value moved to another thread stays correct.
 			</p>
 			<p>
-				The tests crash 200 requests at once, half of them after allocating 2,000 strings, and check
-				afterwards that Roc holds no allocation (<code>--debug</code> serves the count at
-				<code>/__rocx/allocations</code>). This site's tests render its pages again and again and check the
-				same.
+				The tests crash 200 requests at once, half after allocating 2,000 strings, then check that Roc
+				holds no allocation (<code>--debug</code> serves the count at <code>/__rocx/allocations</code>).
+				This site's tests check the same after rendering its pages over and over.
 			</p>
 
 			<Heading id="streams">Streams of events</Heading>
 			<p>
-				An endpoint can answer with a stream of server-sent events: a loop,
-				<code>{"Events.stream(|{ send!, sleep! }| …)"}</code>. The host runs it as a call of its own for as
-				long as it is open. <code>send!</code> writes an event to the response, and <code>sleep!</code>
-				pauses. When the client goes away, <code>sleep!</code> wakes early and the next
-				<code>send!</code> returns <code>Err(Gone)</code>, so <code>?</code> ends the loop. A sleeping
-				stream holds no thread: the tests keep 2,000 open on two threads, and a request beside them is
-				still answered at once. <a href={"${Paths.calls}#events"}>Events</a> shows one, with a component
-				listening to it.
+				An endpoint can answer with server-sent events: a loop,
+				<code>{"Events.stream(|{ send!, sleep! }| …)"}</code>, which the host runs as its own call while the
+				stream is open. <code>send!</code> writes an event; <code>sleep!</code> pauses. When the client
+				leaves, <code>sleep!</code> wakes early and the next <code>send!</code> returns
+				<code>Err(Gone)</code>, so <code>?</code> ends the loop. A sleeping stream holds no thread: the
+				tests keep 2,000 open on two threads and still answer a request at once.
+				<a href={"${Paths.calls}#events"}>Events</a> shows one, with a component listening.
 			</p>
 			<p>
 				For live data that pages follow, a <a href={"${Paths.platform_live}#channels"}>channel</a> is
-				usually better: all of a tab's channels share one stream, the host keeps that stream without a
-				call, and Roc runs only briefly, for a channel's check or hook.
+				usually better: a tab's channels share one stream the host keeps without a call, and Roc runs only
+				briefly, for a check or hook.
 			</p>
 
 			<Heading id="pages">Pages, rendered on the server</Heading>
 			<p>
 				A page is one tree of components: its layouts, the page, and what they contain. The host renders
 				it whole (<code>server/host/src/signals.rs</code>) exactly as the browser's runtime would: each
-				component runs once, each hole runs once, nothing is tracked and nothing waits, and a memo is
-				computed when it is made. The output carries small HTML comments that mark where each hole is, so
-				the browser can hydrate it. Markup inside <code>{"<NoHydration>"}</code> is rendered as plain HTML,
-				with no markers: the browser never hydrates it. The site's tests compare what the host renders with
-				what the browser's runtime renders, byte for byte, on every page.
+				component and hole runs once, nothing is tracked or waits, and a memo is computed when made. HTML
+				comments mark each hole for hydration; markup inside <code>{"<NoHydration>"}</code> is plain HTML,
+				never hydrated. The site's tests check that the host and the browser's runtime render every page
+				the same, byte for byte.
 			</p>
 			<p>
-				When a component reads an endpoint (<code>Endpoint.read!</code>, a GET of one of the app's own
-				paths), the host makes that request in-process: it runs through the app's <code>respond!</code>,
-				behind the middleware of the route's directories, with <code>accept: application/json</code>, the page's headers
-				(cookies included) and the app's context. So the component gets the same answer the browser would.
-				Each URL is asked once per render. The answers go into a script at the end of the page, each under
-				its URL, followed by <code>/rocx/start.js</code>, and the browser reads them from there instead of
-				asking again. Reads made inside a <code>{"<NoHydration>"}</code> aren't recorded, since the browser
-				never makes them.
+				A component's endpoint read (<code>Endpoint.read!</code>, a GET of the app's own path) is made
+				in-process: through the app's <code>respond!</code> and the route directories' middleware, with
+				<code>accept: application/json</code>, the page's headers (cookies included) and the app's context,
+				so it gets the answer the browser would. Each URL is asked once per render. The answers go, by URL,
+				into a script at the end of the page, before <code>/rocx/start.js</code>, and the browser reads them
+				there instead of asking again. Reads inside a <code>{"<NoHydration>"}</code> aren't recorded: the
+				browser never makes them.
 			</p>
 			<p>
-				When something fails (a context nothing provides, a memo that failed, an endpoint that answers
-				anything but 200), the nearest <code>{"<Errored>"}</code> shows its fallback, as in the browser. A
-				redirect from an endpoint makes the page that redirect. A crash ends the render, and the page is
-				answered 500.
+				On a failure (a context nothing provides, a failed memo, an endpoint answering anything but 200),
+				the nearest <code>{"<Errored>"}</code> shows its fallback, as in the browser. An endpoint's
+				redirect redirects the page; a crash ends the render with a 500.
 			</p>
 
 			<Heading id="photos">Photos' copies</Heading>
@@ -312,92 +286,78 @@ view! = |_|
 
 			<Heading id="background">Background loops and isolated calls</Heading>
 			<p>
-				As it starts, the server asks the platform's Roc which loops to run in the background: the
-				plugins' loops (the jobs plugin's workers, its schedules and its hourly sweep of finished jobs) and
-				their checks (the email plugin's look at the SMTP server). Each runs as a call of its own until
-				the server stops; one that crashes starts again a second later. A loop sleeps with
-				<code>Live.next!</code>, which wakes when something is published on a topic it listens to, when its
-				time is up, or with <code>Gone</code> when the server stops. <code>Db.notify!</code> (and Postgres's
-				<code>NOTIFY</code>) publish on <code>{"db:<channel>"}</code>, which is how job workers sleep until
-				a job is queued.
+				At start, the server asks the platform's Roc which loops to run in the background: plugins' loops
+				(the jobs plugin's workers, schedules and hourly sweep of finished jobs) and checks (the email
+				plugin's look at the SMTP server). Each runs as its own call until the server stops; one that
+				crashes restarts a second later. A loop sleeps with <code>Live.next!</code>, which wakes on a
+				publish to a topic it listens to, when its time is up, or with <code>Gone</code> at shutdown.
+				<code>Db.notify!</code> (and Postgres's <code>NOTIFY</code>) publish on
+				<code>{"db:<channel>"}</code>: that is how job workers sleep until a job is queued.
 			</p>
 			<p>
-				An <strong>isolated call</strong> runs Roc inside another call, guarded on its own: a crash in it
-				ends it alone, and the caller is told why. Plugins run calls this way
-				(<code>Plugin.isolated!</code>); the jobs plugin runs each job so, which is why a job that crashes
-				is just a job that failed, and the worker goes on.
+				An <strong>isolated call</strong> runs Roc inside another call, guarded on its own: a crash ends it
+				alone, and the caller learns why. Plugins use them (<code>Plugin.isolated!</code>); the jobs plugin
+				runs each job in one, so a crashing job just fails and the worker goes on.
 			</p>
 			<p>
-				An actor's turn is a guarded call of its own, too. Its mailbox, in the host, runs it with the kind,
-				key, state and message as strings, so a crash frees all of them. No lock is taken: one task routes
-				every message to its actor's mailbox, and each actor handles its own messages one at a time
+				An actor's turn is a guarded call too: its mailbox, in the host, runs it with the kind, key, state
+				and message as strings, so a crash frees them all. No lock is taken: one task routes each message
+				to its actor's mailbox, and each actor handles its messages one at a time
 				(<a href={Paths.platform_actors}>actors</a>).
 			</p>
 
 			<Heading id="plugins">Plugins</Heading>
 			<p>
-				A <strong>plugin</strong> is a package that adds to an app what only the server runs: tables,
-				background loops, files, scripts every page loads, development pages, work at start, checks; never
-				a route. You install one in a line: name the package in the app's header, and list its plugin in
-				the program. The jobs, email, auth, push, Stripe and audio packages, among others, are
-				plugins.
+				A <strong>plugin</strong> is a package that adds what only the server runs: tables, background
+				loops, files, scripts every page loads, development pages, work at start, checks; never a route.
+				Name the package in the app's header and list its plugin in the program. The jobs, email, auth,
+				push, Stripe and audio packages, among others, are plugins.
 			</p>
 			<Code
 				title="main.roc"
 				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tinit!,\n\tplugins: [Acme.plugin({})],\n})"}
 				numbers={Bool.False}
 			/>
-			<p>
-				A plugin is one value, a <code>Plugin.Value</code>, which its package makes from options of its
-				own. What it adds:
-			</p>
+			<p>A plugin is one value, a <code>Plugin.Value</code>, made by its package from its own options:</p>
 			<ul>
 				<li>
-					<strong>No routes.</strong> Every URL an app answers is a file under its <code>routes/</code>
-					(D-116): a package that answers requests offers handlers, which the app calls from route files of
-					its own (<code>{"respond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"}</code>),
-					where it wants them and behind the middleware of the folder it puts them in.
+					<strong>No routes.</strong> Every URL is a file under the app's <code>routes/</code> (D-116). A
+					package that answers requests offers handlers for the app's own route files
+					(<code>{"respond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"}</code>),
+					wherever the app puts them, behind that folder's middleware.
 				</li>
 				<li>
-					<strong>Tables</strong> (its migrations) are applied after the platform's and before the app's,
-					each recorded under the plugin's name. A plugin may list one migration per database flavor.
+					<strong>Tables</strong> (migrations) are applied after the platform's and before the app's,
+					recorded under the plugin's name; a plugin may list one per database flavor.
 				</li>
 				<li>
-					<strong>Calls, loops, starts and checks</strong> are given the app's context, which its
-					<code>init!</code> made. The plugin doesn't need to know its type
-					(<code>Plugin.Value(context)</code>).
+					<strong>Calls, loops, starts and checks</strong> get the app's context (from its
+					<code>init!</code>) without knowing its type (<code>Plugin.Value(context)</code>).
 				</li>
 				<li>
-					<strong>Needs</strong> say what the compiler can't check: an environment variable, a database
-					(any, or Postgres or SQLite only), another plugin.
+					<strong>Needs</strong> the compiler can't check: an environment variable, a database (any, or
+					Postgres or SQLite only), another plugin.
 				</li>
-				<li>
-					<strong>Files and scripts</strong>, below.
-				</li>
+				<li><strong>Files and scripts</strong>, below.</li>
 			</ul>
 			<p>
-				As it starts, the server checks every plugin at once, and any problem stops it, with the whole
-				list: two routes at one path (the app's and a plugin's, or two plugins'), a file at the root where a
-				route is, two files at one place, a name used twice, an environment variable a plugin needs and
-				doesn't have, a database it needs, a plugin it needs that isn't listed. Then it logs what each
-				plugin added.
+				At start, the server checks every plugin and stops on any problem, listing them all: two
+				development pages at one method and path, a file at the root where the app has a route, two files
+				at one place, a name used twice, a need not met. Then it logs what each plugin added.
 			</p>
 			<p>
-				A plugin package names the server platform in its header, as an app does. The modules the browser
-				can compile too are listed in a second header, <code>browser.roc</code>, which the browser's copy
-				of the app uses instead.
+				A plugin package names the server platform in its header, as an app does; a second header,
+				<code>browser.roc</code>, lists the modules the browser's copy of the app can compile too.
 			</p>
 			<p>
-				<strong>A plugin's files</strong> are embedded when the app is built
-				(<code>{"import \"static/push-sw.js\" as worker : List(U8)"}</code>) and handed to the host once,
-				at start. The host serves them before anything else sees the request, the app's middleware
-				included, so an app's sign-in guard never blocks a service worker or a script. A file is served at
-				<code>{"/rocx/plugins/<plugin>/<path>"}</code>, or at <code>{"/<path>"}</code> with
-				<code>at: Root</code> (a service worker, whose scope is where it is). It answers <code>GET</code>
-				and <code>HEAD</code>, with its content type and an ETag of its bytes (304 when the browser has
-				them already). Files listed as <code>scripts</code> are loaded by every page the server renders,
-				each as a module before <code>start.js</code>. Such a script can register browser effects that
-				<code>Browser.call!</code> finds by the name <code>{"<plugin>.<effect>"}</code>; each is given
+				<strong>A plugin's files</strong> are embedded at build (with an <code>import … : List(U8)</code>,
+				below) and handed to the host at start. The host serves them before anything else, the app's middleware included, so a sign-in
+				guard never blocks a service worker or script: at <code>{"/rocx/plugins/<plugin>/<path>"}</code>,
+				or <code>{"/<path>"}</code> with <code>at: Root</code> (a service worker, whose scope is where it
+				is), to <code>GET</code> and <code>HEAD</code>, with its content type and an ETag of its bytes (304
+				when the browser has them). Every server-rendered page loads the files listed as
+				<code>scripts</code>, as modules before <code>start.js</code>. Such a script can register browser
+				effects that <code>Browser.call!</code> finds as <code>{"<plugin>.<effect>"}</code>; each gets
 				<code>{"{ under }"}</code>, which puts a URL under the site's base path. The
 				<a href={Paths.ecosystem_push}>push</a> plugin serves its service worker at the root and its script
 				this way, and the <a href={Paths.ecosystem_audio}>audio</a> plugin its player.
@@ -412,12 +372,13 @@ view! = |_|
 			<p>
 				<code>Tcp.connect!</code> (or <code>connect_tls!</code>, or <code>start_tls!</code> on an open
 				socket) opens a socket for the call. <code>write_bytes!</code>, <code>read_exactly!</code>,
-				<code>read_up_to!</code> and <code>read_until!</code> use it, the call pausing while each waits, and
-				<code>close!</code> closes it; a socket the call leaves open is closed when the call ends. TLS is
-				rustls, checked against the web's certificate authorities. <code>Random.bytes!</code> and
-				<code>Random.seed_u64!</code> are the operating system's secure randomness
-				(<a href={Paths.platform_crypto}>crypto</a>). The email package's SMTP client is written on these,
-				and so is <a href={"${Paths.platform_database}#roc-pg"}>roc-pg</a>, a Postgres client in Roc.
+				<code>read_up_to!</code> and <code>read_until!</code> pause the call while they wait;
+				<code>close!</code> closes it, and the call's end closes any left open. TLS is rustls, checked
+				against the web's certificate authorities. <code>Random.bytes!</code> and
+				<code>Random.seed_u64!</code> are the OS's secure randomness
+				(<a href={Paths.platform_crypto}>crypto</a>). The email package's SMTP client and
+				<a href={"${Paths.platform_database}#roc-pg"}>roc-pg</a>, a Postgres client in Roc, are built on
+				these.
 			</p>
 
 			<Heading id="limits">Not yet</Heading>
@@ -430,11 +391,11 @@ view! = |_|
 			<Callout kind="note" title="Built on">
 				<p>
 					tokio and hyper (HTTP), corosensei (coroutines), tokio-postgres with deadpool, rusqlite with
-					SQLite compiled in, turso_core (Turso's engine; a release has Postgres's and Turso's only if
-					its program names them), image, fast_image_resize and libwebp (photos' copies; in a release whose
-					markup writes an <code>enhanced:src</code>), chrono-tz (time zones), rustls with ring (TLS;
-					ring for random numbers, AES-GCM and P-256 too), and Roc's glue for the types the platform's
-					header names (<code>just glue</code> writes <code>server/host/src/roc_platform_abi.rs</code>).
+					SQLite compiled in, turso_core (Turso's engine; a release has Postgres's and Turso's only if its
+					program names them), image, fast_image_resize and libwebp (photos' copies, in a release whose
+					markup writes an <code>enhanced:src</code>), chrono-tz (time zones), rustls with ring (TLS, random
+					numbers, AES-GCM and P-256), and Roc's glue for the types the platform's header names
+					(<code>just glue</code> writes <code>server/host/src/roc_platform_abi.rs</code>).
 				</p>
 			</Callout>
 		</NoHydration>
