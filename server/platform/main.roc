@@ -438,7 +438,7 @@ started_for_host! = |boxed| {
 			}
 		}
 	}
-	Plugins.log!(plugins)
+	Plugins.log!(plugins, !Setting.text!("debug").is_empty())
 	# Under --dev, the places to open (the plugins', the app's own among them), for the server to
 	# list under its address (D-111).
 	if !Setting.text!("dev").is_empty() {

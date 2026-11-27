@@ -1370,7 +1370,7 @@ can be searched:
 | `rocx server: Roc crashed` | error | `method`, `target`, `error` |
 | `rocx server: migrated` | info | `migration` |
 | `rocx plugins: <names>` | info | (the plugins started, in their order, in the message; one that adds nothing but links isn't named) |
-| `rocx plugins: added` | debug | `plugin`, `adds` |
+| `rocx plugins: added` | debug | `plugin`, `adds` (under `--debug`) |
 | `rocx server: links` | info | a link a field, its label its name (under `--dev`, D-111) |
 | `rocx actor: a message failed` | error | `actor`, `key`, `error` |
 | `rocx jobs: a job failed, and runs again` | warn | `kind`, `id`, `attempt`, `of`, `again_in_ms`, `error` |
@@ -1467,8 +1467,8 @@ each (`Plugins.roc`):
   a root file where a route is, or a script that isn't one of the plugin's files.
 
 Then the plugins are ordered by their needs (the list's order breaks ties), and the log names them
-on one line (`rocx plugins: jobs, acme`), and at debug says what each added (`rocx plugins: added
-plugin=acme adds="2 routes, 2 files, 1 script, 1 migration"`). A plugin's `links` (D-111) are the
+on one line (`rocx plugins: jobs, acme`), and under `--debug` says at debug what each added (`rocx
+plugins: added plugin=acme adds="2 routes, 2 files, 1 script, 1 migration"`). A plugin's `links` (D-111) are the
 places it adds that a person may want to open: under `--dev` the server lists them under its
 address.
 

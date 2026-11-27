@@ -143,16 +143,20 @@ Plugins := [].{
 	}
 
 	## Logs the plugins started, in their order, one line at info (`rocx plugins: jobs, email`, D-111),
-	## and what each added at debug (`rocx plugins: added`, `plugin=jobs adds="1 migration, 5
-	## loops"`). One that adds nothing but links (the app's own) isn't named.
-	log! : List(Plugin.Running(context)) => {}
-	log! = |plugins| {
-		for plugin in plugins {
-			Log.debug!("rocx plugins: added", { plugin: plugin.name, adds: Plugins.added(plugin) })
+	## and with `detailed` (the server's `--debug`) what each added, at debug (`rocx plugins: added`,
+	## `plugin=jobs adds="1 migration, 5 loops"`). One that adds nothing but links (the app's own)
+	## is in neither.
+	log! : List(Plugin.Running(context)), Bool => {}
+	log! = |plugins, detailed| {
+		named = plugins.keep_if(|plugin| Plugins.added(plugin) != "nothing")
+		if detailed {
+			for plugin in named {
+				Log.debug!("rocx plugins: added", { plugin: plugin.name, adds: Plugins.added(plugin) })
+			}
 		}
-		named = plugins.keep_if(|plugin| Plugins.added(plugin) != "nothing").map(|plugin| plugin.name)
-		if !named.is_empty() {
-			Log.info!("rocx plugins: ${Str.join_with(named, ", ")}", {})
+		names = named.map(|plugin| plugin.name)
+		if !names.is_empty() {
+			Log.info!("rocx plugins: ${Str.join_with(names, ", ")}", {})
 		}
 	}
 

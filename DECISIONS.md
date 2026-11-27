@@ -6604,7 +6604,8 @@ compiler's time on each build.
   (`logging::listing`); JSON, one event, `rocx server: links`, a link a field. None outside
   `--dev`.
 - **Plugins.** One line at info names them in their order (`rocx plugins: jobs, email, auth`); a
-  plugin that adds nothing but links isn't named. What each added is at debug.
+  plugin that adds nothing but links isn't named. What each added is at debug, and only under
+  `--debug` (the log has no level filter: a debug line is written), so `--dev` shows the one line.
 - **The pretty line.** `14:03:12 info  gate failed  error="no session" path=/admin`: the level in
   lower case, the fields two spaces after the message. At a terminal the time and the fields'
   names are dimmed and the level coloured (debug grey, info cyan, warn yellow, error a bold red),
