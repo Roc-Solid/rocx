@@ -576,15 +576,12 @@ endpoints are under `api/` (D-100) says its own, as a type in the page: `Params 
 **Middleware** (the platform's `Middleware`) runs around answers, and goes by folder (D-103). A
 `+middleware.roc` names one (`middleware = Middlewares.signed_in`) that runs around every page,
 endpoint and channel in its directory and the directories below it, outermost first;
-`routes/+middleware.roc` runs around every request for the app's routes, and one for a path nothing
-answers. A plugin's routes and the OpenAPI document aren't in `routes/`, so no `+middleware.roc`
-reaches them: main.roc gives each the middleware it is behind (D-114:
-`Auth.plugin({ …, middleware: Middlewares.default })`,
-`JobsPage.plugin({ middleware: Middlewares.default.then(Middlewares.admin) })`, or
-`Middleware.none({})` for routes anyone may reach), and a plugin with routes has no default for it,
-so what guards each is written where the plugin is listed. A directory in
-brackets is a **group** (`routes/(members)/`): it adds nothing to the path, so a page and its
-endpoints under `api/` share one guard (`routes/(members)/account/+page.rocx` is `/account`,
+`routes/+middleware.roc` runs around every request the app answers. Every URL is a route file
+(D-116): a package that answers requests (packages/auth's sign-in steps, the jobs page) offers
+handlers the app's route files call, and the OpenAPI document is a route file too, so a folder's
+middleware is around them as around the app's own pages. A directory in brackets is a **group**
+(`routes/(members)/`): it adds nothing to the path, so a page and its endpoints under `api/` share
+one guard (`routes/(members)/account/+page.rocx` is `/account`,
 `routes/(members)/api/account/+server.roc` is `/api/account`), and the sign-in pages sit outside it.
 A route file can't name middleware: `rocx build` refuses `middleware = …` in a page, an endpoint, a
 layout or the error page, saying which `+middleware.roc` to move it to. A middleware may answer by
@@ -747,7 +744,7 @@ program = App.program({
 - `init!`: makes the app's context once, when the server starts (after the migrations, so it may
   read the database), from the text of `--context-file`. Put settings read once, handles, anything
   in it. The host keeps it for as long as the server runs, and every call into the app's code is
-  given it: each request's middleware, a job's run, an actor's methods, a plugin's routes and loops.
+  given it: each request's middleware, a job's run, an actor's methods, a plugin's calls and loops.
   An `Err` stops the server.
 - `cross_site`: `Refused` (the default) or `Allowed`: whether the platform refuses a change another
   site's page sends, before any middleware. (The middleware isn't here: it is
@@ -757,12 +754,10 @@ program = App.program({
   engine).
   `--database-url sqlite:<path>` or `turso:<path>` overrides the path or the engine (under `rocx
   dev`: a release's server has the program's engine alone, D-104).
-- `openapi`: whether to serve the endpoints' OpenAPI document (`Off` by default; see below).
-- `plugins`: what packages add to the app (their routes answer behind `routes/+middleware.roc`,
-  before the app's own).
+- `plugins`: what packages add to the app (tables, jobs, loops, files, checks), never a route
+  (D-116): a package that answers requests offers handlers, which the app's route files call.
 
-Every request is answered by a plugin's route or by `Routes.respond!`, behind
-`routes/+middleware.roc`.
+Every request is answered by `Routes.respond!`, behind `routes/+middleware.roc`.
 `App.jobs` lists the jobs the app's modules define, for the jobs plugin (`packages/jobs`). Each is
 defined at the top of its module's block (`welcome = Job.define("welcome", |context, input| …)`, or
 `Job.define_with`); one defined elsewhere, two with one name, or jobs with no jobs package in the
@@ -871,15 +866,30 @@ docs' [live page](https://roc-solid.github.io/platform/live).
 `Api.openapi`: each path and its params, each method with its handler's doc comment (its first
 sentence, without the method and path it may start with, is the summary Swagger UI and Scalar list
 it by), and the JSON Schemas of what it is sent and answers, from the handlers' types (written or
-inferred). It is off unless `App.program` says otherwise: `openapi:
-Document(middleware)` serves `GET /openapi.json`, and `Page(Swagger, middleware)` or
-`Page(Scalar, middleware)` also serves `GET /openapi.html`, the document in Swagger UI or
-Scalar (pinned on jsDelivr and checked against its hash), both behind `middleware`, which the app
-must name (D-114: `routes/+middleware.roc` isn't around them; `Middleware.none({})` makes them
-public). How, without reflection: a type's parser
-works with any format, and the platform's `OpenApi` is a format that reads nothing and writes the
-schema of each shape it is asked to read. A body a form can send is listed as a form's too
-(URL-encoded and multipart), beside JSON.
+inferred). An app serves it from route files of its own (D-116), and nothing is served without
+them:
+
+```roc
+# routes/openapi.json/+server.roc: GET /openapi.json
+import pf.OpenApi
+import ../../Generated/Api
+
+respond! = |{ request, .. }| OpenApi.document_route(request, Api.openapi)
+```
+
+```roc
+# routes/openapi.html/+server.roc: GET /openapi.html, which reads openapi.json beside it
+import pf.OpenApi
+
+respond! = |{ request, .. }| OpenApi.page_route(request, Scalar)   # or Swagger
+```
+
+The page is the document in Swagger UI or Scalar (pinned on jsDelivr and checked against its hash).
+Both are routes, so the middleware of the folder they are in is around them, and `rocx routes`
+lists them; under `--dev` the server lists the page (else the document) among the places to open.
+How, without reflection: a type's parser works with any format, and the platform's `OpenApi` is a
+format that reads nothing and writes the schema of each shape it is asked to read. A body a form
+can send is listed as a form's too (URL-encoded and multipart), beside JSON.
 
 **No server functions.** Roc Solid has no `server!` functions; `rocx build` refuses one at its line.
 Write a `get!` in a route's `+server.roc` instead (its input is the path's params or the query) and
@@ -1075,13 +1085,14 @@ format, plugins and routes.
 - It renders a page of components natively, byte for byte as the browser's runtime would.
 - It gives the app a database (Postgres, or SQLite in the server's process on SQLite's engine or
   Turso's: `Db`, migrations, transactions, notifications); plugins (what a package adds to an app:
-  routes, tables, loops, paths for development, checked when the server starts); requests to other
-  servers (`Http.fetch!(url, init)`, like JavaScript's `fetch`); bodies as bytes, and forwarded from
-  elsewhere (`Server.forward`); cookies; settings (`Env`, `Setting`); encryption (`AesGcm`), P-256's
-  key pairs, ES256 and ECDH (`P256`) and random bytes; values in memory by key (`Kv`: TTLs, atomic
-  counters, a size limit); channels (typed live updates, one stream per tab, told when a
-  subscription was dropped or its tab went); and actors (typed asks, tells and timers, one message
-  at a time, their state and timers kept in the database when there is one).
+  tables, loops, files, paths for development, checked when the server starts; never a route,
+  D-116); requests to other servers (`Http.fetch!(url, init)`, like JavaScript's `fetch`); bodies
+  as bytes, and forwarded from elsewhere (`Server.forward`); cookies; settings (`Env`, `Setting`);
+  encryption (`AesGcm`), P-256's key pairs, ES256 and ECDH (`P256`) and random bytes; values in
+  memory by key (`Kv`: TTLs, atomic counters, a size limit); channels (typed live updates, one
+  stream per tab, told when a subscription was dropped or its tab went); and actors (typed asks,
+  tells and timers, one message at a time, their state and timers kept in the database when there
+  is one).
 - Some things are packages rather than platform features: files (`packages/storage`: S3, a
   directory or memory), crypto written in Roc (`packages/crypto`), jobs and cron (`packages/jobs`, a
   plugin, with a jobs page in `packages/admin`) and email (`packages/email`, a plugin: SMTP, or a

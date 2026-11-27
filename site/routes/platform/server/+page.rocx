@@ -319,15 +319,15 @@ view! = |_|
 
 			<Heading id="plugins">Plugins</Heading>
 			<p>
-				A <strong>plugin</strong> is a package that adds to an app what only the server runs: routes,
-				tables, background loops, files, scripts every page loads, development pages, work at start,
-				checks. You install one in a line: name the package in the app's header, and list its plugin in
+				A <strong>plugin</strong> is a package that adds to an app what only the server runs: tables,
+				background loops, files, scripts every page loads, development pages, work at start, checks; never
+				a route. You install one in a line: name the package in the app's header, and list its plugin in
 				the program. The jobs, email, auth, push, Stripe and audio packages, among others, are
 				plugins.
 			</p>
 			<Code
 				title="main.roc"
-				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tinit!,\n\tplugins: [Acme.plugin({ at: \"/acme\", middleware: Middlewares.default })],\n})"}
+				source={"app [program] { pf: platform \"../server/platform/main.roc\", acme: \"../packages/acme/main.roc\" }\n\nimport acme.Acme\n\nprogram = App.program({\n\tinit!,\n\tplugins: [Acme.plugin({})],\n})"}
 				numbers={Bool.False}
 			/>
 			<p>
@@ -336,13 +336,10 @@ view! = |_|
 			</p>
 			<ul>
 				<li>
-					<strong>Routes</strong> answer behind the middleware the app gives the plugin
-					(<code>middleware</code>, which a plugin with routes has no default for), given what it hands on
-					(the signed-in user, say). They aren't files under <code>routes/</code>, so no
-					<code>+middleware.roc</code> is around them, not even <code>routes/</code>'s: the app says what
-					each is behind in main.roc (<code>Middlewares.default</code>,
-					<code>{"Middlewares.default.then(Middlewares.admin)"}</code>, or <code>{"Middleware.none({})"}</code>).
-					A plugin's route can't share a method and path with the app's: its <code>at</code> moves it.
+					<strong>No routes.</strong> Every URL an app answers is a file under its <code>routes/</code>
+					(D-116): a package that answers requests offers handlers, which the app calls from route files of
+					its own (<code>{"respond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"}</code>),
+					where it wants them and behind the middleware of the folder it puts them in.
 				</li>
 				<li>
 					<strong>Tables</strong> (its migrations) are applied after the platform's and before the app's,

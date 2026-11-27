@@ -11,8 +11,9 @@ import push.PushState
 ## how it went with a `pushstate` event, which every `<PushButton>` on the page hears
 ## (`PushState`).
 ##
-## `api` is where the push plugin's endpoints are (`Push.plugin({ at })`): with `"/push"`, `GET
-## /push/key` (the public key), `POST /push/subscribe` and `POST /push/unsubscribe`.
+## `api` is where the app's routes for push are (D-116: `Push.key_route!` and the rest, in route
+## files of its own): with `"/push"`, `GET /push/key` (the public key), `POST /push/subscribe` and
+## `POST /push/unsubscribe`.
 PushButton := [].{
 	view! : { api : Str } => Html
 	view! = |{ api }| {

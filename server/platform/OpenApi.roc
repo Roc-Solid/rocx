@@ -1,10 +1,9 @@
 import Endpoint
 import Events
-import Middleware
 import Server
 
-## An app's endpoints as an OpenAPI document (3.2), which the server answers `GET /openapi.json`
-## with. rocx writes it from the routes (`Api.openapi`): each path and its params; each method
+## An app's endpoints as an OpenAPI document (3.2), which an app serves from a route of its own
+## (`routes/openapi.json/+server.roc` calling `OpenApi.document_route`, D-116). rocx writes it from the routes (`Api.openapi`): each path and its params; each method
 ## there and what its handler's comment says; and the JSON Schemas of what it is sent and what it
 ## answers, from their types as the compiler has them, written down or inferred.
 ##
@@ -110,103 +109,32 @@ OpenApi := [].{
 	document = |title, paths|
 		"{\"openapi\":\"3.2.0\",\"info\":{\"title\":${Json.to_str(title)},\"version\":\"0\"},\"paths\":{${Str.join_with(paths, ",")}}}"
 
-	## Whether an app serves its endpoints' document, and a page to read it in, and behind what. `Off`,
-	## unless the app says: nothing. `Document(middleware)`: `GET /openapi.json`. `Page(Swagger,
-	## middleware)` or `Page(Scalar, middleware)`: that, and `GET /openapi.html`, the document in
-	## Swagger UI or Scalar, which the page loads from jsDelivr, pinned to one version and checked
-	## against its hash, and tells not to call home. Either is behind `middleware`, which the app must
-	## give (D-114): the document says what every endpoint takes and answers, so it is never public
-	## because something was left out. The app's `routes/+middleware.roc` isn't around it; the app
-	## names what is (`Page(Scalar, Middlewares.default.then(Middlewares.admin))`), or
-	## `Middleware.none({})` for anyone.
-	Serving(context, out) : [Off, Document(Middleware(context, out)), Page([Swagger, Scalar], Middleware(context, out))]
-
-	## What `Serving` serves, without the middleware it is behind.
-	Shown : [Off, Document, Page([Swagger, Scalar])]
-
-	## What `serving` serves.
-	shown : Serving(context, out) -> Shown
-	shown = |serving|
-		match serving {
-			Off => Off
-			Document(_) => Document
-			Page(viewer, _) => Page(viewer)
-		}
-
-	## The answer to a request for the document (`json`, the app's `Api.openapi`) or its page, as
-	## `what` says: JSON, or HTML; 405 for a method but GET. Any other request, or one for what
-	## `what` doesn't serve, is `NotHere`: the routes answer it. A program an app writes itself can
-	## ask it before its routes:
+	## The answer at the document's route (`routes/openapi.json/+server.roc`, D-116): `json`, the
+	## app's `Api.openapi`, for a GET (HEAD too); 405 for any other method. The route is the app's,
+	## so the middleware of the folder it is in is around it, as around any other:
 	##
-	##     match OpenApi.respond(request, Page(Swagger), Api.openapi) {
-	##         Ok(served) => served
-	##         Err(NotHere) => Routes.respond!(request, context)
-	##     }
-	##
-	## or put `middleware` at the end of its chain, as `App.program` does.
-	respond : Server.Request, Shown, Str -> Try(Server.Response, [NotHere])
-	respond = |request, what, json| {
-		reading = request.method == "GET" or request.method == "HEAD"
-		served = |kind, text|
-			if reading {
-				Ok(Server.response(200, [{ name: "content-type", value: kind }], text))
-			} else {
-				Ok(Endpoint.not_allowed(request, ["GET"]))
-			}
-		match what {
-			Off => Err(NotHere)
-			Document =>
-				if request.path == "/openapi.json" {
-					served("application/json", json)
-				} else {
-					Err(NotHere)
-				}
-			Page(viewer) =>
-				if request.path == "/openapi.json" {
-					served("application/json", json)
-				} else if request.path == "/openapi.html" {
-					served("text/html; charset=utf-8", page(viewer))
-				} else {
-					Err(NotHere)
-				}
-		}
-	}
+	##     respond! = |{ request, .. }| OpenApi.document_route(request, Api.openapi)
+	document_route : Server.Request, Str -> Server.Response
+	document_route = |request, json| served(request, "application/json", json)
 
-	## The document and its page as a middleware: a request for what `serving` serves goes through
-	## the middleware it is behind, then is answered; every other request is handed on, unchanged.
-	## `App.program` runs it before the app's own middleware (routes/+middleware.roc), which isn't
-	## around the document (D-114):
+	## The answer at the page's route (`routes/openapi.html/+server.roc`): the document in Swagger UI
+	## or Scalar, which the page loads from jsDelivr, pinned to one version and checked against its
+	## hash, and tells not to call home. It reads `openapi.json` beside it, so the two routes go in
+	## one folder. A GET (HEAD too); 405 for any other method.
 	##
-	##     Middleware.run!(OpenApi.middleware(Page(Swagger, Middleware.none({})), Api.openapi), request, context, next!)
-	middleware : Serving(context, out), Str -> Middleware(context, context)
-	middleware = |serving, json| {
-		what = OpenApi.shown(serving)
-		answered! = |request, context, guard| {
-			Middleware.run!(
-				guard,
-				request,
-				context,
-				|passed, _handed|
-					match respond(passed, what, json) {
-						Ok(served) => served
-						Err(NotHere) => Server.refused(404, "Not Found")
-					},
-			)
-		}
-		Middleware.make(
-			|request, context, next!|
-				match respond(request, what, json) {
-					Err(NotHere) => next!(request, context)
-					Ok(_) =>
-						match serving {
-							Off => next!(request, context)
-							Document(guard) => answered!(request, context, guard)
-							Page(_, guard) => answered!(request, context, guard)
-						}
-				},
-		)
-	}
+	##     respond! = |{ request, .. }| OpenApi.page_route(request, Scalar)
+	page_route : Server.Request, [Swagger, Scalar] -> Server.Response
+	page_route = |request, viewer| served(request, "text/html; charset=utf-8", page(viewer))
 }
+
+## `text` as `kind` for a GET (HEAD too); 405 for any other method.
+served : Server.Request, Str, Str -> Server.Response
+served = |request, kind, text|
+	if request.method == "GET" or request.method == "HEAD" {
+		Server.response(200, [{ name: "content-type", value: kind }], text)
+	} else {
+		Endpoint.not_allowed(request, ["GET"])
+	}
 
 ## A path's entry: its params, each with its schema, then its methods.
 with_parameters : Str, List({ name : Str, schema : Str }), List(Str) -> Str
@@ -653,32 +581,26 @@ expect {
 	got.starts_with("{\"openapi\":\"3.2.0\",\"info\":{\"title\":\"app\",\"version\":\"0\"},\"paths\":{\"/shout/{word}\":{\"parameters\":[{\"name\":\"word\",\"in\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"post\":{\"summary\":\"Shouted.\",\"description\":\"What it is sent, \\\"shouted\\\".\",\"requestBody\":{\"required\":true,")
 }
 
-## The document and its page: only what `serving` says, and only by GET. (A response can hold a
-## page or a stream, which can't be compared: these compare its status and its text.)
-asked : Str, Str, OpenApi.Shown -> Try((U16, Str), [NotHere])
-asked = |method, path, serving|
-	OpenApi.respond(Server.from_http(method, path, "", []), serving, "{}").map_ok(
-		|served|
-			match served.body {
-				Text(text) => (served.status, text)
-				_ => (served.status, "")
-			},
-	)
+## The document and its page, by GET only. (A response can hold a page or a stream, which can't be
+## compared: these compare its status and its text.)
+asked : Server.Response -> (U16, Str)
+asked = |answer|
+	match answer.body {
+		Text(text) => (answer.status, text)
+		_ => (answer.status, "")
+	}
 
-expect asked("GET", "/openapi.json", Off) == Err(NotHere)
-expect asked("GET", "/openapi.json", Document) == Ok((200, "{}"))
-expect asked("GET", "/openapi.html", Document) == Err(NotHere)
-expect asked("GET", "/openapi.json", Page(Scalar)) == Ok((200, "{}"))
-expect asked("GET", "/about", Page(Swagger)) == Err(NotHere)
-expect asked("POST", "/openapi.json", Document).map_ok(|(status, _)| status) == Ok(405)
-expect OpenApi.shown(Page(Scalar, Middleware.none({}))) == Page(Scalar) and OpenApi.shown(Document(Middleware.none({}))) == Document
+expect asked(OpenApi.document_route(Server.from_http("GET", "/openapi.json", "", []), "{}")) == (200, "{}")
+expect asked(OpenApi.document_route(Server.from_http("HEAD", "/openapi.json", "", []), "{}")).0 == 200
+expect asked(OpenApi.document_route(Server.from_http("POST", "/openapi.json", "", []), "{}")).0 == 405
+expect asked(OpenApi.page_route(Server.from_http("PUT", "/openapi.html", "", []), Scalar)).0 == 405
 
 expect {
-	html = asked("GET", "/openapi.html", Page(Swagger)).map_ok(|(_, text)| text) ?? ""
+	html = asked(OpenApi.page_route(Server.from_http("GET", "/openapi.html", "", []), Swagger)).1
 	html.contains("swagger-ui-bundle.js\" integrity=\"sha384-") and html.contains("validatorUrl: null") and html.contains("url: \"openapi.json\"")
 }
 
 expect {
-	html = asked("GET", "/openapi.html", Page(Scalar)).map_ok(|(_, text)| text) ?? ""
+	html = asked(OpenApi.page_route(Server.from_http("GET", "/openapi.html", "", []), Scalar)).1
 	html.contains("@scalar/api-reference@1.82.1/dist/browser/standalone.js\" integrity=\"sha384-") and html.contains("telemetry: false")
 }

@@ -1,3 +1,4 @@
+import pf.Endpoint
 import pf.Env
 import pf.Http
 import pf.Kv
@@ -26,7 +27,11 @@ import Fingerprint
 ## it (`rocx server: Roc crashed`), so crashes are on the server's log, not here.
 ##
 ## ```roc
-## plugins: [PostHog.plugin({ middleware: Middleware.none({}) })]   # POSTHOG_KEY, POSTHOG_HOST and POSTHOG_RELEASE, from the environment
+## plugins: [PostHog.plugin({})]   # POSTHOG_KEY, POSTHOG_HOST and POSTHOG_RELEASE, from the environment
+## # routes/rocx-errors/+server.roc: where a page's script sends errors (D-116: the app's routes)
+## respond! = |{ request, .. }| PostHog.errors_route!(request)
+## # routes/rocx-errors.js/+server.roc: the script, which sends to its own path without `.js`
+## respond! = |{ request, .. }| PostHog.script_route(request)
 ## middleware = Middlewares.member.then(PostHog.middleware(|context| context.member.id))   # routes/+middleware.roc
 ##
 ## PostHog.capture!("the payment provider refused a refund", { order: order.id, why: why })
@@ -36,41 +41,41 @@ PostHog := [].{
 	## The project's key (`key`; "" for `POSTHOG_KEY`, and without either reporting is off); where
 	## PostHog takes events (`host`; "" for `POSTHOG_HOST`, else `https://us.i.posthog.com`, or
 	## `https://eu.i.posthog.com` for EU Cloud); the app's version on each event (`release`, a
-	## commit; "" for `POSTHOG_RELEASE`); where a page's script sends errors (`at`, its script at
-	## `<at>.js`); how often what was kept is sent (`interval_ms`); and what the script and where it
-	## sends are behind (`middleware`, which the app must say, D-114: not its `routes/+middleware.roc`,
-	## which isn't around a plugin's routes; `Middleware.none({})` lets every page's errors in).
-	Options(context, ctx) := {
-		middleware : Middleware(context, ctx),
+	## commit; "" for `POSTHOG_RELEASE`); and how often what was kept is sent (`interval_ms`).
+	Options := {
 		key : Str ?? "",
 		host : Str ?? "",
 		release : Str ?? "",
-		at : Str ?? "/rocx-errors",
 		interval_ms : U64 ?? 10_000,
 	}
 
-	## The PostHog plugin: the browser's script (`GET <at>.js`) and where it sends errors
-	## (`POST <at>`), the loop that sends what was kept (`posthog.send`), its options kept when the
-	## server starts, and a look once started (`posthog.reporting`: where errors go, or that
-	## reporting is off).
-	plugin : Options(context, ctx) -> Plugin.Value(context)
+	## The PostHog plugin: the loop that sends what was kept (`posthog.send`), its options kept when
+	## the server starts, and a look once started (`posthog.reporting`: where errors go, or that
+	## reporting is off). No routes (D-116): the page's script and where it sends errors are the
+	## app's, calling `script_route` and `errors_route!`.
+	plugin : Options -> Plugin.Value(context)
 	plugin = |options| {
 		given : Settings
 		given = { key: options.key, host: options.host, release: options.release, interval_ms: options.interval_ms }
 		{
 			name: "posthog",
-			routes: Plugin.behind(
-				options.middleware,
-				[
-					{ method: "POST", path: options.at, kind: Endpoint, answer!: |request, _handed| browser!(request) },
-					{ method: "GET", path: "${options.at}.js", kind: Endpoint, answer!: |_request, _handed| script({}) },
-				],
-			),
 			starts: [|_context| keep!(given)],
 			loops: [{ name: "posthog.send", run!: |_context| sender!({}) }],
 			checks: [{ name: "posthog.reporting", run!: |_context| check!({}) }],
 		}
 	}
+
+	## Where a page's script sends an error (`routes/rocx-errors/+server.roc`, D-116): a POST of JSON
+	## (at most 16 KiB), kept for the loop to send; 405 for any other method.
+	errors_route! : Server.Request => Server.Response
+	errors_route! = |request| if (request.method == "POST") browser!(request) else Endpoint.not_allowed(request, ["POST"])
+
+	## The page's script (`routes/rocx-errors.js/+server.roc`), which every page loads
+	## (`<script src="/rocx-errors.js" defer>`): it sends a page's uncaught errors, rejected promises
+	## and hydration mismatches to its own path without `.js`, where `errors_route!` is. A GET (HEAD
+	## too); 405 for any other method.
+	script_route : Server.Request -> Server.Response
+	script_route = |request| if (request.method == "GET" or request.method == "HEAD") script({}) else Endpoint.not_allowed(request, ["GET"])
 
 	## Reports every answer with a 5xx status, from the middleware after it: its route's pattern, its
 	## method, its status and its text (the first line, when it isn't HTML). `user` names who asked,
@@ -123,7 +128,7 @@ PostHog := [].{
 
 	## Reports a job that failed for good: what the jobs plugin calls with its `on_failed!`.
 	##
-	##     plugins: [Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }), PostHog.plugin({ middleware: Middleware.none({}) })]
+	##     plugins: [Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }), PostHog.plugin({})]
 	job_failed! : { kind : Str, id : I64, attempts : U64, error : Str } => {}
 	job_failed! = |failure|
 		report!(

@@ -151,8 +151,9 @@ Guard.rate_limit_with({ name, policy, key, max_keys: 50_000 })
   an address, where it is trusted) counts as `unknown`, one count for every such client, not none.
 - **Each limit its own name.** `name` keeps limits' counts apart. Put a limit in the
   `+middleware.roc` of the directory it guards (`routes/api/+middleware.roc` for the whole API).
-  For a plugin's paths, which no directory has, use `Guard.under("/jobs", …)` in
-  routes/+middleware.roc.
+  Every URL is a route file (D-116), a package's handlers included, so each is in a directory that
+  can hold a limit; `Guard.under("/api", …)` in a middleware above them limits a path and those
+  under it, whichever directories (groups) their files are in.
 - **Answers.** An allowed request gets `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
   (seconds until the whole limit is back) and `RateLimit-Policy` (`5;w=60`). A refused one gets
   429, those headers, `Retry-After` (exactly the seconds until one more would be allowed), and the
@@ -310,7 +311,7 @@ it, every flag is off. `Flags.enabled(values, name)` reads one flag where an `if
 | `Guard.ips({ allow, deny, trust })` | refuses an address in `deny`, or (when `allow` lists any) one not in `allow`, 403 |
 | `Guard.maintenance({ flag, message, retry_after_s, except })` | while the flag is on, answers 503 with `Retry-After` and a small page (text for a client that isn't a browser), except under the paths in `except` (`/admin`, `/health`) |
 | `Guard.feature(flag, who)` | answers 404 to anyone who doesn't have the flag on |
-| `Guard.under("/jobs", guard)` | runs `guard` for `/jobs` and the paths under it only (not `/jobsite`); the app's own routes are guarded by their directory's `+middleware.roc`, a plugin's by the `middleware` main.roc gives it (D-114) |
+| `Guard.under("/jobs", guard)` | runs `guard` for `/jobs` and the paths under it only (not `/jobsite`), whichever directories their files are in; a route is usually guarded by its directory's `+middleware.roc`, a package's handlers too (D-116) |
 
 The default CSP fits a Roc Solid app: scripts and WebAssembly from the site's own origin
 (`'wasm-unsafe-eval'`, which a page needs to start wasm under a CSP), styles inline too (components

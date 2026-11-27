@@ -1,10 +1,10 @@
 import crypto.Base64
 import pf.AesGcm
+import pf.Endpoint
 import pf.Env
 import pf.Http
 import pf.Kv
 import pf.Log
-import pf.Middleware
 import pf.P256
 import pf.Plugin
 import pf.Random
@@ -24,7 +24,7 @@ import "static/push-sw.js" as worker : List(U8)
 import "static/push.js" as script : List(U8)
 
 ## Web Push from the server, as a plugin (`Push.plugin`): subscriptions saved as pages post them
-## (the plugin's endpoints, `subscribe!`), notifications queued as jobs (`notify!`, `broadcast!`),
+## (the app's routes for them, `subscribe_route!`), notifications queued as jobs (`notify!`, `broadcast!`),
 ## one per subscription, and sent by the jobs plugin's workers (`deliver`): encrypted for the
 ## browser (RFC 8291), signed for its push service (VAPID, RFC 8292), posted (RFC 8030), and sent
 ## again later if the push service is busy or down, until the message's TTL runs out. A subscription
@@ -32,8 +32,20 @@ import "static/push.js" as script : List(U8)
 ## `Plugin` and `Env`, and packages/jobs's `Job`.
 ##
 ## ```roc
-## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ middleware: Middleware.none({}) })]   # /push, visitors
-## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ middleware: Middlewares.member, owner: |context| context.member })]   # each user's own
+## plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})]
+## ```
+##
+## Its endpoints are the app's routes (D-116), where `<PushButton api="/push">` looks, each calling
+## its handler, behind the middleware of the folder it is in:
+##
+## ```roc
+## # routes/push/key/+server.roc: GET, the public key
+## respond! = |{ request, .. }| Push.key_route!(request)
+## # routes/push/subscribe/+server.roc: POST; whose: "" for a visitor, or the app's id for the user
+## # its folder's middleware handed on (`context.member`)
+## respond! = |{ request, .. }| Push.subscribe_route!(request, "")
+## # routes/push/unsubscribe/+server.roc: POST
+## respond! = |{ request, .. }| Push.unsubscribe_route!(request, "")
 ## ```
 ##
 ## The keys come from the environment: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (a P-256 pair in
@@ -47,14 +59,23 @@ import "static/push.js" as script : List(U8)
 ## signature VAPID wants), and so is the AES (`AesGcm.seal_with_nonce!`, AES-128-GCM): D-080.
 Push := [].{
 
-	## What the plugin's endpoints are behind (`middleware`, which the app must say, D-114: not its
-	## `routes/+middleware.roc`, which isn't around a plugin's routes; `Middleware.none({})` for
-	## anyone), where they are (`at`: `GET <at>/key`, `POST <at>/subscribe`, `POST
-	## <at>/unsubscribe`, where `<PushButton api="/push">` looks), and whose a subscription is: the
-	## app's id for the user `middleware` handed on (`owner`; by default "", a visitor).
-	Setup(context, ctx) := { middleware : Middleware(context, ctx), at : Str ?? "/push", owner : (ctx -> Str) ?? anyone }
+	## The public key, `GET <api>/key` (`routes/push/key/+server.roc`, D-116), which a page subscribes
+	## with. 405 for a method but GET.
+	key_route! : Server.Request => Server.Response
+	key_route! = |request| taking!(request, ["GET"], |{}| key!({}))
 
-	## The push plugin: its endpoints, behind `middleware`; the service worker at the
+	## A subscription a page posts, `POST <api>/subscribe` (`routes/push/subscribe/+server.roc`),
+	## kept as `owner`'s: the app's id for the user (what the folder's middleware handed on, say), or
+	## "" for a visitor. 405 for a method but POST.
+	subscribe_route! : Server.Request, Str => Server.Response
+	subscribe_route! = |request, owner| taking!(request, ["POST"], |{}| subscribed!(request, owner))
+
+	## A subscription a page drops, `POST <api>/unsubscribe` (`routes/push/unsubscribe/+server.roc`),
+	## if it is `owner`'s. 405 for a method but POST.
+	unsubscribe_route! : Server.Request, Str => Server.Response
+	unsubscribe_route! = |request, owner| taking!(request, ["POST"], |{}| unsubscribed!(request, owner))
+
+	## The push plugin: the service worker at the
 	## site's root (`/push-sw.js`, so its scope is the whole site) and the page's script
 	## (`/rocx/plugins/push/push.js`, which every page loads: the `push.subscribe` and
 	## `push.unsubscribe` effects `<PushButton>` calls), both served before the app and its
@@ -62,20 +83,10 @@ Push := [].{
 	## `push.deliver`, which the jobs plugin's workers run. It needs the jobs plugin, a database and
 	## the VAPID keys; its start checks the keys (or, under `--dev` without them, makes a pair), and
 	## under `--dev`, `GET /__rocx/push/keys` answers a new pair (`new_keys!`).
-	plugin : Setup(context, ctx) -> Plugin.Value(context)
-	plugin = |setup| {
-		at = setup.at
-		owner = setup.owner
+	plugin : {} -> Plugin.Value(context)
+	plugin = |{}| {
 		{
 			name: "push",
-			routes: Plugin.behind(
-				setup.middleware,
-				[
-					{ method: "GET", path: "${at}/key", kind: Endpoint, answer!: |_, _| key!({}) },
-					{ method: "POST", path: "${at}/subscribe", kind: Endpoint, answer!: |request, handed| subscribed!(request, owner(handed)) },
-					{ method: "POST", path: "${at}/unsubscribe", kind: Endpoint, answer!: |request, handed| unsubscribed!(request, owner(handed)) },
-				],
-			),
 			early: [{ method: "GET", path: "/__rocx/push/keys", under: [Dev], answer!: |_| new_keys!({}) }],
 			files: [
 				{ path: "push-sw.js", at: Root, content_type: "text/javascript", body: worker },
@@ -221,8 +232,12 @@ Push := [].{
 }
 
 ## Whose a subscription is, by default: a visitor's ("").
-anyone : ctx -> Str
-anyone = |_| ""
+## `answer!` for a request whose method is one of `methods` (GET takes HEAD too), else 405.
+taking! : Server.Request, List(Str), ({} => Server.Response) => Server.Response
+taking! = |request, methods, answer!| {
+	asked = if (request.method == "HEAD") "GET" else request.method
+	if (methods.contains(asked)) answer!({}) else Endpoint.not_allowed(request, methods)
+}
 
 ## The plugin's start: the keys checked (keys that aren't a pair stop the server, saying why: a
 ## signature by them is tried), or, under `--dev` without them, a pair made for the run; and the

@@ -724,8 +724,9 @@ One nobody asks for is kept under its endpoint's path (its query is fields, `wit
 result reads the page's reads again, and its redirect is followed, as any submission's are. A
 refusal, or no answer, that no component asks for shows nothing on the page, so the console says
 so (`unread`), in every build. Any other form is the browser's: another site's, a path no endpoint
-has (a plugin's own route, such as packages/auth's `/auth/sign-out`), or one posted before the
-runtime is there.
+has a `post!` for (a `+server.roc` that answers with `respond!`, such as the one that calls
+packages/auth's `Auth.sign_out_route!` at `/auth/sign-out`), or one posted before the runtime is
+there.
 
 It sends the fields URL-encoded, with `accept: application/json` and `x-rocx-submission: 1`. A form
 with files (`enctype="multipart/form-data"`, D-054) goes as the browser's `FormData`; its input is

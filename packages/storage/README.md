@@ -26,18 +26,19 @@ Name the package in the server's header, beside the platform:
 app [program] { pf: platform "../server/platform/main.roc", storage: "../packages/storage/main.roc" }
 ```
 
-The package names the server platform itself (the host keeps a directory's and memory's files, and
-the plugin is the server's), so only an app on the server platform can use it; the browser's half
-never imports it. It uses `packages/crypto` (SHA-256 and HMAC, for S3's signatures and the app's
-signed URLs), which it names itself.
+The package names the server platform itself (the host keeps a directory's and memory's files),
+so only an app on the server platform can use it; the browser's half never imports it. It uses
+`packages/crypto` (SHA-256 and HMAC, for S3's signatures and the app's signed URLs), which it names
+itself. It has no plugin.
 
-For signed URLs on a directory or memory bucket, also list its plugin:
+For signed URLs on a directory or memory bucket, also add the route file that answers them (D-116),
+at `/_storage`, where the links point:
 
 ```roc
-program = App.program({
-	# …
-	plugins: [Storage.plugin({ middleware: Middleware.none({}) })],   # the bucket STORAGE_URL names; `env: "UPLOADS_URL"` for another; its URLs are signed, so no middleware
-})
+# routes/_storage/+server.roc
+import storage.Storage
+
+respond! = |{ request, .. }| Storage.signed_route!(request, "STORAGE_URL")   # the bucket STORAGE_URL names
 ```
 
 ## A bucket
@@ -99,10 +100,10 @@ Everything is in the `Storage` module. A key is a file's name in the bucket, `/`
 | `serve!(bucket, key, request, { content_type, cache_control })` | a `Server.Response` (below) | none: a 404 for a missing file |
 | `check!(bucket)` | `{}` if the bucket answers | `S3Err`, `StorageErr` |
 | `said(refusal)` | an `S3Err`'s refusal as a line: `403 SignatureDoesNotMatch: …` | |
-| `plugin({ env ?? "STORAGE_URL" })` | the plugin that answers signed URLs of a directory or memory bucket | |
+| `signed_route!(request, env)` | the answer to a signed URL of the directory or memory bucket whose URL is the environment variable `env` (`"STORAGE_URL"`), for `routes/_storage/+server.roc` | none: a 403 or a 405 (below) |
 
 Types: `Bucket` (`[S3(S3.Bucket), Kept({ root, secret })]`), `Refusal` (`{ status, code, message }`),
-`Info`, `Options` (the plugin's).
+`Info`.
 
 ### Details
 
@@ -138,13 +139,16 @@ request until it expires: 1 second to a week (604,800 s), `BadExpiry` otherwise.
 - On **S3** it is S3's own presigned URL. Only the host is signed, so a PUT may send any content
   type. The browser talks to S3 itself; the app's server never holds the bytes.
 - On **a directory or memory** it is the app's own, at its public URL (`Env.public_url!`):
-  `/__storage?method=PUT&key=…&expires=…&signature=…`. The signature is an HMAC-SHA256 of the
-  method, the key and the expiry, with the bucket's secret. The storage plugin answers it.
+  `/_storage?method=PUT&key=…&expires=…&signature=…`. The signature is an HMAC-SHA256 of the
+  method, the key and the expiry, with the bucket's secret. The app's route answers it.
 
-The plugin's route, `/__storage`, reads the bucket from its environment variable (`STORAGE_URL`, or
-the plugin's `env`). It checks the link's method (a HEAD may use a GET's link), the signature, and
-that the link hasn't expired. Then it serves the file (as `serve!` does, ranges included) or keeps
-the one the PUT sent, with the request's content type. A link it didn't make, or one that was
+The route is the app's file, `routes/_storage/+server.roc`, calling `Storage.signed_route!` (D-116),
+so the middleware of the folders it is in is around it; each link is signed, so it needs none, and
+must be let through. Its path is fixed: `signed_url!` makes its links to `/_storage` (`/__storage`
+before D-116). It reads the bucket from the environment variable it is given (`"STORAGE_URL"`, or
+another for another bucket). It checks the link's method (a HEAD may use a GET's link), the
+signature, and that the link hasn't expired. Then it serves the file (as `serve!` does, ranges
+included) or keeps the one the PUT sent, with the request's content type. A link it didn't make, or one that was
 changed, gets a 403, and so does one that has expired; a method other than GET, HEAD or PUT gets a
 405. A PUT is an ordinary request body, 16 MiB at most unless the server's `--max-body` says more:
 send a larger file in parts, from the server. For an S3 bucket the route has nothing to answer

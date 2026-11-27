@@ -2,6 +2,7 @@ import Env
 import Host
 import Log
 import Plugin
+import Server
 import Setting
 
 ## The app's plugins (`program.plugins`), as the platform starts and runs them (`main.roc`): checked
@@ -130,8 +131,7 @@ Plugins := [].{
 	added = |plugin| {
 		counted = |count, one, many| if (count == 0) [] else ["${count.to_str()} ${if (count == 1) one else many}"]
 		parts =
-			counted(plugin.claims.len(), "route", "routes")
-				.concat(counted(plugin.early.len(), "early route", "early routes"))
+			counted(plugin.early.len(), "early route", "early routes")
 				.concat(counted(plugin.files.len(), "file", "files"))
 				.concat(counted(plugin.scripts.len(), "script", "scripts"))
 				.concat(counted(plugin.migrations.len(), "migration", "migrations"))
@@ -193,15 +193,11 @@ same_method = |a, b| {
 	a == "*" or b == "*" or plain(a) == plain(b)
 }
 
-## Two claims on one method and path: the app's route and a plugin's, two plugins', or two early
-## paths; a line each. (The app's own routes are rocx build's to check: a page and its `+server.roc`
-## share a path.)
+## Two plugins' early paths on one method and path; a line each. A
+## plugin has no routes (D-116), and the app's are rocx build's to check.
 clashes : List(Plugin.Running(context)), List({ method : Str, path : Str, file : Str }) -> List(Str)
-clashes = |plugins, routes| {
-	claimed =
-		routes.map(|route| { method: route.method, path: route.path, owner: route.file, early: Bool.False, by_app: Bool.True })
-			.concat(plugins.join_map(|plugin| plugin.claims.map(|claim| { method: claim.method, path: claim.path, owner: "the ${plugin.name} plugin", early: Bool.False, by_app: Bool.False })))
-			.concat(plugins.join_map(|plugin| plugin.early.map(|early| { method: early.method, path: early.path, owner: "the ${plugin.name} plugin (early)", early: Bool.True, by_app: Bool.False })))
+clashes = |plugins, _routes| {
+	claimed = plugins.join_map(|plugin| plugin.early.map(|early| { method: early.method, path: early.path, owner: "the ${plugin.name} plugin (early)", early: Bool.True, by_app: Bool.False }))
 	var $found = []
 	var $i = 0
 	while $i < claimed.len() {
@@ -223,14 +219,12 @@ clashes = |plugins, routes| {
 }
 
 ## Two files at one URL (two plugins' at the root, or one plugin's twice), and a file at the root
-## where a route is (the app's, or a plugin's): a line each. A route with a `[param]` that a file's
+## where one of the app's routes is: a line each. A route with a `[param]` that a file's
 ## path would fit isn't one: the file is answered first, and the route answers the rest.
 file_clashes : List(Plugin.Running(context)), List({ method : Str, path : Str, file : Str }) -> List(Str)
 file_clashes = |plugins, routes| {
 	files = plugins.join_map(|plugin| plugin.files.map(|file| { url: Plugin.url(plugin.name, file), plugin: plugin.name }))
-	others =
-		routes.map(|route| { path: route.path, owner: route.file })
-			.concat(plugins.join_map(|plugin| plugin.claims.map(|claim| { path: claim.path, owner: "the ${plugin.name} plugin" })))
+	others = routes.map(|route| { path: route.path, owner: route.file })
 	var $found = []
 	var $i = 0
 	while $i < files.len() {
@@ -302,17 +296,14 @@ circles = |plugins| {
 }
 
 none : Plugin.Running({})
-none = { name: "", claims: [], early: [], files: [], scripts: [], migrations: [], calls: [], loops: [], starts: [], checks: [], needs: [], links: [] }
+none = { name: "", early: [], files: [], scripts: [], migrations: [], calls: [], loops: [], starts: [], checks: [], needs: [], links: [] }
 
 expect is_name("push") and is_name("open-api2") and !is_name("Push") and !is_name("")
 expect shape("/push/[id]/x") == "/push/[]/x"
 expect same_method("*", "POST") and same_method("GET", "HEAD") and !same_method("GET", "POST")
 expect
-	Plugins.problems([{ ..none, name: "push", claims: [{ method: "GET", path: "/push/key" }] }], [{ method: "GET", path: "/push/key", file: "routes/push/key/+server.roc" }])
-		== ["GET /push/key: routes/push/key/+server.roc, and the push plugin"]
-expect
-	Plugins.problems([{ ..none, name: "a", claims: [{ method: "*", path: "/x/[id]" }] }, { ..none, name: "b", claims: [{ method: "POST", path: "/x/[key]" }] }], [])
-		== ["POST /x/[id]: the a plugin, and the b plugin"]
+	Plugins.problems([{ ..none, name: "a", early: [{ method: "*", path: "/__rocx/x/[id]", under: [Dev], answer!: |_| Server.response(200, [], "") }] }, { ..none, name: "b", early: [{ method: "POST", path: "/__rocx/x/[key]", under: [Dev], answer!: |_| Server.response(200, [], "") }] }], [])
+		== ["POST /__rocx/x/[id]: the a plugin (early), and the b plugin (early)"]
 expect Plugins.problems([], [{ method: "GET", path: "/m", file: "routes/m/+page.rocx" }, { method: "GET", path: "/m", file: "routes/m/+server.roc" }]) == []
 expect Plugins.problems([{ ..none, name: "auth", needs: [Plugin("email")] }], []) == ["auth needs the email plugin, which isn't in plugins"]
 expect

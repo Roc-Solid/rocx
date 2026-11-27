@@ -263,7 +263,8 @@ view! = |_|
 				Middleware goes by folder, as routes do. A <code>+middleware.roc</code> names the middleware that runs
 				around every page, endpoint and channel in its directory and the directories below it, and
 				nothing else runs any. The one in <code>routes/</code> itself is the app's, around every request
-				it answers (a plugin's route, a path nothing has). This site's adds two headers to every answer:
+				it answers (every URL is a route file, a package's handlers' too, and a path nothing has). This
+				site's adds two headers to every answer:
 			</p>
 			<Code title={Sources.site_root_middleware.file} source={Sources.site_root_middleware.rocx} numbers={Bool.False} />
 			<p>
@@ -460,10 +461,10 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.route_routes.file}, in part"} source={Sources.route_routes.rocx} numbers={Bool.False} />
 			<p>
-				<code>App.program</code> answers every request with it that no plugin's route and no OpenAPI path
-				takes, behind the app's middleware (<code>routes/+middleware.roc</code>), and the GETs the server
-				makes while it renders a page go the same way. A plugin's routes and the OpenAPI document aren't
-				in <code>routes/</code>, so they are behind what main.roc gives them instead (D-114). A route in a directory with a <code>+middleware.roc</code> above it is wrapped in
+				<code>App.program</code> answers every request with it, behind the app's middleware
+				(<code>routes/+middleware.roc</code>): every URL is a route file (D-116), a package's handlers and the
+				OpenAPI document too. The GETs the server makes while it renders a page go the
+				same way. A route in a directory with a <code>+middleware.roc</code> above it is wrapped in
 				<code>Middleware.run!</code>, one inside the other, outermost first, and the handler is given what
 				the innermost passed on. The members page and its endpoint run behind their group's:
 			</p>
@@ -489,37 +490,25 @@ view! = |_|
 				schema: what they require, and their lengths, patterns and ranges.
 			</p>
 			<h3>Turning it on</h3>
-			<p>It is off unless the app turns it on, with <code>openapi</code> in its <code>App.program</code>:</p>
-			<Code title="main.roc" source={"program = App.program({\n\tinit!: |started| Ok({ facts: started }),\n\topenapi: Page(Swagger, Middlewares.default),\n})"} numbers={Bool.False} />
-			<TableWrap>
-				<table>
-					<thead><tr><th><code>openapi:</code></th><th>The app serves</th></tr></thead>
-					<tbody>
-						<tr><td><code>Off</code>, or no <code>openapi</code></td><td>neither</td></tr>
-						<tr><td><code>Document(middleware)</code></td><td><code>GET /openapi.json</code>: the document</td></tr>
-						<tr><td><code>Page(Swagger, middleware)</code>, <code>Page(Scalar, middleware)</code></td><td>that, and <code>GET /openapi.html</code>: the document in Swagger UI, or in Scalar</td></tr>
-					</tbody>
-				</table>
-			</TableWrap>
+			<p>
+				An app serves it from routes of its own (D-116): <code>routes/openapi.json/+server.roc</code> answers
+				with the document, and <code>routes/openapi.html/+server.roc</code>, beside it, with a page that reads
+				it, in Swagger UI or Scalar. Without them, neither is served.
+			</p>
+			<Code title="routes/openapi.json/+server.roc" source={"import pf.OpenApi\nimport ../../Generated/Api\n\nrespond! = |{ request, .. }| OpenApi.document_route(request, Api.openapi)"} numbers={Bool.False} />
+			<Code title="routes/openapi.html/+server.roc" source={"import pf.OpenApi\n\nrespond! = |{ request, .. }| OpenApi.page_route(request, Swagger)"} numbers={Bool.False} />
 			<ul>
 				<li>
-					<strong>It is behind the middleware it names</strong>, which the app must give: the document says
-					what every endpoint takes and answers, so it is never public because something was left out.
-					<code>routes/+middleware.roc</code> isn't around it (D-114): give it what a folder of admins runs
-					(<code>{"Page(Scalar, Middlewares.default.then(Middlewares.admin))"}</code>) to keep it from
-					strangers, or <code>{"Middleware.none({})"}</code> to show it to anyone.
+					<strong>They are routes like any other</strong>: the middleware of the folder they are in is
+					around them, so put them in a group that keeps strangers out to keep the document from them, and
+					<code>rocx routes</code> lists them. Under <code>--dev</code>, the server lists the page as it
+					starts.
 				</li>
 				<li>
 					<strong>The page loads its viewer from jsDelivr</strong>, pinned to one version and checked
 					against its hash, and tells it not to call home: no validator for Swagger UI; no telemetry, fonts,
 					developer tools or agent for Scalar. Bundling a viewer instead would add 2 to 5 MB to every app's
 					server.
-				</li>
-				<li>
-					<strong>An app that writes its own <code>program</code></strong>, instead of using
-					<code>App.program</code>, runs <code>{"OpenApi.middleware(Page(Swagger, Middleware.none({})), Api.openapi)"}</code>
-					before its routes, as <code>App.program</code> does, or asks
-					<code>OpenApi.respond</code> before its routes.
 				</li>
 			</ul>
 			<p>

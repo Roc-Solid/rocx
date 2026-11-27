@@ -269,7 +269,7 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.match(local.html, /<title data-rocx>Local 0<\/title><title>Local<\/title>.*<section class="local"><!--x--><!--\/x--> <p class="board rx-[a-z0-9]+"><!--x-->0<!--\/x--><\/p> <span class="tag">its own<\/span> <button class="bump" type="button">Bump<\/button><\/section>/, "a route file's own components, its <style> scoping its Board");
 		const missing = await get("/nope");
 		assert.equal(missing.status, 404);
-		assert.equal(missing.app, "e2e", "a path nothing answers is behind routes/+middleware.roc (D-114)");
+		assert.equal(missing.app, "e2e", "a path nothing answers is behind routes/+middleware.roc too");
 		assert.match(missing.html, /<title>Not here<\/title>.*<main><!--errored--><!--show--><section class="error"><h1>404<\/h1> <p class="problem">nothing at \/nope<\/p><\/section><!--\/show--><!--\/errored--><\/main> <footer class="at"><!--x-->\/nope<!--\/x--><\/footer>/);
 		const text = await fetch(`${server.url}/nope`);
 		assert.deepEqual([text.status, text.headers.get("content-type"), await text.text()], [404, "text/plain; charset=utf-8", "nothing at /nope"]);
@@ -288,11 +288,11 @@ test("an app of components: rocx build writes its Root, Routes and App, its serv
 		assert.equal(down.status, 500);
 		assert.match(down.html, /<h1>500<\/h1> <p class="problem">GET \/things\/down: 503: the shelf is down<\/p>/);
 		assert.deepEqual([(await get("/members")).status, (await get("/members")).html], [401, "members only"]);
-		// The jobs page, a plugin's page: behind the middleware main.roc gives it alone, not
-		// routes/+middleware.roc, whose header it lacks (D-114).
-		assert.deepEqual(await get("/admin/jobs"), { status: 401, app: null, html: "members only" }, "its middleware refuses a stranger");
+		// The jobs page, packages/admin's handler on a route of the app's (D-116), in the (staff)
+		// group: behind the app's middleware (its header), then the group's.
+		assert.deepEqual(await get("/admin/jobs"), { status: 401, app: "e2e", html: "members only" }, "the group's middleware refuses a stranger");
 		const jobsPage = await get("/admin/jobs", { cookie: "member=Ada" });
-		assert.equal(jobsPage.app, null, "routes/+middleware.roc isn't around a plugin's route");
+		assert.equal(jobsPage.app, "e2e", "routes/+middleware.roc is around it, as around every route");
 		assert.match(jobsPage.html, /<body class="rocx-admin">/, "the jobs page, in the admin look (no database here, so it says why)");
 		const member = await get("/members", { cookie: "member=Ada" });
 		assert.equal(member.status, 200);
@@ -458,7 +458,7 @@ test("routes, served natively: each page in its layouts, a param a page's, a pat
 	// itself does: `OpenApi.respond` first, then the routes.
 	put(
 		"main.roc",
-		'app [program] { pf: platform "../../../server/platform/main.roc", crypto: "../../../packages/crypto/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\tinit!: |started| Ok(started),\n\trespond!: |request, context| {\n\t\tmatch OpenApi.respond(request, Document, Api.openapi) {\n\t\t\tOk(served) => served\n\t\t\tErr(NotHere) => Routes.respond!(request, context)\n\t\t}\n\t},\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [],\n\troutes: [],\n}\n',
+		'app [program] { pf: platform "../../../server/platform/main.roc", crypto: "../../../packages/crypto/main.roc" }\n\nimport pf.Server\nimport pf.OpenApi\nimport Generated/Api\nimport Generated/Routes\n\nprogram = {\n\tinit!: |started| Ok(started),\n\trespond!: |request, context| if (request.path == "/openapi.json") OpenApi.document_route(request, Api.openapi) else Routes.respond!(request, context),\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [],\n\troutes: [],\n}\n',
 	);
 	// A page that sends the visitor elsewhere as it renders (`<Navigate>`, D-040): a 303 from the server.
 	put("routes/gone/+page.rocx", 'import pf.Html\nimport pf.Navigate\n\n## Moved: to the blog.\nview! = |_| <main><Navigate href="/blog" /><p>Moved</p></main>\n');

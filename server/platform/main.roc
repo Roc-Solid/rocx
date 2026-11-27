@@ -45,11 +45,11 @@
 ##   (`ROCX_LOG`, `pretty` or `json`, if it is set; or else pretty when stderr is a terminal, and JSON
 ##   when it isn't), `Pretty` or `Json`. `App.program` says `Auto`; an app says otherwise with
 ##   `{ ..App.program(…), logs: { format: Json } }`.
-## - `plugins`: what packages add to the app (`Plugin`), all but their routes, which `respond!`
-##   answers: early paths, files (which the host serves before the app, and its middleware, ever
-##   sees the request), scripts (which every page loads), tables, calls, loops, starts, checks and
-##   needs, checked when the server starts (`Plugins`); `routes`, the app's own (`Routes.claims`),
-##   which no plugin's route or file at the root may meet.
+## - `plugins`: what packages add to the app (`Plugin`; no routes, D-116: a package's handlers are
+##   called from the app's route files): early paths, files (which the host serves before the app,
+##   and its middleware, ever sees the request), scripts (which every page loads), tables, calls,
+##   loops, starts, checks and needs, checked when the server starts (`Plugins`); `routes`, the
+##   app's own (`Routes.claims`), which no plugin's file at the root may meet.
 ## - A page's components are Solid-style (web/runtime.js hydrates the document in the browser). A
 ##   GET endpoint a component reads while the host renders the page (`Endpoint.read!`) is answered by
 ##   its route, in-process (`Host.fetch!`). The modules components are written with (`Html`, `Solid`,

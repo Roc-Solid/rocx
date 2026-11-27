@@ -1,30 +1,29 @@
 import Host
-import Middleware
 import Server
 
 ## What a package adds to an app, as one value the app lists (`App.program({ plugins: [...] })`):
-## its routes, behind the middleware the app gives it (D-114); paths answered before the app, under
-## `--dev` or `--debug` (`early`); files served as they are, before the app and its middleware
-## (`files`), and those of them every page loads (`scripts`); its tables (`migrations`); named
-## functions run in a call of their own (`calls`); background loops; work run once the server has
-## started (`starts`) and checks run after (`checks`); what it needs that the compiler can't see
-## (`needs`); and the places it adds that a person may want to open (`links`), which the server
-## lists under its address under `--dev`. Every field but `name` has a default, so a plugin says only what it adds. A package
-## makes one from options of its own, whose fields without a default are required
-## (`JobsPage.plugin({ middleware })`).
+## paths answered before the app, under `--dev` or `--debug` (`early`); files served as they are,
+## before the app and its middleware (`files`), and those of them every page loads (`scripts`); its
+## tables (`migrations`); named functions run in a call of their own (`calls`); background loops;
+## work run once the server has started (`starts`) and checks run after (`checks`); what it needs
+## that the compiler can't see (`needs`); and the places it adds that a person may want to open
+## (`links`), which the server lists under its address under `--dev`. Every field but `name` has a
+## default, so a plugin says only what it adds. A package makes one from options of its own, whose
+## fields without a default are required.
 ##
-## A plugin's routes aren't in the app's `routes/`, so no `+middleware.roc` is around them, not even
-## `routes/`'s (D-114): a plugin with routes takes a `middleware` of the app's, which it has no
-## default for, and puts its routes behind it (`Plugin.behind`). The app says what each plugin's
-## routes are behind, in one place: its main.roc (`middleware: Middlewares.default`, or
-## `Middleware.none({})` for routes anyone may reach), and a route reads what that middleware hands
-## on (`Push.plugin({ middleware: Middlewares.signed_in, owner: |ctx| ctx.user.id })`).
+## A plugin adds no routes (D-116): every URL an app answers is a file under its `routes/`. A
+## package that answers requests offers handlers instead, which the app calls from a route file of
+## its own, where it wants them and behind the middleware of the folder it puts them in:
 ##
 ## ```roc
-## plugin : Options(context, ctx) -> Plugin.Value(context)
+## # routes/(admin)/admin/jobs/+server.roc
+## respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })
+## ```
+##
+## ```roc
+## plugin : Options -> Plugin.Value(context)
 ## plugin = |options| {
 ##     name: "acme",
-##     routes: Plugin.behind(options.middleware, [{ method: "GET", path: options.at, kind: Page, answer!: |request, _ctx| page!(request) }]),
 ##     migrations: [{ name: "0001_notes", sql: notes }],
 ##     loops: [{ name: "acme.sync", run!: |_context| sync!({}) }],
 ##     needs: [Database, Env("ACME_KEY")],
@@ -32,26 +31,24 @@ import Server
 ## ```
 ##
 ## A plugin's calls, loops, starts and checks are given the app's context (what its `init!` made,
-## `context`), as its jobs and actors are, and so are its routes, before the middleware the app
-## gave it (`Plugin.behind`). A plugin doesn't know its type.
+## `context`), as its jobs and actors are. A plugin doesn't know its type.
 ##
 ## When the server starts it checks every plugin at once, and any problem stops it, with the whole
 ## list: a name used twice; a call, loop or check not named `<plugin>.<name>`; an early path not
-## under `/__rocx/`; two routes at one method and path (the app's and a plugin's, or two plugins');
-## a file's path that isn't one (`/sw.js`, `../x`), two files at one path, a file at the root where
-## the app has a route (or another plugin one), a script that is none of the plugin's files; a need
-## not met (an environment variable unset, no database or one of the other flavor, a plugin not in
-## the list); needs that go round in a circle. It orders the plugins by what they need (the list's order
-## breaking ties), applies their migrations after the platform's and before the app's, each
-## recorded as `<plugin>/<name>`, makes the app's context (its `init!`), runs their `starts` with
-## it (an `Err` stops the server), and logs a line a plugin saying what it added.
+## under `/__rocx/`, or two at one method and path; a file's path that isn't one (`/sw.js`, `../x`),
+## two files at one path, a file at the root where the app has a route, a script that is none of
+## the plugin's files; a need not met (an environment variable unset, no database or one of the
+## other flavor, a plugin not in the list); needs that go round in a circle. It orders the plugins
+## by what they need (the list's order breaking ties), applies their migrations after the
+## platform's and before the app's, each recorded as `<plugin>/<name>`, makes the app's context
+## (its `init!`), runs their `starts` with it (an `Err` stops the server), and logs a line a plugin
+## saying what it added.
 Plugin := [].{
 
-	## A plugin. `context` is the app's context (its `init!`'s), which its calls, loops, starts,
-	## checks and routes are given. It doesn't know its type.
+	## A plugin. `context` is the app's context (its `init!`'s), which its calls, loops, starts and
+	## checks are given. It doesn't know its type.
 	Value(context) := {
 		name : Str,
-		routes : List(Route(context)) ?? [],
 		early : List(Early) ?? [],
 		files : List(File) ?? [],
 		scripts : List(Str) ?? [],
@@ -63,25 +60,6 @@ Plugin := [].{
 		needs : List(Need) ?? [],
 		links : List(Link) ?? [],
 	}
-
-	## A route, given the request and `ctx`: the app's context, or, behind a middleware
-	## (`Plugin.behind`), what that hands on. Its `path` may have `[param]` segments, matched as the
-	## app's are, and `request.route` is it. GET answers HEAD too; `*` any method. A `Page` or an
-	## `Endpoint`, as the app's are. No middleware of the app's `routes/` is around it (D-114).
-	Route(ctx) : { method : Str, path : Str, kind : [Page, Endpoint], answer! : Server.Request, ctx => Server.Response }
-
-	## `routes` behind `middleware` (the one the app gave the plugin): each runs once it has passed
-	## the request on, given what it handed on; it may answer first itself (a refusal, a redirect to
-	## sign in). A plugin with routes takes the middleware as an option with no default (D-114), so
-	## an app always says what its routes are behind.
-	behind : Middleware(context, ctx), List(Route(ctx)) -> List(Route(context))
-	behind = |middleware, routes|
-		routes.map(
-			|route| {
-				answer! = route.answer!
-				{ method: route.method, path: route.path, kind: route.kind, answer!: |request, context| Middleware.run!(middleware, request, context, answer!) }
-			},
-		)
 
 	## A path the platform answers before the app, only when the server was started with one of
 	## the flags in `under` (`--dev`, `--debug`): under `/__rocx/`, so the app's paths and its
@@ -134,11 +112,9 @@ Plugin := [].{
 	## it starts: `➜ Mailbox  http://localhost:8080/__rocx/mail`.
 	Link : { label : Str, path : Str }
 
-	## What the platform keeps of a plugin (`program.plugins`): all but its routes, which the app's
-	## `respond!` answers (`Plugin.respond!`); their methods and paths, for the checks.
+	## What the platform keeps of a plugin (`program.plugins`).
 	Running(context) : {
 		name : Str,
-		claims : List({ method : Str, path : Str }),
 		early : List(Early),
 		files : List(File),
 		scripts : List(Str),
@@ -155,7 +131,6 @@ Plugin := [].{
 	running : Value(context) -> Running(context)
 	running = |plugin| {
 		name: plugin.name,
-		claims: plugin.routes.map(|route| { method: route.method, path: route.path }),
 		early: plugin.early,
 		files: plugin.files,
 		scripts: plugin.scripts,
@@ -177,27 +152,8 @@ Plugin := [].{
 			Root => "/${file.path}"
 		}
 
-	## Answers `request` with the first plugin route that matches its method and path, given the
-	## app's context (the route's middleware, `Plugin.behind`, runs first); with `otherwise!` (the
-	## OpenAPI document, then the app's middleware and routes) when none does.
-	respond! : List(Value(context)), Server.Request, context, (Server.Request, context => Server.Response) => Server.Response
-	respond! = |plugins, request, context, otherwise!|
-		match plugins.join_map(|plugin| plugin.routes).find_first(|route| method_matches(route.method, request.method) and Plugin.matches(route.path, request.path)) {
-			Ok(route) => (route.answer!)(request, context)
-			Err(_) => otherwise!(request, context)
-		}
-
-	## The path of the plugin route that answers `method` and `path` (`/admin/jobs`), for
-	## `request.route`.
-	pattern : List(Value(context)), Str, Str -> Try(Str, [NotFound])
-	pattern = |plugins, method, path|
-		match plugins.join_map(|plugin| plugin.routes).find_first(|route| method_matches(route.method, method) and Plugin.matches(route.path, path)) {
-			Ok(route) => Ok(route.path)
-			Err(_) => Err(NotFound)
-		}
-
-	## Whether `path` is one `pattern` stands for: segment by segment, a `[param]` one standing for
-	## any one segment.
+	## Whether `path` is one `route_path` stands for (an early path): segment by segment, a
+	## `[param]` one standing for any one segment.
 	matches : Str, Str -> Bool
 	matches = |route_path, path| {
 		wanted = route_path.split_on("/")
@@ -243,10 +199,6 @@ Plugin := [].{
 		}
 }
 
-## Whether a route for `wanted` answers `method`.
-method_matches : Str, Str -> Bool
-method_matches = |wanted, method| wanted == "*" or wanted == method or (wanted == "GET" and method == "HEAD")
-
 is_param : Str -> Bool
 is_param = |segment| segment.starts_with("[") and segment.ends_with("]")
 
@@ -254,7 +206,5 @@ expect Plugin.matches("/admin/jobs", "/admin/jobs")
 expect !Plugin.matches("/admin/jobs", "/admin/jobs/1")
 expect Plugin.matches("/push/[id]", "/push/7")
 expect !Plugin.matches("/push/[id]", "/push")
-expect method_matches("GET", "HEAD")
 expect Plugin.url("push", { path: "push.js", at: Plugin, content_type: "text/javascript", body: [] }) == "/rocx/plugins/push/push.js"
 expect Plugin.url("push", { path: "push-sw.js", at: Root, content_type: "text/javascript", body: [] }) == "/push-sw.js"
-expect !method_matches("POST", "GET")

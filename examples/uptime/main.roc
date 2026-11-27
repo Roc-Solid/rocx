@@ -10,8 +10,9 @@
 ## - packages/email sends the alerts: over SMTP with `SMTP_URL`, or else, under `--dev`, kept for
 ##   the dev mailbox (`/__rocx/mail`); a server with neither doesn't start.
 ## - packages/auth keeps the admin's sessions (12 hours, in the `uptime_admin` cookie, their hashes
-##   in the database) and ends them at `POST /auth/sign-out`. It has no `admit!`, so nobody signs in
-##   by a link or a provider: Session.roc checks `ADMIN_PASSWORD` and starts a session itself.
+##   in the database) and ends them at `POST /auth/sign-out` (its route, routes/auth/sign-out/). It
+##   has no routes for links or providers, so nobody signs in that way: Session.roc checks
+##   `ADMIN_PASSWORD` and starts a session itself.
 ## - packages/otel sends the metrics (each request's time, each check's latency, each monitor's
 ##   state) to the collector `OTEL_EXPORTER_OTLP_ENDPOINT` names; without it, nothing is measured.
 app [program] { admin: "../../packages/admin/main.roc", auth: "../../packages/auth/main.roc", charts: "../../packages/charts/main.roc", crypto: "../../packages/crypto/main.roc", email: "../../packages/email/main.roc", jobs: "../../packages/jobs/main.roc", otel: "../../packages/otel/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc" }
@@ -20,22 +21,21 @@ import auth.Auth
 import email.Email
 import jobs.Cron
 import jobs.Job
-import admin.JobsPage
 import otel.Otel
 import Generated/App
 import Jobs
-import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
 	# A file beside where the server starts (`--database-url sqlite:<path>` puts it elsewhere).
 	database: Sqlite("data/uptime.db"),
+	# Under --dev, the jobs page (its route, routes/(admin)/admin/jobs/) among the places to open.
+	links: [{ label: "Jobs", path: "/admin/jobs" }],
 	plugins: [
 		# A job each ten seconds (`Jobs.due`): done ones are kept an hour, not the plugin's week.
 		Job.plugin({ jobs: App.jobs, crons: [Cron.every("*/10 * * * * *", Jobs.due, {}), Cron.every("0 3 * * *", Jobs.nightly, {})], keep_done_ms: 60 * 60 * 1000 }),
-		JobsPage.plugin({ at: "/admin/jobs", middleware: Middlewares.default.then(Middlewares.admin), back: { label: "Status admin", href: "/admin" } }),
 		Email.plugin({ from: "Status <status@example.com>" }),
-		Auth.plugin({ middleware: Middlewares.default, sign_in: "/admin/sign-in", home: "/admin", cookie: "uptime_admin", session_ms: 12 * 60 * 60 * 1000 }),
+		Auth.plugin({ sign_in: "/admin/sign-in", home: "/admin", cookie: "uptime_admin", session_ms: 12 * 60 * 60 * 1000 }),
 		Otel.plugin({}),
 	],
 })

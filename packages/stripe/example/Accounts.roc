@@ -4,7 +4,7 @@ import pf.Time
 import crypto.Base64
 import auth.Auth
 
-## The app's people, and who gets in (`admit!`, which the auth plugin asks at every sign-in).
+## The app's people, and who gets in (`admit!`, which the auth routes ask at every sign-in).
 Accounts := [].{
 
 	## Someone who has signed in.

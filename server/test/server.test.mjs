@@ -1389,9 +1389,11 @@ test("the jobs page's guard refuses whom it refuses, whatever they ask for: GET,
 		assert.equal(refused.status, 403, `${init.method ?? "GET"} ${path}`);
 		assert.match(await refused.text(), /admins only/, "the guard's answer, not the page's");
 	}
-	// Its routes are a GET (which answers HEAD too) and a POST: another method there is neither's.
-	assert.equal((await get("/admin/jobs", { method: "HEAD" })).status, 403, "a HEAD is the GET route's, behind the guard");
-	assert.equal((await get("/admin/jobs", { method: "PUT" })).status, 404, "a PUT is no route's");
+	// The route is the app's (D-116), its guard first for every method; the page answers GET (HEAD
+	// too) and POST, and 405 for any other.
+	assert.equal((await get("/admin/jobs", { method: "HEAD" })).status, 403, "a HEAD, behind the guard");
+	assert.equal((await get("/admin/jobs", { method: "PUT" })).status, 403, "a PUT, behind the guard too");
+	assert.equal((await get("/admin/jobs", { method: "PUT", headers: { "x-admin": "yes" } })).status, 405, "past it, the page takes no PUT");
 });
 
 test("the jobs page mounted by the app itself (JobsPage.respond!), at its own path, behind its own guard", { skip: skipDb }, async () => {
@@ -1420,16 +1422,16 @@ test("jobs: finished ones are swept once older than the plugin keeps them (done 
 	assert.deepEqual(await left(), ["queued-old", "canceled-young", "failed-young", "done-young"], "newest first");
 });
 
-test("JobsPage.plugin without a middleware doesn't compile: the record is missing the field middleware, which has no default (D-114; the hint lists the fields left out, defaulted ones too)", { skip }, () => {
+test("JobsPage.respond! without a mount doesn't compile: the record is missing the field mount", { skip }, () => {
 	const at = join(root, "server", "test", "build", "guardless");
 	mkdirSync(at, { recursive: true });
 	writeFileSync(
 		join(at, "main.roc"),
-		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Plugin\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\tinit!: |started| Ok(started),\n\trespond!: |_, _| Server.response(200, [], ""),\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [Plugin.running(JobsPage.plugin({ at: "/admin/jobs" }))],\n\troutes: [],\n}\n',
+		'app [program] { pf: platform "../../../platform/main.roc", admin: "../../../../packages/admin/main.roc" }\n\nimport pf.Server\nimport admin.JobsPage\n\nprogram = {\n\tinit!: |started| Ok(started),\n\trespond!: |request, _| JobsPage.respond!(request, { back: { label: "Home", href: "/" } }),\n\tdatabase: Postgres,\n\tmigrations: [],\n\tactors: [],\n\tlogs: { format: Auto },\n\tplugins: [],\n\troutes: [],\n}\n',
 	);
 	const checked = spawnSync(roc(), ["check", join(at, "main.roc")], { encoding: "utf8" });
 	assert.notEqual(checked.status, 0);
-	assert.match(checked.stdout + checked.stderr, /This record is missing these fields:\n - back\n - middleware\n/);
+	assert.match(checked.stdout + checked.stderr, /This record is missing the field: mount\n/);
 });
 
 test("packages/admin on Postgres: its catalog read from pg_catalog, a check's values and a foreign key as choices, a row created, found, changed and deleted", { skip: skipDb }, async () => {
@@ -1751,19 +1753,14 @@ test("what was a flag of the server's and is a plugin's now is refused, saying w
 
 // ---- Plugins: what a package adds to an app (server/test/fixture) ----
 
-test("plugins: a plugin's route answers in the app, with the app's context and its own pattern as the route; its call runs in a call of its own, a crash ending only that; its loop ran, its start kept, its check logged; the log says what each added, in the order their needs put them", { skip }, async () => {
-	assert.equal(await text("/fixture/context"), "/fixture/context: the app's context, facts=yes, through its middleware");
-	assert.equal(await text("/fixture/notes/42"), "note 42 at /fixture/notes/[id]");
-	assert.equal((await server.get("/fixture/context", { method: "HEAD" })).status, 200, "GET answers HEAD");
+test("plugins: a plugin's handlers answer on the app's routes (D-116: a plugin has none); its call runs in a call of its own, a crash ending only that; its loop ran, its start kept, its check logged; the log says what each added, in the order their needs put them", { skip }, async () => {
 	assert.equal(await text("/fixture/shout?word=quiet"), "QUIET");
 	const crashed = await server.get("/fixture/shout?word=crash");
 	assert.equal(crashed.status, 500);
 	assert.equal(await crashed.text(), "crashed: the fixture's call crashed");
 	assert.equal(await text("/fixture/shout?word=again"), "AGAIN", "the server goes on");
 	assert.equal(await text("/fixture/state"), "started, 1 beat");
-	assert.equal(await text("/second"), "second");
-	assert.equal(await text("/third", { method: "POST" }), "third POST", "a route for every method");
-	assert.equal(await text("/"), "Hello from Roc, natively.", "the app's own routes, after the plugins'");
+	assert.equal(await text("/"), "Hello from Roc, natively.", "the app's own routes");
 	assert.deepEqual(
 		events()
 			.filter((event) => event.msg === "rocx plugins: added")
@@ -1771,20 +1768,16 @@ test("plugins: a plugin's route answers in the app, with the app's context and i
 		[
 			"debug jobs: 1 early route, 1 migration, 1 call, 6 loops, 1 start",
 			"debug email: 4 early routes, 1 start, 1 check",
-			"debug jobs-page: 2 routes",
-			"debug fixture: 5 routes, 1 early route, 2 files, 1 script, 1 migration, 1 call, 1 loop, 1 start, 1 check",
-			"debug second: 1 route",
-			"debug third: 1 route",
-			"debug storage: 1 route",
+			"debug fixture: 1 early route, 2 files, 1 script, 1 migration, 1 call, 1 loop, 1 start, 1 check",
 		],
-		"listed jobs, email, the jobs page, fixture, third, second, storage: third needs second, so it comes after it; what each added at debug (D-111)",
+		"listed jobs, email, fixture, third, second: what each added at debug (D-111), second and third nothing, so no line",
 	);
 	assert.deepEqual(
 		events()
 			.filter((event) => event.msg.startsWith("rocx plugins: ") && event.msg !== "rocx plugins: added")
 			.map(({ level, msg }) => `${level} ${msg}`),
-		["info rocx plugins: jobs, email, jobs-page, fixture, second, third, storage"],
-		"one line at info, naming them in their order (D-111)",
+		["info rocx plugins: jobs, email, fixture"],
+		"one line at info, naming those that add something in their order (D-111): second and third add nothing",
 	);
 	await logsEvent({ level: "info", msg: "the fixture looked", check: "fixture.look" });
 });
@@ -1870,7 +1863,7 @@ test("plugins: an early path is answered before the app, only under the flag it 
 		// Under --dev, the places the plugins add, listed under the address, each a whole URL (D-111).
 		const listed = events(dev).find((event) => event.msg === "rocx server: links");
 		assert.ok(listed, dev.logged());
-		assert.deepEqual({ ...listed, time: "" }, { time: "", level: "info", msg: "rocx server: links", Mailbox: `${dev.url}/__rocx/mail`, Jobs: `${dev.url}/admin/jobs` });
+		assert.deepEqual({ ...listed, time: "" }, { time: "", level: "info", msg: "rocx server: links", Mailbox: `${dev.url}/__rocx/mail` });
 	} finally {
 		await dev.stop();
 	}
@@ -1902,7 +1895,7 @@ test("plugins: a plugin's table, applied after the platform's and before the app
 	}
 });
 
-test("plugins: what stops the server at start, every problem a line: a route the app has, two plugins at one path, a loop without the plugin's name first, an early path outside /__rocx/, a file's path that isn't relative, a script that is no file, a file at the root in the platform's place, two files at one place, a file where a route is, a variable unset, a plugin not in the list, needs in a circle, a name twice, a name that isn't one", { skip }, async () => {
+test("plugins: what stops the server at start, every problem a line: two plugins' early paths at one path, a loop without the plugin's name first, an early path outside /__rocx/, a file's path that isn't relative, a script that is no file, a file at the root in the platform's place, two files at one place, a file where a route is, a variable unset, a plugin not in the list, needs in a circle, a name twice, a name that isn't one", { skip }, async () => {
 	const executable = join(dir, "refused");
 	buildApp(join(root, "server", "test", "refused", "main.roc"), executable, { opt: process.env.ROCX_TEST_OPT ?? "dev" });
 	const refused = await start([], executable, { REFUSED_UNSET: "" }).then(
@@ -1922,11 +1915,9 @@ test("plugins: what stops the server at start, every problem a line: a route the
 			"auth needs the email plugin, which isn't in plugins",
 			"two plugins are called two",
 			"plugin \"Bad Name\": a plugin's name is lowercase letters, digits and -",
-			"GET /x: routes/x/+page.rocx, and the clash plugin",
-			"POST /y/[id]: the one plugin, and the two plugin",
+			"POST /__rocx/y/[id]: the one plugin (early), and the two plugin (early)",
 			"/sw.js: the one plugin's file, and the two plugin's file",
 			"/x: routes/x/+page.rocx, and the clash plugin's file",
-			"/x: the clash plugin, and the clash plugin's file",
 			"left needs right, which needs left",
 			"one: REFUSED_UNSET isn't set",
 		].join("\n"),
@@ -2935,7 +2926,7 @@ for (const backend of backends) {
 		if (s3) {
 			assert.match(putUrl, /X-Amz-Expires=60&X-Amz-SignedHeaders=host&X-Amz-Signature=[0-9a-f]{64}$/);
 		} else {
-			assert.ok(putUrl.startsWith(`${(await on()).url}/__storage?method=PUT&key=`), "the app's own link, at where it listens");
+			assert.ok(putUrl.startsWith(`${(await on()).url}/_storage?method=PUT&key=`), "the app's own link, at where it listens");
 			assert.match(putUrl, /&expires=\d+&signature=[0-9a-f]{64}$/);
 		}
 		assert.equal((await fetch(putUrl, { method: "PUT", body: "sent by Node", headers: { "content-type": "text/plain" } })).status, 200);

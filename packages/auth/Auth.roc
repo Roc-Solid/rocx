@@ -1,5 +1,6 @@
 import pf.AesGcm
 import pf.Db
+import pf.Endpoint
 import pf.Env
 import pf.Http
 import pf.Log
@@ -17,23 +18,39 @@ import "migrations/0002_impersonation.sql" as impersonation : Str
 import "migrations/0003_two_factor.sql" as two_factor_tables : Str
 import "migrations/0004_two_factor_misses.sql" as two_factor_misses : Str
 
-## Sign-in for Roc Solid apps, as a plugin (D-072): by a link mailed to an address, or at a
-## provider (Google, GitHub, any OpenID Connect one); sessions kept as their token's hash in the
-## app's database; middleware that hands the signed-in user on. It has no pages: the app's sign-in
-## page posts to it and links to it, and its own `admit!` says who gets in. With `two_factor`, a
-## user who turned it on gives a code from an authenticator app (or a recovery code) after that.
+## Sign-in for Roc Solid apps (D-072): by a link mailed to an address, or at a provider (Google,
+## GitHub, any OpenID Connect one); sessions kept as their token's hash in the app's database;
+## middleware that hands the signed-in user on. It has no pages: the app's sign-in page posts to its
+## steps and links to them, and the app's `admit!` says who gets in. With `two_factor`, a user who
+## turned it on gives a code from an authenticator app (or a recovery code) after that.
 ##
 ## ```roc
-## plugins: [Auth.plugin({ admit!: Accounts.admit!, middleware: Middlewares.default, providers: [Auth.google, Auth.github] })]
+## plugins: [Auth.plugin({ providers: Accounts.providers })]   # its tables and settings
 ## ```
 ##
-## The plugin's endpoints, under `at` (`/auth`): `GET|POST <at>/link?token=…` (a mailed link,
-## used once; with `link_page`, the link goes to the app's page, which posts its token here), `GET <at>/<provider>?then=…` (off to a provider) and `GET <at>/<provider>/callback`
-## (back from it), `POST <at>/sign-out`, `POST <at>/dev` (any address, under `--dev` only), and
-## `POST <at>/code` (a sign-in's second factor, from the app's `code_page`). Each answers with a
-## redirect: where the browser was going, or the app's sign-in page with why not
-## (`?error=link|refused|provider|state|unavailable|attempts|locked|timeout`, and `&reason=` for `refused`
-## and `provider`), or the code page after a wrong code (`?error=code`).
+## Its steps are the app's routes (D-116): a route file under `at` (`routes/auth/` for `/auth`)
+## for each, calling its handler, behind the middleware of the folder it is in (which must let a
+## signed-out request through: these are how one signs in):
+##
+## ```roc
+## # routes/auth/[provider]/+server.roc: GET <at>/<provider>?then=…, off to a provider
+## respond! = |{ request, params, .. }| Auth.provider_route!(request, Accounts.providers, params.provider)
+## # routes/auth/[provider]/callback/+server.roc: GET, back from it (the redirect URI to register)
+## respond! = |{ request, params, .. }| Auth.callback_route!(request, Accounts.providers, params.provider, Accounts.admit!)
+## # routes/auth/link/+server.roc: GET|POST <at>/link?token=…, a mailed link, used once
+## respond! = |{ request, .. }| Auth.link_route!(request, Accounts.admit!)
+## # routes/auth/code/+server.roc: POST, a sign-in's second factor, from the app's `code_page`
+## respond! = |{ request, .. }| Auth.code_route!(request)
+## # routes/auth/sign-out/+server.roc: POST
+## respond! = |{ request, .. }| Auth.sign_out_route!(request)
+## # routes/auth/dev/+server.roc: POST, any address, under --dev only (404 otherwise)
+## respond! = |{ request, .. }| Auth.dev_route!(request, Accounts.admit!)
+## ```
+##
+## An app lists only the steps it uses. Each answers with a redirect: where the browser was going, or
+## the app's sign-in page with why not (`?error=link|refused|provider|state|unavailable|attempts|locked|timeout`,
+## and `&reason=` for `refused` and `provider`), or the code page after a wrong code (`?error=code`);
+## a method it doesn't take, 405.
 Auth := [].{
 
 	## Who is signing in, as the plugin hands them to `admit!`: the provider ("email" for a link or
@@ -73,23 +90,13 @@ Auth := [].{
 	}
 
 	## The plugin's options:
-	## - `admit!`: who gets in by a link, a provider or the dev sign-in. Given who is signing in, the
-	##   app's id for its user, or why not (shown on the sign-in page). It runs inside the
-	##   transaction that starts the session: what it writes (a new user's row, a request to join a
-	##   waiting list, a job it queues) commits with the session, or with its refusal, and a
-	##   database error rolls all of it back. Keep anything slow (a fetch) out of it. Without it, nobody
-	##   signs in those ways, and an app signs people in its own way (`sign_in!`: a password it
-	##   checks, a name picked).
-	## - `middleware`: what the plugin's endpoints are behind (D-114), which the app must say: not its
-	##   `routes/+middleware.roc`, which isn't around a plugin's routes. They are how one signs in, so
-	##   nothing there may send a signed-out request away: `Middleware.none({})`, or the app's own that
-	##   only logs or adds headers (`Middlewares.default`, if it gates nothing). With `cross_site:
-	##   Allowed`, give it the app's own form check too: its POSTs are forms.
-	## - `at`: where the plugin's endpoints are (`/auth`).
+	## - `at`: where the app's route files for its steps are (`/auth`: `routes/auth/`), which its
+	##   links and a provider's redirect URI are made with.
 	## - `sign_in`: the app's sign-in page, where a signed-out request (`required`) and a sign-in
 	##   that failed go (`/sign-in`).
 	## - `home`: where a sign-in goes when it wasn't going anywhere (`/`).
-	## - `providers`: where else one may sign in (none: links alone).
+	## - `providers`: where else one may sign in (none: links alone): the list the app's provider
+	##   routes are given too, so keep it in a module they import (`Accounts.providers`).
 	## - `session_ms`: how long a session lasts (30 days); one used in its second half is kept for
 	##   as long again.
 	## - `link_ms`: how long a mailed link is good for (15 minutes).
@@ -111,9 +118,7 @@ Auth := [].{
 	##   characters (`openssl rand -hex 32`), from which the key that seals each authenticator's
 	##   secret is derived. With `two_factor`, the server doesn't start without it, but under `--dev`,
 	##   where a development secret stands in (on the log).
-	Options(context, ctx) := {
-		admit! : (Auth.Identity => Try(Str, Str)) ?? nobody!,
-		middleware : Middleware(context, ctx),
+	Options := {
 		at : Str ?? "/auth",
 		sign_in : Str ?? "/sign-in",
 		home : Str ?? "/",
@@ -151,33 +156,16 @@ Auth := [].{
 	## how many unused recovery codes they have.
 	TwoFactor : [Off, Pending, On({ since_ms : I64, recovery_codes : U64 })]
 
-	## The auth plugin: its endpoints (behind `middleware`, the app's choice), its tables
-	## (`auth/0001_auth` to `auth/0004_two_factor_misses`, the same on SQLite and Postgres), and its
-	## settings, kept at start. It needs a database; with `two_factor`, the app's secret too (it
-	## won't start without it, but under `--dev`).
-	plugin : Auth.Options(context, ctx) -> Plugin.Value(context)
+	## The auth plugin: its tables (`auth/0001_auth` to `auth/0004_two_factor_misses`, the same on
+	## SQLite and Postgres) and its settings, kept at start for its handlers and middleware. No
+	## routes (D-116): the app's route files call its handlers (`provider_route!` and the rest). It
+	## needs a database; with `two_factor`, the app's secret too (it won't start without it, but
+	## under `--dev`).
+	plugin : Auth.Options -> Plugin.Value(context)
 	plugin = |options| {
 		settings = settings_of(options)
-		admit! = options.admit!
-		at = settings.at
-		away = options.providers.map(
-			|provider| [
-				{ method: "GET", path: "${at}/${provider.name}", kind: Endpoint, answer!: |request, _| away!(settings, provider, request) },
-				{ method: "GET", path: "${at}/${provider.name}/callback", kind: Endpoint, answer!: |request, _| back!(settings, admit!, provider, request) },
-			],
-		)
 		{
 			name: "auth",
-			routes: Plugin.behind(
-				options.middleware,
-				[
-					{ method: "GET", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
-					{ method: "POST", path: "${at}/link", kind: Endpoint, answer!: |request, _| linked!(settings, admit!, request) },
-					{ method: "POST", path: "${at}/dev", kind: Endpoint, answer!: |request, _| dev!(settings, admit!, request) },
-					{ method: "POST", path: "${at}/sign-out", kind: Endpoint, answer!: |request, _| left!(settings, request) },
-					{ method: "POST", path: "${at}/code", kind: Endpoint, answer!: |request, _| coded!(settings, request) },
-				].concat(List.join(away)),
-			),
 			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }, { name: "0004_two_factor_misses", sql: two_factor_misses }],
 			starts: [
 				|_context| {
@@ -197,6 +185,72 @@ Auth := [].{
 			links: [{ label: "Sign in", path: settings.sign_in }],
 		}
 	}
+
+	## A provider's first step, `GET <at>/<provider>?then=…` (`routes/auth/[provider]/+server.roc`,
+	## D-116): off to the provider called `name` among `providers` (the plugin's list,
+	## `Accounts.providers`), which asks who is signing in. 404 for a name none of them has; 405 for a
+	## method but GET.
+	provider_route! : Server.Request, List(Auth.Provider), Str => Server.Response
+	provider_route! = |request, providers, name|
+		taking!(
+			request,
+			["GET"],
+			|{}|
+				match providers.find_first(|provider| provider.name == name) {
+					Ok(provider) => away!(settings!({}), provider, request)
+					Err(_) => Server.refused(404, "Not found")
+				},
+		)
+
+	## Back from the provider called `name`, `GET <at>/<provider>/callback`
+	## (`routes/auth/[provider]/callback/+server.roc`: the redirect URI to register with it): who
+	## signed in there, given to `admit!`, then signed in (or asked for their second factor), and on
+	## to where they were going. 404 for a name none of `providers` has; 405 for a method but GET.
+	##
+	## `admit!` says who gets in, here, by a link (`link_route!`) and by the dev sign-in
+	## (`dev_route!`): given who is signing in, the app's id for its user, or why not (shown on the
+	## sign-in page). It runs inside the transaction that starts the session: what it writes (a new
+	## user's row, a request to join a waiting list, a job it queues) commits with the session, or
+	## with its refusal, and a database error rolls all of it back. Keep anything slow (a fetch) out
+	## of it. An app that signs people in its own way (a password it checks, a name picked) calls
+	## `sign_in!` instead, and has no routes for these.
+	callback_route! : Server.Request, List(Auth.Provider), Str, (Auth.Identity => Try(Str, Str)) => Server.Response
+	callback_route! = |request, providers, name, admit!|
+		taking!(
+			request,
+			["GET"],
+			|{}|
+				match providers.find_first(|provider| provider.name == name) {
+					Ok(provider) => back!(settings!({}), admit!, provider, request)
+					Err(_) => Server.refused(404, "Not found")
+				},
+		)
+
+	## A mailed link, `GET|POST <at>/link?token=…` (`routes/auth/link/+server.roc`), used once: the
+	## address it was sent to, given to `admit!` (as `callback_route!` says), then signed in. With
+	## `link_page`, the link opens the app's page, which posts its token here. 405 for a method but
+	## GET and POST.
+	link_route! : Server.Request, (Auth.Identity => Try(Str, Str)) => Server.Response
+	link_route! = |request, admit!| taking!(request, ["GET", "POST"], |{}| linked!(settings!({}), admit!, request))
+
+	## The dev sign-in, `POST <at>/dev` (`routes/auth/dev/+server.roc`): under `--dev`, any address
+	## posted (`email`, `then`), as if a provider had checked it, given to `admit!` and signed in, as
+	## a link would; without `--dev`, 404, as if there were no such route. For trying an app and for
+	## its tests, which need no mail and no provider; a server started with `--dev` lets anyone in as
+	## anyone, so never start one that way where others can reach it. 405 for a method but POST.
+	dev_route! : Server.Request, (Auth.Identity => Try(Str, Str)) => Server.Response
+	dev_route! = |request, admit!| taking!(request, ["POST"], |{}| dev!(settings!({}), admit!, request))
+
+	## Signing out, `POST <at>/sign-out` (`routes/auth/sign-out/+server.roc`): the session ended, its
+	## cookie gone, and on to `then` (a form's field), else home. 405 for a method but POST.
+	sign_out_route! : Server.Request => Server.Response
+	sign_out_route! = |request| taking!(request, ["POST"], |{}| left!(settings!({}), request))
+
+	## A sign-in's second factor, `POST <at>/code` (`routes/auth/code/+server.roc`), from the app's
+	## `code_page`: the code (or a recovery code) checked, then signed in, else back to the page. 405
+	## for a method but POST.
+	code_route! : Server.Request => Server.Response
+	code_route! = |request| taking!(request, ["POST"], |{}| coded!(settings!({}), request))
 
 	## Google (OpenID Connect): `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, from an OAuth client
 	## of the "Web application" kind whose redirect URI is `<public URL>/auth/google/callback`. It
@@ -621,7 +675,7 @@ Auth := [].{
 }
 
 ## The settings an app's options make.
-settings_of : Auth.Options(_, _) -> Auth.Settings
+settings_of : Auth.Options -> Auth.Settings
 settings_of = |options| {
 	at: if (options.at.ends_with("/")) options.at.drop_suffix("/") else options.at,
 	sign_in: options.sign_in,
@@ -638,9 +692,12 @@ settings_of = |options| {
 	key_env: options.key_env,
 }
 
-## `admit!` when the app gives none: nobody signs in by a link, a provider or the dev sign-in.
-nobody! : Auth.Identity => Try(Str, Str)
-nobody! = |_| Err("Signing in this way isn't open here.")
+## `answer!` for a request whose method is one of `methods` (GET takes HEAD too), else 405.
+taking! : Server.Request, List(Str), ({} => Server.Response) => Server.Response
+taking! = |request, methods, answer!| {
+	asked = if (request.method == "HEAD") "GET" else request.method
+	if (methods.contains(asked)) answer!({}) else Endpoint.not_allowed(request, methods)
+}
 
 ## The settings when the plugin isn't listed (or hasn't started): its options' defaults.
 defaults : Auth.Settings

@@ -5,7 +5,7 @@ import pf.Time
 import crypto.Base64
 import auth.Auth
 
-## The app's people, and who gets in (`admit!`, which the auth plugin asks at every sign-in).
+## The app's people, and who gets in (`admit!`, which the auth routes ask at every sign-in).
 Accounts := [].{
 
 	## Someone who has signed in.
@@ -16,6 +16,10 @@ Accounts := [].{
 	## a waiting list would keep its requests). An identity that signed in before is its user
 	## again; a new one is the user with its address, or a new user. It runs inside the sign-in's
 	## transaction, which commits what it wrote whether it lets them in or not.
+	## Where else one may sign in: the plugin's list, and routes/auth/[provider]/'s.
+	providers : List(Auth.Provider)
+	providers = [Auth.google, Auth.github]
+
 	admit! : Auth.Identity => Try(Str, Str)
 	admit! = |identity|
 		if identity.email.ends_with("@refused.example") {

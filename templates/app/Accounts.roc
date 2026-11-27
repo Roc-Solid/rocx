@@ -11,6 +11,11 @@ Accounts := [].{
 	## A user: their id, their address and their name ("" until they say).
 	User : { id : Str, email : Str, name : Str }
 
+	## Where else one may sign in (packages/auth): the plugin offers each once its environment
+	## variables are set, and routes/auth/[provider]/ goes there and back.
+	providers : List(Auth.Provider)
+	providers = [Auth.google, Auth.github]
+
 	## Who gets in: packages/auth asks at every sign-in. Someone who signed in before is their user
 	## again. Someone new is the user with their address, or a new user. An address-less sign-in
 	## (a provider that didn't vouch for one) is refused, with the words the sign-in page shows.

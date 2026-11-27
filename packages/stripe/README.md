@@ -26,20 +26,31 @@ Postgres against a stand-in for Stripe's API (`example/test/stand-in.mjs`), neve
    program = App.program({
        init!: |_started| Ok({}),
        plugins: [
-           Auth.plugin({ admit!: Accounts.admit!, middleware: Middleware.none({}) }),
-           Stripe.plugin({ on_event!: Billing.on_event!, middleware: Middleware.none({}) }),
+           Auth.plugin({}),
+           Stripe.plugin({}),
        ],
        database: Sqlite("data/app.db"),
    })
    ```
 
-2. Give the server its keys: `STRIPE_SECRET_KEY` (`sk_test_…` while you build, `sk_live_…` in
+2. Add the webhook's route file (D-116), with the app's own handling of each event (`on_event!`,
+   [below](#the-webhook)), in a folder whose middleware lets Stripe's servers through:
+
+   ```roc
+   # routes/stripe/webhook/+server.roc: POST /stripe/webhook
+   import stripe.Stripe
+   import ../../../Billing
+
+   respond! = |{ request, .. }| Stripe.webhook_route!(request, Billing.on_event!)
+   ```
+
+3. Give the server its keys: `STRIPE_SECRET_KEY` (`sk_test_…` while you build, `sk_live_…` in
    production; a restricted key, `rk_…`, with write access to Customers, Checkout Sessions and the
    Customer Portal, and read access to Subscriptions, will do) and `STRIPE_WEBHOOK_SECRET` (the
    webhook endpoint's signing secret, `whsec_…`). The server doesn't start without them, and once it
    has, it logs which mode they are (`stripe.keys`).
 
-3. Send the browser to Checkout from an endpoint of the app's (a plan's button posts to it):
+4. Send the browser to Checkout from an endpoint of the app's (a plan's button posts to it):
 
    ```roc
    post! = |{ context, body, .. }|
@@ -50,7 +61,7 @@ Postgres against a stand-in for Stripe's API (`example/test/stand-in.mjs`), neve
        }
    ```
 
-4. Ask who has paid: `Stripe.subscribed!(user)`, `Stripe.paid_for!(user, "price_…")` (or a
+5. Ask who has paid: `Stripe.subscribed!(user)`, `Stripe.paid_for!(user, "price_…")` (or a
    product), `Stripe.subscription!(user)`, `Stripe.payments!(user)`. And write `on_event!` for what
    the app does itself when Stripe says something happened (below).
 
@@ -117,10 +128,15 @@ runs them).
 
 ```roc
 Stripe.Options := {
-    webhook_at : Str ?? "/stripe/webhook",                         # where Stripe sends its events
-    on_event! : (Stripe.Event => Try({}, Str)) ?? ignored!,          # the app's own handling of each
+    webhook_at : Str ?? "/stripe/webhook",      # where the app's webhook route is, for the log
 }
 ```
+
+The plugin has no routes (D-116): `webhook_at` doesn't move the webhook, the route file's folder
+does. It says where the app put it, for the line the plugin logs once the server has started
+(`stripe.keys`: `test mode, Stripe-Version …, webhooks at POST /stripe/webhook`); the endpoint's
+URL to give Stripe is `<public URL><webhook_at>`. What the app does with each event is
+`webhook_route!`'s argument (`on_event!`, [below](#the-webhook)).
 
 The environment: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (needed), and `STRIPE_API_URL`
 (Stripe's API by default; a test's stand-in, or `stripe-mock`).
@@ -227,10 +243,16 @@ the group doesn't change.
 
 ## The webhook
 
-`POST <webhook_at>`, behind the `middleware` the app gives the plugin, which it must say: the app's
-`routes/+middleware.roc` isn't around a plugin's routes (D-114). Stripe's servers call it, signed
-in as nobody, so give it `Middleware.none({})`, or one that only logs or adds headers (a request
-without an `Origin`, as Stripe's is, passes the platform's cross-site check).
+```roc
+Stripe.webhook_route! : Server.Request, (Stripe.Event => Try({}, Str)) => Server.Response
+```
+
+`POST /stripe/webhook`, the app's route file (`routes/stripe/webhook/+server.roc`, D-116) calling
+`Stripe.webhook_route!(request, on_event!)`; 405 for a method but POST. The middleware of the
+folders it is in is around it, `routes/+middleware.roc` included. Stripe's servers call it, signed
+in as nobody: a request without an `Origin`, as Stripe's is, passes the platform's cross-site
+check, but a middleware there that wants every request signed in would refuse it, so keep the
+file out of a group that guards. An app with nothing of its own to do gives `|_| Ok({})`.
 
 1. **Its signature.** `Stripe-Signature` is `t=<seconds>,v1=<signature>[,v1=…]`. One `v1` must be
    the HMAC-SHA256, under `STRIPE_WEBHOOK_SECRET`, of `<t>.` followed by the request's body as it

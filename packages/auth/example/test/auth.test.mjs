@@ -111,18 +111,21 @@ function app(database, fake) {
 	const dir = join(example, "build", database, "app");
 	rmSync(dir, { recursive: true, force: true });
 	mkdirSync(dir, { recursive: true });
-	for (const each of ["routes", "migrations", "Accounts.roc", "Middlewares.roc"]) cpSync(join(example, each), join(dir, each), { recursive: true });
+	for (const each of ["routes", "migrations", "Middlewares.roc"]) cpSync(join(example, each), join(dir, each), { recursive: true });
 	const providers = [
 		"Auth.google",
 		"Auth.github",
 		`Auth.oidc({ name: "test", label: "Test", issuer: "${fake}", authorize_url: "${fake}/authorize", token_url: "${fake}/token", client_id_env: "TEST_CLIENT_ID", client_secret_env: "TEST_CLIENT_SECRET" })`,
 		`{ ..Auth.github, name: "hub", label: "Hub", flow: GitHub("${fake}/api"), authorize_url: "${fake}/hub/authorize", token_url: "${fake}/hub/token", client_id_env: "HUB_CLIENT_ID", client_secret_env: "HUB_CLIENT_SECRET" }`,
 	];
+	// The providers are the app's list (Accounts.providers), which the plugin and the provider routes
+	// are both given (D-116).
+	const accounts = readFileSync(join(example, "Accounts.roc"), "utf8").replace("providers = [Auth.google, Auth.github]", `providers = [${providers.join(", ")}]`);
+	assert.match(accounts, /name: "hub"/, "the stand-in's providers written");
+	writeFileSync(join(dir, "Accounts.roc"), accounts);
 	const main = readFileSync(join(example, "main.roc"), "utf8")
 		.replaceAll('"../', '"../../../../')
-		.replace("providers: [Auth.google, Auth.github]", `providers: [${providers.join(", ")}]`)
 		.replace('database: Sqlite("data/auth.db")', `database: ${database === "sqlite" ? 'Sqlite("data/auth.db")' : "Postgres"}`);
-	assert.match(main, /name: "hub"/, "the stand-in's providers written");
 	writeFileSync(join(dir, "main.roc"), main);
 	mkdirSync(join(dir, "routes", "test", "as"), { recursive: true });
 	writeFileSync(join(dir, "routes", "test", "as", "+server.roc"), asRoute);

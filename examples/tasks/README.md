@@ -90,7 +90,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 | Feature | Where |
 |---|---|
 | A middleware around every request, `routes/+middleware.roc`: `identify` puts who you are, from your session (`Auth.optional`), into every handler's `context`; `logged` logs each answer (`Log.info!`, or `Log.error!` for a 5xx). A change sent from another site's page the platform refuses before it | [`Middlewares.roc`](Middlewares.roc), named in [`routes/+middleware.roc`](routes/+middleware.roc) |
-| A plugin: packages/auth keeps sessions in the app's database, its cookie `tasks_session`. With no `admit!`, nobody signs in by a link or a provider; the app starts sessions itself | [`main.roc`](main.roc) (`Auth.plugin`) |
+| A plugin: packages/auth keeps sessions in the app's database, its cookie `tasks_session`. With none of its sign-in routes (D-116), nobody signs in by a link or a provider; the app starts sessions itself | [`main.roc`](main.roc) (`Auth.plugin`) |
 | A session started and ended by an endpoint (`Auth.sign_in!` for the person picked, `Auth.sign_out!`), then a redirect | [`routes/api/me/+server.roc`](routes/api/me/+server.roc) |
 | SQLite in the server's process, with migrations and a seed that is safe to run twice | [`main.roc`](main.roc), [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`migrations/0002_seed.sql`](migrations/0002_seed.sql) |
 | Queries: `Db.all!` into typed rows, `Db.one!` for the one row a query reads, `Db.run!`, a transaction, and `Db.Nullable` for optional columns | [`Store.roc`](Store.roc) (`Row`, `task_of`, `task!`, `move!`) |

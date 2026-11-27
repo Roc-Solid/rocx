@@ -129,7 +129,7 @@ only the app's modules' kinds. Its plugin brings it:
 deliver : Job.Kind(_, Input)
 deliver = Job.define_with("push.deliver", { attempts: 5, timeout_ms: 60_000 }, |_context, input| deliver!(input))
 
-plugin = |setup| { name: "push", calls: [Job.call(deliver)], starts: [|_context| Job.adopt!(deliver)], needs: [Plugin("jobs")], … }
+plugin = |{}| { name: "push", calls: [Job.call(deliver)], starts: [|_context| Job.adopt!(deliver)], needs: [Plugin("jobs")], … }
 ```
 
 ## Running jobs
@@ -269,9 +269,8 @@ then moves like this:
 
 - Name the package in the app's header (`jobs: "…/packages/jobs/main.roc"`), and import
   `jobs.Job` and `jobs.Cron` instead of `pf.Job` and `pf.Cron`. The jobs page is `admin.JobsPage`
-  (packages/admin, which the header names too), best listed as a plugin:
-  `JobsPage.plugin({ at: "/admin/jobs", middleware: Middlewares.default.then(Middlewares.admin) })`. A route file that mounted it
-  still works, with `admin.JobsPage`.
+  (packages/admin, which the header names too), on a route file of the app's, behind its folder's
+  middleware (D-116): `respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })`.
 - List the plugin: `plugins: [Job.plugin({ jobs: App.jobs, crons: [...] })]`. Schedules move from
   `App.program`'s `crons`, which is gone, to the plugin's.
 - `--job-workers` and `--job-retry-ms` are gone: the plugin's `workers` and `retry_ms` replace them.

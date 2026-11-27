@@ -217,23 +217,16 @@ view! = |_|
 			</ul>
 
 			<Heading id="page">The jobs page</Heading>
-			<Code title={"${Sources.platform_jobs_page.file}, in part"} source={"${Sources.platform_admins_only.rocx}\n\n# … in its plugins\n${Sources.platform_jobs_page.rocx}"} numbers={Bool.False} />
+			<Code title={"${Sources.platform_jobs_page.file}, in part"} source={"${Sources.platform_admins_only.rocx}\n\n# … in its routes\n${Sources.platform_jobs_page.rocx}"} numbers={Bool.False} />
 			<p>
-				<a href={Paths.ecosystem_admin}>packages/admin</a> draws a page of the queue, as a plugin you list where
-				only your admins get in. <code>{"JobsPage.plugin({ at, middleware, back })"}</code> answers at
-				<code>at</code> (<code>/admin/jobs</code> by default) behind <code>middleware</code>: all that knows
-				who is an admin, as your <code>routes/+middleware.roc</code> isn't around a plugin's routes (what
-				<code>routes/(admin)/</code> runs: <code>{"Middlewares.default.then(Middlewares.admin)"}</code>).
-				<code>middleware</code> has no default, so a
-				jobs page is never public because an option was left out; without it the app doesn't compile. The page
-				needs the jobs plugin. <code>back</code> is a link back to your app's own pages, first in the page's
-				sidebar (none by default).
+				<a href={Paths.ecosystem_admin}>packages/admin</a> draws a page of the queue on a route of yours,
+				where only your admins get in: <code>{"JobsPage.respond!(request, { mount })"}</code> from a
+				<code>respond!</code>, which <a href={"${Paths.platform_http}#routes"}>answers every method</a>, in a
+				folder whose middleware knows who is an admin. <code>mount</code> is the route's path. The page needs
+				the jobs plugin. <code>back</code> is a link back to your app's own pages, first in the page's sidebar
+				(none by default).
 			</p>
-			<p>
-				To mount the page yourself, answer a route with <code>{"JobsPage.respond!(request, { mount })"}</code>
-				from a <code>respond!</code>, which <a href={"${Paths.platform_http}#routes"}>answers every method</a>:
-			</p>
-			<Code title="routes/admin/jobs/+server.roc" source={"import admin.JobsPage\n\n# routes/admin/+middleware.roc guards it, as every route under admin/: middleware = Middlewares.admin\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"} numbers={Bool.False} />
+			<Code title="routes/(admin)/admin/jobs/+server.roc" source={"import admin.JobsPage\n\n# routes/(admin)/+middleware.roc guards it, as every route in (admin)/: middleware = Middlewares.admin\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"} numbers={Bool.False} />
 			<ul>
 				<li>
 					<strong>What it shows.</strong> A console of the queue: how many jobs are queued, running, failed,

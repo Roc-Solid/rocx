@@ -407,7 +407,7 @@ view! = |_|
 				server platform (native code in a Rust host), and the browser's, the same pages on the browser
 				platform (WebAssembly). <code>rocx build</code> writes the server's program,
 				<code>Generated/App.roc</code>: every request goes through the app's middleware
-				(<code>routes/+middleware.roc</code>) to a plugin's route or the router rocx writes. The app's own <code>main.roc</code> says only what rocx can't
+				(<code>routes/+middleware.roc</code>) to the router rocx writes, which every URL is a file of. The app's own <code>main.roc</code> says only what rocx can't
 				know:
 			</p>
 			<Code
@@ -428,8 +428,8 @@ view! = |_|
 				</li>
 				<li>
 					It may also say <code>database</code> (<code>Postgres</code> unless it says
-					<code>Sqlite(path)</code> or <code>Turso(path)</code>), <code>openapi</code> (whether to serve
-					the endpoints' OpenAPI document) and <code>plugins</code> (what packages add).
+					<code>Sqlite(path)</code> or <code>Turso(path)</code>) and <code>plugins</code> (what packages
+					add: tables, jobs, loops, scripts; never a route).
 				</li>
 			</ul>
 			<p>

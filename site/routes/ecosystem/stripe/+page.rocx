@@ -54,11 +54,13 @@ view! = |_|
 				on Postgres, against a stand-in for Stripe's API.
 			</p>
 			<p>
-				<strong>1. The plugin.</strong> Name the package in the app's header and list its plugin, with your
-				<code>on_event!</code>. The server needs <code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code>
-				to start.
+				<strong>1. The plugin and the webhook.</strong> Name the package in the app's header and list its
+				plugin, for its tables. The server needs <code>STRIPE_SECRET_KEY</code> and
+				<code>STRIPE_WEBHOOK_SECRET</code> to start. The webhook is a route of yours (D-116), calling the
+				package's handler with your <code>on_event!</code>.
 			</p>
 			<Code title={Sources.stripe_example_main.file} source={Sources.stripe_example_main.rocx} />
+			<Code title="routes/stripe/webhook/+server.roc" source={"import stripe.Stripe\nimport ../../../Billing\n\nrespond! = |{ request, .. }| Stripe.webhook_route!(request, Billing.on_event!)"} numbers={Bool.False} />
 			<p>
 				<strong>2. Off to Checkout.</strong> A plan's button posts its price to an endpoint of yours, which calls
 				<code>Stripe.checkout!</code> and redirects to the URL it gives. The mode comes from your plan, never
@@ -159,8 +161,10 @@ view! = |_|
 
 			<Heading id="webhook">The webhook</Heading>
 			<p>
-				The plugin's one endpoint, <code>POST /stripe/webhook</code> (<code>webhook_at</code>), runs behind your
-				middleware. For each request:
+				<code>{"Stripe.webhook_route!(request, on_event!)"}</code> answers <code>POST /stripe/webhook</code>
+				from your route file (<code>webhook_at</code> tells the plugin where you put it, for the line it
+				logs at start), behind the middleware of its folder, which must let Stripe's servers in. For each
+				request:
 			</p>
 			<ul>
 				<li>

@@ -66,8 +66,7 @@ program = {
 	actors: [Actor.handler(Counter.add), Actor.handler(Counter.get), Actor.handler(Counter.boom), Actor.handler(Counter.nap), Actor.handler(Mirror.relay), Actor.handler(Mirror.itself), Actor.handler(Mirror.cycle), Actor.handler(Bouncer.back), Actor.handler(Ticker.start), Actor.handler(Ticker.tick({})), Actor.handler(Ticker.stop), Actor.handler(Ticker.ticks)],
 	# The log's format: `ROCX_LOG` if it's set, or else pretty on a terminal and JSON elsewhere.
 	logs: { format: Auto },
-	# The plugins (`plugins`): their routes answer in `respond!` (`Plugin.respond!`), the platform
-	# runs the rest.
+	# The plugins (`plugins`): the platform runs what they add (no routes, D-116).
 	plugins: plugins.map(Plugin.running),
 	routes: [],
 }
@@ -75,9 +74,9 @@ program = {
 ## The plugins. The jobs (packages/jobs): the kinds its workers run, a schedule, and a short first
 ## retry (20 ms), so the tests see retries soon. Email (packages/email). The jobs page
 ## (packages/admin). A plugin package's
-## (server/test/fixture): the
-## fixture's routes are behind a middleware of the app's (D-114), and show what it handed on from
-## the server's context; `third` needs `second`, so it starts after it.
+## (server/test/fixture): no routes (D-116), its handlers answering routes of the app's;
+## `third` needs `second`, so it starts after it. The jobs page (packages/admin) and the storage
+## package's signed URLs are routes of the app's too (`route!`).
 plugins : List(Plugin.Value(Str))
 plugins = [
 	Job.plugin(
@@ -94,13 +93,9 @@ plugins = [
 	),
 	# Email (packages/email): SMTP_URL and MAIL_FROM from the environment, the dev mailbox under --dev.
 	Email.plugin({}),
-	# The jobs page (packages/admin), behind a middleware of the app's own, with a link back to the app.
-	JobsPage.plugin({ at: "/admin/jobs", middleware: admins_only, back: { label: "Acme Tests", href: "/" } }),
-	Fixture.plugin({ middleware: Middleware.make(|request, context, next!| next!(request, "${context}, through its middleware")), shown: |handed| "the app's context, ${handed}" }),
+	Fixture.plugin({}),
 	Fixture.third({}),
 	Fixture.second({}),
-	# The signed URLs of a file: or memory: bucket (packages/storage), the app's to answer.
-	Storage.plugin({ middleware: Middleware.none({}) }),
 ]
 
 ## Lists as parameters (`Db.array`), against Postgres, as JSON: text and bigint arrays with `= any`,
@@ -148,8 +143,8 @@ respond! = |request, context| {
 	} else if asked != "" {
 		channel!(request)
 	} else {
-		# A page view lets a plain form's flash go, as `App.program` does. A plugin's route first.
-		Server.clear_flash(request, Plugin.respond!(plugins, { ..request, route: Plugin.pattern(plugins, request.method, request.path) ?? "" }, context, route!))
+		# A page view lets a plain form's flash go, as `App.program` does. Every URL is the app's (D-116).
+		Server.clear_flash(request, route!(request, context))
 	}
 }
 
@@ -806,7 +801,16 @@ route! = |request, context| {
 				Err(BadRow(why)) => text(500, why)
 			}
 		}
-		# The jobs page mounted by the app itself, behind a guard of its own (its plugin is at /admin/jobs).
+		# The jobs page (packages/admin), on a route of the app's (D-116), behind a guard of its own, with
+		# a link back to the app.
+		(_, "/admin/jobs") => Middleware.run!(admins_only, request, context, |passed, _| JobsPage.respond!(passed, { mount: "/admin/jobs", back: { label: "Acme Tests", href: "/" } }))
+		# The signed URLs of a file: or memory: bucket (packages/storage), on a route of the app's.
+		(_, "/_storage") => Storage.signed_route!(request, "STORAGE_URL")
+		# The fixture plugin's handlers, on routes of the app's.
+		(_, "/fixture/shout") => Fixture.shout_route!(request)
+		(_, "/fixture/state") => Fixture.state_route!(request)
+		(_, "/fixture/migrated") => Fixture.migrated_route!(request)
+		# The jobs page mounted a second time, at another path, behind the same guard.
 		(_, "/admin/mounted") => Middleware.run!(admins_only, request, context, |passed, _| JobsPage.respond!(passed, { mount: "/admin/mounted" }))
 		("GET", "/jobs/ticks") => {
 			found : Try(List({ ticks : I64 }), [DbErr(Str), BadRow(Str)])

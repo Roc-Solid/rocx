@@ -7,7 +7,7 @@ import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 
 ## The posthog package: an app's errors sent to PostHog's error tracking, from the app itself (a
-## middleware, a plugin's routes and loop), grouped by fingerprints of its own; and the daily digest
+## middleware, two route handlers and a plugin's loop), grouped by fingerprints of its own; and the daily digest
 ## that reads them. Static: PostHog is a server.
 meta = {
 	title: "PostHog",
@@ -37,16 +37,16 @@ view! = |_|
 			<p>
 				Use this package when you want to hear about an app's errors in production without reading its log.
 				It is a <a href={"${Paths.platform_server}#plugins"}>plugin</a> plus a
-				<a href={"${Paths.routing}#middleware"}>middleware</a>, written in Roc on top of what any plugin can do:
-				the platform has no error-reporting hook of its own. The middleware notices failed answers, the
-				plugin's routes take errors from the browser, and a background loop sends everything to PostHog in
-				batches, so a request never waits on PostHog.
+				<a href={"${Paths.routing}#middleware"}>middleware</a> and two route handlers, written in Roc on top of
+				what any app can do: the platform has no error-reporting hook of its own. The middleware notices failed
+				answers, the app's routes take errors from the browser with the package's handlers, and a background
+				loop sends everything to PostHog in batches, so a request never waits on PostHog.
 			</p>
 
 			<Heading id="install">Installing it</Heading>
 			<p>
 				Name the package in the app's header (<code>{"posthog: \"…/packages/posthog/main.roc\""}</code>), then
-				wire it into the program in three places:
+				wire it into the program in four places:
 			</p>
 			<Code title={"${Sources.posthog_program.file}, in part"} source={Sources.posthog_program.rocx} numbers={Bool.False} />
 			<Code title={Sources.posthog_middleware.file} source={Sources.posthog_middleware.rocx} numbers={Bool.False} />
@@ -58,8 +58,15 @@ view! = |_|
 					<code>{"|_| \"\""}</code>.
 				</li>
 				<li>
-					<strong>The plugin</strong>, <code>{"PostHog.plugin({ middleware: Middleware.none({}) })"}</code>, goes in the app's plugins. It reads
+					<strong>The plugin</strong>, <code>{"PostHog.plugin({})"}</code>, goes in the app's plugins. It reads
 					its key from the environment (see <a href="#where">where they go</a>).
+				</li>
+				<li>
+					<strong>The routes</strong> for the browser's errors are yours (D-116):
+					<code>routes/rocx-errors/+server.roc</code> answers with
+					<code>{"PostHog.errors_route!(request)"}</code>, and <code>routes/rocx-errors.js/+server.roc</code>
+					with <code>{"PostHog.script_route(request)"}</code>, the page's script, which sends to its own path
+					without <code>.js</code>.
 				</li>
 				<li>
 					<strong>Failed jobs</strong> are reported when the <a href={Paths.ecosystem_jobs}>jobs</a> plugin is
@@ -68,7 +75,7 @@ view! = |_|
 			</ul>
 			<p>
 				For errors in the browser, add one line to the layout:
-				<code>{"<script src=\"/rocx-errors.js\" defer></script>"}</code>. The plugin serves that script.
+				<code>{"<script src=\"/rocx-errors.js\" defer></script>"}</code>. Your route serves that script.
 			</p>
 
 			<Heading id="what">What it reports</Heading>
@@ -119,7 +126,6 @@ view! = |_|
 						<tr><td><code>key</code></td><td><code>POSTHOG_KEY</code></td><td>none: reporting is off</td></tr>
 						<tr><td><code>host</code></td><td><code>POSTHOG_HOST</code></td><td><code>https://us.i.posthog.com</code> (use <code>https://eu.i.posthog.com</code> for EU Cloud)</td></tr>
 						<tr><td><code>release</code></td><td><code>POSTHOG_RELEASE</code></td><td>none; set it to the commit a build is from</td></tr>
-						<tr><td><code>at</code></td><td></td><td><code>/rocx-errors</code> (its script is <code>/rocx-errors.js</code>)</td></tr>
 						<tr><td><code>interval_ms</code></td><td></td><td><code>10000</code></td></tr>
 					</tbody>
 				</table>

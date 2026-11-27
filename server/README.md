@@ -105,12 +105,11 @@ contract) and `Generated/Handlers`. `site/main.roc` and `examples/*/main.roc` ar
    answers first. Otherwise `program.respond!` runs. For an app built by rocx, that is
    `Generated/App`: it sets `request.route`, sends a channel's end (`x-rocx-channel: close`)
    straight to the route's `on_close!`, and runs everything else through the platform's cross-site
-   check (`Middleware.same_origin`, unless the app says `cross_site: Allowed`), then a plugin's
-   route, behind the middleware the app gave that plugin (`Plugin.respond!`, D-114), else the OpenAPI
-   document, behind the middleware the app named for it (`OpenApi.middleware`), else the app's
-   middleware (`routes/+middleware.roc`) around the app's own routes (`Routes.respond!`, which runs
-   the `+middleware.roc` of each directory the route is in, outermost first, D-103) and the error
-   page. `Server.clear_flash` runs on the way out.
+   check (`Middleware.same_origin`, unless the app says `cross_site: Allowed`), then the app's
+   middleware (`routes/+middleware.roc`) around its routes (`Routes.respond!`, which runs the
+   `+middleware.roc` of each directory the route is in, outermost first, D-103) and a path nothing
+   answers. Every URL is a route file (D-116): a package's handlers and the OpenAPI document are
+   answered by the app's route files that call them. `Server.clear_flash` runs on the way out.
 5. `Server.for_host` flattens the `Server.Response` for the host. Its `kind` says which body it
    has (table below).
 6. Back in the host, in the same call: a handler's `Router.revalidate!` keys become an
@@ -182,7 +181,7 @@ program = {
     actors: [Actor.handler(Carts.add)],         # every actor method (Actors, below)
     logs: { format: Auto },                     # Auto, Pretty or Json (The log, below)
     plugins: plugins.map(Plugin.running),       # what packages add (Plugins, below)
-    routes: [],                                 # the app's own routes, which plugins' mustn't meet
+    routes: [],                                 # the app's own routes, which plugins' root files mustn't meet
 }
 ```
 
@@ -194,18 +193,19 @@ program = App.program({
     init!: |_started| Ok({}),
     database: Sqlite("data/plate.db"),          # optional: Sqlite("data/app.db") by default
     cross_site: Refused,                        # optional: Refused by default
-    openapi: Page(Swagger, Middleware.none({})), # optional: Off by default; behind the middleware it names
     plugins: [Email.plugin({})],                # optional: none by default
 })
 ```
 
 `App.program` fills in the rest: every route behind its directories' middleware (`+middleware.roc`
-files under `routes/`, `routes/+middleware.roc` around every request for the app's routes and a
-path nothing answers; a plugin's routes and the OpenAPI document behind what main.roc gives them,
-D-114), the migrations in
-`migrations/*.sql` (embedded), the actor methods the app's modules define, `logs: { format: Auto }`
-and the routes' claims. `App.jobs` lists the kinds of job the modules define, for the jobs plugin.
-To change the log format, update the record: `{ ..App.program({ … }), logs: { format: Json } }`.
+files under `routes/`, `routes/+middleware.roc` around every request: every URL is a route file,
+D-116), the migrations in `migrations/*.sql` (embedded), the actor methods the app's modules
+define, `logs: { format: Auto }` and the routes' claims. `App.jobs` lists the kinds of job the
+modules define, for the jobs plugin. To change the log format, update the record:
+`{ ..App.program({ … }), logs: { format: Json } }`. The OpenAPI document is no field: an app serves
+it from route files of its own (`routes/openapi.json/+server.roc` calling
+`OpenApi.document_route(request, Api.openapi)`, `routes/openapi.html/+server.roc` calling
+`OpenApi.page_route(request, Swagger)` or `Scalar`; README.md, "OpenAPI").
 
 ### `init!` and the app's context
 
@@ -511,7 +511,8 @@ not part of the platform.
   SQLite. They use the database and its notifications, background loops, and isolated calls with
   time limits. A job is queued with `Job.enqueue!(kind, input, {})`, the options a record with
   defaults (`{ when: At(ms) }`, `{ key, … }` for `enqueue_keyed!`). The jobs page is
-  packages/admin's (`JobsPage.plugin`). See `packages/jobs/README.md`.
+  packages/admin's, on a route file of the app's (`JobsPage.respond!`, D-116). See
+  `packages/jobs/README.md`.
 - **Email** (packages/email, D-035): `Email.plugin({})` sends over SMTP (`SMTP_URL`, `MAIL_FROM`)
   on `Tcp` with TLS. Without an SMTP server it keeps mail in `Kv` only under `--dev` (the dev
   mailbox at `/__rocx/mail`, an early path) or `--debug` (for tests); anywhere else its start
@@ -650,8 +651,9 @@ refused. File operations run on tokio's blocking threads.
 a directory or memory it answers with `Stored` (`Server.stored(root, key, request, headers)`),
 which the host sends as it is: with its length, type, ETag and `last-modified`; 206 for one
 `Range` (416 past the end); 304 for a matching `If-None-Match`. Signed URLs for a directory or
-memory are answered by the storage plugin's `/__storage` route. `packages/storage/README.md` has
-the rest: URLs, operations, errors, signed URLs and limits.
+memory are answered at `/_storage` by the app's route file that calls `Storage.signed_route!`
+(D-116). `packages/storage/README.md` has the rest: URLs, operations, errors, signed URLs and
+limits.
 
 ## Bodies as bytes: `request.body` and `Server.bytes`
 
@@ -1355,10 +1357,11 @@ no message is its fields alone, a request's line as an app may write it:
 JSON keeps the fields as they are, numbers with their units in their names.
 
 Under `--dev`, the server lists the places to open under its address as it starts: the app's
-stories, its OpenAPI document, and what each plugin adds (`Plugin.Link`: the mailbox, the sign-in
-page, the jobs page) and what the app names itself (`App.program({ links })`). A path is the
-server's; a whole URL is listed as it is. In JSON it is one event, `rocx server: links`, a link a
-field.
+stories, its OpenAPI document (the page if a route of the app's answers `/openapi.html`, else the
+document if one answers `/openapi.json`, D-116), what each plugin adds (`Plugin.Link`: the mailbox,
+the sign-in page) and what the app names itself (`App.program({ links })`: its jobs page, say). A
+path is the server's; a whole URL is listed as it is. In JSON it is one event, `rocx server:
+links`, a link a field.
 
 ```
 10:36:32 info  rocx plugins: jobs, email, auth
@@ -1440,17 +1443,17 @@ app [program] { pf: platform "../server/platform/main.roc", acme: "../packages/a
 
 import acme.Acme
 
-program = App.program({ init!, plugins: [Acme.plugin({ at: "/acme", middleware: Middlewares.default })] })
+program = App.program({ init!, plugins: [Acme.plugin({})] })
 ```
 
 ### What a plugin adds
 
-A plugin is a `Plugin.Value(context)`: a name, plus any of these fields (each defaults to
-`[]`). `context` is the app's context (its `init!`'s), which a plugin doesn't know the type of.
+A plugin is a `Plugin.Value(context)`: a name, plus any of these fields (each defaults to `[]`).
+`context` is the app's context (its `init!`'s), which a plugin doesn't know the type of. A plugin
+adds no routes (D-116, below).
 
 | Field | What it is |
 | --- | --- |
-| `routes` | Answered before the OpenAPI document and the app's own routes, given the app's context; no `+middleware.roc` is around them, not even `routes/`'s (D-114, below). |
 | `early` | Paths under `/__rocx/`, answered before the app, only under `--dev` or `--debug` (as each says). |
 | `files` | Served as they are, before anything else, the app's middleware included (D-050, below). |
 | `scripts` | Paths of the plugin's own files that every rendered page loads. |
@@ -1466,36 +1469,39 @@ makes its plugin from options of its own (a nominal record whose fields without 
 required). A plugin generic in the app's context is a function even with no options
 (`Acme.plugin({})`).
 
-### A plugin's routes and middleware (D-114)
+### A package's routes are the app's files (D-116)
 
-A plugin's routes aren't files under `routes/`, so the folders' middleware doesn't reach them,
-and neither does `routes/+middleware.roc`, which runs around the app's own routes (and a path
-nothing answers). A plugin with routes takes the app's middleware as an option instead,
-`middleware : Middleware(context, ctx)`, with no default, and puts its routes behind it
-(`Plugin.behind(options.middleware, routes)`): each route runs once the middleware has passed the
-request on, given what it handed on (`ctx`). The app says what each plugin is behind in one place,
-main.roc:
+Every URL an app answers is a file under its `routes/`. A package that answers requests offers
+handlers instead of routes: functions of the request (and whatever the route concerns) that answer
+it, each checking its methods (405 for any other). The app calls one from a route file of its own,
+at the path it wants, behind the middleware of the folder it puts the file in:
 
 ```roc
-plugins: [
-    Auth.plugin({ admit!: Accounts.admit!, middleware: Middlewares.default }),        # headers only: anyone signs in
-    JobsPage.plugin({ middleware: Middlewares.default.then(Middlewares.admin) }),     # what routes/(admin)/ runs
-    Push.plugin({ middleware: Middlewares.signed_in, owner: |ctx| ctx.user.id }),    # reads what it hands on
-    Stripe.plugin({ on_event!: Billing.on_event!, middleware: Middleware.none({}) }), # Stripe's servers call it
-],
-openapi: Page(Scalar, Middlewares.default.then(Middlewares.admin)),
+# routes/(admin)/admin/jobs/+server.roc, behind routes/(admin)/+middleware.roc
+import admin.JobsPage
+
+respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })
 ```
 
-There is no default because Roc's field defaults can't tie `ctx` to `context` (a pass-through
-would have to), and because a sensitive page (the jobs page, the OpenAPI document, which says what
-every endpoint takes) should never be public because an option was left out. `Middleware.none({})`
-says "nothing" out loud. Each package's `at` (`webhook_at` for Stripe) puts its routes elsewhere
-when two would meet; the server refuses to start while they do. The platform's cross-site check
-(`cross_site: Refused`, the default) is still around every request, plugins' too. An app that says
-`cross_site: Allowed` and checks forms in its own root middleware loses that check on a plugin's
-routes unless it passes that part to the plugin: `Middleware.none({})` there leaves a plugin's
-POSTs (`/auth/sign-out`, say) unchecked. Split the root into what every request needs (the log,
-one origin, the form check) and the gate, and give plugins the first.
+So a folder guards a package's handlers as it guards the app's own routes, `rocx routes` lists
+them with the middleware around them, and a handler's change is a compile error at the line that
+calls it. What a route concerns is the handler's argument, not a plugin's option: who gets in
+(packages/auth's `admit!`), whose a push subscription is (what the folder's middleware handed on),
+what the app does with a Stripe event (`on_event!`).
+
+| Package | Handlers | Route files (as the examples put them) |
+| --- | --- | --- |
+| packages/auth | `Auth.provider_route!`, `callback_route!`, `link_route!`, `code_route!`, `sign_out_route!`, `dev_route!` | `routes/auth/[provider]/`, `[provider]/callback/`, `link/`, `code/`, `sign-out/`, `dev/` |
+| packages/push | `Push.key_route!`, `subscribe_route!`, `unsubscribe_route!` | `routes/push/key/`, `subscribe/`, `unsubscribe/` |
+| packages/posthog | `PostHog.errors_route!`, `script_route` | `routes/rocx-errors/`, `routes/rocx-errors.js/` |
+| packages/stripe | `Stripe.webhook_route!` | `routes/stripe/webhook/` |
+| packages/storage | `Storage.signed_route!` | `routes/_storage/`, where its signed links point |
+| packages/admin | `JobsPage.respond!` | `routes/(admin)/admin/jobs/` |
+| the platform | `OpenApi.document_route`, `OpenApi.page_route` | `routes/openapi.json/`, `routes/openapi.html/` |
+
+An app writes a file only for the steps it uses (an app that signs people in itself has none of
+packages/auth's sign-in steps). A plugin's early paths and files aren't routes: the platform
+answers them before the app (the table above).
 
 ### Checks at start
 
@@ -1504,19 +1510,19 @@ each (`Plugins.roc`):
 
 - a name used twice, or not made of lowercase letters, digits and `-`;
 - a call, loop or check not named `<plugin>.<name>`;
-- an early path outside `/__rocx/`;
-- two routes at one method and path (the app's, which `rocx build` lists in `Routes.claims`, and a
-  plugin's, or two plugins');
+- an early path outside `/__rocx/`, or two plugins' early paths at one method and path (a plugin
+  has no routes, D-116, and the app's are `rocx build`'s to check);
 - an unset variable, no database (or the other kind), a plugin not in the list, or needs in a
   circle;
 - a file whose path isn't relative, a root file under `rocx/` or `__rocx/`, two files at one place,
-  a root file where a route is, or a script that isn't one of the plugin's files.
+  a root file where one of the app's routes is (`Routes.claims`), or a script that isn't one of the
+  plugin's files.
 
 Then the plugins are ordered by their needs (the list's order breaks ties), and the log names them
 on one line (`rocx plugins: jobs, acme`), and under `--debug` says at debug what each added (`rocx
-plugins: added plugin=acme adds="2 routes, 2 files, 1 script, 1 migration"`). A plugin's `links` (D-111) are the
-places it adds that a person may want to open: under `--dev` the server lists them under its
-address.
+plugins: added plugin=acme adds="1 early route, 2 files, 1 script, 1 migration"`). A plugin's
+`links` (D-111) are the places it adds that a person may want to open: under `--dev` the server
+lists them under its address.
 
 ### Files and scripts (D-050)
 
@@ -1804,8 +1810,8 @@ it over HTTP:
   `--describe-sql` on Postgres (a scratch database, `--sql-database`, `CREATEDB`); a SQLite or
   Turso URL refused for a Postgres app; packages/admin's tables admin (`admin-checks.mjs`, shared
   with the SQLite tests); roc-pg (`server/examples/roc-pg`).
-- **Plugins:** the fixture plugin package's (`server/test/fixture`) route with the app's context,
-  early path, files and scripts (served before an app that refuses everything,
+- **Plugins:** the fixture plugin package's (`server/test/fixture`) handlers on the app's routes
+  (D-116), early path, files and scripts (served before an app that refuses everything,
   `server/test/refusing`), table, call, loop, start, check and need; an app whose plugins break
   every rule refused at start with the whole message (`server/test/refused`); old flags refused,
   saying where they went.

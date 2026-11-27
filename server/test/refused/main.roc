@@ -21,20 +21,19 @@ program = {
 ## Each breaks a rule, or two.
 plugins : List(Plugin.Value(Str))
 plugins = [
-	# A route the app has; a loop not named with the plugin's name first; an early path outside
-	# /__rocx/; a file at the root where the app has a route; a file whose path isn't relative.
+	# A loop not named with the plugin's name first; an early path outside /__rocx/; a file at the
+	# root where the app has a route; a file whose path isn't relative.
 	{
 		name: "clash",
-		routes: [route("GET", "/x")],
 		loops: [{ name: "beat", run!: |_context| {} }],
 		early: [{ method: "GET", path: "/mail", under: [Dev], answer!: |_| answer }],
 		files: [file("x", Root), file("/abs.js", Plugin)],
 	},
-	# Two plugins at one path (a param's name doesn't matter); a variable that isn't set; two files at
-	# one place at the root; a script that is none of the plugin's files; a file at the root, in the
-	# platform's place.
-	{ name: "one", routes: [route("*", "/y/[id]")], needs: [Env("REFUSED_UNSET")], files: [file("sw.js", Root)], scripts: ["missing.js"] },
-	{ name: "two", routes: [route("POST", "/y/[key]")], files: [file("sw.js", Root), file("rocx/start.js", Root)] },
+	# Two plugins' early paths at one path (a param's name doesn't matter); a variable that isn't set;
+	# two files at one place at the root; a script that is none of the plugin's files; a file at the
+	# root, in the platform's place.
+	{ name: "one", early: [{ method: "*", path: "/__rocx/y/[id]", under: [Dev], answer!: |_| answer }], needs: [Env("REFUSED_UNSET")], files: [file("sw.js", Root)], scripts: ["missing.js"] },
+	{ name: "two", early: [{ method: "POST", path: "/__rocx/y/[key]", under: [Dev], answer!: |_| answer }], files: [file("sw.js", Root), file("rocx/start.js", Root)] },
 	# A plugin that isn't in the list.
 	{ name: "auth", needs: [Plugin("email")] },
 	# Needs that go round in a circle.
@@ -47,9 +46,6 @@ plugins = [
 
 file : Str, [Plugin, Root] -> Plugin.File
 file = |path, at| { path, at, content_type: "text/javascript", body: [] }
-
-route : Str, Str -> Plugin.Route(Str)
-route = |method, path| { method, path, kind: Endpoint, answer!: |_, _| answer }
 
 answer : Server.Response
 answer = Server.response(200, [], "plugged")

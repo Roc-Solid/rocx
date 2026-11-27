@@ -1,8 +1,6 @@
 import pf.Blobs
 import pf.Env
 import pf.Http
-import pf.Middleware
-import pf.Plugin
 import pf.Random
 import pf.Server
 import pf.Time
@@ -223,7 +221,7 @@ Storage := [].{
 	## A URL anyone may use, until `expires_s` seconds from now, to make the request `method` (`GET`
 	## or `PUT`) of the object `key`. On S3 it is S3's (presigned: only the host is signed, so a PUT
 	## may send any content type). On `file:` and `memory:` it is the app's, at its public URL
-	## (`/__storage`), which the storage plugin answers (`Storage.plugin`): its key, its expiry and
+	## (`/_storage`), which the app's route answers (`signed_route!`): its key, its expiry and
 	## an HMAC-SHA256 of them with the bucket's secret. A PUT there is a request's body, 16 MiB at
 	## most unless the server's `--max-body` says more. `BadExpiry` unless `expires_s` is 1 to 604,800 (a week).
 	signed_url! : Bucket, Str, { method : Str, expires_s : U64 } => Try(Str, [BadExpiry, StorageErr(Str)])
@@ -256,32 +254,24 @@ Storage := [].{
 	said : Refusal -> Str
 	said = |refused| S3.said(refused)
 
-	## The storage plugin's options: what its route is behind (`middleware`, which the app must say,
-	## D-114: not its `routes/+middleware.roc`, which isn't around a plugin's routes; each URL is
-	## signed, so `Middleware.none({})` is the usual one), and the environment variable that is the
-	## bucket's URL.
-	Options(context, ctx) := { middleware : Middleware(context, ctx), env : Str ?? "STORAGE_URL" }
-
-	## The plugin that answers the signed URLs of the app's `file:` or `memory:` bucket (whose URL
-	## is the environment variable `env`, `STORAGE_URL` unless it says): `GET`, `HEAD` or `PUT`
-	## `/__storage?method=…&key=…&expires=…&signature=…`, the object served or kept, if the URL is
-	## one `signed_url!` made for that method, and hasn't expired; 403 if not. For an S3 bucket it has
-	## nothing to answer (404): S3 answers its own.
-	plugin : Options(context, ctx) -> Plugin.Value(context)
-	plugin = |options| {
-		named = options.env
-		{
-			name: "storage",
-			routes: Plugin.behind(options.middleware, [{ method: "*", path: plugin_path, kind: Endpoint, answer!: |request, _handed| answered!(named, request) }]),
-		}
-	}
+	## The answer to a signed URL of the app's `file:` or `memory:` bucket, whose URL is the
+	## environment variable `env` (`"STORAGE_URL"`): `GET`, `HEAD` or `PUT`
+	## `/_storage?method=…&key=…&expires=…&signature=…`, the object served or kept, if the URL is one
+	## `signed_url!` made for that method, and hasn't expired; 403 if not. For an S3 bucket it has
+	## nothing to answer (404): S3 answers its own. The route is the app's (D-116), at the path
+	## `signed_url!` makes links to; each link is signed, so it needs no middleware of the app's:
+	##
+	##     # routes/_storage/+server.roc
+	##     respond! = |{ request, .. }| Storage.signed_route!(request, "STORAGE_URL")
+	signed_route! : Server.Request, Str => Server.Response
+	signed_route! = |request, env| answered!(env, request)
 }
 
-## Where the plugin answers signed URLs.
+## Where the app's route answers signed URLs (`signed_route!`): `routes/_storage/+server.roc`.
 plugin_path : Str
-plugin_path = "/__storage"
+plugin_path = "/_storage"
 
-## The answer to a signed URL (`Storage.plugin`).
+## The answer to a signed URL (`Storage.signed_route!`).
 answered! : Str, Server.Request => Server.Response
 answered! = |named, request| {
 	plain = |status, text| Server.response(status, [{ name: "content-type", value: "text/plain; charset=utf-8" }], text)

@@ -7,8 +7,8 @@
 ## `receive!`, `on_open!` and `on_close!`), and `+error.rocx` is what a path nothing has shows. A
 ## `+middleware.roc` names the middleware that runs around every page, endpoint and channel in its
 ## directory and the directories below it, outermost first; the one in `routes/` itself runs around
-## every request for the app's routes and a path nothing answers (D-103), not a plugin's route or
-## the OpenAPI document, which are behind the middleware the app gives each in main.roc (D-114). A directory in brackets, `(members)`, is a group: it adds
+## every request the app answers (D-103): every URL is a route file, a package's handlers and the
+## OpenAPI document too (D-116). A directory in brackets, `(members)`, is a group: it adds
 ## nothing to the path, so files at different paths can share a directory's middleware or layout
 ## (`routes/(members)/api/members/+server.roc` answers `/api/members`). A `+server.roc` may name the rules a method's body
 ## is read and checked with (`post_body = Signup.form`, D-093), and its handlers' annotations may
@@ -3309,22 +3309,22 @@ Routes := [].{
 	}
 
 	## `Routes.claims`'s lines: each of the app's routes, its method (`*` for `respond!`; GET for a
-	## stream of events) and its path, and its file, which the server compares plugins' routes with
-	## when it starts.
+	## stream of events) and its path, and its file, which the server compares plugins' files at the
+	## root with when it starts.
 	claims_lines : Table, List(Source) -> List(Str)
 	claims_lines = |table, sources| {
 		rows = Routes.route_list(table, sources).keep_if(|row| row.path.starts_with("/"))
 		listed = rows.map(|row| "\t\t{ method: ${Text.roc_string(if (row.method == "EVENTS") "GET" else row.method)}, path: ${Text.roc_string(row.path)}, file: ${Text.roc_string(row.file)} },")
 		[
 			"\t## The app's routes, each a method and a path (`*`: any), and the file it is in: what the server",
-			"\t## checks plugins' routes against when it starts (`program.routes`).",
+			"\t## checks plugins' files at the root against when it starts (`program.routes`).",
 			"\tclaims : List({ method : Str, path : Str, file : Str })",
 		]
 			.concat(if (listed.is_empty()) ["\tclaims = []"] else ["\tclaims = ["].concat(listed).append("\t]"))
 	}
 
 	## `Generated/App.roc`, the server's program.
-	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), endpoints : Bool, jobs_package : Str, middleware : [Some(Str), None], stories : Bool } -> Str
+	app_module : { jobs : List(Found), actors : List(Found), migrations : List(Str), openapi : Str, jobs_package : Str, middleware : [Some(Str), None], stories : Bool } -> Str
 	app_module = |input| {
 		# The jobs package, as the app's header names it (packages/jobs): `App.jobs` is for its plugin.
 		jobs_package = input.jobs_package
@@ -3371,10 +3371,10 @@ Routes := [].{
 		lines =
 			[
 				"## Written by rocx build: the app's `program`, for its main.roc, which says what only it can",
-				"## (`program = App.program({ init! })`, `database` if it isn't SQLite's data/app.db, `openapi` if it serves its endpoints' OpenAPI",
-				"## document, `cross_site` if it takes changes from other sites' pages, and `plugins`). Every request is answered by a plugin's route, behind",
-				"## the middleware the app gave that plugin (D-114), or the OpenAPI document, behind its own, or the app's (`Routes.respond!`), behind",
-				"## the app's middleware (`routes/+middleware.roc`, D-103), as is a path nothing answers; the actors' methods are the ones its modules",
+				"## (`program = App.program({ init! })`, `database` if it isn't SQLite's data/app.db, `cross_site` if it takes changes",
+				"## from other sites' pages, and `plugins`). Every request is answered by the app's routes (`Routes.respond!`), behind the",
+				"## app's middleware (`routes/+middleware.roc`, D-103): every URL is a route file, a package's handlers and the OpenAPI",
+				"## document included (D-116); the actors' methods are the ones its modules",
 				"## define (`Actor.method`), and the kinds of job in `App.jobs` are theirs too (`Job.define`), for the jobs",
 				"## plugin; the migrations, migrations/*.sql, in the order of their names; the log's format is",
 				"## `Auto` (`ROCX_LOG`, or pretty on a terminal and JSON elsewhere), which the app may change:",
@@ -3382,7 +3382,6 @@ Routes := [].{
 				"import pf.Server",
 				"import pf.Endpoint",
 				"import pf.Middleware",
-				"import pf.OpenApi",
 				"import pf.Plugin",
 			]
 				.concat(
@@ -3393,7 +3392,6 @@ Routes := [].{
 				)
 				.concat(if (jobs_package.is_empty()) [] else ["import ${jobs_package}.Job"])
 				.concat(if (input.actors.is_empty()) [] else ["import pf.Actor"])
-				.concat(if (input.endpoints) ["import Api"] else [])
 				.concat(["import Routes"])
 				.concat(import_lines)
 				.concat(embedded.map(|each| "import ${Text.roc_string("../migrations/${each.name}")} as ${each.as_name} : Str"))
@@ -3418,52 +3416,43 @@ Routes := [].{
 					"\t## What only the app can say: `init!`, which makes the app's context once, when the server starts",
 					"\t## (after the migrations), from what it was started with (`--context-file`: `|started| Ok(…)`):",
 					"\t## the host keeps it, and every request's middleware is given it (`routes/+middleware.roc`'s, which",
-					"\t## runs around the app's routes and a path nothing answers, D-103; a plugin's, D-114); `cross_site`, a change (POST, PUT, PATCH, DELETE) another",
+					"\t## runs around every request, D-103); `cross_site`, a change (POST, PUT, PATCH, DELETE) another",
 					"\t## site's page sends: `Refused` (403, `Middleware.same_origin`) unless the app says `Allowed`, when",
 					"\t## a directory's middleware may refuse it where it should; `database`, its database (D-045, D-105): `Sqlite(path)`, a",
 					"\t## file in the server's process (`--database-url sqlite:<path>` puts it elsewhere), `Sqlite(\"data/app.db\")` unless it",
 					"\t## says; `Turso(path)`, the same SQL on Turso's engine (D-046; `turso:<path>` runs a SQLite app on it); or",
 					"\t## `Postgres`, at `--database-url`;",
-					"\t## `openapi`, whether it serves its endpoints' OpenAPI document, and a page to read it",
-					"\t## in, behind the middleware it names (`OpenApi.Serving`: `Page(Scalar, Middlewares.admin)`): `Off` unless it says;",
-					"\t## `plugins`, what packages add to it (`Plugin`): their routes answer before the app's own, each",
-					"\t## behind the middleware the app gave its plugin, not routes/'s (D-114), and the",
-					"\t## platform runs the rest (the jobs plugin: `App.jobs`, and its schedules); and `links`,",
+					"\t## `plugins`, what packages add to it (`Plugin`: tables, jobs, loops, files; no routes, D-116), which the",
+					"\t## platform runs (the jobs plugin: `App.jobs`, and its schedules); and `links`,",
 					"\t## places of the app's a person may want to open (`Plugin.Link`: `/mcp`, or a whole URL),",
 					"\t## which the server lists under its address under `--dev` (D-111), after the stories and",
-					"\t## the OpenAPI document (`App.links`).",
-					"\tConfig(given, shown) := {",
+					"\t## the OpenAPI document's page, if the app has a route for it (`App.links`).",
+					"\tConfig(given) := {",
 					"\t\tinit! : Str => Try(given, Str),",
 					"\t\tcross_site : [Refused, Allowed] ?? Refused,",
 					"\t\tdatabase : [Postgres, Sqlite(Str), Turso(Str)] ?? Sqlite(\"data/app.db\"),",
-					"\t\topenapi : OpenApi.Serving(given, shown) ?? Off,",
 					"\t\tplugins : List(Plugin.Value(given)) ?? [],",
 					"\t\tlinks : List(Plugin.Link) ?? [],",
 					"\t}",
 					"",
 					"\t## Under `--dev`, the app's places to open (D-111), its own plugin's: ${if (input.stories) "its stories, " else ""}its endpoints' OpenAPI",
-					"\t## document or its page, as it serves them, then its own (`links`).",
-					"\tlinks : OpenApi.Serving(_, _), List(Plugin.Link) -> List(Plugin.Link)",
-					"\tlinks = |openapi, own| {",
+					"\t## document or its page, if a route of the app's serves it (D-116), then its own (`links`).",
+					"\tlinks : List(Plugin.Link) -> List(Plugin.Link)",
+					"\tlinks = |own| {",
 					"\t\tstories = ${if (input.stories) "[{ label: \"Stories\", path: \"/__rocx/stories\" }]" else "[]"}",
-					"\t\tserved =",
-					"\t\t\tmatch OpenApi.shown(openapi) {",
-					"\t\t\t\tOff => []",
-					"\t\t\t\tDocument => ${if (input.endpoints) "[{ label: \"OpenAPI\", path: \"/openapi.json\" }]" else "[]"}",
-					"\t\t\t\tPage(_) => ${if (input.endpoints) "[{ label: \"OpenAPI\", path: \"/openapi.html\" }]" else "[]"}",
-					"\t\t\t}",
+					"\t\tserved = ${if (input.openapi.is_empty()) "[]" else "[{ label: \"OpenAPI\", path: ${Text.roc_string(input.openapi)} }]"}",
 					"\t\tstories.concat(served).concat(own)",
 					"\t}",
 					"",
 					"\t## The platform's program, from what the app says (`Config`).",
-					"\tprogram : Config(_, _) -> _",
+					"\tprogram : Config(_) -> _",
 					"\tprogram = |config| {",
 					"\t\t# The app's context, made once at the start and kept by the host.",
 					"\t\tinit!: config.init!,",
 					"\t\t# The request as the host gives it (its address too: `peer`), and the app's context.",
 					"\t\trespond!: |parsed, given| {",
 					"\t\t\t# The route that answers it (`/blog/[slug]`), for the middleware: what a metric groups requests by.",
-					"\t\t\trequest = { ..parsed, route: Plugin.pattern(config.plugins, parsed.method, parsed.path) ?? Routes.pattern(parsed.path) }",
+					"\t\t\trequest = { ..parsed, route: Routes.pattern(parsed.path) }",
 					"\t\t\t# The end of a channel's subscription, as the host tells it: its route's `on_close!`, outside",
 					"\t\t\t# the middleware (a subscriber refused at a beat ends too).",
 					"\t\t\tif (Endpoint.channel_asked(request) == \"close\") {",
@@ -3474,27 +3463,12 @@ Routes := [].{
 					match input.middleware {
 						Some(module_name) =>
 							[
-								"\t\t\t\t# The app's routes, behind its middleware (routes/+middleware.roc, D-103), a path nothing answers too.",
-								"\t\t\t\trouted! = |asked, context| Middleware.run!(${module_name}.middleware, asked, context, |answered, handed| Routes.respond!(answered, handed))",
+								"\t\t\t\t# The app's routes, behind its middleware (routes/+middleware.roc, D-103): every URL is one (D-116).",
+								"\t\t\t\tchecked! = |asked, context| Middleware.run!(${module_name}.middleware, asked, context, |answered, handed| Routes.respond!(answered, handed))",
 							]
-						None => ["\t\t\t\trouted! = |asked, context| Routes.respond!(asked, context)"]
+						None => ["\t\t\t\tchecked! = |asked, context| Routes.respond!(asked, context)"]
 					},
 				)
-				.concat(
-					if input.endpoints {
-						[
-							"\t\t\t\t# The endpoints' OpenAPI document and its page, behind the middleware the app names for them",
-							"\t\t\t\t# (`OpenApi.middleware`, D-114), then the app's routes.",
-							"\t\t\t\topened! = |asked, context| Middleware.run!(OpenApi.middleware(config.openapi, Api.openapi), asked, context, routed!)",
-						]
-					} else {
-						["\t\t\t\topened! = routed!"]
-					},
-				)
-				.concat([
-					"\t\t\t\t# A plugin's route, behind the middleware the app gave its plugin (D-114), or the rest.",
-					"\t\t\t\tchecked! = |asked, context| Plugin.respond!(config.plugins, asked, context, opened!)",
-				])
 				.concat([
 					"\t\t\t\t# A change another site's page sends refused first, unless the app takes them (`cross_site`).",
 					"\t\t\t\tanswer = if (config.cross_site == Allowed) checked!(request, given) else Middleware.run!(Middleware.same_origin({}), request, given, checked!)",
@@ -3507,7 +3481,7 @@ Routes := [].{
 					"\t\tactors: [${Str.join_with(input.actors.map(|actor| "Actor.handler(${alias(actor)}.${actor.define}${if (actor.thunk) "({})" else ""})"), ", ")}],",
 					"\t\tlogs: { format: Auto },",
 					"\t\t# The app's own plugin first, adding nothing but its places to open (D-111), then the packages'.",
-					"\t\tplugins: [Plugin.running({ name: \"app\", links: App.links(config.openapi, config.links) })].concat(config.plugins.map(Plugin.running)),",
+					"\t\tplugins: [Plugin.running({ name: \"app\", links: App.links(config.links) })].concat(config.plugins.map(Plugin.running)),",
 					"\t\troutes: Routes.claims,",
 					"\t}",
 					"}",
@@ -3982,7 +3956,7 @@ Routes := [].{
 			"migrationsIn" => Ok(Value.strs(Routes.migrations_in!(Value.str(arg(0)))))
 			"appModule" => {
 				input = arg(0)
-				Ok(Text(Routes.app_module({ jobs: Value.items(Value.field(input, "jobs")).map(Routes.found_from), actors: Value.items(Value.field(input, "actors")).map(Routes.found_from), migrations: Value.items(Value.field(input, "migrations")).map(Value.str), endpoints: Routes.truthy(Value.field(input, "endpoints")), jobs_package: Value.str_or(Value.field(input, "jobsPackage"), ""), middleware: Routes.maybe_text(Value.field(input, "middleware")), stories: Routes.truthy(Value.field(input, "stories")) })))
+				Ok(Text(Routes.app_module({ jobs: Value.items(Value.field(input, "jobs")).map(Routes.found_from), actors: Value.items(Value.field(input, "actors")).map(Routes.found_from), migrations: Value.items(Value.field(input, "migrations")).map(Value.str), openapi: Value.str_or(Value.field(input, "openapi"), ""), jobs_package: Value.str_or(Value.field(input, "jobsPackage"), ""), middleware: Routes.maybe_text(Value.field(input, "middleware")), stories: Routes.truthy(Value.field(input, "stories")) })))
 			}
 			"clientMainModule" => {
 				input = arg(0)

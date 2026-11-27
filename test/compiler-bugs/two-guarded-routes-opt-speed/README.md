@@ -51,3 +51,6 @@ upstream's: upstream main 9e28b549e3 answers as well, without the fork's own fix
 `--opt=speed`, a `List.map` over closures (here `plugins.map(Plugin.running)`) read each item as a
 closure with no callable set, and calling one crashed. `JobsPage.plugin` is back to a GET and a POST route; for a day it gave one route,
 for every method at `at` (`*`), so one closure captured the guard.
+
+Since D-116 (2026-11-27) a plugin has no routes. The three apps keep the shape they had, with a record
+of their own (`Plugged`) in place of the platform's `Plugin.Value`, so they still build and say the same.

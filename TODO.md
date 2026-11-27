@@ -55,10 +55,10 @@ When an item lands, delete its line here in the same commit.
   month. Ticks that know days, hours and months wait for an app that needs them.
 - **Uploads straight to storage.** A file dropped or chosen (D-055) is kept through the app's
   server, as a field of an action's multipart form (D-054). A browser `PUT` to a signed URL
-  (`Storage.signed_url!`, D-047's plugin route) would spare the server a large file's bytes, but it
-  is a second way to keep a file, and needs packages/storage to have a browser half (a plugin
-  script) and a way to tell the app the file landed. Left out of D-055 for one way per job; worth it
-  once an app keeps files too big for a request's body.
+  (`Storage.signed_url!`, D-047; the app's `/_storage` route, D-116) would spare the server a large
+  file's bytes, but it is a second way to keep a file, and needs packages/storage to have a browser
+  half (a plugin script) and a way to tell the app the file landed. Left out of D-055 for one way
+  per job; worth it once an app keeps files too big for a request's body.
 - **packages/jobs:** a job's log in the jobs page, parked with its options in its `PROPOSALS.md`.
 - **packages/stripe (D-082):** the questions at the end of its `PROPOSALS.md` (whether `past_due`
   counts as paying; `rocx new` offering it), and one run of its example against Stripe's own test
@@ -300,9 +300,11 @@ When an item lands, delete its line here in the same commit.
   - packages/posthog: `sent!` drops a batch that is `TooLarge` without a log line.
   - packages/storage: directory and memory buckets keep multipart parts under `.uploads/`, and an
     app's key starting with `.uploads` isn't refused.
-- **packages/storage has no `at`** (D-114): its route is at `/__storage`, fixed, because
-  `Storage.signed_url!` builds its links to that path too; an `at` would have to reach the signer
-  (kept at start, as auth keeps its settings). Every other plugin with routes can be moved.
+- **packages/storage's signed links go to one fixed path** (D-116): its route is the app's file,
+  `routes/_storage/+server.roc` calling `Storage.signed_route!`, but `Storage.signed_url!` builds
+  its links to `/_storage` whatever the app does, so the file can't move. Making it movable needs
+  the signer to know the path (an argument of `signed_url!`, or a setting kept at start, as auth
+  keeps its `at`). Every other package's handlers go wherever the app puts their files.
 - **Database errors sent to clients:** the package examples answer a failed query with its text
   (`Err(Status(503, why))`: packages/auth's, stripe's, push's and guard's examples, and
   sqlite-vs-turso's bench routes), which can name tables, columns and values. examples/tasks, plate
@@ -310,10 +312,6 @@ When an item lands, delete its line here in the same commit.
   platform has no refusal for this (a `Failed(why)` that logs `why` with the route and answers a
   plain 500); Endpoint.roc is shared with the browser's platform, which has no log, so it needs a
   decision.
-- **packages/otel/example's browser program doesn't check:** `rocx check packages/otel/example`
-  type-checks its server, then fails on the browser's copy (`build/client`): `Api.openapi does not
-  exist` in Generated/App.roc (an app of endpoints alone; examples/echo, the same, has no browser
-  program). On master before the plugin too; the example isn't in `just examples`.
 - **Single rows read as lists** (`Db.one!`, D-096): tasks, plate, board and notes use it; uptime,
   pomodoro, quiz, sqlite-vs-turso, packages/auth's and packages/stripe's stores (and their
   examples) and `rocx new`'s template (`Accounts.roc`) still read one row with `Db.all!` and

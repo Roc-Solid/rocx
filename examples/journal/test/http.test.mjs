@@ -203,7 +203,7 @@ test("the JSON API: posts by language, tag, writer and search, and one post whol
 	assert.equal(missing.status, 404);
 });
 
-test("OpenAPI: the document and Scalar's page, opted in through App.program", async () => {
+test("OpenAPI: the document and Scalar's page, from routes of the app's (D-116)", async () => {
 	const client = app.client();
 	const document = await client.read("/openapi.json");
 	assert.equal(document.openapi, "3.2.0");

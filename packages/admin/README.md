@@ -6,8 +6,8 @@ add, change or delete it. It reads the tables from the database's own catalog on
 there is no code to generate and nothing to keep in step with the schema. You mount it with one
 route file, behind your app's own middleware.
 
-The package also draws the jobs page (`JobsPage`, [below](#the-jobs-page)), a plugin that shows the
-queue of packages/jobs. The docs site's page, `/ecosystem/admin`, shows the admin's pages rendered
+The package also draws the jobs page (`JobsPage`, [below](#the-jobs-page)), which shows the queue
+of packages/jobs, mounted with a route file too. The docs site's page, `/ecosystem/admin`, shows the admin's pages rendered
 from made-up tables.
 
 ```roc
@@ -243,45 +243,24 @@ finished in the last hour, the latest failures, each kind, the schedules, and th
 drawer, with retry, cancel and run now as plain forms. packages/jobs's README and the docs site's
 `/ecosystem/jobs#page` describe what it shows.
 
-It is a plugin, behind a `middleware` the app gives it: the whole of what decides who may see it,
-as the app's `routes/+middleware.roc` isn't around a plugin's routes (D-114). `middleware` has no
-default, so a jobs page is never public because an option was left out. Leaving it
-out doesn't compile ("This record is missing these fields: … middleware"; the compiler lists the fields
-with a default too).
+It is a route of the app's (D-116): a route file that calls `JobsPage.respond!(request, { mount,
+back })`, in a folder whose `+middleware.roc` decides who may see it, as for any of the app's
+pages. It answers GET (HEAD too) and POST, and any other method with a 405:
 
 ```roc
-plugins: [
-    Job.plugin({ jobs: App.jobs }),
-    JobsPage.plugin({ at: "/admin/jobs", middleware: Middlewares.default.then(Middlewares.admin) }),   # at: "/admin/jobs" unless it says
-]
+# routes/(admin)/admin/jobs/+server.roc, behind routes/(admin)/+middleware.roc (`middleware = Middlewares.admin`)
+import admin.JobsPage
+
+respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs", back: { label: "Status admin", href: "/admin" } })
 ```
 
-| Option | Default | What it is |
+| Field | Default | What it is |
 |---|---|---|
-| `at : Str` | `"/admin/jobs"` | where the page is |
-| `middleware : Middleware(context, out)` | (required) | all that runs before the page (what `routes/(admin)/` runs, say: `Middlewares.default.then(Middlewares.admin)`), and may refuse or send a stranger to sign in; what it hands on isn't used |
+| `mount : Str` | (required) | where the page is: the path of the route file that answers it |
 | `back : { label : Str, href : Str }` | none | a link back to the app's own pages, first in the page's sidebar |
 
-```roc
-JobsPage.plugin({ middleware: Middlewares.default.then(Middlewares.admin), back: { label: "Status admin", href: "/admin" } })
-```
-
-The plugin adds a GET route (HEAD too) and a POST route at `at`. They are pages, not endpoints, so
-they aren't in the app's `/openapi.json`. It needs the jobs plugin (`needs: [Plugin("jobs")]`): the
-server refuses to start without it.
-
-To mount the page yourself, answer a route with `JobsPage.respond!(request, { mount, back })`
-(`back` is optional). It answers GET, HEAD and POST, and any other method with a 405:
-
-```roc
-# routes/admin/jobs/+server.roc
-import admin.JobsPage
-import ../../../Middlewares
-
-middleware = Middlewares.admin
-
-respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })   # and back, as above
-```
+`rocx routes` lists it with the middleware around it. It needs the jobs plugin (`Job.plugin`),
+whose queue it shows.
 
 ## One look
 
@@ -315,7 +294,7 @@ runs their `expect`s.
 | `View` | each page's HTML (`index_page`, `list_page`, `row_page`, `delete_page`, `problem_page`, and `problems_page` for options that name what the schema doesn't have), a list's row of filters, and the sidebar of tables (`side`) |
 | `Look` | the admin look (`shared`, the rules every admin page shares, and the helpers), the tables admin's own rules, its `document` and its `headers` |
 | `Form` | a query's or a form's fields, decoded; links, encoded |
-| `JobsPage` | the jobs page (server only): `plugin({ at, middleware, back })`, or `respond!(request, { mount, back })` |
+| `JobsPage` | the jobs page (server only), for a route file of the app's: `respond!(request, { mount, back })` |
 | `AdminHtml` | the server's admin pages (the jobs page, the dev mailbox), on `Look`: a page, a stream of changes, times, links (server only) |
 
 ## Tests

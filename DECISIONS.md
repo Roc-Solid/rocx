@@ -6173,8 +6173,8 @@ by hand.
 
 **Status.** Built (2026-11-26), the user's call, after a review of where an app names middleware;
 changes D-079 (a page's middleware from the `+server.roc` beside it).
-Changed by D-114: `routes/+middleware.roc` is no longer around a plugin's routes or the OpenAPI
-document.
+Changed by D-114, then D-116: a plugin has no routes, and every URL is a route file, so
+`routes/+middleware.roc` is around every request again.
 
 **Context.** An app named middleware in two places, with a rule between them: the app's default
 (`App.program({ middleware })` in main.roc) around every request, and a route file's own line
@@ -6737,7 +6737,8 @@ no duration is shown as one.
 
 ## D-114 A plugin's routes and the OpenAPI document are behind the middleware main.roc gives them
 
-**Status.** Built (2026-11-27), the user's call, after the private app's own gate sent
+**Status.** Superseded by D-116 the same day: a plugin has no routes, and the OpenAPI document is a
+route of the app's, so neither needs a middleware of its own. Built (2026-11-27), the user's call, after the private app's own gate sent
 `/openapi.html` and `/admin/jobs` to its sign-in page, and its sign-in page under `--dev` offered
 Google alone.
 
@@ -6790,3 +6791,54 @@ identifies, so they behave as before.
 
 **Reversible:** yes: `Generated/App` puts the root around `Plugin.respond!` again, and the
 plugins drop the option.
+
+## D-116 A plugin adds no routes: a package offers handlers, and every URL is a route file
+
+**Status.** Built (2026-11-27), the user's call, the same day as D-114, which it replaces in part.
+
+**Context.** D-114 put a plugin's routes and the OpenAPI document outside `routes/+middleware.roc`,
+each behind a middleware main.roc gave it. It answered the private app's problem, but plugins still
+had a way of their own to put something at a URL, which no file showed, `rocx routes` didn't list,
+and folders' middleware didn't reach: so every package with routes needed an `at` and a
+`middleware` option, the app wrote a folder's chain by hand to pass one, and the auth plugin's
+`admit!`, push's `owner` and Stripe's `on_event!` were options of a plugin for what are a route's
+concerns. The user's view: plugins aren't part of the file structure, so they behave unexpectedly;
+all routes reflected in the folders is worth a change in every consumer.
+
+**Decision.**
+
+- **`Plugin.Value` has no `routes`.** A plugin adds tables, jobs and calls, loops, starts, checks,
+  files and scripts, dev pages (`early`, under `/__rocx/`) and places to list; never a route.
+  `Plugin.behind`, `Plugin.respond!`, `Plugin.pattern` and `Plugin.Route` are gone, and so are the
+  start's checks of a plugin's routes against the app's (its files and early paths are still
+  checked).
+- **A package that answers requests offers handlers**, a route file's `respond!` calls, each
+  checking its methods (405 otherwise): `Auth.provider_route!`, `callback_route!`, `link_route!`,
+  `code_route!`, `sign_out_route!`, `dev_route!` (packages/auth); `Push.key_route!`,
+  `subscribe_route!`, `unsubscribe_route!`; `PostHog.errors_route!`, `script_route`;
+  `Stripe.webhook_route!`; `Storage.signed_route!` (at `/_storage`, where its signed links point;
+  it was `/__storage`, which a route file can't be); `JobsPage.respond!` (`JobsPage.plugin` is
+  gone). What a route concerns is the handler's argument: `admit!`, the subscription's owner (what
+  the folder's middleware handed on), `on_event!`, the provider list (the app's, in a module both the
+  plugin's options and the route import: `Accounts.providers`).
+- **The OpenAPI document is a route of the app's**: `routes/openapi.json/+server.roc` calls
+  `OpenApi.document_route(request, Api.openapi)`, `routes/openapi.html/+server.roc`
+  `OpenApi.page_route(request, Scalar)`. `App.program` loses `openapi`; the server lists the page
+  under `--dev` when a route answers `/openapi.html` (or the document, `/openapi.json`).
+- **Every URL is a route file**, so `routes/+middleware.roc` is around every request the app
+  answers again (D-103 as it was), and the folders' middleware around the package's handlers as
+  around any route. `Middleware.none` goes with the options that needed it.
+- **The dev sign-in stays** (`dev_route!`): an app's way to try it and its tests' way in, with no
+  mail and no provider. Starting a reachable server with `--dev` is the operator's to avoid.
+
+**Why.** One way to put something at a URL: the file. `rocx routes` lists a package's endpoints
+with the middleware around them, a folder guards them as it guards the app's own, and the app picks
+their paths by where it puts the files, so no package needs `at` or `middleware`. A handler's
+change is a compile error at the route file's line that calls it.
+
+**Costs.** An app writes a small file for each step it uses (six for every auth step, none for an
+app that signs people in itself), where it listed a plugin; `rocx new`'s template ships its own.
+Storage's links still go to one fixed path. Every consumer of a package with routes changed once.
+
+**Reversible:** yes: `routes` comes back to `Plugin.Value`, and the handlers become a plugin's
+routes again.

@@ -25,6 +25,12 @@ Build := [].{
 	app_module_name : Str
 	app_module_name = "App"
 
+	## The OpenAPI document's place to open under `--dev` (D-111): its page if a route of the app's
+	## answers `/openapi.html`, else the document at `/openapi.json`, else none ("") (D-116: the app
+	## serves them from route files, `OpenApi.page_route` and `OpenApi.document_route`).
+	openapi_link : List(Str) -> Str
+	openapi_link = |paths| if (paths.contains("/openapi.html")) "/openapi.html" else if (paths.contains("/openapi.json")) "/openapi.json" else ""
+
 	## The line of a browser's copy's `.rocx-client` that says where its app is, from the copy.
 	client_app_lead : Str
 	client_app_lead = "app: "
@@ -401,7 +407,7 @@ Build := [].{
 					.concat([{ name: "Paths", content: Routes.paths_module(table, sources) }, { name: "Styles", content: Build.styles_module(css, sheet) }])
 					.concat(api)
 					.concat(root_page)
-					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), endpoints, jobs_package, middleware: Routes.root_middleware(table), stories: !stories_page.is_empty() }) }])
+					.concat([{ name: Build.app_module_name, content: Routes.app_module({ jobs: jobs.jobs, actors: actors.actors, migrations: Routes.migrations_in!(dir), openapi: Build.openapi_link(Routes.route_list(table, sources).map(|row| row.path)), jobs_package, middleware: Routes.root_middleware(table), stories: !stories_page.is_empty() }) }])
 			if pages {
 				match options.client {
 					Some(_) => {
@@ -1405,3 +1411,6 @@ Build := [].{
 		)
 	}
 }
+
+expect Build.openapi_link(["/", "/openapi.json", "/openapi.html"]) == "/openapi.html"
+expect Build.openapi_link(["/openapi.json"]) == "/openapi.json" and Build.openapi_link(["/"]) == ""

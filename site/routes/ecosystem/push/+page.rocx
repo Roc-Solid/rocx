@@ -82,13 +82,8 @@ view! = |_|
 				with the <a href={Paths.ecosystem_jobs}>jobs</a> plugin, which runs the job that sends:
 			</p>
 			<Code title={Sources.push_example_main.file} source={Sources.push_example_main.rocx} />
-			<p>That is all the server needs. The plugin brings:</p>
+			<p>The plugin brings:</p>
 			<ul>
-				<li>
-					three endpoints, behind the middleware you give it (<code>middleware</code>, which has no default;
-					your <code>routes/+middleware.roc</code> isn't around a plugin's routes): <code>GET /push/key</code> (the public key),
-					<code>POST /push/subscribe</code> and <code>POST /push/unsubscribe</code>;
-				</li>
 				<li>its table, <code>push_subscriptions</code>, in the app's database (Postgres or SQLite);</li>
 				<li>its job, <code>push.deliver</code>, which the jobs plugin's workers run;</li>
 				<li>
@@ -97,18 +92,17 @@ view! = |_|
 				</li>
 				<li>under <code>--dev</code> only, <code>GET /__rocx/push/keys</code>: a new pair of keys each time.</li>
 			</ul>
-			<p>Two more options change the defaults:</p>
-			<ul>
-				<li>
-					<code>{"Push.plugin({ middleware, at: \"/notifications\" })"}</code> puts the endpoints under another path (give
-					the button the same path).
-				</li>
-				<li>
-					<code>{"Push.plugin({ middleware: Middlewares.member, owner: |context| context.member })"}</code> makes each subscription belong to the
-					signed-in user, read from the context <code>middleware</code> hands on. Then <code>Push.notify!</code> can
-					send to that user's browsers. Without it, every subscription is a visitor's (<code>""</code>).
-				</li>
-			</ul>
+			<p>
+				Its three endpoints are routes of the app's (D-116), each a file calling the package's handler,
+				behind the middleware of the folder it is in: <code>GET /push/key</code> (the public key),
+				<code>POST /push/subscribe</code> and <code>POST /push/unsubscribe</code>, where
+				<code>{"<PushButton api=\"/push\">"}</code> looks. Put them elsewhere and give the button that path.
+			</p>
+			<Code title="routes/push/subscribe/+server.roc" source={"import push.Push\n\n# Whose the subscription is: \"\" for a visitor, or the app's id for the user this folder's middleware\n# handed on (`context.member`); then Push.notify! can send to that user's browsers.\nrespond! = |{ request, .. }| Push.subscribe_route!(request, \"\")"} numbers={Bool.False} />
+			<p>
+				<code>{"Push.key_route!(request)"}</code> and <code>{"Push.unsubscribe_route!(request, owner)"}</code>
+				answer the other two the same way.
+			</p>
 			<p>
 				<strong>3. The page.</strong> The button, and a handler that asks an endpoint to notify everyone:
 			</p>
@@ -131,7 +125,7 @@ view! = |_|
 						<tr>
 							<td><code>api : Str</code></td>
 							<td>
-								where the plugin's endpoints are: with <code>"/push"</code>, <code>GET /push/key</code>,
+								where your routes for push are: with <code>"/push"</code>, <code>GET /push/key</code>,
 								<code>POST /push/subscribe</code> and <code>POST /push/unsubscribe</code>
 							</td>
 						</tr>
@@ -282,9 +276,9 @@ view! = |_|
 					examples. The browser's half of an app can use these too (<code>browser.roc</code> lists them).
 				</li>
 				<li>
-					<strong>The plugin</strong>, <code>{"Push.plugin({ middleware })"}</code>, on the server platform, which the
-					package names in its header (<a href={"${Paths.platform_server}#plugins"}>plugins</a>): its endpoints,
-					its table, and the job that sends.
+					<strong>The plugin</strong>, <code>{"Push.plugin({})"}</code>, on the server platform, which the
+					package names in its header (<a href={"${Paths.platform_server}#plugins"}>plugins</a>): its table,
+					the job that sends, and the handlers the app's routes call.
 				</li>
 				<li>
 					<strong>The browser's part</strong>: <code>{"<PushButton>"}</code> (in <code>components/</code>,

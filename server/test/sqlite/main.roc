@@ -18,7 +18,6 @@ import pf.Actor
 import pf.Db
 import pf.Kv
 import pf.Live
-import pf.Middleware
 import pf.Plugin
 import pf.Random
 import pf.Server
@@ -55,7 +54,6 @@ plugins = [
 		keep_failed_ms: 7_200_000,
 		sweep_ms: 500,
 	}),
-	JobsPage.plugin({ at: "/admin/jobs", middleware: Middleware.none({}), back: { label: "Tests", href: "/" } }),
 	{
 		name: "lite",
 		needs: [Sqlite],
@@ -77,14 +75,16 @@ Counter := [].{
 	add = Actor.method("add", |{ state, input, .. }| { state: { count: state.count + input }, reply: state.count + input })
 }
 
-## A plugin's route, or the app's.
+## The app's routes: every URL is one (D-116).
 respond! : Server.Request, Str => Server.Response
-respond! = |request, context| Plugin.respond!(plugins, { ..request, route: Plugin.pattern(plugins, request.method, request.path) ?? "" }, context, route!)
+respond! = |request, context| route!(request, context)
 
 route! : Server.Request, Str => Server.Response
 route! = |request, context| {
 	query = request.query
 	match (request.method, request.path) {
+		# The jobs page (packages/admin), open to all, on a route of the app's.
+		(_, "/admin/jobs") => JobsPage.respond!(request, { mount: "/admin/jobs", back: { label: "Tests", href: "/" } })
 		("GET", "/flavor") =>
 			text(
 				200,

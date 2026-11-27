@@ -1,8 +1,8 @@
 import pf.Db
+import pf.Endpoint
 import pf.Env
 import pf.Http
 import pf.Log
-import pf.Middleware
 import pf.Plugin
 import pf.Random
 import pf.Server
@@ -20,35 +20,39 @@ import "migrations/0002_refunds.sql" as refunds : Str
 ## card forms: Stripe's pages take the cards.
 ##
 ## ```roc
-## plugins: [Stripe.plugin({ on_event!: Billing.on_event!, middleware: Middleware.none({}) })]    # STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+## plugins: [Stripe.plugin({})]    # STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+## # routes/stripe/webhook/+server.roc: where Stripe sends its events (D-116: the app's route)
+## respond! = |{ request, .. }| Stripe.webhook_route!(request, Billing.on_event!)
 ##
 ## url = Stripe.checkout!({ user: me.id, email: me.email, mode: Subscription, prices: [{ price: "price_…", quantity: 1 }], success_url: "/billing/done", cancel_url: "/pricing" })?
 ## if Stripe.subscribed!(me.id) … else …
 ## ```
 ##
-## The plugin's one endpoint is `POST <webhook_at>` (`/stripe/webhook`), where Stripe sends its
-## events: each checked against `STRIPE_WEBHOOK_SECRET`, handled once (a second time it is only
-## answered), kept in the package's tables, and handed to the app's `on_event!` in the same
-## transaction.
+## The webhook (`webhook_route!`, in the app's route file at `webhook_at`, `/stripe/webhook`) is
+## where Stripe sends its events: each checked against `STRIPE_WEBHOOK_SECRET`, handled once (a
+## second time it is only answered), kept in the package's tables, and handed to the app's
+## `on_event!` in the same transaction.
 Stripe := [].{
 
-	## The plugin's options:
-	## - `middleware`: what the webhook is behind, which the app must say (D-114: its
-	##   `routes/+middleware.roc` isn't around a plugin's routes). Stripe's servers call it, signed in
-	##   as nobody: `Middleware.none({})`, or one that only logs or adds headers.
-	## - `webhook_at`: where Stripe sends its events (`/stripe/webhook`): the endpoint's URL to give
-	##   Stripe is `<public URL><webhook_at>`.
-	## - `on_event!`: the app's own handling of each event (a one-time payment fulfilled on
-	##   `checkout.session.completed`, an email when `invoice.payment_failed`), after the package's
-	##   and in the same transaction: what it writes, and the jobs it queues, commit with the event's
-	##   record. An `Err` rolls all of it back and answers 500, so Stripe sends the event again
-	##   later (for up to three days). Keep slow work (a fetch, sending mail) out of it: queue a job.
-	##   It runs once an event: one Stripe sends again is answered, not handled again.
-	Options(context, ctx) := {
-		middleware : Middleware(context, ctx),
+	## The plugin's options: `webhook_at`, where the app's route for the webhook is
+	## (`/stripe/webhook`: `routes/stripe/webhook/+server.roc`), which the plugin's look at the keys
+	## names: the endpoint's URL to give Stripe is `<public URL><webhook_at>`.
+	Options := {
 		webhook_at : Str ?? "/stripe/webhook",
-		on_event! : (Stripe.Event => Try({}, Str)) ?? ignored!,
 	}
+
+	## The webhook, `POST <webhook_at>` (`routes/stripe/webhook/+server.roc`, D-116): an event Stripe
+	## sends, checked, handled once and kept, then handed to `on_event!`. Stripe's servers call it,
+	## signed in as nobody, so the folder it is in must let them through. 405 for a method but POST.
+	##
+	## `on_event!` is the app's own handling of each event (a one-time payment fulfilled on
+	## `checkout.session.completed`, an email when `invoice.payment_failed`), after the package's
+	## and in the same transaction: what it writes, and the jobs it queues, commit with the event's
+	## record. An `Err` rolls all of it back and answers 500, so Stripe sends the event again later
+	## (for up to three days). Keep slow work (a fetch, sending mail) out of it: queue a job. It runs
+	## once an event: one Stripe sends again is answered, not handled again. `|_| Ok({})` for none.
+	webhook_route! : Server.Request, (Stripe.Event => Try({}, Str)) => Server.Response
+	webhook_route! = |request, on_event!| if (request.method == "POST") webhook!(on_event!, request) else Endpoint.not_allowed(request, ["POST"])
 
 	## What a Checkout Session is made with (`checkout!`):
 	## - `user`: the app's id for whoever pays: their customer is made the first time and used every
@@ -139,19 +143,15 @@ Stripe := [].{
 	api_version : Str
 	api_version = "2025-03-31.basil"
 
-	## The Stripe plugin: the webhook (`POST <webhook_at>`, behind `middleware`, the app's choice: Stripe's servers call it), the tables
-	## (`stripe/0001_stripe` and `stripe/0002_refunds`, the same on SQLite and Postgres), and a look
-	## at the keys once the
-	## server has started (`stripe.keys`: test or live mode). It needs a database, and
+	## The Stripe plugin: the tables (`stripe/0001_stripe` and `stripe/0002_refunds`, the same on
+	## SQLite and Postgres), and a look at the keys once the server has started (`stripe.keys`: test or live mode). It needs a database, and
 	## `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` set; `STRIPE_API_URL` points it at another
 	## API than Stripe's (a test's stand-in).
-	plugin : Stripe.Options(context, ctx) -> Plugin.Value(context)
+	plugin : Stripe.Options -> Plugin.Value(context)
 	plugin = |options| {
 		at = options.webhook_at
-		on_event! = options.on_event!
 		{
 			name: "stripe",
-			routes: Plugin.behind(options.middleware, [{ method: "POST", path: at, kind: Endpoint, answer!: |request, _| webhook!(on_event!, request) }]),
 			migrations: [{ name: "0001_stripe", sql: table }, { name: "0002_refunds", sql: refunds }],
 			checks: [{ name: "stripe.keys", run!: |_context| keys!(at) }],
 			needs: [Database, Env("STRIPE_SECRET_KEY"), Env("STRIPE_WEBHOOK_SECRET")],
@@ -384,10 +384,6 @@ Stripe := [].{
 			_ => Bool.False
 		}
 }
-
-## `on_event!` when the app gives none: the package's own handling is all.
-ignored! : Stripe.Event => Try({}, Str)
-ignored! = |_| Ok({})
 
 ## Now, in milliseconds since 1970.
 now! : {} => I64

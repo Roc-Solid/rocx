@@ -1,6 +1,4 @@
 import pf.Db
-import pf.Middleware
-import pf.Plugin
 import pf.Server
 import pf.Time
 import jobs.Cron
@@ -8,30 +6,21 @@ import jobs.Job
 import AdminHtml
 import Look
 
-## The jobs page: a console of packages/jobs's queue, as a plugin the app lists, behind the
-## middleware the app gives it (only the app knows who may see it; D-114: its `routes/+middleware.roc`
-## isn't around a plugin's routes, so `middleware` says all of what is). How many jobs are queued, running, failed, done and
-## canceled; what finished in the last hour, and the latest failures; each kind, with its attempts,
-## time limit and jobs; the schedules and when each runs next; and the jobs, newest first, each
-## opening in a drawer with its input, attempts, times and last error. Retry, cancel and run now
-## are plain forms, answered with a redirect back. It refreshes itself as jobs change (a stream of
-## events), answers its own links and forms in place as View Transitions (`AdminHtml`), and works
-## without script too.
+## The jobs page: a console of packages/jobs's queue, on a route of the app's (D-116), behind the
+## middleware of the folder the app puts it in (only the app knows who may see it). How many jobs
+## are queued, running, failed, done and canceled; what finished in the last hour, and the latest
+## failures; each kind, with its attempts, time limit and jobs; the schedules and when each runs
+## next; and the jobs, newest first, each opening in a drawer with its input, attempts, times and
+## last error. Retry, cancel and run now are plain forms, answered with a redirect back. It
+## refreshes itself as jobs change (a stream of events), answers its own links and forms in place
+## as View Transitions (`AdminHtml`), and works without script too. It needs the jobs plugin
+## (`Job.plugin`), whose queue it shows.
 ##
 ## ```roc
-## plugins: [
-##     Job.plugin({ jobs: App.jobs }),
-##     JobsPage.plugin({ at: "/admin/jobs", middleware: Middlewares.default.then(Middlewares.admin) }),   # `middleware` has no default
-##     # or, with a link back to the app's own pages, first in its sidebar:
-##     JobsPage.plugin({ middleware: Middlewares.default.then(Middlewares.admin), back: { label: "Status", href: "/admin" } }),
-## ]
-## ```
-##
-## An app that mounts it itself answers a route with `respond!` (`mount` is the path it is at):
-##
-## ```roc
-## # routes/admin/jobs/+server.roc, under routes/admin/+middleware.roc (`middleware = Middlewares.admin`)
-## respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })   # back: as above
+## # routes/(admin)/admin/jobs/+server.roc, behind routes/(admin)/+middleware.roc (`Middlewares.admin`)
+## respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs" })
+## # or, with a link back to the app's own pages, first in its sidebar:
+## respond! = |{ request, .. }| JobsPage.respond!(request, { mount: "/admin/jobs", back: { label: "Status", href: "/admin" } })
 ## ```
 ##
 ## It answers GET (`?state=failed`, `?kind=…`, `?before=<id>` for older ones, `?id=123` for one
@@ -40,33 +29,10 @@ import Look
 ## another site's page is refused (403), as `Middleware.same_origin` would.
 JobsPage := [].{
 
-	## Where the page is (`at`), and who may see it: `middleware`, the app's for its admins (the
-	## whole of it: the app's `routes/+middleware.roc` isn't around a plugin's routes, D-114), which
-	## may refuse, or send a stranger to sign in. What it hands on isn't used. `middleware` has no
-	## default: a jobs page is never public because an option was left out. `back`: a link back to the app's own pages, first in the sidebar
-	## (`{ label: "Status", href: "/admin" }`); none unless the app says (`href` "").
-	Options(context, out) := { at : Str ?? "/admin/jobs", middleware : Middleware(context, out), back : { label : Str, href : Str } ?? { label: "", href: "" } }
-
-	## Where the page an app mounts itself is (`mount`), and its link back to the app (`back`, as
-	## `Options` has it).
+	## Where the page is (`mount`: the path of the route file that answers it), and a link back to the
+	## app's own pages, first in the sidebar (`back`: `{ label: "Status", href: "/admin" }`); none
+	## unless the app says (`href` "").
 	Mount := { mount : Str, back : { label : Str, href : Str } ?? { label: "", href: "" } }
-
-	## The jobs page as a plugin (`jobs-page`): its page at `at`, a GET route (HEAD too) and a POST
-	## route, behind `middleware`. It needs the jobs plugin (`Job.plugin`), whose queue it shows. Pages,
-	## not endpoints: not in the app's `/openapi.json`.
-	plugin : Options(context, out) -> Plugin.Value(context)
-	plugin = |options| {
-		at = options.at
-		back = options.back
-		answer! = |request, _handed| JobsPage.respond!(request, { mount: at, back })
-		{
-			name: "jobs-page",
-			routes: Plugin.behind(options.middleware, [{ method: "GET", path: at, kind: Page, answer! }, { method: "POST", path: at, kind: Page, answer! }]),
-			needs: [Plugin("jobs")],
-			# Under --dev, the page (D-111).
-			links: [{ label: "Jobs", path: at }],
-		}
-	}
 
 	## Answers a request to the jobs page at `mount`: a GET draws it (or streams its changes), a
 	## POST retries, cancels or runs a job, or runs a schedule, and redirects back; any other method

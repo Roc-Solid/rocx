@@ -50,15 +50,33 @@ is the reference.
 
    program = App.program({
    	# …
-   	plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({ middleware: Middleware.none({}) })],
+   	plugins: [Job.plugin({ jobs: App.jobs }), Push.plugin({})],
    })
    ```
 
-   That is all the server needs: the endpoints (`GET /push/key`, `POST /push/subscribe`,
-   `POST /push/unsubscribe`), the table, the job, the service worker and the page's script, and
-   under `--dev` `GET /__rocx/push/keys`. The plugin needs a database.
+   The plugin brings the table, the job, the service worker and the page's script, and under
+   `--dev` `GET /__rocx/push/keys`. It needs a database.
 
-3. **A button**, on any page:
+3. **The endpoints**, the app's own route files (D-116), each calling its handler
+   ([below](#the-endpoints)), in `routes/push/` where `<PushButton api="/push">` looks:
+
+   ```roc
+   # routes/push/key/+server.roc: GET /push/key, the public key
+   import push.Push
+
+   respond! = |{ request, .. }| Push.key_route!(request)
+   ```
+
+   ```roc
+   # routes/push/subscribe/+server.roc: POST /push/subscribe, a visitor's subscription ("")
+   import push.Push
+
+   respond! = |{ request, .. }| Push.subscribe_route!(request, "")
+   ```
+
+   `routes/push/unsubscribe/+server.roc` is the same, with `Push.unsubscribe_route!`.
+
+4. **A button**, on any page:
 
    ```roc
    import push.PushButton
@@ -66,7 +84,7 @@ is the reference.
    <PushButton api="/push" />
    ```
 
-4. **Sending**, from a job or an endpoint on the server:
+5. **Sending**, from a job or an endpoint on the server:
 
    ```roc
    import push.Notification
@@ -79,19 +97,26 @@ is the reference.
 `example/` is a small app with every step: a page with `<PushButton>` and a button that notifies
 everyone.
 
-### Plugin options
+### The endpoints
 
-`Push.plugin(setup)` takes `{ middleware, at ?? "/push", owner ?? (|_| "") }`:
+`Push.plugin({})` has no options and no routes (D-116). The endpoints are the app's route files,
+each calling a handler, behind the middleware of the folder they are in:
 
-- `middleware` is what the endpoints are behind, which the app must say: its
-  `routes/+middleware.roc` isn't around a plugin's routes (D-114). `Middleware.none({})` for a site
-  of visitors; the middleware that knows who is signed in for one with accounts (below).
-- `at` is where the endpoints are: `Push.plugin({ at: "/notifications" })` answers
-  `GET /notifications/key` and so on (then `<PushButton api="/notifications" />`).
-- `owner` says whose a subscription is: a function from the context `middleware` handed on
-  to the app's id for the user, as text. An app with accounts gives
-  `Push.plugin({ middleware: Middlewares.member, owner: |context| context.member })`, and `notify!(member, …)` sends to that user's
-  browsers. Without it, every subscription is a visitor's (`""`).
+```roc
+Push.key_route! : Server.Request => Server.Response                   # GET <api>/key: the public key
+Push.subscribe_route! : Server.Request, Str => Server.Response        # POST <api>/subscribe: kept as the owner's
+Push.unsubscribe_route! : Server.Request, Str => Server.Response      # POST <api>/unsubscribe: if it is the owner's
+```
+
+Each answers 405 for a method it doesn't take.
+
+- **Where they are** is where the files are: `routes/notifications/key/+server.roc` and the rest
+  answer `GET /notifications/key` and so on (then `<PushButton api="/notifications" />`).
+- **Whose a subscription is** is the second argument: the app's id for the user, as text, or `""`
+  for a visitor. An app with accounts puts the files in a folder whose middleware knows who is
+  signed in, and passes what it handed on:
+  `respond! = |{ request, context, .. }| Push.subscribe_route!(request, context.member)`; then
+  `notify!(member, …)` sends to that user's browsers.
 
 ## Sending
 
@@ -168,7 +193,7 @@ id for a user, as text, or `""` for a visitor.
 
 | Module | What it has |
 |---|---|
-| `Push` | `plugin(setup)`, the plugin ([options](#plugin-options)). `subscribe!(body, owner)`: saves a subscription the page posted, if its endpoint is at a browser's push service (`Invalid(why)` if not). `unsubscribe!(endpoint, owner)`. `notify!(owner, notification, options)` and `broadcast!(notification, options)`: queue a `deliver` job per subscription, and answer how many. `public_key!` and `keys!` (from the environment; under `--dev` without keys, the pair the run made, kept in `Kv`). `deliver`: the job (`push.deliver`, 5 attempts, a minute each). `send!(keys, subscription, data, options)`: one attempt, encrypted (`P256.ecdh!`, `AesGcm.seal_with_nonce!`) and signed (`P256.sign!`), and what the push service's answer means |
+| `Push` | `plugin({})`, the plugin. `key_route!(request)`, `subscribe_route!(request, owner)`, `unsubscribe_route!(request, owner)`: the endpoints, for the app's route files ([The endpoints](#the-endpoints)). `subscribe!(body, owner)`: saves a subscription the page posted, if its endpoint is at a browser's push service (`Invalid(why)` if not). `unsubscribe!(endpoint, owner)`. `notify!(owner, notification, options)` and `broadcast!(notification, options)`: queue a `deliver` job per subscription, and answer how many. `public_key!` and `keys!` (from the environment; under `--dev` without keys, the pair the run made, kept in `Kv`). `deliver`: the job (`push.deliver`, 5 attempts, a minute each). `send!(keys, subscription, data, options)`: one attempt, encrypted (`P256.ecdh!`, `AesGcm.seal_with_nonce!`) and signed (`P256.sign!`), and what the push service's answer means |
 | `PushStore` | The `push_subscriptions` table: `save!` (one row per endpoint; subscribing again updates it), `remove!`, `remove_id!`, `find!`, `of_owner!`, `everyone!`, `delivered!`, `refused!`. Each statement runs on Postgres and SQLite; `delivered!` asks `Db.backend!` which to run |
 
 The table's migration is `migrations/0001_push_subscriptions.sql` on Postgres and

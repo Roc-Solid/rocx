@@ -28,7 +28,7 @@ and reloads the page when you save a file. Under `rocx dev`:
 | `main.roc` | The server's program: the plugins (mail and sign-in), the database |
 | `AGENTS.md`, `CLAUDE.md` | Notes for coding agents: rocx's rules in a block `rocx agents` keeps up to date, and yours outside it; `CLAUDE.md` imports `AGENTS.md` |
 | `Middlewares.roc` | What requests go through: `default` (every request), `signed_in`, `anyone`, `mail_limit`; each `+middleware.roc` under `routes/` names one |
-| `Accounts.roc` | The app's users: who may sign in (`admit!`), and reading a user (`user!`) |
+| `Accounts.roc` | The app's users: who may sign in (`admit!`), where else one may sign in (`providers`), and reading a user (`user!`) |
 | `migrations/` | The database's tables, as SQL, applied in order as the server starts |
 | `routes/` | The pages and endpoints: a folder each, its path the URL |
 | `routes/+middleware.roc` | What runs around every request: the security headers |
@@ -38,6 +38,7 @@ and reloads the page when you save a file. Under `rocx dev`:
 | `routes/api/me/+server.roc` | Who is signed in, for the bar at the top |
 | `routes/sign-in/` | The sign-in page, the page a link opens (`link/`), and the page that asks for a two-factor code (`code/`) |
 | `routes/api/sign-in/` | Their endpoints: what the sign-in page offers besides an address, the link it mails (`mail/`), whom a link signs in (`link/`), and whom a sign-in waiting for its code is for (`code/`) |
+| `routes/auth/` | Signing in's steps, each a line calling packages/auth's handler: a mailed link (`link/`), a provider and back (`[provider]/`, `[provider]/callback/`), the two-factor code (`code/`), signing out (`sign-out/`) and the dev sign-in (`dev/`) |
 | `routes/(signed-in)/` | A group, which adds nothing to the path: its `+middleware.roc` lets only signed-in people through to the account page and its endpoints |
 | `routes/(signed-in)/account/` | A page for signed-in people only: your address, where you're signed in, signing out everywhere, and two-factor sign-in |
 | `routes/(signed-in)/api/account/` | Its endpoints: what the page reads (the address, the sessions, two-factor sign-in's state), signing out everywhere, and two-factor sign-in's forms (`two-factor/`, `two-factor/confirm/`, `two-factor/off/`) |
@@ -132,8 +133,9 @@ provider, giving it the redirect URI, then set the two variables where the serve
 | GitHub | GitHub, Settings, Developer settings, OAuth Apps | `<PUBLIC_URL>/auth/github/callback` | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` |
 
 Under `rocx dev` the public URL is `http://localhost:8080`. Someone signing in at a provider for the
-first time is the user with that address, or a new one (`Accounts.admit!`). Another OpenID Connect
-provider is one line: see the auth page in the guide.
+first time is the user with that address, or a new one (`Accounts.admit!`). The list is
+`Accounts.providers`, which `main.roc` and `routes/auth/[provider]/` both read; another OpenID
+Connect provider is one line in it: see the auth page in the guide.
 
 ## Going live
 

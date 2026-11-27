@@ -18,8 +18,8 @@ Middlewares := [].{
 	## The diary, when `PLATE_PASSWORD` is set: packages/auth's `Auth.required` (`signed_in`): a
 	## browser asking for a page without a session is sent to sign in (`/sign-in?then=…`), and back
 	## after; anything else is refused (401). Without a password, everyone. The sign-in page and its
-	## endpoint sit outside its group, and the auth plugin's endpoints (signing out) and the
-	## runtime's files outside routes/: they are for anyone.
+	## endpoint sit outside its group, and so does the route that signs out (routes/auth/sign-out/), and
+	## the runtime's files are outside routes/: they are for anyone.
 	gate : Middleware({}, {})
 	gate = Middleware.make(
 		|request, context, next!|

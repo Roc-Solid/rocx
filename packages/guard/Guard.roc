@@ -119,9 +119,9 @@ Guard := [].{
 		}
 
 	## `middleware` for requests whose path is `prefix` or under it (`"/jobs"`: `/jobs`, `/jobs/x`,
-	## not `/jobsite`); others pass by it. For paths no directory of routes/ has, in
-	## routes/+middleware.roc: a plugin's (the jobs page's). The app's own routes are guarded by their
-	## directory's `+middleware.roc`.
+	## not `/jobsite`); others pass by it, in a middleware that runs for more than those paths
+	## (routes/+middleware.roc). A route is better guarded by its directory's `+middleware.roc`, which
+	## every URL has (D-116: a package's handlers are the app's route files too).
 	under : Str, Middleware(c, c) -> Middleware(c, c)
 	under = |prefix, middleware| {
 		trimmed = prefix.drop_suffix("/")

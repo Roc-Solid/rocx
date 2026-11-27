@@ -1,6 +1,7 @@
 ## packages/stripe's example: an app that sells a subscription (Basic or Pro, monthly) and an e-book
-## (once), through Stripe's hosted Checkout. The plugin brings the rest (D-082): the webhook that
-## keeps its tables in step with Stripe, the customers, the Customer Portal, and what the app reads
+## (once), through Stripe's hosted Checkout. The plugin brings the rest (D-082), with the webhook a
+## route of the app's (routes/stripe/webhook/, the package's handler, D-116) that keeps its tables in
+## step with Stripe: the customers, the Customer Portal, and what the app reads
 ## to know who has paid for what. `Billing.on_event!` is the app's own part of each event: an
 ## e-book bought becomes an order. People sign in with packages/auth's dev sign-in (`rocx dev`: any
 ## address at once); `Accounts.admit!` keeps a row for each.
@@ -10,20 +11,17 @@
 ## e-book, for those who bought it (`/ebook`).
 app [program] { auth: "../../auth/main.roc", crypto: "../../crypto/main.roc", pf: platform "../../../server/platform/main.roc", stripe: "../main.roc" }
 
-import pf.Middleware
 import auth.Auth
 import stripe.Stripe
 import Generated/App
-import Accounts
-import Billing
 
 program = App.program({
 	init!: |_started| Ok({}),
 	plugins: [
-		Auth.plugin({ middleware: Middleware.none({}), admit!: Accounts.admit! }),
+		Auth.plugin({}),
 		# STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET, from the environment (README.md: the Stripe CLI's
 		# `stripe listen` gives the second).
-		Stripe.plugin({ middleware: Middleware.none({}), on_event!: Billing.on_event! }),
+		Stripe.plugin({}),
 	],
 	database: Sqlite("data/stripe.db"),
 })

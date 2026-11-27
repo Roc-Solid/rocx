@@ -5,14 +5,13 @@
 ## (`migrations/*.sql`, the USDA foods among them) embedded; this file says only what the routes
 ## can't (the middleware is routes/'s: `+middleware.roc` around every request, and the diary's): what
 ## every request's context starts as, its database, SQLite (D-045), and packages/auth, which keeps the sessions when the diary has a
-## password (`PLATE_PASSWORD`: Session.roc checks it, and starts a session itself, since the plugin
-## has no `admit!` and nobody signs in by a link or a provider). The browser's program is the same
+## password (`PLATE_PASSWORD`: Session.roc checks it, and starts a session itself, since the app has
+## no routes for links or providers and nobody signs in that way). The browser's program is the same
 ## pages, compiled to WebAssembly from the copy `rocx build --client` writes.
 app [program] { auth: "../../packages/auth/main.roc", charts: "../../packages/charts/main.roc", crypto: "../../packages/crypto/main.roc", forms: "../../packages/forms/main.roc", pf: platform "../../server/platform/main.roc", testing: "../../packages/testing/main.roc", tools: "../../packages/tools/main.roc" }
 
 import auth.Auth
 import Generated/App
-import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
@@ -21,6 +20,6 @@ program = App.program({
 	plugins: [
 		# A session lasts 90 days in the `plate_session` cookie, kept going while it is used; the
 		# sign-in page is the plugin's default, `/sign-in`.
-		Auth.plugin({ middleware: Middlewares.default, cookie: "plate_session", session_ms: 90 * 24 * 60 * 60 * 1000 }),
+		Auth.plugin({ cookie: "plate_session", session_ms: 90 * 24 * 60 * 60 * 1000 }),
 	],
 })

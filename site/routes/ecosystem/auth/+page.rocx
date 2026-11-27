@@ -38,8 +38,8 @@ view! = |_|
 			>
 				People sign in by a link mailed to their address, or at Google, GitHub or any OpenID Connect
 				provider, and with a code from an authenticator app too once they turn that on. Sessions live in
-				your app's database. Middleware hands the signed-in user to your routes. The package is a plugin,
-				and has no pages: your sign-in page is yours.
+				your app's database. Middleware hands the signed-in user to your routes. The package is a plugin
+				with handlers for your routes, and has no pages: your sign-in page is yours.
 			</PageHero>
 			<p>
 				Signing in is easy to write and easy to get wrong: tokens kept in plain text, links that work
@@ -54,11 +54,17 @@ view! = |_|
 				Its tests sign in every way, on SQLite and on Postgres, against a stand-in provider.
 			</p>
 			<p>
-				<strong>1. The plugin.</strong> Name the package in the app's header and list its plugin with your
-				<code>admit!</code>. The email plugin sends the links (with no SMTP server, under <code>--dev</code>,
-				they land in the <a href={"${Paths.ecosystem_email}#mailbox"}>dev mailbox</a>).
+				<strong>1. The plugin and its routes.</strong> Name the package in the app's header and list its
+				plugin, with the providers it offers. The email plugin sends the links (with no SMTP server, under
+				<code>--dev</code>, they land in the <a href={"${Paths.ecosystem_email}#mailbox"}>dev mailbox</a>).
 			</p>
 			<Code title={Sources.auth_example_main.file} source={Sources.auth_example_main.rocx} />
+			<p>
+				Each step of signing in is a route of yours (D-116), under <code>routes/auth/</code>, calling one of
+				the package's handlers, behind the middleware of the folder it is in, which must let a signed-out
+				request through. List the steps you use; <code>admit!</code> goes to the ones that let someone in:
+			</p>
+			<Code title="routes/auth/" source={"# [provider]/+server.roc: GET /auth/<provider>?then=…, off to a provider\nrespond! = |{ request, params, .. }| Auth.provider_route!(request, Accounts.providers, params.provider)\n# [provider]/callback/+server.roc: back from it (the redirect URI to register)\nrespond! = |{ request, params, .. }| Auth.callback_route!(request, Accounts.providers, params.provider, Accounts.admit!)\n# link/+server.roc: a mailed link\nrespond! = |{ request, .. }| Auth.link_route!(request, Accounts.admit!)\n# code/+server.roc: a sign-in's second factor\nrespond! = |{ request, .. }| Auth.code_route!(request)\n# sign-out/+server.roc\nrespond! = |{ request, .. }| Auth.sign_out_route!(request)\n# dev/+server.roc: any address, under --dev only\nrespond! = |{ request, .. }| Auth.dev_route!(request, Accounts.admit!)"} numbers={Bool.False} />
 			<p>
 				<strong>2. Who gets in.</strong> <code>admit!</code> is given who is signing in, and answers with your
 				id for their user, or why not. Here anyone gets in except addresses at <code>refused.example</code>, and
@@ -86,7 +92,7 @@ view! = |_|
 			<Code title={Sources.auth_example_sign_in.file} source={Sources.auth_example_sign_in.rocx} />
 			<p>
 				<strong>5. The page a link opens.</strong> With <code>link_page</code>, a mailed link opens your page,
-				which shows whom it signs in and posts the link to the plugin from a button. Some mail services
+				which shows whom it signs in and posts the link to your <code>/auth/link</code> route from a button. Some mail services
 				open every link in a message to check it, and a link that signed in when opened would be used up
 				before its person clicked it.
 			</p>
@@ -108,12 +114,14 @@ view! = |_|
 			</p>
 			<p>
 				<strong>Under <code>--dev</code>.</strong> <code>POST /auth/dev</code> with any <code>email</code> signs
-				it in at once, with no mail. Without <code>--dev</code> there is no such endpoint.
+				it in at once, with no mail. Without <code>--dev</code> the route answers 404, as if there were none.
+				It is for trying the app and for its tests; never start a server others can reach with
+				<code>--dev</code>.
 			</p>
 			<p>
 				<strong>Your own way.</strong> <code>{"Auth.sign_in!(answer, user)"}</code> starts a session for a user
 				you decided on yourself (a password you checked, a person picked from a list) and sets its cookie.
-				Without <code>admit!</code>, that is the only way in.
+				An app with no routes for links or providers signs people in this way alone.
 			</p>
 			<p>
 				The other ways end the same: <code>admit!</code> is asked, a session starts, and the browser goes on to

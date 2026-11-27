@@ -176,9 +176,11 @@ post! : { request : Server.Request, params : {}, context : Gate.Member, body : {
 ## Plugins and packages
 
 `main.roc` lists plugins: jobs and schedules (packages/jobs), email (packages/email), sign-in and
-sessions (packages/auth), files (packages/storage), AI (packages/ai) and more. Each package's
-README says what it adds, the settings it reads and its routes. Import a package's module by its
-name (`import auth.Auth`); never copy a package's code into the app.
+sessions (packages/auth), AI (packages/ai) and more. A plugin adds no routes (D-116): every URL is a
+file under `routes/`, and a package that answers requests (auth's sign-in steps, the jobs page,
+storage's signed links) offers handlers a route file calls with a one-line `respond!`. Each
+package's README says what it adds, the settings it reads and the route files it wants. Import a
+package's module by its name (`import auth.Auth`); never copy a package's code into the app.
 
 ## Deploying
 

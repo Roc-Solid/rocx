@@ -96,9 +96,9 @@ Where to look in the code for each Roc Solid feature the app uses.
 
 | Feature | Where |
 |---|---|
-| Sign-in as packages/auth's plugin, listed in `main.roc` with the app's `admit!`: anyone with a mailed link gets in, as the person with that address or someone new (with a notebook of their own). | `main.roc`, `Account.admit!`, `Store.person_for!` |
+| Sign-in by packages/auth: its plugin listed in `main.roc`, and its link step a route file of the app's, given the app's `admit!` (D-116): anyone with a mailed link gets in, as the person with that address or someone new (with a notebook of their own). | `main.roc`, `routes/auth/link/`, `Account.admit!`, `Store.person_for!` |
 | A sign-in link made by the plugin (`Auth.link!`: kept by its hash, good once, for 15 minutes) and mailed in the app's own words (`Email.send!`, packages/email's plugin). | `routes/sign-in/` (the page), `routes/api/sign-in/` (its endpoint), `Account.send_link!` |
-| The page a link opens: whom it signs in (`Auth.link_for!`, which doesn't use the link), and a plain form whose button posts the token to the plugin's `/auth/link`. A mail scanner that follows links doesn't use yours up. | `routes/sign-in/link/`, `routes/api/sign-in/link/` |
+| The page a link opens: whom it signs in (`Auth.link_for!`, which doesn't use the link), and a plain form whose button posts the token to `/auth/link` (`Auth.link_route!`). A mail scanner that follows links doesn't use yours up. | `routes/sign-in/link/`, `routes/api/sign-in/link/`, `routes/auth/link/` |
 | A sign-in that didn't work comes back to the sign-in page with `?error=` (a link used or expired, an address turned away), and the page says why. | `routes/sign-in/+page.rocx` (packages/auth's `SignInError.message`) |
 | Sessions kept by the plugin: a random token in the `notes_session` cookie, its hash in the database, for 30 days, kept going while in use. | `Middlewares.signed_in` (`Auth.required`), `Account.session!` |
 | Signing out, and signing out of every browser (every session of yours ended). | `routes/api/sign-out/` (`Auth.sign_out!`), `routes/(signed-in)/api/settings/everywhere/` (`Auth.sign_out_everywhere!`) |
@@ -114,7 +114,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 | MCP tools made from the JSON API's endpoints (`McpHttp.endpoint`). A tool's arguments fill the endpoint's path parameters too (`read_note`'s `id`), so an agent may do exactly what a script may, checked by the same code. | `Agents.roc` (`server`) |
 | The MCP server as a route, `/mcp` (its `respond!`), behind its directory's middleware; its tools are the JSON API's endpoints, sent with the MCP request's token through their own middleware. | `routes/mcp/`, `Agents.roc` |
 | A bearer token turned into its person, so a token never reaches another person's notes. Read-only tokens are refused for writes. | `Middlewares.agent`, `Notebook.writer`, `Store.roc` (every query names the person) |
-| The JSON API, and its OpenAPI document with Scalar to read it (`openapi: Page(Scalar, Middlewares.default)`), at `/openapi.json` and `/openapi.html`. | `routes/(api)/api/notes/`, `routes/(api)/api/search/`, `routes/(api)/api/me/`, `main.roc` |
+| The JSON API, and its OpenAPI document with Scalar to read it, at `/openapi.json` and `/openapi.html`: two route files of the app's (D-116), `OpenApi.document_route(request, Api.openapi)` and `OpenApi.page_route(request, Scalar)`. | `routes/(api)/api/notes/`, `routes/(api)/api/search/`, `routes/(api)/api/me/`, `routes/openapi.json/`, `routes/openapi.html/` |
 | Rate limits (packages/guard): sign-in links for each address, MCP calls for each token. | `Middlewares.mail_limit`, `Middlewares.agent_limit` |
 
 ### Search and Markdown

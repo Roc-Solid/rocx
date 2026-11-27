@@ -5,8 +5,10 @@ Sign-in for Roc Solid apps, as a plugin (D-072): by a link mailed to an address,
 app after that (two-factor sign-in, D-081). Sessions are kept in the app's database (Postgres,
 SQLite or Turso), as their token's hash. Middleware hands the signed-in user on to the routes.
 
-The package has no pages. The app's sign-in page posts to it and links to it, the app mails the
-links (packages/email), and the app's `admit!` says who gets in and which of its users they are.
+The package has no pages and no routes of its own. Its steps (a mailed link, a provider and back,
+the code, signing out, the dev sign-in) are handlers the app's route files call (D-116); the app's
+sign-in page posts to them and links to them, the app mails the links (packages/email), and the
+app's `admit!`, given to those routes, says who gets in and which of its users they are.
 What the package does is the part that is easy to get wrong: tokens, their hashes, their expiry and
 single use, cookies, OAuth's state, PKCE and nonce, the ID token's checks, where a sign-in may
 send the browser after, and authenticator codes (sealed secrets, a code good once, recovery codes,
@@ -18,7 +20,7 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
 ## Installing it
 
 1. Name the package in the app's header (it names the server platform, so only the server's half
-   of an app sees it), and list its plugin with the app's `admit!`:
+   of an app sees it), and list its plugin (its tables and settings) with the app's providers:
 
    ```roc
    app [program] { auth: "../packages/auth/main.roc", email: "../packages/email/main.roc", pf: platform "../server/platform/main.roc" }
@@ -27,15 +29,20 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
        init!: |_started| Ok({}),
        plugins: [
            Email.plugin({ from: "Acme <hello@example.com>" }),
-           Auth.plugin({ admit!: Accounts.admit!, middleware: Middlewares.default, providers: [Auth.google, Auth.github], link_page: "/sign-in/link" }),
+           Auth.plugin({ providers: Accounts.providers, link_page: "/sign-in/link" }),
        ],
        database: Sqlite("data/app.db"),
    })
    ```
 
-2. Write `admit!`: given who is signing in (`Auth.Identity`), the app's id for its user, or why not.
+2. In a module of the app's that main.roc and the routes both import (`Accounts.roc`), write the
+   providers and `admit!`: given who is signing in (`Auth.Identity`), the app's id for its user, or
+   why not.
 
    ```roc
+   providers : List(Auth.Provider)
+   providers = [Auth.google, Auth.github]
+
    admit! : Auth.Identity => Try(Str, Str)
    admit! = |identity|
        match identity.user {
@@ -44,7 +51,19 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
        }
    ```
 
-3. Put the middleware around the routes that need a signed-in user: a `+middleware.roc` in their
+3. Add a route file for each step the app uses (D-116), under `routes/auth/` (the plugin's `at`),
+   in no folder whose middleware turns a signed-out request away: these are how one signs in.
+   Each is one line, calling its handler ([The routes](#the-routes)):
+
+   ```roc
+   # routes/auth/[provider]/callback/+server.roc
+   import auth.Auth
+   import ../../../../Accounts
+
+   respond! = |{ request, params, .. }| Auth.callback_route!(request, Accounts.providers, params.provider, Accounts.admit!)
+   ```
+
+4. Put the middleware around the routes that need a signed-in user: a `+middleware.roc` in their
    directory guards every page, endpoint and channel in it and below it (a group, `(members)/`,
    adds nothing to their paths):
 
@@ -57,19 +76,17 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
    middleware = Middlewares.signed_in
    ```
 
-4. Write the sign-in page: a form whose endpoint calls `Auth.link!` and mails the URL, a link per
+5. Write the sign-in page: a form whose endpoint calls `Auth.link!` and mails the URL, a link per
    provider (`Auth.providers!`), and, with `link_page`, the page a mailed link opens.
 
 ## The plugin's options
 
 ```roc
-Auth.Options(context, ctx) := {
-    admit! : (Auth.Identity => Try(Str, Str)) ?? nobody!,  # who gets in by a link or a provider
-    middleware : Middleware(context, ctx),     # what the endpoints are behind (required, below)
-    at : Str ?? "/auth",                       # where the plugin's endpoints are
+Auth.Options := {
+    at : Str ?? "/auth",                       # where the app's route files for its steps are (routes/auth/)
     sign_in : Str ?? "/sign-in",               # the app's sign-in page
     home : Str ?? "/",                         # where a sign-in goes when it wasn't going anywhere
-    providers : List(Auth.Provider) ?? [],     # where else one may sign in
+    providers : List(Auth.Provider) ?? [],     # where else one may sign in: the list the provider routes get too
     session_ms : U64 ?? 2_592_000_000,         # how long a session lasts (30 days)
     link_ms : U64 ?? 900_000,                  # how long a mailed link is good for (15 minutes)
     link_page : Str ?? "",                     # the app's page a mailed link opens ("": /auth/link)
@@ -82,23 +99,22 @@ Auth.Options(context, ctx) := {
 }
 ```
 
-`middleware` is what the plugin's endpoints are behind, which the app must say (D-114: an app's `routes/+middleware.roc` isn't around a plugin's routes).
-They are how one signs in, so nothing there may send a signed-out request away: give the app's
-middleware that only adds headers or logs (`Middlewares.default`, as `rocx new` does), or
-`Middleware.none({})`. An app with `cross_site: Allowed` that checks forms in its own middleware
-gives the plugin that check too: its POSTs (`<at>/sign-out`, `<at>/link`, `<at>/code`) are forms.
+`at` is where the app put its route files: the plugin makes its links (a mailed link's URL) and a
+provider's redirect URI with it. It doesn't move the routes; the files' folder does. Keep
+`providers` in a module the provider routes import too (`Accounts.providers`), so both see one list.
 
-Without `admit!`, nobody signs in by a link, a provider or the dev sign-in: an app that checks a
-password of its own, or lets people pick who they are, starts sessions with `Auth.sign_in!` and
-uses the rest (the middleware, signing out, the sessions' table).
+An app that checks a password of its own, or lets people pick who they are, has no route for a
+link, a provider or the dev sign-in, so nobody signs in that way: it starts sessions with
+`Auth.sign_in!` and uses the rest (the middleware, signing out, the sessions' table).
 
-`admit!` runs inside the transaction that starts the session, with the identity's row. What it
-writes commits with the session, or with its refusal: a new user's row and a welcome job it queues
-when it lets someone in, a waiting list's row when it turns them away for now. A database error rolls
-all of it back. Keep anything slow (a fetch) out of it. A helper of the app's that opens its own
-`Db.transaction!` is fine inside `admit!`: it becomes a level of the sign-in's transaction (a
-savepoint, D-076), whose `Err` undoes only what the helper wrote. On Turso, a transaction that loses
-to another's write runs again, and `admit!` with it.
+`admit!` is given to the routes that sign someone in (`callback_route!`, `link_route!`,
+`dev_route!`). It runs inside the transaction that starts the session, with the identity's row.
+What it writes commits with the session, or with its refusal: a new user's row and a welcome job it
+queues when it lets someone in, a waiting list's row when it turns them away for now. A database
+error rolls all of it back. Keep anything slow (a fetch) out of it. A helper of the app's that
+opens its own `Db.transaction!` is fine inside `admit!`: it becomes a level of the sign-in's
+transaction (a savepoint, D-076), whose `Err` undoes only what the helper wrote. On Turso, a
+transaction that loses to another's write runs again, and `admit!` with it.
 
 ## Signing in
 
@@ -111,8 +127,8 @@ for `link_ms`.
   A mail scanner that opens every link in a message then can't use one up.
 - Without it, the URL is `/auth/link?token=…`, and opening it signs in.
 
-**At a provider.** The app's button links to `/auth/<provider>?then=…`. The plugin keeps a state, a
-PKCE verifier and a nonce in a cookie for ten minutes, and sends the browser to the provider.
+**At a provider.** The app's button links to `/auth/<provider>?then=…`. `provider_route!` keeps a
+state, a PKCE verifier and a nonce in a cookie for ten minutes, and sends the browser to the provider.
 Back at `/auth/<provider>/callback`, the state must be the one the browser kept. The code is traded
 at the provider's token endpoint (with the verifier and the client's secret), and who signed in is
 read: from the ID token (OpenID Connect: its issuer, audience, expiry and nonce checked; its address
@@ -120,7 +136,8 @@ taken only when the provider says it is verified), or from GitHub's API (the use
 primary verified address).
 
 **Under `--dev`.** `POST /auth/dev` with an `email` signs that address in, as a link would. Without
-`--dev` there is no such endpoint. `Auth.dev_sign_in!` says whether it is open, for the page.
+`--dev` it answers 404, as if there were no such route. `Auth.dev_sign_in!` says whether it is
+open, for the page.
 
 **The app's own way.** `Auth.sign_in!(answer, user)` starts a session for a user the app has
 decided on itself (a password it checked, a person picked from a list) and sets its cookie on
@@ -276,7 +293,7 @@ stop working, but recovery codes still sign in (and turn it off, to set it up ag
 
 ```roc
 Auth.Provider : {
-    name : Str,                                 # its endpoints: /auth/<name>, /auth/<name>/callback
+    name : Str,                                 # its routes: /auth/<name>, /auth/<name>/callback
     label : Str,                                # for the app's button
     flow : [Oidc(List(Str)), GitHub(Str)],      # the ID token's issuers, or GitHub's API
     authorize_url : Str,
@@ -296,21 +313,39 @@ Auth.Provider : {
 
 The public URL is the server's (`--public-url`, `PUBLIC_URL`), never a request's `Host`. A record
 update changes any part: `{ ..Auth.google, client_id_env: "ACME_GOOGLE_ID" }`. A provider whose client
-id is empty isn't offered (`Auth.providers!` leaves it out), and its endpoint sends the browser back
-to the sign-in page saying so. The names `link`, `dev` and `sign-out` are the plugin's own.
+id is empty isn't offered (`Auth.providers!` leaves it out), and its route sends the browser back
+to the sign-in page saying so. Don't name a provider `link`, `code`, `dev` or `sign-out`: those are
+the other steps' paths.
 
-## The endpoints
+## The routes
 
-Each answers with a redirect.
+Each step is a handler the app calls from a route file of its own (D-116), in `routes/auth/` for
+the default `at`, so the middleware of the folder it is in is around it, as around any route, and
+`rocx routes` lists it. An app writes only the files for the steps it uses (`rocx new`'s template
+has all six). Each answers with a redirect; a method it doesn't take, 405.
 
-| Endpoint | Does |
+```roc
+Auth.provider_route! : Server.Request, List(Auth.Provider), Str => Server.Response
+Auth.callback_route! : Server.Request, List(Auth.Provider), Str, (Auth.Identity => Try(Str, Str)) => Server.Response
+Auth.link_route! : Server.Request, (Auth.Identity => Try(Str, Str)) => Server.Response
+Auth.dev_route! : Server.Request, (Auth.Identity => Try(Str, Str)) => Server.Response
+Auth.code_route! : Server.Request => Server.Response
+Auth.sign_out_route! : Server.Request => Server.Response
+```
+
+| Route file: `respond! = \|{ request, .. }\| …` | Answers |
 | --- | --- |
-| `GET /auth/link?token=…`, `POST /auth/link` (`token`) | uses a mailed link: signed in, on to where it was going |
-| `GET /auth/<provider>?then=…` | off to the provider |
-| `GET /auth/<provider>/callback` | back from it: signed in, on to `then` |
-| `POST /auth/sign-out` (`then`) | the session ended, its cookie gone, on to `then` (else `home`) |
-| `POST /auth/dev` (`email`, `then`) | under `--dev` only: that address signed in |
-| `POST /auth/code` (`code`, `then`) | a sign-in's second factor: signed in, on to `then`; or back to the code page |
+| `routes/auth/link/+server.roc`: `Auth.link_route!(request, Accounts.admit!)` | `GET /auth/link?token=…`, `POST /auth/link` (`token`): uses a mailed link: signed in, on to where it was going |
+| `routes/auth/[provider]/+server.roc`: `Auth.provider_route!(request, Accounts.providers, params.provider)` | `GET /auth/<provider>?then=…`: off to the provider (404 for a name the list hasn't) |
+| `routes/auth/[provider]/callback/+server.roc`: `Auth.callback_route!(request, Accounts.providers, params.provider, Accounts.admit!)` | `GET /auth/<provider>/callback`: back from it: signed in, on to `then` |
+| `routes/auth/sign-out/+server.roc`: `Auth.sign_out_route!(request)` | `POST /auth/sign-out` (`then`): the session ended, its cookie gone, on to `then` (else `home`) |
+| `routes/auth/dev/+server.roc`: `Auth.dev_route!(request, Accounts.admit!)` | `POST /auth/dev` (`email`, `then`): under `--dev` only (404 otherwise): that address signed in |
+| `routes/auth/code/+server.roc`: `Auth.code_route!(request)` | `POST /auth/code` (`code`, `then`): a sign-in's second factor: signed in, on to `then`; or back to the code page |
+
+The provider routes read the path's `params` too (`respond! = |{ request, params, .. }| …`). Each
+file imports `auth.Auth` and the app's module (`import ../../../Accounts` from
+`routes/auth/link/`). These are how one signs in, so no folder they are in may turn a signed-out
+request away: keep them out of a group whose middleware is `Auth.required`.
 
 A sign-in that fails goes to the app's sign-in page with why, and where it was going (`&then=`):
 
@@ -331,7 +366,8 @@ A wrong code goes back to the code page with `?error=code`.
 
 | Function | Does |
 | --- | --- |
-| `plugin : Options(context, ctx) -> Plugin.Value(context)` | the plugin: its endpoints, its tables, its settings |
+| `plugin : Options -> Plugin.Value(context)` | the plugin: its tables and its settings (no routes, D-116) |
+| `provider_route!`, `callback_route!`, `link_route!`, `code_route!`, `sign_out_route!`, `dev_route!` | the steps, for the app's route files ([The routes](#the-routes)) |
 | `link! : Str, Str => Try(Str, [NotAnAddress, DbErr(Str), ..])` | a sign-in link for an address, going on to `then`: the URL to mail |
 | `link_for! : Str => Try({ email, then }, [Gone])` | whom a link signs in, without using it |
 | `session! : Server.Request => Try(Session, [SignedOut])` | the request's session |
@@ -383,9 +419,10 @@ Expired sessions, links and waiting sign-ins are swept as sessions start.
 
 - **Tokens** are 32 random bytes. Only their SHA-256 is kept, so a leaked table signs no one in.
   A link is used and deleted in one statement, so two clicks at once can't both use it.
-- **Cookies** are `HttpOnly` and `SameSite=Lax`, and `__Host-` and `Secure` on HTTPS. The posts the
-  plugin answers come from the app's pages: list `Middleware.same_origin({})` in the app's
-  middleware, as `rocx new` does, so another site's form is refused.
+- **Cookies** are `HttpOnly` and `SameSite=Lax`, and `__Host-` and `Secure` on HTTPS. The posts its
+  routes answer come from the app's pages: the platform refuses one another site's page sends
+  (`cross_site: Refused`, the default); an app that says `cross_site: Allowed` puts
+  `Middleware.same_origin({})` in the middleware of the folder its `auth/` routes are in.
 - **Where a sign-in goes after** is a path of this site, or `home`: never `//elsewhere`,
   `/\elsewhere`, `https://…`, or a path with a control character in it (a tab, a line break: a
   browser drops them from a URL as it reads one, so `/<tab>/elsewhere` would go to `//elsewhere`).

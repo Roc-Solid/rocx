@@ -327,20 +327,15 @@ view! = |_|
 
 			<Heading id="jobs-page">The jobs page</Heading>
 			<p>
-				The package also draws the queue of <a href={Paths.ecosystem_jobs}>packages/jobs</a>, as a plugin.
-				You list it beside the jobs plugin, with a <code>middleware</code>: all that decides who may see it,
-				usually what your admin pages' folder runs, as your <code>routes/+middleware.roc</code> isn't around
-				a plugin's routes. <code>middleware</code> has no default, so a jobs page is never public because an
-				option was left out.
+				The package also draws the queue of <a href={Paths.ecosystem_jobs}>packages/jobs</a>, on a route of
+				yours, as the tables admin is: put the route file in the folder your admin pages are in, so its
+				middleware decides who may see it, and give <code>mount</code> the route's path.
 			</p>
-			<Code source={"plugins: [\n\tJob.plugin({ jobs: App.jobs }),\n\tJobsPage.plugin({ at: \"/admin/jobs\", middleware: Middlewares.default.then(Middlewares.admin) }),   # at: \"/admin/jobs\" unless it says\n]"} numbers={Bool.False} />
+			<Code title="routes/(admin)/admin/jobs/+server.roc" source={"import admin.JobsPage\n\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\", back: { label: \"Status admin\", href: \"/admin\" } })"} numbers={Bool.False} />
 			<p>
-				A request at <code>at</code> passes the platform's cross-site check, then <code>middleware</code>, then
-				the page; what the middleware hands on isn't used. The page needs the jobs plugin, and the server says so at start if it
-				isn't listed. <code>back</code> adds a link back to your app's pages, as the tables admin's option does
-				(<code>{"JobsPage.plugin({ middleware, back: { label: \"Status admin\", href: \"/admin\" } })"}</code>). To
-				mount the page yourself, answer a route with <code>{"JobsPage.respond!(request, { mount })"}</code>
-				(<code>back</code> is optional there too). The jobs page's own section says
+				A request there passes the app's middleware, then the folder's, then the page. The page needs the
+				jobs plugin listed. <code>back</code> adds a link back to your app's pages, as the tables admin's
+				option does; none unless you give one. The jobs page's own section says
 				<a href={"${Paths.ecosystem_jobs}#page"}>what it shows and does</a>.
 			</p>
 			<p>
@@ -369,7 +364,7 @@ view! = |_|
 						<tr><td><code>View</code></td><td>each page's HTML: <code>index_page</code>, <code>list_page</code>, <code>row_page</code>, <code>delete_page</code>, <code>problem_page</code>, <code>problems_page</code>, and the sidebar (<code>side</code>)</td></tr>
 						<tr><td><code>Look</code></td><td>the admin look: the rules every admin page shares (<code>shared</code>) and its helpers (<code>side</code>, <code>header</code>, <code>panel</code>, <code>empty</code>, <code>icon</code>, <code>button_with</code>), light and dark; the tables admin's own rules, its document, and the headers it is sent with</td></tr>
 						<tr><td><code>Form</code></td><td>a query's or a form's fields, decoded, and links, encoded</td></tr>
-						<tr><td><code>JobsPage</code></td><td>the jobs page: <code>{"plugin({ at, middleware, back })"}</code>, or <code>{"respond!(request, { mount, back })"}</code> for an app that mounts it itself (server only)</td></tr>
+						<tr><td><code>JobsPage</code></td><td>the jobs page: <code>{"respond!(request, { mount, back })"}</code>, from a route of the app's (server only)</td></tr>
 						<tr><td><code>AdminHtml</code></td><td>the server's admin pages (the jobs page, the dev mailbox), on <code>Look</code>: a page with its stream of changes, times, links (server only)</td></tr>
 					</tbody>
 				</table>

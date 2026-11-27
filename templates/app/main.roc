@@ -13,7 +13,6 @@ import auth.Auth
 import email.Email
 import Generated/App
 import Accounts
-import Middlewares
 
 program = App.program({
 	init!: |_started| Ok({}),
@@ -22,12 +21,14 @@ program = App.program({
 		# and anywhere else the server doesn't start. Put an address here that your mail service lets
 		# you send from.
 		Email.plugin({ from: "{{title}} <hello@example.com>" }),
-		# Signing in (packages/auth): a mailed link opens /sign-in/link, and `Accounts.admit!` says
-		# which user someone is. A provider is offered once its environment variables are set.
+		# Signing in (packages/auth): its tables and settings. Its steps are routes of the app's, in
+		# routes/auth/ (a mailed link, a provider and back, the code, signing out, the dev sign-in),
+		# where `Accounts.admit!` says which user someone is. A mailed link opens /sign-in/link; a
+		# provider of `Accounts.providers` is offered once its environment variables are set.
 		# Two-factor sign-in, for those who turn it on: their sign-in waits at /sign-in/code for the
 		# code their authenticator app shows. Its secrets are sealed under a key from APP_SECRET:
 		# set it where the server runs (`rocx dev` makes do without).
-		Auth.plugin({ middleware: Middlewares.default, admit!: Accounts.admit!, providers: [Auth.google, Auth.github], link_page: "/sign-in/link", cookie: "{{name}}_session", two_factor: Bool.True, issuer: "{{title}}" }),
+		Auth.plugin({ providers: Accounts.providers, link_page: "/sign-in/link", cookie: "{{name}}_session", two_factor: Bool.True, issuer: "{{title}}" }),
 	],
 	# Where the data is: `Sqlite("data/app.db")`, a file beside the server; `Turso("data/app.db")`,
 	# the same on Turso's engine; or `Postgres`, at DATABASE_URL.

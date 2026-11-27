@@ -1,8 +1,8 @@
 # posthog
 
 Send a Roc Solid app's errors to [PostHog's error tracking](https://posthog.com/docs/error-tracking).
-Everything runs in the app: a middleware, a plugin's routes and a background loop. It needs nothing
-from the platform beyond what any plugin has. The user guide is the docs site's
+Everything runs in the app: a middleware, two handlers for the app's route files and a plugin's
+background loop. It needs nothing from the platform beyond what any plugin has. The user guide is the docs site's
 [PostHog page](https://roc-solid.github.io/ecosystem/posthog); this file is the reference.
 
 It reports four kinds of error:
@@ -32,7 +32,8 @@ costs nothing.
 ## Installing it
 
 The package names the server platform, so only the server's half of an app sees it. Name it in the
-app's header, add the plugin, give the jobs plugin `PostHog.job_failed!`, and put the middleware in
+app's header, add the plugin, give the jobs plugin `PostHog.job_failed!`, add the two route files
+for the page's script and where it sends errors (D-116), and put the middleware in
 `routes/+middleware.roc`, the one around every request:
 
 ```roc
@@ -47,10 +48,27 @@ program = App.program({
 	init!: |started| Ok({ facts: started }),
 	plugins: [
 		Job.plugin({ jobs: App.jobs, on_failed!: PostHog.job_failed! }),
-		PostHog.plugin({ middleware: Middleware.none({}) }),
+		PostHog.plugin({}),
 	],
 })
 ```
+
+```roc
+# routes/rocx-errors.js/+server.roc: the page's script, which sends to its own path without .js
+import posthog.PostHog
+
+respond! = |{ request, .. }| PostHog.script_route(request)
+```
+
+```roc
+# routes/rocx-errors/+server.roc: where the script sends errors
+import posthog.PostHog
+
+respond! = |{ request, .. }| PostHog.errors_route!(request)
+```
+
+Every page sends its errors there, so keep the two files out of a folder whose middleware turns a
+signed-out visitor away.
 
 ```roc
 # routes/+middleware.roc
@@ -75,24 +93,27 @@ All of it is in the `PostHog` module (`import posthog.PostHog`).
 
 | Function | What it does |
 | --- | --- |
-| `plugin : Options(context, ctx) -> Plugin.Value(context)` | The plugin: the browser's script (`GET <at>.js`), where it sends errors (`POST <at>`), the loop that sends what was kept (`posthog.send`), and a check that logs, once the server has started, where errors go or `off: no POSTHOG_KEY` (`posthog.reporting`). |
+| `plugin : Options -> Plugin.Value(context)` | The plugin: the loop that sends what was kept (`posthog.send`), and a check that logs, once the server has started, where errors go or `off: no POSTHOG_KEY` (`posthog.reporting`). No routes (D-116): the two below are the app's. |
+| `script_route : Server.Request -> Server.Response` | The page's script, for `routes/rocx-errors.js/+server.roc`: a GET (HEAD too); 405 for any other method. It sends a page's uncaught errors, rejected promises and hydration mismatches to its own path without `.js`. |
+| `errors_route! : Server.Request => Server.Response` | Where the script sends an error, for `routes/rocx-errors/+server.roc`: a POST of JSON (at most 16 KiB), kept for the loop to send; 405 for any other method. |
 | `middleware : (context -> Str) -> Middleware(context, context)` | Reports every answer with a 5xx status that passes through it. The function names who asked, from the context the middleware before it handed on (`""` for nobody known). Put it after the middleware that knows who is signed in, or first, with `\|_\| ""`. |
 | `capture! : Str, fields => {}` | Reports an error the app dealt with, with fields (a record, as `Log.error!` takes them). While answering a request, the report also carries the request's path and method. |
 | `capture_for! : Str, Str, fields => {}` | `capture!` for a person the app knows (the first argument, as the app names them), so PostHog counts the people an issue reached. |
 | `job_failed! : { kind : Str, id : I64, attempts : U64, error : Str } => {}` | Reports a job that failed for good. Give it to the jobs plugin as `on_failed!`. |
 
-`Options` (every field optional but `middleware`):
+`Options` (every field optional):
 
 | Option | Environment | Default |
 | --- | --- | --- |
-| `middleware` | | none: required. What the script and `POST <at>` are behind; the app's `routes/+middleware.roc` isn't around a plugin's routes (D-114). Every page sends its errors there, so `Middleware.none({})` |
 | `key` | `POSTHOG_KEY` | none: reporting is off |
 | `host` | `POSTHOG_HOST` | `https://us.i.posthog.com` (`https://eu.i.posthog.com` for EU Cloud) |
 | `release` | `POSTHOG_RELEASE` | none (set it to the commit a build is from) |
-| `at` | | `/rocx-errors` (its script at `/rocx-errors.js`) |
 | `interval_ms` | | `10000` (at least 100) |
 
-An option given in `PostHog.plugin({ … })` wins over the environment.
+An option given in `PostHog.plugin({ … })` wins over the environment. Where the script and its
+errors go is where the app's two route files are: the script sends to its own path without `.js`,
+so they go side by side (`routes/rocx-errors.js/`, `routes/rocx-errors/`), and the layout's
+`<script src>` names the first.
 
 The package also exposes `Event` (the `$exception` event and the batch body) and `Fingerprint`
 (`of` and `normalized`, below), which the plugin uses and its tests check.
