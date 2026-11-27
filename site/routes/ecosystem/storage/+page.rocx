@@ -31,19 +31,19 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/storage</code>]}
 				title="Files, in S3 or beside the server"
 			>
-				Uploads, avatars, videos: files that don't belong in the database go in a bucket. This package keeps a
-				file, reads it back whole or in part, uploads a large one in parts, hands out links the browser uploads
-				or downloads with directly, and serves a file of any size to the browser, ranges included.
+				Uploads, avatars, videos: files that don't belong in the database go in a bucket. This package keeps
+				a file, reads it back whole or in part, uploads a large one in parts, hands out links the browser
+				uploads or downloads with directly, and serves a file of any size, ranges included.
 			</PageHero>
 			<p>
-				Use it whenever your server needs to keep files. The bucket can be any S3 (AWS, Cloudflare R2, or
-				rustfs or MinIO on your machine), a directory beside the server, or the server's memory for tests. A
-				URL picks which, and your code is the same for all three. The package runs on the server only; the
-				browser reaches the files through links and answers your server gives it.
+				The bucket can be any S3 (AWS, Cloudflare R2, or rustfs or MinIO on your machine), a directory beside
+				the server, or the server's memory for tests. A URL picks which; your code is the same for all three.
+				The package runs on the server only. The browser reaches the files through links and answers your
+				server gives it.
 			</p>
 			<p>
-				The samples on this page come from <code>server/test/app/Samples.roc</code>. The server platform's
-				tests run them on memory, on a directory, and on a real S3 bucket when one is configured.
+				The samples come from <code>server/test/app/Samples.roc</code>, which the server platform's tests run
+				on memory, on a directory, and on a real S3 bucket when one is configured.
 			</p>
 
 			<Heading id="bucket">A bucket</Heading>
@@ -54,14 +54,12 @@ view! = |_|
 				numbers={Bool.False}
 			/>
 			<p>
-				Then make a bucket from its URL. Keep the URL in the server's environment (here,
-				<code>STORAGE_URL</code>) and make the bucket where you need it:
+				Then make a bucket from its URL, kept in the server's environment (here <code>STORAGE_URL</code>):
 			</p>
 			<Code title={"${Sources.platform_files.file}, in part"} source={Sources.platform_files.rocx} numbers={Bool.False} />
 			<p>
-				<code>Storage.from_url</code> only reads the URL; it doesn't contact the bucket. An empty URL, or one
-				it can't read, is a <code>StorageErr</code> that says what is wrong. The URL's scheme picks the
-				backend:
+				<code>Storage.from_url</code> only reads the URL; it doesn't contact the bucket. An empty or unreadable
+				URL is a <code>StorageErr</code> that says what is wrong. The URL's scheme picks the backend:
 			</p>
 			<Code
 				title="STORAGE_URL"
@@ -71,151 +69,149 @@ view! = |_|
 			/>
 			<ul>
 				<li>
-					<strong>S3</strong> (<code>s3://</code>). The URL's path is the bucket's name. <code>region</code> is
-					the region the keys sign for: <code>us-east-1</code> if you leave it out, <code>auto</code> for R2.
+					<strong>S3</strong> (<code>s3://</code>). The URL's path is the bucket's name. <code>region</code>
+					is the region the keys sign for: <code>us-east-1</code> if left out, <code>auto</code> for R2.
 					<code>style=path</code> puts the bucket in the request's path, as rustfs and MinIO want; without it,
 					the bucket goes in the host name, as AWS and R2 prefer. <code>tls=no</code> uses plain
-					<code>http</code>. Write any character the URL would otherwise misread as <code>%XX</code>. Any other
+					<code>http</code>. Write any character the URL would misread as <code>%XX</code>. Any other
 					parameter is refused, so a typo such as <code>stlye=path</code> fails at once.
 				</li>
 				<li>
 					<strong>A directory</strong> (<code>file:data/uploads</code>, relative to where the server starts;
-					created if missing). Each file is a real file at its key. It is written to a temporary file first
-					and then moved into place, so a crash never leaves half a file. Its content type and ETag are kept
-					beside it, in <code>.storage/</code>. A directory suits an app on one server, as SQLite does
+					created if missing). Each file is a real file at its key, written to a temporary file and then moved
+					into place, so a crash never leaves half a file. Its content type and ETag are kept beside it, in
+					<code>.storage/</code>. A directory suits an app on one server, as SQLite does
 					(<a href={Paths.platform_database}>the database</a>); in production, put it on a volume.
 				</li>
 				<li>
 					<strong>Memory</strong> (<code>memory:</code>, or <code>memory:name</code> for a separate bucket).
-					Everything is gone when the server stops. Use it in tests, which then need no S3.
+					Gone when the server stops. Use it in tests, which then need no S3.
 				</li>
 			</ul>
 			<p>
-				A directory or memory URL may also give <code>secret</code>, the key its signed links are made with
-				(see <a href="#signed">Signed links</a>). Without it, the server picks a random one each time it
-				starts, and links it gave out before a restart stop working.
+				A directory or memory URL may also give <code>secret</code>, the key for its
+				<a href="#signed">signed links</a>. Without it, the server picks a random one at each start, and links
+				given out before a restart stop working.
 			</p>
 			<p>
-				<code>Storage.check!(bucket)</code> asks whether the bucket answers. For S3, it checks that the keys
-				work for this bucket; for a directory, that it can be written to; memory always answers. Call it from
-				a health check, so a wrong URL shows before the first upload.
+				<code>Storage.check!(bucket)</code> asks whether the bucket answers: for S3, that the keys work for
+				this bucket; for a directory, that it can be written to; memory always answers. Call it from a health
+				check, so a wrong URL shows before the first upload.
 			</p>
 
 			<Heading id="objects">Keeping a file</Heading>
 			<p>
 				A file in a bucket is an object, stored under a key: its name in the bucket, slashes included
-				(<code>avatars/ada</code>). Its bytes are a <code>List(U8)</code>. This sample keeps a member's avatar,
-				describes it, and reads it back:
+				(<code>avatars/ada</code>). Its bytes are a <code>List(U8)</code>.
 			</p>
 			<Code title={"${Sources.platform_avatar.file}, in part"} source={Sources.platform_avatar.rocx} numbers={Bool.False} />
 			<ul>
 				<li>
-					<code>{"Storage.put!(bucket, key, bytes, { content_type })"}</code> keeps a file under a key, replacing
-					whatever was there.
+					<code>{"Storage.put!(bucket, key, bytes, { content_type })"}</code> keeps a file under a key,
+					replacing whatever was there.
 				</li>
 				<li>
 					<code>{"Storage.put_upload!(bucket, key, upload)"}</code> keeps a file a form sent, as
 					<code>{"Server.file(request, \"photo\")"}</code> reads it (<a href={"${Paths.calls}#forms"}>forms</a>),
-					with the type the browser gave.
+					with the browser's type.
 				</li>
 				<li>
-					<code>Storage.get!(bucket, key)</code> reads a file whole. From S3, a file larger than 64 MiB is
-					refused; read it in pieces instead.
+					<code>Storage.get!(bucket, key)</code> reads a file whole. From S3, a file over 64 MiB is refused;
+					read it in pieces instead.
 				</li>
 				<li>
-					<code>{"Storage.get_range!(bucket, key, { offset, length })"}</code> reads a piece of a file, and also
+					<code>{"Storage.get_range!(bucket, key, { offset, length })"}</code> reads a piece of a file and
 					answers the file's whole size, so you can read a large one piece by piece.
 				</li>
 				<li>
-					<code>Storage.head!(bucket, key)</code> describes a file without reading its bytes: its size, its
-					content type and its ETag. For a file put whole, the ETag is its MD5, on every backend.
+					<code>Storage.head!(bucket, key)</code> describes a file without reading it: its size, content type
+					and ETag. For a file put whole, the ETag is its MD5, on every backend.
 				</li>
 				<li>
-					<code>Storage.delete!(bucket, key)</code> deletes a file. Deleting a file that isn't there is
+					<code>Storage.delete!(bucket, key)</code> deletes a file. Deleting a missing file is
 					<code>Ok</code>, so a cleanup can safely run twice.
 				</li>
 			</ul>
 			<p>
 				On a directory or memory bucket, a key must be a plain path, so it can never reach outside the
-				directory. An empty key is refused, and so is one with an empty segment (a leading <code>/</code>, or
-				<code>a//b</code>), a <code>.</code> or <code>..</code> segment, or one that starts with
-				<code>.storage</code>.
+				directory. Refused: an empty key, an empty segment (a leading <code>/</code>, or <code>a//b</code>), a
+				<code>.</code> or <code>..</code> segment, and a key that starts with <code>.storage</code>.
 			</p>
 
 			<Heading id="parts">A large file, in parts</Heading>
 			<p>
-				A video is too large to send in one request. A multipart upload sends it in numbered parts and then
-				puts them together:
+				A video is too large for one request. A multipart upload sends it in numbered parts, then joins them:
 			</p>
 			<Code title={"${Sources.platform_parts.file}, in part"} source={Sources.platform_parts.rocx} numbers={Bool.False} />
 			<ol>
 				<li><code>Storage.start_upload!</code> starts the upload and answers its id.</li>
 				<li>
 					<code>Storage.upload_part!</code> sends one part by its number (1 to 10,000) and answers the part's
-					ETag. Sending the same number again replaces that part.
+					ETag. Sending a number again replaces that part.
 				</li>
 				<li>
-					<code>Storage.finish_upload!</code> joins the parts you list, in the order of their numbers, into one
-					file. A part listed with an ETag that isn't its own is refused, and a part you don't list is dropped.
-					The file's ETag is the MD5 of the parts' MD5s and their count (<code>…-3</code>), as S3 makes it.
+					<code>Storage.finish_upload!</code> joins the parts you list, in number order, into one file. A part
+					listed with an ETag that isn't its own is refused, and a part you don't list is dropped. The file's
+					ETag is the MD5 of the parts' MD5s and their count (<code>…-3</code>), as S3 makes it.
 				</li>
 			</ol>
 			<p>
-				<code>Storage.abort_upload!</code> drops an upload and every part sent so far. On S3, every part but the
-				last must be 5 MiB or more; S3 refuses a smaller one at the end with <code>EntityTooSmall</code>.
+				<code>Storage.abort_upload!</code> drops an upload and its parts. On S3, every part but the last must
+				be 5 MiB or more; S3 refuses a smaller one at the end with <code>EntityTooSmall</code>.
 			</p>
 
 			<Heading id="signed">Signed links</Heading>
 			<p>
 				A signed link lets the browser upload or download one file directly, without your server code in the
-				middle. Anyone holding the link can make that one request until it expires, so treat it as a secret.
+				middle. Anyone holding it can make that one request until it expires, so treat it as a secret.
 			</p>
 			<Code title={"${Sources.platform_upload_link.file}, in part"} source={Sources.platform_upload_link.rocx} numbers={Bool.False} />
 			<p>
 				<code>{"Storage.signed_url!(bucket, key, { method, expires_s })"}</code> makes a link for a
-				<code>GET</code> or a <code>PUT</code> of that key, valid for <code>expires_s</code> seconds: at least
-				1, at most a week. Anything else is <code>BadExpiry</code>.
+				<code>GET</code> or a <code>PUT</code> of that key, valid for <code>expires_s</code> seconds, from 1
+				up to a week. Anything else is <code>BadExpiry</code>.
 			</p>
 			<ul>
 				<li>
-					<strong>On S3</strong> it is S3's own presigned URL. The browser talks to S3 itself, so your server
-					never holds the bytes. Only the host is signed, so a <code>PUT</code> may send any content type.
+					<strong>On S3</strong> it is S3's own presigned URL. The browser talks to S3, so your server never
+					holds the bytes. Only the host is signed, so a <code>PUT</code> may send any content type.
 				</li>
 				<li>
-					<strong>On a directory or memory</strong> it is a link to your own app, at
-					<code>/_storage</code> under its public URL. A route of yours answers it there (D-116), calling the
-					package's handler; each link is signed, so the route needs no middleware of yours:
+					<strong>On a directory or memory</strong> it is a link to your own app, at <code>/_storage</code>
+					under its public URL. A route of yours answers it there (D-116) by calling the package's handler.
+					Each link is signed, so the route needs no middleware of yours:
 				</li>
 			</ul>
 			<Code title="routes/_storage/+server.roc" source={"import storage.Storage\n\n# The signed links of the bucket STORAGE_URL names.\nrespond! = |{ request, .. }| Storage.signed_route!(request, \"STORAGE_URL\")"} numbers={Bool.False} />
 			<p>
-				The handler reads the bucket from the variable it is given (<code>STORAGE_URL</code> here). Before it serves the file (ranges included) or keeps the one sent, it checks
-				the link's method, that it hasn't expired, and its signature: an HMAC-SHA256 of the method, the key
-				and the expiry, made with the bucket's <code>secret</code>. A link it didn't make, one that was
-				changed, or one that has expired gets a 403. A <code>PUT</code> through the route is an ordinary
-				request body, so it is limited to 16 MiB unless the server's <code>--max-body</code> allows more; send
-				larger files in parts. For an S3 bucket the route has nothing to answer: S3 answers its own links.
+				The handler reads the bucket from the variable it is given (<code>STORAGE_URL</code> here). Before it
+				serves the file (ranges included) or keeps the one sent, it checks the link's method, its expiry and
+				its signature: an HMAC-SHA256 of the method, the key and the expiry, made with the bucket's
+				<code>secret</code>. A link it didn't make, a changed one or an expired one gets a 403. A
+				<code>PUT</code> through the route is an ordinary request body, so it is limited to 16 MiB unless the
+				server's <code>--max-body</code> allows more; send larger files in parts. For an S3 bucket the route
+				has nothing to answer: S3 answers its own links.
 			</p>
 
 			<Heading id="serve">Serving one</Heading>
 			<Code title={"${Sources.platform_serve.file}, in part"} source={Sources.platform_serve.rocx} numbers={Bool.False} />
 			<p>
-				<code>{"Storage.serve!(bucket, key, request, { content_type, cache_control })"}</code> answers a request
-				with a file of any size. The bytes never pass through Roc:
+				<code>{"Storage.serve!(bucket, key, request, { content_type, cache_control })"}</code> answers a
+				request with a file of any size. The bytes never pass through Roc:
 			</p>
 			<ul>
 				<li>
-					From S3, the answer is a forward: the server asks S3 for the file and streams it to the browser as it
-					arrives (<a href={"${Paths.platform_http}#forward"}>a body from elsewhere</a>).
+					From S3, the answer is a forward: the server streams the file from S3 to the browser as it arrives
+					(<a href={"${Paths.platform_http}#forward"}>a body from elsewhere</a>).
 				</li>
 				<li>From a directory or memory, the server sends the file it keeps (<code>Server.stored</code>).</li>
 			</ul>
 			<p>
 				The request's <code>Range</code> and <code>If-None-Match</code> headers are passed on, so a video
-				player's range requests get 206 answers and a browser's cache gets its 304s. A file that isn't there is
-				a 404. An empty <code>content_type</code> sends the type the file was stored with, and an empty
-				<code>cache_control</code> sends none. Because the headers are read from the request record, you can
-				change them first: <code>serve_whole!</code> above drops the range to always send the whole file.
+				player's range requests get 206s and a browser's cache gets its 304s. A missing file is a 404. An
+				empty <code>content_type</code> sends the type the file was stored with, and an empty
+				<code>cache_control</code> sends none. The headers come from the request record, so you can change
+				them first: <code>serve_whole!</code> above drops the range to always send the whole file.
 			</p>
 
 			<Heading id="errors">Errors</Heading>
@@ -229,27 +225,27 @@ view! = |_|
 					<code>Storage.said(refusal)</code> writes one as a line for the log.
 				</li>
 				<li>
-					<code>StorageErr(why)</code>: S3 didn't answer, or answered too late; a file couldn't be written; or
-					the key isn't valid. <code>Storage.from_url</code> gives one too, for a missing or unreadable URL.
+					<code>StorageErr(why)</code>: S3 didn't answer, or answered too late; a file couldn't be written;
+					or the key isn't valid. <code>Storage.from_url</code> gives one too, for a missing or unreadable URL.
 				</li>
 			</ul>
 			<p>
-				A directory or memory bucket gives a <code>StorageErr</code> where S3 would give an
-				<code>S3Err</code> (a part listed with the wrong ETag, say). A range that starts past a file's end is
-				no bytes on a directory or memory, and <code>InvalidRange</code> on S3.
+				A directory or memory bucket gives a <code>StorageErr</code> where S3 gives an <code>S3Err</code> (a
+				part listed with the wrong ETag, say). A range that starts past a file's end is no bytes on a
+				directory or memory, and <code>InvalidRange</code> on S3.
 			</p>
 
 			<Heading id="how">How it works</Heading>
 			<p>
 				For S3, the package signs each request itself with AWS Signature Version 4 (its <code>SigV4</code>
-				module, checked against AWS's own worked examples) and sends it with the server platform's
-				<code>Http.send!</code> (<a href={"${Paths.platform_http}#out"}>asking another server</a>). Requests time
-				out after 30 seconds, or 5 minutes for one that carries or reads a file. <code>put!</code> signs its
-				body's SHA-256, so S3 refuses the file if anything changed on the way.
+				module, checked against AWS's worked examples) and sends it with the server platform's
+				<code>Http.send!</code> (<a href={"${Paths.platform_http}#out"}>asking another server</a>). Requests
+				time out after 30 seconds, or 5 minutes for one that carries or reads a file. <code>put!</code> signs
+				its body's SHA-256, so S3 refuses the file if anything changed on the way.
 			</p>
 			<p>
 				For a directory or memory, the server's host keeps the files (the platform's <code>Blobs</code>
-				module). It reads and writes them on its threads for blocking work, so a call waiting on a file
+				module), reading and writing them on its threads for blocking work, so a call waiting on a file
 				doesn't hold up other Roc calls. A multipart upload keeps its parts under <code>.uploads/</code> until
 				it is finished or aborted.
 			</p>
@@ -260,8 +256,8 @@ view! = |_|
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong>Whole files in memory:</strong> <code>put!</code> and <code>get!</code> hold the whole file in
-					memory. Read a large one with <code>get_range!</code>, or send it to the browser with
+					<strong>Whole files in memory:</strong> <code>put!</code> and <code>get!</code> hold the whole file
+					in memory. Read a large one with <code>get_range!</code>, or send it to the browser with
 					<code>serve!</code>.
 				</li>
 				<li><strong>No listing</strong> of a bucket's files, and no copying a file to another key.</li>

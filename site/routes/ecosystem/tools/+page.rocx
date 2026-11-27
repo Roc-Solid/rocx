@@ -25,10 +25,10 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/tools</code>]}
 				title="Tools, made once, for any model"
 			>
-				A tool is something a model can do through your app: a name, what it does, the JSON Schema of its
+				A tool is something a model can do through your app: a name, a description, the JSON Schema of its
 				arguments, and the function that does it. This package holds that definition, what a tool answers,
-				and a JSON value read a field at a time. It is plain Roc on no platform, and it is what both
-				<a href={Paths.ecosystem_ai}>the AI package</a> and <a href={Paths.ecosystem_mcp}>the MCP package</a> import.
+				and a JSON value read a field at a time. It is plain Roc on no platform, imported by both
+				<a href={Paths.ecosystem_ai}>the AI package</a> and <a href={Paths.ecosystem_mcp}>the MCP package</a>.
 			</PageHero>
 
 			<Heading id="install">Installing it</Heading>
@@ -40,13 +40,13 @@ view! = |_|
 			/>
 			<p>
 				Then <code>import tools.Tool</code> where you make tools, and <code>import tools.JsonValue</code>
-				where you read JSON whose shape no record names (keys with dashes, a field that is sometimes a
-				number and sometimes text).
+				where you read JSON no record describes (keys with dashes, a field that is sometimes a number and
+				sometimes text).
 			</p>
 
 			<Heading id="once">One tool, two ways in</Heading>
 			<p>
-				A tool made once is used wherever a model asks for it. Given to an agent, Claude uses it from your
+				A tool made once works wherever a model asks for it. Given to an agent, Claude uses it from your
 				server; given to an MCP server, an AI client (Claude, an editor) calls it over the protocol:
 			</p>
 			<Code
@@ -56,9 +56,9 @@ view! = |_|
 			/>
 			<p>
 				<code>Ai.tool</code>, and the MCP package's <code>McpHttp.tool</code> and
-				<code>McpHttp.endpoint</code>, write a tool's arguments' schema from their Roc type, as the platform
-				writes <code>/openapi.json</code>'s. A tool checks its arguments against that type before it runs:
-				arguments that don't fit go back to the model as a tool error it can act on, as does the tool's own
+				<code>McpHttp.endpoint</code>, write the arguments' schema from their Roc type, as the platform writes
+				<code>/openapi.json</code>'s. A tool checks its arguments against that type before it runs. Arguments
+				that don't fit go back to the model as a tool error it can act on, as does the tool's own
 				<code>Err</code>.
 			</p>
 
@@ -79,21 +79,21 @@ view! = |_|
 			</p>
 
 			<p>
-				A tool can say what a person is shown while it runs: <code>{"tool.doing(\"Looking for your info…\")"}</code>.
+				A tool can say what a person sees while it runs: <code>{"tool.doing(\"Looking for your info…\")"}</code>.
 				When a call asks the AI package for <a href={"${Paths.ecosystem_ai}#updates"}>updates</a>, each tool
-				that starts to run is a <code>Tool.Update</code> its page can show (<code>Using</code>, with that line),
-				as is each note the model writes between its tool calls (<code>Progress</code>). An agent used as a
-				tool is run with a listener (<code>with_listener</code>), so its own updates reach the page too.
+				that starts is a <code>Tool.Update</code> its page can show (<code>Using</code>, with that line), and
+				so is each note the model writes between tool calls (<code>Progress</code>). An agent used as a tool
+				runs with a listener (<code>with_listener</code>), so its own updates reach the page too.
 			</p>
 
 			<Heading id="limits">What isn't here</Heading>
 			<ul>
 				<li>
 					<code>Tool.typed</code> takes the schema as text: the writer that makes one from a type is the
-					server platform's, and this package names no platform. Make tools with <code>Ai.tool</code> or
-					<code>McpHttp.tool</code> to have it written for you.
+					server platform's, and this package names no platform. <code>Ai.tool</code> and
+					<code>McpHttp.tool</code> write it for you.
 				</li>
-				<li>Resources and prompts are MCP's alone: they stay in the MCP package.</li>
+				<li>Resources and prompts are MCP's alone, so they stay in the MCP package.</li>
 			</ul>
 		</NoHydration>
 	</>

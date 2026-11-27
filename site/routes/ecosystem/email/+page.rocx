@@ -32,15 +32,14 @@ view! = |_|
 				title="Email that goes out over SMTP, or waits in a mailbox while you develop"
 			>
 				A welcome, a sign-in link, a receipt: <code>Email.send!</code> hands a message to your SMTP server,
-				as text or as text and HTML. While you develop you don't set an SMTP server, so the message is
-				kept in the server's memory instead, and the dev mailbox shows it. Nothing reaches a real inbox by
-				accident, and nothing is lost by accident either: a deployed server with no SMTP server doesn't
-				start.
+				as text or as text and HTML. While you develop, with no SMTP server set, the message is kept in the
+				server's memory and shown in the dev mailbox. Nothing reaches a real inbox by accident, and nothing
+				is lost: a deployed server with no SMTP server doesn't start.
 			</PageHero>
 			<p>
-				The package runs on the server only. It is a <a href={"${Paths.ecosystem}#plugins"}>plugin</a>: the
-				plugin adds the dev mailbox's pages and checks your SMTP server when the app starts. Sending works
-				through the <code>Email</code> module.
+				The package runs on the server only. Its <a href={"${Paths.ecosystem}#plugins"}>plugin</a> adds the
+				dev mailbox's pages and checks your SMTP server at start; you send with the <code>Email</code>
+				module.
 			</p>
 
 			<Heading id="install">Installing it</Heading>
@@ -49,13 +48,13 @@ view! = |_|
 				<code>email.Email</code>, and list its plugin in your program's <code>plugins</code>:
 			</p>
 			<Code title={"${Sources.email_plugin.file}, in part"} source={Sources.email_plugin.rocx} numbers={Bool.False} />
-			<p>Both of the plugin's options have defaults:</p>
+			<p>Both options have defaults:</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Option</th><th>Default</th><th>What it is</th></tr></thead>
 					<tbody>
-						<tr><td><code>from : Str</code></td><td><code>MAIL_FROM</code> from the environment, or else <code>{"rocx <rocx@localhost>"}</code></td><td>who email is from: <code>{"\"Acme <hello@example.com>\""}</code>, unless <code>MAIL_FROM</code> is set, which wins, so a deploy names the sender</td></tr>
-						<tr><td><code>{"smtp_url! : {} => Str"}</code></td><td>reads <code>SMTP_URL</code> from the environment</td><td>where email goes, found once when the server starts; give your own function to read it from somewhere else, such as a secrets vault. <code>""</code> means no SMTP server, which only <code>--dev</code> (and <code>--debug</code>, for tests) allows.</td></tr>
+						<tr><td><code>from : Str</code></td><td><code>MAIL_FROM</code> from the environment, or else <code>{"rocx <rocx@localhost>"}</code></td><td>who email is from: <code>{"\"Acme <hello@example.com>\""}</code>. <code>MAIL_FROM</code>, if set, wins, so a deploy names the sender.</td></tr>
+						<tr><td><code>{"smtp_url! : {} => Str"}</code></td><td>reads <code>SMTP_URL</code> from the environment</td><td>where email goes, read once at start. Give your own function to read it from elsewhere, such as a secrets vault. <code>""</code> means no SMTP server, which only <code>--dev</code> (and <code>--debug</code>, for tests) allows.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -64,15 +63,15 @@ view! = |_|
 			<p>
 				<code>{"Email.send!({ to, subject, text, html })"}</code> sends one message and waits for the SMTP
 				server's answer. <code>to</code> is an address, with or without a name
-				(<code>{"\"Ada Lovelace <ada@example.com>\""}</code>), or several (below). <code>html</code> may be
-				left out, or <code>""</code>, for a text-only email. It answers <code>{"Ok({})"}</code>, or
+				(<code>{"\"Ada Lovelace <ada@example.com>\""}</code>), or several (below). Leave out
+				<code>html</code>, or give <code>""</code>, for text only. It answers <code>{"Ok({})"}</code>, or
 				<code>EmailErr</code> with the reason: an address it can't read, a header it refuses, a server that
 				refuses the message or can't be reached, or no SMTP server outside <code>--dev</code>.
 			</p>
 			<p>
-				Send from a <a href={Paths.ecosystem_jobs}>job</a> rather than from the request itself. The request
-				that queues the job doesn't wait for the SMTP server, and a send that fails is tried again later.
-				Here is a job that sends, from the server platform's test app:
+				Send from a <a href={Paths.ecosystem_jobs}>job</a>, not from the request: the request doesn't wait for
+				the SMTP server, and a failed send is tried again later. A job that sends, from the server platform's
+				test app:
 			</p>
 			<Code title={"${Sources.platform_mail_job.file}, in part"} source={Sources.platform_mail_job.rocx} numbers={Bool.False} />
 			<p>
@@ -81,20 +80,19 @@ view! = |_|
 			</p>
 			<Callout kind="note" title="No SMTP server: the mailbox under --dev, a refusal anywhere else">
 				<p>
-					Under <code>--dev</code> (as <code>rocx dev</code> starts the server) with no SMTP server,
-					<code>Email.send!</code> answers <code>{"Ok({})"}</code> and keeps the message for the dev mailbox,
-					with a line on the log (<code>email: kept, not sent (no SMTP_URL)</code>). So does
-					<code>--debug</code>, which tests start the server with. Anywhere else the message would be lost,
-					so a server that lists the plugin and has no SMTP server doesn't start: it says
-					<code>{"email: SMTP_URL isn't set, so email can't be sent: …"}</code> and exits. Without the plugin,
-					each <code>Email.send!</code> answers <code>EmailErr</code> saying the same.
+					Under <code>--dev</code> (as <code>rocx dev</code> starts the server) or <code>--debug</code> (as
+					tests start it), with no SMTP server, <code>Email.send!</code> answers <code>{"Ok({})"}</code> and
+					keeps the message for the dev mailbox, logging <code>email: kept, not sent (no SMTP_URL)</code>.
+					Anywhere else the message would be lost, so a server that lists the plugin and has no SMTP server
+					exits at start with <code>{"email: SMTP_URL isn't set, so email can't be sent: …"}</code>. Without
+					the plugin, each <code>Email.send!</code> answers <code>EmailErr</code> saying the same.
 				</p>
 			</Callout>
 
 			<Heading id="recipients">Several recipients, Cc, Bcc, Reply-To</Heading>
 			<p>
 				A message is a record with defaults (<code>Email.Message</code>): only <code>to</code>,
-				<code>subject</code> and <code>text</code> must be given, and the rest are there when you need them:
+				<code>subject</code> and <code>text</code> are required.
 			</p>
 			<Code
 				title="Minutes, to the team"
@@ -105,33 +103,33 @@ view! = |_|
 				<table>
 					<thead><tr><th>Field</th><th>Default</th><th>What it is</th></tr></thead>
 					<tbody>
-						<tr><td><code>to : Str</code></td><td>(must be given)</td><td>one address or several, separated by commas, as an email's <code>To</code> header has them; a comma inside a quoted name is the name's (<code>{"\"Lovelace, Ada\" <ada@example.com>"}</code>). At least one.</td></tr>
+						<tr><td><code>to : Str</code></td><td>(must be given)</td><td>one or several addresses, separated by commas as in an email's <code>To</code> header; a comma inside a quoted name is the name's (<code>{"\"Lovelace, Ada\" <ada@example.com>"}</code>). At least one.</td></tr>
 						<tr><td><code>html : Str</code></td><td><code>""</code></td><td>the same as HTML; <code>""</code> for text alone</td></tr>
 						<tr><td><code>cc : List(Str)</code></td><td><code>[]</code></td><td>more who see it, in its <code>Cc</code> header; each item one address or several</td></tr>
-						<tr><td><code>bcc : List(Str)</code></td><td><code>[]</code></td><td>more who get it, named in no header: only the SMTP server is told, so nobody who gets it sees them</td></tr>
-						<tr><td><code>reply_to : Str</code></td><td><code>""</code></td><td>where a reply goes; <code>""</code>: to who it is from</td></tr>
-						<tr><td><code>{"headers : List((Str, Str))"}</code></td><td><code>[]</code></td><td>headers of your own, such as <code>List-Unsubscribe</code></td></tr>
+						<tr><td><code>bcc : List(Str)</code></td><td><code>[]</code></td><td>more who get it, named in no header: only the SMTP server is told, so no recipient sees them</td></tr>
+						<tr><td><code>reply_to : Str</code></td><td><code>""</code></td><td>where a reply goes; <code>""</code>: to the sender</td></tr>
+						<tr><td><code>{"headers : List((Str, Str))"}</code></td><td><code>[]</code></td><td>your own headers, such as <code>List-Unsubscribe</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 			<p>
-				<code>to</code> stays a <code>Str</code>, so every message written for one recipient still is one.
-				For a list of people, join it: <code>{"Str.join_with(addresses, \", \")"}</code>. The SMTP server is
-				told every address in <code>to</code>, <code>cc</code> and <code>bcc</code>, each once. If it
-				refuses one, nobody gets the message, and <code>Email.send!</code> says which address it refused.
+				<code>to</code> stays a <code>Str</code>, so a message for one recipient is unchanged. For a list,
+				join it: <code>{"Str.join_with(addresses, \", \")"}</code>. The SMTP server is told each address in
+				<code>to</code>, <code>cc</code> and <code>bcc</code> once. If it refuses one, nobody gets the message,
+				and <code>Email.send!</code> names the refused address.
 			</p>
 			<p>
-				A header of your own can't break the message: one whose name or value has a line break in it
-				(which would start a header of its own, a <code>Bcc</code> that quietly adds a recipient, say) is
-				refused, and so are the headers the package writes itself (<code>From</code>, <code>To</code>,
-				<code>Cc</code>, <code>Bcc</code>, <code>Reply-To</code>, <code>Subject</code>, <code>Date</code>,
-				<code>Message-ID</code>, <code>MIME-Version</code>, <code>Content-*</code>): use the field instead.
-				A value that isn't plain ASCII is encoded, as the subject is.
+				Your headers can't break the message. One with a line break in its name or value (which would start
+				a new header, say a <code>Bcc</code> that quietly adds a recipient) is refused, as are the headers
+				the package writes (<code>From</code>, <code>To</code>, <code>Cc</code>, <code>Bcc</code>,
+				<code>Reply-To</code>, <code>Subject</code>, <code>Date</code>, <code>Message-ID</code>,
+				<code>MIME-Version</code>, <code>Content-*</code>): use the field instead. A value that isn't plain
+				ASCII is encoded, as the subject is.
 			</p>
 			<Callout kind="note" title="A message you build first is an Email.Message">
 				<p>
-					A record written straight into <code>Email.send!</code>, or returned by a function whose type
-					says <code>Email.Message</code>, gets the defaults. A function typed with a plain record
+					A record written straight into <code>Email.send!</code>, or returned by a function typed
+					<code>Email.Message</code>, gets the defaults. A function typed with a plain record
 					(<code>{"-> { to : Str, subject : Str, text : Str, html : Str }"}</code>) or an untyped local
 					doesn't: write <code>Email.Message</code> in its type.
 				</p>
@@ -153,58 +151,54 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				A port in the URL (<code>host:2525</code>) overrides the default. When the URL has a user, the
-				client signs in with <code>AUTH PLAIN</code>; write any special characters in the user or the
-				password with <code>%</code> escapes, as in any URL. The password goes in clear only when the URL
-				says <code>?tls=never</code>.
+				A port in the URL (<code>host:2525</code>) overrides the default. With a user in the URL, the client
+				signs in with <code>AUTH PLAIN</code>; write special characters in the user or password as
+				<code>%</code> escapes. The password goes in clear only with <code>?tls=never</code>.
 			</p>
 			<p>
-				Once the server has started, the plugin connects to the SMTP server (TLS and all), says goodbye,
-				and logs whether it answered, under <code>email.smtp</code>. A wrong URL shows on the log then, not
-				at the first email. An SMTP server that doesn't answer doesn't stop the app.
+				Once the server has started, the plugin connects to the SMTP server (TLS and all), says goodbye, and
+				logs whether it answered, under <code>email.smtp</code>, so a wrong URL shows in the log, not at the
+				first email. An SMTP server that doesn't answer doesn't stop the app.
 			</p>
 
 			<Heading id="mailbox">The dev mailbox</Heading>
 			<p>
 				A server started with <code>--dev</code> (as <code>rocx dev</code> starts it) answers
-				<code>/__rocx/mail</code> before your app does. It lists the email kept instead of sent, newest
-				first (when, from, to, subject), with a Clear button, and the list updates as mail arrives. Each
-				message has its own page at <code>{"/__rocx/mail/<id>"}</code>: its headers (Cc, Bcc and Reply-To
-				too, and your own), its text, its HTML in a sandboxed frame (no script runs in it, and a link opens
-				in a new tab), and the whole message as SMTP would have carried it, in which no header names the
-				Bcc.
+				<code>/__rocx/mail</code> before your app. It lists the email kept instead of sent, newest first
+				(when, from, to, subject), with a Clear button, updating as mail arrives. Each message has a page at
+				<code>{"/__rocx/mail/<id>"}</code>: its headers (Cc, Bcc, Reply-To and your own), its text, its HTML in
+				a sandboxed frame (no script runs; links open in a new tab), and the whole message as SMTP would have
+				carried it, where no header names the Bcc.
 			</p>
 			<p>
 				The last 100 messages are kept in the server's memory (<a href={Paths.platform_kv}><code>Kv</code></a>),
-				with or without a database, so a restart forgets them. <code>/__rocx/mail.json</code> has the same
-				messages as JSON, for tests: the <a href={Paths.ecosystem_testing}>testing package</a> reads it to
-				find the link in a sign-in email. A server started with <code>--debug</code> and not
-				<code>--dev</code> serves only the JSON. Without either flag, these paths are your app's.
+				with or without a database, so a restart forgets them, on purpose. <code>/__rocx/mail.json</code> has
+				them as JSON, for tests: the <a href={Paths.ecosystem_testing}>testing package</a> reads it to find the
+				link in a sign-in email. Under <code>--debug</code> without <code>--dev</code>, only the JSON is
+				served. Without either flag, these paths are your app's.
 			</p>
 
 			<Heading id="inside">How it works</Heading>
 			<p>
 				The package is Roc on what the server platform gives every plugin. <code>Email.roc</code> writes the
-				message: it reads every address first, a subject or a name that isn't plain ASCII is encoded
-				(RFC 2047), a body that isn't is sent as Base64, and text with HTML becomes
-				<code>multipart/alternative</code>. <code>Smtp.roc</code> is a small SMTP client over the
-				platform's <code>Tcp</code>, which has TLS: a <code>RCPT TO</code> for each recipient, then the
-				message. Each send opens its own connection. <code>Mailbox.roc</code> is the dev mailbox: paths a plugin answers before the app,
-				only under <code>--dev</code> or <code>--debug</code>
-				(<a href={"${Paths.platform_server}#plugins"}>plugins</a>), drawn in the
-				<a href={Paths.ecosystem_admin}>admin's</a> look.
+				message: it reads every address first, encodes a subject or name that isn't plain ASCII (RFC 2047),
+				sends such a body as Base64, and makes text with HTML <code>multipart/alternative</code>.
+				<code>Smtp.roc</code> is a small SMTP client over the platform's <code>Tcp</code>, which has TLS: a
+				<code>RCPT TO</code> for each recipient, then the message, on a new connection for each send.
+				<code>Mailbox.roc</code> is the dev mailbox: paths a plugin answers before the app, only under
+				<code>--dev</code> or <code>--debug</code> (<a href={"${Paths.platform_server}#plugins"}>plugins</a>),
+				drawn in the <a href={Paths.ecosystem_admin}>admin's</a> look.
 			</p>
 			<p>
-				If you don't list the plugin, <code>Email.send!</code> still works: it reads <code>SMTP_URL</code>
-				and <code>MAIL_FROM</code> itself on each send. You lose the mailbox's pages, the check of the SMTP
-				server, and the refusal to start without one: a send fails instead.
+				Without the plugin, <code>Email.send!</code> still works, reading <code>SMTP_URL</code> and
+				<code>MAIL_FROM</code> itself on each send. You lose the mailbox, the SMTP check at start, and the
+				refusal to start without a server: a send fails instead.
 			</p>
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>No attachments.</li>
 				<li>No groups in an address list (<code>{"undisclosed-recipients:;"}</code>), and no comments in an address.</li>
-				<li>Mail kept for the mailbox lives in memory only, so a restart forgets it. That is on purpose.</li>
 			</ul>
 			<p>
 				The package's <code>README.md</code> (<code>packages/email/</code>) has the full reference.

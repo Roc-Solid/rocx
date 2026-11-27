@@ -33,78 +33,71 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/stripe</code>]}
 				title="Charge from the first day"
 			>
-				Stripe's hosted Checkout takes a payment or starts a subscription, its Customer Portal lets people
-				change their plan, their card or cancel, and a webhook keeps your app's database in step with
-				Stripe. Your app asks its own tables who has paid for what. Cards are typed on Stripe's pages,
-				never yours.
+				Stripe's hosted Checkout takes payments and starts subscriptions, its Customer Portal lets people
+				change their plan or card or cancel, and a webhook keeps your database in step. Your app asks its own
+				tables who has paid. Cards are typed on Stripe's pages, never yours.
 			</PageHero>
 			<p>
-				Charging is where small mistakes cost money: a webhook that trusts whoever posts to it, an event
-				handled twice, a late event that puts an old subscription back, two customers for one person, a
-				thank-you page that shows nothing because the event hasn't come yet. The package does those parts.
+				The package handles the parts where small mistakes cost money: webhook signatures, events that come
+				twice or late, one customer per person, and a thank-you page that knows before the event arrives.
 				Your app keeps its prices (made in Stripe's Dashboard), its pages, and <code>on_event!</code>: what it
-				does itself when someone pays.
+				does when someone pays.
 			</p>
 
 			<Heading id="example">A first app</Heading>
 			<p>
-				The package has a small app, <code>packages/stripe/example</code>, that sells a subscription (Basic or
-				Pro) and an e-book, and each file below is that app's. People sign in with the
-				<a href={Paths.ecosystem_auth}>auth package</a>'s dev sign-in. Its tests pay every way, on SQLite and
-				on Postgres, against a stand-in for Stripe's API.
+				Each file below is from <code>packages/stripe/example</code>, which sells a subscription (Basic or
+				Pro) and an e-book, with the <a href={Paths.ecosystem_auth}>auth package</a>'s dev sign-in. Its tests
+				pay every way, on SQLite and Postgres, against a stand-in for Stripe's API.
 			</p>
 			<p>
-				<strong>1. The plugin and the webhook.</strong> Name the package in the app's header and list its
-				plugin, for its tables. The server needs <code>STRIPE_SECRET_KEY</code> and
-				<code>STRIPE_WEBHOOK_SECRET</code> to start. The webhook is a route of yours (D-116), calling the
-				package's handler with your <code>on_event!</code>.
+				<strong>1. The plugin and the webhook.</strong> List the plugin, for its tables. The server needs
+				<code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code> to start. The webhook is your
+				route (D-116), calling the package's handler with your <code>on_event!</code>.
 			</p>
 			<Code title={Sources.stripe_example_main.file} source={Sources.stripe_example_main.rocx} />
 			<Code title="routes/stripe/webhook/+server.roc" source={"import stripe.Stripe\nimport ../../../Billing\n\nrespond! = |{ request, .. }| Stripe.webhook_route!(request, Billing.on_event!)"} numbers={Bool.False} />
 			<p>
-				<strong>2. Off to Checkout.</strong> A plan's button posts its price to an endpoint of yours, which calls
-				<code>Stripe.checkout!</code> and redirects to the URL it gives. The mode comes from your plan, never
-				from the form. The user's Stripe customer is made the first time and used every time after.
+				<strong>2. Off to Checkout.</strong> A plan's button posts its price to your endpoint, which calls
+				<code>Stripe.checkout!</code> and redirects. The mode comes from your plan, never the form. Each user
+				gets one Stripe customer, made the first time.
 			</p>
 			<Code title={Sources.stripe_example_checkout.file} source={Sources.stripe_example_checkout.rocx} />
 			<p>
-				<strong>3. Back from Checkout.</strong> Stripe sends the browser back as soon as it is paid, often before
-				its events have come. <code>Stripe.checkout_session!</code> asks Stripe for the session (with
-				<code>?session_id=</code>, which the package put in the success URL) and keeps it, so the page and
-				everything after it already know.
+				<strong>3. Back from Checkout.</strong> Stripe redirects as soon as it is paid, often before its
+				events. <code>Stripe.checkout_session!</code> fetches the session (by the <code>?session_id=</code> the
+				package put in the success URL) and keeps it, so this page already knows.
 			</p>
 			<Code title={Sources.stripe_example_done.file} source={Sources.stripe_example_done.rocx} />
 			<p>
-				<strong>4. What your app does when someone pays.</strong> <code>on_event!</code> is given each event after
-				the package has kept it, in the same transaction. Here an e-book bought becomes an order, and a
-				failed renewal goes on the log:
+				<strong>4. When someone pays.</strong> <code>on_event!</code> gets each event after the package keeps
+				it, in the same transaction. Here a bought e-book becomes an order; a failed renewal is logged:
 			</p>
 			<Code title={Sources.stripe_example_billing.file} source={Sources.stripe_example_billing.rocx} />
 			<p>
-				<strong>5. Pages for those who paid.</strong> Middleware asks the package's tables:
-				<code>Stripe.subscribed!</code> for the subscribers' pages, <code>Stripe.paid_for!</code> for the
-				e-book. Anyone else goes to the pricing page.
+				<strong>5. Pages for those who paid.</strong> Middleware checks <code>Stripe.subscribed!</code> for
+				the subscribers' pages and <code>Stripe.paid_for!</code> for the e-book; anyone else goes to the
+				pricing page.
 			</p>
 			<Code title="Middlewares.roc, in part" source={Sources.stripe_example_gates.rocx} numbers={Bool.False} />
 			<p>
-				Each guards a group, a directory in brackets that adds nothing to the paths: the Pro page and its
+				Each guards a group (a directory in brackets, which adds nothing to the paths): the Pro page and its
 				endpoint are in <code>routes/(subscribers)/</code>, behind its <code>+middleware.roc</code>:
 			</p>
 			<Code title={Sources.stripe_example_subscribers.file} source={Sources.stripe_example_subscribers.rocx} numbers={Bool.False} />
 			<p>
-				<strong>6. The portal.</strong> A button on the account page goes to Stripe's Customer Portal, which
-				comes back when they are done. What they change there comes back as events.
+				<strong>6. The portal.</strong> A button on the account page opens Stripe's Customer Portal, which
+				comes back when they are done. Their changes arrive as events.
 			</p>
 			<Code title={Sources.stripe_example_portal.file} source={Sources.stripe_example_portal.rocx} />
 
 			<Heading id="local">Developing with the Stripe CLI</Heading>
 			<p>
-				Use Stripe's test mode: its keys start <code>sk_test_</code>, nothing is charged, and its test card
-				<code>4242 4242 4242 4242</code> (any future date, any CVC) pays. In the Dashboard, in test mode, make the
-				products and prices you sell (their ids, <code>price_…</code>, are what <code>checkout!</code> takes), and
-				save the Customer Portal's settings once: until they are saved, Stripe makes no portal sessions in
-				test mode. Then forward Stripe's events to your app with the
-				<a href="https://docs.stripe.com/stripe-cli">Stripe CLI</a>:
+				Use test mode: <code>sk_test_</code> keys, nothing charged, and the test card
+				<code>4242 4242 4242 4242</code> (any future date, any CVC). In the Dashboard, in test mode, make your
+				products and prices (<code>checkout!</code> takes their <code>price_…</code> ids), and save the
+				Customer Portal's settings once: until then, Stripe makes no portal sessions in test mode. Forward
+				events with the <a href="https://docs.stripe.com/stripe-cli">Stripe CLI</a>:
 			</p>
 			<Code
 				source={"stripe listen --forward-to localhost:8080/stripe/webhook   # prints the webhook secret: whsec_…\nexport STRIPE_SECRET_KEY=sk_test_… STRIPE_WEBHOOK_SECRET=whsec_…\nrocx dev                                                 # in another terminal\nstripe trigger checkout.session.completed                # an event of your own"}
@@ -116,33 +109,20 @@ view! = |_|
 				<code>{"<public URL>/stripe/webhook"}</code>, and give the server its signing secret. Send it the
 				<code>checkout.session.*</code>, <code>customer.subscription.*</code>, <code>invoice.paid</code>,
 				<code>invoice.payment_failed</code>, <code>customer.deleted</code>, <code>charge.refunded</code> and
-				<code>charge.dispute.*</code> events: a one-time payment refunded in full, or disputed, isn't paid for
-				any more (a dispute won gives it back). When the server starts it
-				logs which mode its keys are, and warns about live keys under <code>--dev</code>.
+				<code>charge.dispute.*</code> events. A one-time payment refunded in full or disputed no longer
+				counts as paid (a dispute won gives it back). At start the server logs its keys' mode, and warns
+				about live keys under <code>--dev</code>.
 			</p>
 
 			<Heading id="how">How a payment goes</Heading>
-			<ol>
-				<li>
-					Your endpoint calls <code>{"Stripe.checkout!({ user, email, mode, prices, success_url, cancel_url })"}</code>.
-					The package finds the user's Stripe customer, or makes one (the app's id in its metadata), and makes a
-					Checkout Session with the user as its <code>client_reference_id</code>. You redirect to its URL.
-				</li>
-				<li>They pay on Stripe's page. Stripe sends the browser to your success URL.</li>
-				<li>
-					That page calls <code>Stripe.checkout_session!</code>, which keeps what Stripe says now: the page can say
-					"You're subscribed".
-				</li>
-				<li>
-					Stripe's events arrive at the webhook: <code>checkout.session.completed</code>,
-					<code>customer.subscription.created</code>, <code>invoice.paid</code>. Each is kept, and your
-					<code>on_event!</code> fulfils what needs fulfilling.
-				</li>
-				<li>
-					Later, renewals, failed payments, plan changes and cancellations in the portal arrive the same way, and
-					<code>Stripe.subscribed!</code> follows them.
-				</li>
-			</ol>
+			<p>
+				<code>{"Stripe.checkout!({ user, email, mode, prices, success_url, cancel_url })"}</code> finds or
+				makes the user's Stripe customer (your id in its metadata) and a Checkout Session with the user as
+				its <code>client_reference_id</code>. After the success page (step 3), events reach the webhook:
+				<code>checkout.session.completed</code>, <code>customer.subscription.created</code>,
+				<code>invoice.paid</code>. Renewals, failed payments, plan changes and portal cancellations arrive
+				the same way later, and <code>Stripe.subscribed!</code> follows them.
+			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Option of <code>checkout!</code></th><th>Is</th></tr></thead>
@@ -162,33 +142,31 @@ view! = |_|
 			<Heading id="webhook">The webhook</Heading>
 			<p>
 				<code>{"Stripe.webhook_route!(request, on_event!)"}</code> answers <code>POST /stripe/webhook</code>
-				from your route file (<code>webhook_at</code> tells the plugin where you put it, for the line it
-				logs at start), behind the middleware of its folder, which must let Stripe's servers in. For each
-				request:
+				from your route file, behind its folder's middleware, which must let Stripe's servers in
+				(<code>webhook_at</code> tells the plugin the path, for its log line at start). For each request:
 			</p>
 			<ul>
 				<li>
 					<strong>The signature.</strong> <code>Stripe-Signature</code> must hold the HMAC-SHA256, under your
-					webhook secret, of its timestamp and the body exactly as it came, and be at most five minutes old.
-					Anything else is a 400. Stripe sends one signature per secret while you roll a secret; one is enough.
+					webhook secret, of its timestamp and the exact body, at most five minutes old; anything else is a
+					400. While you roll a secret, Stripe signs with each; one match is enough.
 				</li>
 				<li>
-					<strong>Once.</strong> The event's id is recorded in the transaction that handles it. One that comes
-					again (Stripe sends an event until it is answered) is answered and not handled again, and two copies
-					at once wait for each other.
+					<strong>Once.</strong> The event's id is recorded in the transaction that handles it. A repeat
+					(Stripe resends until answered) is answered, not handled again; two copies at once wait for each
+					other.
 				</li>
 				<li>
 					<strong>Kept, then yours.</strong> The package keeps what the event says (a checkout's state, a
-					subscription's, a deleted customer), then gives your <code>on_event!</code> the event, read: its type,
-					the user it is about, and <code>Session</code>, <code>Subscription</code>, <code>Invoice</code> or
-					<code>Other</code>. Its <code>Err</code> rolls everything back and answers 500, so Stripe sends the
-					event again later, for up to three days.
+					subscription's, a deleted customer), then gives <code>on_event!</code> the event, read: its type,
+					its user, and <code>Session</code>, <code>Subscription</code>, <code>Invoice</code> or
+					<code>Other</code>. Its <code>Err</code> rolls everything back and answers 500, so Stripe tries again
+					later, for up to three days.
 				</li>
 				<li>
-					<strong>In any order.</strong> Stripe promises none. A subscription's row keeps the version of the event
-					that last changed it, its time and its kind, so an event that comes late never puts an older state back,
-					and an ended subscription stays ended. Two changes in the same second stand level, and the package asks
-					Stripe which is last.
+					<strong>In any order.</strong> Stripe promises none. A subscription's row keeps the version, time and
+					kind of the event that last changed it, so a late event never brings back an older state, and an
+					ended subscription stays ended. For two changes in one second, the package asks Stripe which is last.
 				</li>
 			</ul>
 			<Note>
@@ -198,8 +176,8 @@ view! = |_|
 
 			<Heading id="paid">Who has paid</Heading>
 			<p>
-				These read your database, never Stripe, so a page that checks them doesn't wait on another server, and
-				nothing the browser sends decides who has paid:
+				These read your database, never Stripe: a page that checks them waits on no other server, and nothing
+				the browser sends decides who has paid.
 			</p>
 			<TableWrap>
 				<table>
@@ -214,28 +192,29 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				For anything else of Stripe's API (a refund, a list of invoices), <code>Stripe.post!</code> and
-				<code>Stripe.get!</code> ask it as the package does: the secret key, a pinned
-				<code>Stripe-Version</code>, an idempotency key on a create, another try after a network error.
-				That key is new each call; for a create the app may ask twice (a job run again, a form sent twice),
-				<code>Stripe.post_with!</code> takes a key of the app's own, so Stripe makes it once.
+				For the rest of Stripe's API (a refund, a list of invoices), <code>Stripe.post!</code> and
+				<code>Stripe.get!</code> call it as the package does: the secret key, a pinned
+				<code>Stripe-Version</code>, an idempotency key on a create, a retry after a network error. That key
+				is new each call. When the app may ask twice (a job run again, a form sent twice),
+				<code>Stripe.post_with!</code> takes your own key, so Stripe creates once.
 			</p>
 
 			<Heading id="testing">Testing without Stripe</Heading>
 			<p>
-				<code>STRIPE_API_URL</code> points the package at another server. The example's tests start a stand-in
-				for Stripe's API (<code>example/test/stand-in.mjs</code>, Node with no dependencies): the endpoints the
-				package calls, answering with Stripe's objects, and what paying on Checkout's page would do. Each test
-				makes an event and signs it as Stripe does, and sends it to the webhook. Copy it into your app's tests.
+				<code>STRIPE_API_URL</code> points the package at another server. The example's tests start a
+				stand-in for Stripe's API (<code>example/test/stand-in.mjs</code>, Node with no dependencies): the
+				endpoints the package calls, answering with Stripe's objects, and what paying on Checkout's page
+				would do. Each test signs an event as Stripe does and sends it to the webhook. Copy it into your
+				app's tests.
 			</p>
 
 			<Heading id="tables">The tables</Heading>
 			<p>
-				The plugin's migrations (<code>stripe/0001_stripe</code>, then <code>stripe/0002_refunds</code>) make four
-				tables, the same on SQLite and on Postgres:
-				<code>stripe_customers</code> (each user's Stripe customer), <code>stripe_checkouts</code>,
-				<code>stripe_subscriptions</code> (as the events last said) and <code>stripe_events</code> (those handled,
-				swept after 30 days). Your users stay in your own table; the package knows them by your id.
+				The plugin's migrations (<code>stripe/0001_stripe</code>, then <code>stripe/0002_refunds</code>) make
+				four tables, the same on SQLite and Postgres: <code>stripe_customers</code> (each user's Stripe
+				customer), <code>stripe_checkouts</code>, <code>stripe_subscriptions</code> (as the events last said)
+				and <code>stripe_events</code> (those handled, swept after 30 days). Your users stay in your table; the
+				package knows them by your id.
 			</p>
 
 			<Heading id="safety">Safety</Heading>
@@ -243,21 +222,21 @@ view! = |_|
 				<li>No card reaches your server: Checkout and the portal are Stripe's pages.</li>
 				<li>The webhook takes signed events only, compared in constant time, at most five minutes old.</li>
 				<li>A checkout belongs to its user: the success page refuses another user's session.</li>
-				<li>Every create carries an idempotency key, so a request tried again makes one customer, one session.</li>
+				<li>Every create carries an idempotency key, so a retried request makes one customer, one session.</li>
 				<li>Test and live keys are told apart at start, and live keys under <code>--dev</code> are a warning.</li>
 			</ul>
 			<Note>
-				A <code>routes/+middleware.roc</code> that wants every request signed in would refuse Stripe's webhook
-				too: guard your routes by their directories instead. The webhook has no <code>Origin</code>, so the
+				A <code>routes/+middleware.roc</code> that requires sign-in everywhere would refuse Stripe's webhook
+				too: guard your routes by directory instead. The webhook has no <code>Origin</code>, so the
 				platform's cross-site check lets it through.
 			</Note>
 
 			<Heading id="status">Status</Heading>
 			<p>
-				Checkout (payments and subscriptions, trials, promotion codes), the Customer Portal, the webhook, the
-				checks for who has paid, and refunds and disputes taking a one-time payment back are built and
-				tested. Stripe Tax, metered billing, Connect and embedded Checkout are not; the package's
-				<code>PROPOSALS.md</code> has them.
+				Built and tested: Checkout (payments, subscriptions, trials, promotion codes), the Customer Portal,
+				the webhook, the checks for who has paid, and refunds and disputes taking back a one-time payment.
+				Not yet, in the package's <code>PROPOSALS.md</code>: Stripe Tax, metered billing, Connect and embedded
+				Checkout.
 			</p>
 		</NoHydration>
 	</>

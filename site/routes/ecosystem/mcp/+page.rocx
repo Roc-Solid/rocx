@@ -34,64 +34,62 @@ view! = |_|
 			title="Your app's tools, for AI agents"
 		>
 			MCP, the Model Context Protocol, is how AI agents (and the apps they run in: Claude, an editor, the
-			MCP Inspector) find out what an app can do, and do it. This package makes a Roc Solid app an MCP
-			server. An endpoint the app already has becomes a tool in one line, and the tool's JSON Schema is
-			the one the platform writes for <code>/openapi.json</code>, from the same Roc types.
+			MCP Inspector) learn what an app can do, and do it. This package makes a Roc Solid app an MCP server.
+			An endpoint becomes a tool in one line, with the JSON Schema the platform writes for
+			<code>/openapi.json</code> from the same Roc types.
 		</PageHero>
 		<p>
-			Use it when you want an agent to work with your app's data: search it, read it, add to it. An MCP
-			server offers three kinds of things:
+			Use it to let agents search, read and add to your app's data. An MCP server offers three kinds of
+			things:
 		</p>
 		<ul>
-			<li><strong>Tools</strong>: actions the agent can call, with arguments, such as "create a note".</li>
+			<li><strong>Tools</strong>: actions the agent calls with arguments, such as "create a note".</li>
 			<li>
-				<strong>Resources</strong>: data the agent can read by a URI, such as <code>notes://index</code>.
-				A <strong>template</strong> is a family of resources whose URIs follow a pattern, such as
+				<strong>Resources</strong>: data the agent reads by URI, such as <code>notes://index</code>. A
+				<strong>template</strong> is a family of resources whose URIs follow a pattern, such as
 				<code>{"notes://note/{id}"}</code>.
 			</li>
 			<li>
 				<strong>Prompts</strong>: ready-made messages a person picks from a menu in their agent (a slash
-				command, say), filled in with the arguments they give.
+				command, say), filled in with their arguments.
 			</li>
 		</ul>
 		<p>
-			The package has two parts. The protocol is plain Roc, on no platform, so you can test it with
-			<code>expect</code>s. A small module on the server platform, <code>McpHttp</code>, serves it over
-			HTTP and makes tools from your endpoints. The <a href={Paths.examples_notes}>notes example</a> is a
-			full app that agents use this way.
+			The protocol is plain Roc on no platform, so you can test it with <code>expect</code>s. A small module
+			on the server platform, <code>McpHttp</code>, serves it over HTTP and makes tools from your endpoints.
+			The <a href={Paths.examples_notes}>notes example</a> is a full app that agents use this way.
 		</p>
 
 		<Heading id="first">A first server</Heading>
 		<p>
-			A server is a record: a name, a version, and what it offers. This one converts temperatures. Its
-			tool's handler is a Roc function from a record to a record. The package reads the arguments an
-			agent sends into the handler's argument type, and sends its answer back as JSON. When the handler
-			returns <code>Err</code>, the tool refuses, and the model reads why.
+			A server is a record: a name, a version, and what it offers. This one converts temperatures. Its tool's
+			handler is a Roc function from a record to a record: the package reads the agent's arguments into its
+			argument type and sends its answer back as JSON. When the handler returns <code>Err</code>, the tool
+			refuses, and the model reads why.
 		</p>
 		<Code title={Sources.mcp_server.file} source={Sources.mcp_server.rocx} />
 		<p>
-			The JSON Schemas here are written by hand, because this page's server has no HTTP side. Over HTTP,
+			The JSON Schemas here are written by hand, since this server has no HTTP side. Over HTTP,
 			<code>McpHttp.tool</code> writes them from the handler's types (<a href="#http">below</a>). The other
 			fields:
 		</p>
 		<ul>
 			<li>
-				<code>resources</code>: each is something an agent reads by its URI. <code>Resource.text</code>
-				gives a URI, a name, a MIME type and a function that makes the text.
+				<code>resources</code>: each read by its URI. <code>Resource.text</code> takes a URI, a name, a MIME
+				type and a function that makes the text.
 			</li>
 			<li>
 				<code>templates</code>: each matches a family of URIs. In
 				<code>{"temperatures://boiling/{substance}"}</code>, <code>{"{substance}"}</code> takes whatever the
-				URI has in that place, and the read function is given it by name.
+				URI has in that place, and the read function gets it by name.
 			</li>
 			<li><code>prompts</code>: each makes messages from the arguments a person gives.</li>
 		</ul>
 
 		<Heading id="answers">What it answers</Heading>
 		<p>
-			This site is static files, so nothing here serves MCP. Instead, while the site was built, this page
-			sent the server above the requests below, as a client would send them, and shows the package's
-			answers as they came back (indented so they are easier to read).
+			This site is static, so nothing here serves MCP. While the site was built, this page sent the server
+			above these requests, as a client would; the answers are as they came back (indented for reading).
 		</p>
 		{...McpTemperatures.exchanges!({}).map_with_index(
 			|exchange, index|
@@ -108,11 +106,10 @@ view! = |_|
 		<p>
 			<code>McpHttp</code> serves the MCP server from a route, such as <code>routes/mcp/+server.roc</code>,
 			behind its directory's <a href={"${Paths.routing}#middleware"}>middleware</a>, which decides who may
-			ask. It makes tools from what the app already has: an <a href={"${Paths.routing}#endpoints"}>endpoint</a>,
-			a function of the app's own, or a handler written for the tool. A tool made from an endpoint sends it
-			as a handler does, through the endpoint's own route and middleware, with the MCP request's token, so an
-			agent can do what the same credentials can do over HTTP, and no more. This sketch serves one and
-			makes one tool of each kind:
+			ask. It makes tools from an <a href={"${Paths.routing}#endpoints"}>endpoint</a>, a function of the
+			app's own, or a handler written for the tool. An endpoint's tool calls it as a handler does, through
+			its own route and middleware with the MCP request's token, so an agent can do what the same
+			credentials can do over HTTP, and no more. This sketch serves one and makes one tool of each kind:
 		</p>
 		<Code title="A sketch (this site serves no MCP): the route, its middleware, and the server" source={Sources.mcp_http_sketch.rocx} />
 		<TableWrap>
@@ -120,40 +117,39 @@ view! = |_|
 				<thead><tr><th>McpHttp.</th><th>What it is</th></tr></thead>
 				<tbody>
 					<tr><td><code>respond!(server, request, context)</code></td><td>The answer to one request to the MCP route, for its route file's <code>respond!</code>.</td></tr>
-					<tr><td><code>endpoint(Api.x, about, McpHttp.openapi({"{}"}))</code></td><td>An endpoint as a tool. <code>Api.x</code> is the function from the endpoint's path params to the endpoint, in <code>Generated/Api</code>. The tool's arguments are one object holding both the path's params and the body (<code>{"{ \"id\": \"7\", \"tags\": [\"work\"] }"}</code>). It is sent through the endpoint's route, behind its middleware, with the MCP request's headers. The endpoint's answer is the tool's, and a refusal goes back to the model.</td></tr>
+					<tr><td><code>endpoint(Api.x, about, McpHttp.openapi({"{}"}))</code></td><td>An endpoint as a tool. <code>Api.x</code>, in <code>Generated/Api</code>, is the function from the endpoint's path params to the endpoint. The tool's arguments are one object holding the path's params and the body (<code>{"{ \"id\": \"7\", \"tags\": [\"work\"] }"}</code>), sent with the MCP request's headers. The endpoint's answer is the tool's, and a refusal goes back to the model.</td></tr>
 					<tr><td><code>function(Module.name!, about, McpHttp.openapi({"{}"}))</code></td><td>A function of the app's own as a tool, run inside the MCP request, behind the MCP route's middleware.</td></tr>
 					<tr><td><code>tool(about, handler!, McpHttp.openapi({"{}"}))</code></td><td>A handler written for the tool, <code>{"arg, Caller(c) => Try(result, Str)"}</code>, its schemas written from its types.</td></tr>
-					<tr><td><code>Caller(c)</code></td><td>What a handler is given: <code>{"{ request, context, progress! }"}</code>. <code>context</code> is what the middleware passed on, such as who is asking.</td></tr>
+					<tr><td><code>Caller(c)</code></td><td>What a handler gets: <code>{"{ request, context, progress! }"}</code>. <code>context</code> is what the middleware passed on, such as who is asking.</td></tr>
 					<tr><td><code>About</code></td><td>A tool's <code>{"{ name, description }"}</code>, and optionally <code>title</code> and <code>tags</code>.</td></tr>
 				</tbody>
 			</table>
 		</TableWrap>
 		<p>
-			<code>{"McpHttp.openapi({})"}</code> is always the same argument: the platform's schema writers,
-			passed as a value. It is there because of a compiler limit: one generic function can't both read a
-			type with <code>Json</code> and describe it with <code>OpenApi</code>, so the writers are passed in
-			where the types are known.
+			<code>{"McpHttp.openapi({})"}</code> is always the same argument: the platform's schema writers, passed
+			as a value. A compiler limit means one generic function can't both read a type with <code>Json</code>
+			and describe it with <code>OpenApi</code>, so the writers are passed in where the types are known.
 		</p>
 		<p>
-			A tool marked <code>.reporting()</code> may call <code>progress!</code> to say how far it has got.
-			When the client asks to hear progress, it gets the answer as a stream of
+			A tool marked <code>.reporting()</code> may call <code>progress!</code> to say how far it has got. A
+			client that asks for progress gets the answer as
 			<a href={"${Paths.calls}#events"}>server-sent events</a>: each step as it is taken, then the answer.
 		</p>
 		<p>
-			<code>McpHttp</code> is the package's own, on the server platform: an app names the package
-			<code>mcp</code> in its header and writes <code>import mcp.McpHttp</code>. The browser's half of the app
-			sees only the protocol's modules, which run anywhere.
+			<code>McpHttp</code> is on the server platform: name the package <code>mcp</code> in the app's header
+			and write <code>import mcp.McpHttp</code>. The browser's half of the app sees only the protocol's
+			modules, which run anywhere.
 		</p>
 
 		<Heading id="access">Who may ask</Heading>
 		<p>
-			The middleware in front of the MCP route decides, as it does for any route. It can check a session
-			cookie, an API key or an OAuth access token. The notes example checks a personal access token,
-			which its users make on a settings page.
+			The middleware in front of the MCP route decides, as for any route: it can check a session cookie, an
+			API key or an OAuth access token. The notes example checks a personal access token, which its users
+			make on a settings page.
 		</p>
 		<p>
-			MCP's own way is OAuth: a client without a good token gets a 401 that says where to learn how to
-			get one. The <code>Bearer</code> module builds those answers:
+			MCP's own way is OAuth: a client without a good token gets a 401 that says where to learn how to get
+			one. The <code>Bearer</code> module builds those answers:
 		</p>
 		<ul>
 			<li><code>Bearer.token(headers)</code>: the token a request carries (<code>Authorization: Bearer …</code>).</li>
@@ -168,15 +164,14 @@ view! = |_|
 			Not yet: issuing tokens. The platform has no authorization server of its own; that is a proposal.
 		</p>
 		<p>
-			Separately, the package refuses a request that a browser sends from a page of another site (by its
-			<code>Origin</code> header). Without that, a web page could reach an MCP server running on the
-			reader's own computer.
+			The package also refuses a request a browser sends from another site's page (by its
+			<code>Origin</code> header), so a web page can't reach an MCP server on the reader's own computer.
 		</p>
 
 		<Heading id="testing">Testing a server</Heading>
 		<p>
 			<code>Mcp.receive</code> is pure, so an app's <code>expect</code>s can send its server requests and
-			read the answers, with no network. <code>Mcp.problems(server)</code> lists what MCP won't accept:
+			read the answers with no network. <code>Mcp.problems(server)</code> lists what MCP won't accept:
 		</p>
 		<ul>
 			<li>a tool name that isn't 1 to 128 letters, digits, <code>_</code>, <code>-</code> and <code>.</code>;</li>
@@ -184,26 +179,26 @@ view! = |_|
 			<li>a schema that isn't JSON;</li>
 			<li>an endpoint's tool whose path params and body have a field with the same name.</li>
 		</ul>
-		<p>The server on this page is tested this way:</p>
+		<p>This page's server is tested this way:</p>
 		<Code title={Sources.mcp_test.file} source={Sources.mcp_test.rocx} />
 
 		<Heading id="speaks">What it speaks</Heading>
 		<p>
 			MCP over Streamable HTTP: one endpoint, where each POST carries one JSON-RPC message and is answered
-			with JSON, or with a stream of events for a tool that reports progress. The same endpoint speaks
-			both eras of the protocol:
+			with JSON, or with a stream of events for a tool that reports progress. The endpoint speaks both eras
+			of the protocol:
 		</p>
 		<ul>
 			<li>
-				<strong>2026-07-28</strong>, the current version, has no handshake. Each request states its
-				version and the client's capabilities in its <code>_meta</code>, and its headers repeat them
+				<strong>2026-07-28</strong>, the current version, has no handshake. Each request states its version
+				and the client's capabilities in its <code>_meta</code>, and its headers repeat them
 				(<code>MCP-Protocol-Version</code>, <code>Mcp-Method</code>, <code>Mcp-Name</code>).
 				<code>server/discover</code> says what the server offers, and each list says how long a client may
 				keep it.
 			</li>
 			<li>
 				<strong>2025-11-25, 2025-06-18 and 2025-03-26</strong> start with <code>initialize</code>, then
-				<code>notifications/initialized</code>. The server keeps no session between requests, which these
+				<code>notifications/initialized</code>. The server keeps no session between requests, as these
 				versions allow, so it sends no <code>Mcp-Session-Id</code>.
 			</li>
 		</ul>
@@ -226,13 +221,14 @@ view! = |_|
 
 		<Heading id="modules">The modules</Heading>
 		<p>
-			The protocol reads a request, checks it, and either answers it or says what to run. It has no
-			effects of its own: tools, resources and prompts are functions the app gives it.
-			<code>roc test packages/mcp/main.roc</code> runs its <code>expect</code>s, including the spec's
-			example messages. The package's README lists every function. What a tool is (<code>Tool</code>),
-			what it answers (<code>Content</code>) and <code>JsonValue</code> are
-			<a href={Paths.ecosystem_tools}>the tools package's</a>: a tool made there is served here as it is,
-			and the AI package's models use it too. Name <code>tools</code> in your app's header beside
+			The protocol reads a request, checks it, and either answers it or says what to run. It has no effects:
+			tools, resources and prompts are functions the app gives it. <code>roc test packages/mcp/main.roc</code>
+			runs its <code>expect</code>s, including the spec's example messages; the README lists every function.
+		</p>
+		<p>
+			What a tool is (<code>Tool</code>), what it answers (<code>Content</code>) and <code>JsonValue</code>
+			come from <a href={Paths.ecosystem_tools}>the tools package</a>: a tool made there is served here as it
+			is, and the AI package's models use it too. Name <code>tools</code> in your app's header beside
 			<code>mcp</code>, and <code>import tools.Tool</code>.
 		</p>
 		<TableWrap>
@@ -248,10 +244,7 @@ view! = |_|
 				</tbody>
 			</table>
 		</TableWrap>
-		<p>
-			<code>Mcp.Server(ctx)</code> needs only <code>name</code> and <code>version</code>. The other fields
-			have defaults:
-		</p>
+		<p><code>Mcp.Server(ctx)</code> needs only <code>name</code> and <code>version</code>. The rest have defaults:</p>
 		<ul>
 			<li><code>title</code>: the server's name for people;</li>
 			<li><code>instructions</code>: for the model, how the tools fit together;</li>
@@ -259,8 +252,8 @@ view! = |_|
 			<li><code>page_size</code>: how many items go in one page of a list (100);</li>
 			<li><code>ttl_ms</code>: how long a client may keep a list, in current MCP (5 minutes);</li>
 			<li>
-				<code>origins</code>: pages of other sites whose requests are answered. Pages of the server's own
-				site, and requests from no page at all (an agent, <code>curl</code>), always are.
+				<code>origins</code>: other sites' pages whose requests are answered. The server's own site's pages,
+				and requests from no page at all (an agent, <code>curl</code>), always are.
 			</li>
 		</ul>
 		<p>The package has no components: its readers are agents, not people.</p>
@@ -273,10 +266,10 @@ view! = |_|
 			</li>
 			<li>
 				Over HTTP, in an app built with <code>rocx build</code> on the server platform, with the official
-				clients: the MCP Inspector's command line (2.16.0, which speaks 2025-11-25), and the TypeScript
-				SDK's client (2.4.0) on 2026-07-28. That covers tools from an endpoint (with its path's params among
-				the arguments), from a function and from a handler; refusals; resources; a template; a prompt; and a
-				tool's progress, streamed as events.
+				clients: the MCP Inspector's command line (2.16.0, speaking 2025-11-25) and the TypeScript SDK's
+				client (2.4.0) on 2026-07-28. Covered: tools from an endpoint (with its path's params among the
+				arguments), a function and a handler; refusals; resources; a template; a prompt; and a tool's
+				progress, streamed as events.
 			</li>
 			<li>
 				examples/notes, whose server is its route <code>routes/mcp/</code> and whose tests call its tools
@@ -296,8 +289,8 @@ view! = |_|
 		<Heading id="limits">Limits</Heading>
 		<ul>
 			<li>
-				Not yet: list-change notifications, resource subscriptions, completions, logging to the client,
-				and requests from the server to the client (sampling, asking the user).
+				Not yet: list-change notifications, resource subscriptions, completions, logging to the client, and
+				requests from the server to the client (sampling, asking the user).
 			</li>
 			<li>No sessions: nothing is kept between requests.</li>
 			<li>

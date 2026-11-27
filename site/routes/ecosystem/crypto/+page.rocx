@@ -28,10 +28,10 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/crypto</code>]}
 				title="Hashes, signatures and keys, in Roc"
 			>
-				SHA-256, HMAC, HKDF, Base64 and hex. You use them to store a token as its digest, sign a link so
-				nobody can forge it, and derive separate keys from one secret. SHA-1 and Base32 are here too, for
-				authenticator apps' codes. The package is plain Roc on no
-				platform, so the server, a page in the browser and an <code>expect</code> all run the same code.
+				SHA-256, HMAC, HKDF, Base64 and hex: store a token as its digest, sign a link so nobody can forge it,
+				derive separate keys from one secret. SHA-1 and Base32 are here too, for authenticator apps' codes.
+				The package is plain Roc on no platform, so the server, a page in the browser and an
+				<code>expect</code> run the same code.
 			</PageHero>
 
 			<Heading id="install">Installing it</Heading>
@@ -42,25 +42,23 @@ view! = |_|
 				numbers={Bool.False}
 			/>
 			<p>
-				Then import the modules where you use them: <code>import crypto.Hmac</code>,
-				<code>import crypto.Base64</code>, and so on. Encryption and random bytes need the operating
-				system, so they are the server platform's, not this package's: <code>AesGcm</code> and
-				<code>Random</code> (<a href={Paths.platform_crypto}>the platform's crypto page</a> shows them with
-				this package, for tokens and sealed secrets).
+				Then import the modules you use: <code>import crypto.Hmac</code>, <code>import crypto.Base64</code>,
+				and so on. <a href={Paths.platform_crypto}>The platform's crypto page</a> uses them with the server
+				platform's encryption and random bytes, for tokens and sealed secrets.
 			</p>
 
 			<Heading id="links">A signed link</Heading>
 			<p>
-				A link that carries who it is for and when it expires, signed so that changing either breaks it.
-				This is from the server platform's test app:
+				A link that carries who it is for and when it expires, signed so that changing either breaks it. From
+				the server platform's test app:
 			</p>
 			<Code title={"${Sources.platform_links.file}, in part"} source={Sources.platform_links.rocx} numbers={Bool.False} />
 			<p>
-				The key that signs links comes from the app's <code>APP_SECRET</code> through HKDF, with
-				<code>"links"</code> as its purpose, so this key signs links and nothing else. The link's text is
-				signed with HMAC-SHA256, and the signature is written in Base64's URL alphabet, which needs no
-				escaping in a URL. <code>Hmac.verify_sha256</code> compares signatures in constant time: how long
-				it takes doesn't tell a forger how much of a signature was right.
+				The signing key comes from the app's <code>APP_SECRET</code> through HKDF, with <code>"links"</code>
+				as its purpose, so it signs links and nothing else. The link's text is signed with HMAC-SHA256, and
+				the signature is written in Base64's URL alphabet, which needs no escaping in a URL.
+				<code>Hmac.verify_sha256</code> compares signatures in constant time, so the time it takes doesn't
+				tell a forger how much of a signature was right.
 			</p>
 
 			<Heading id="modules">The modules</Heading>
@@ -79,37 +77,36 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				Decoding is strict, so each value has exactly one text: only the alphabet asked for, no spaces or
-				line breaks, padding either left out or exactly right, and the unused bits of the last character
-				zero. Anything else is an error (<code>InvalidBase64</code>, <code>InvalidBase32</code>,
-				<code>InvalidHex</code>). The package's <code>README.md</code> (<code>packages/crypto/</code>) lists
-				every function's type.
+				Decoding is strict, so each value has exactly one text: only the alphabet asked for, no spaces or line
+				breaks, padding either left out or exactly right, and the last character's unused bits zero. Anything
+				else is an error (<code>InvalidBase64</code>, <code>InvalidBase32</code>, <code>InvalidHex</code>).
+				The package's <code>README.md</code> (<code>packages/crypto/</code>) lists every function's type.
 			</p>
 			<p>
-				SHA-1, HMAC-SHA1 and Base32 are here for one job: the six-digit codes of an authenticator app
-				(TOTP, RFC 6238), which <a href={"${Paths.ecosystem_auth}#two-factor"}>the auth package's two-factor sign-in</a> checks.
-				SHA-1 is broken for collisions, so don't sign with it or keep a token's digest in it; HMAC-SHA1
-				doesn't rest on collisions, but for anything new use HMAC-SHA256.
+				SHA-1, HMAC-SHA1 and Base32 serve one job: an authenticator app's six-digit codes (TOTP, RFC 6238),
+				which <a href={"${Paths.ecosystem_auth}#two-factor"}>the auth package's two-factor sign-in</a> checks.
+				SHA-1 is broken for collisions, so don't sign with it or store a token's digest in it. HMAC-SHA1
+				doesn't rest on collisions, but use HMAC-SHA256 for anything new.
 			</p>
 
 			<Heading id="checked">How it is tested</Heading>
 			<p>
-				Each module's <code>expect</code>s check it against published test vectors: NIST's SHA-256 and
-				SHA-1 examples, every test case of RFC 4231 (HMAC-SHA256) and RFC 2202 (HMAC-SHA1), RFC 5869's
-				SHA-256 cases (HKDF), and RFC 4648's (Base64, Base32 and hex). <code>Sha256</code> wraps Roc's
-				builtin <code>Crypto.SHA256</code>; <code>Sha1</code> is Roc of its own. The server platform's
-				tests also compare SHA-256, HMAC, HKDF, Base64 and hex with Node's <code>crypto</code>, through a
-				running server, and the auth package's tests compare authenticator codes with Node's.
+				Each module's <code>expect</code>s check it against published test vectors: NIST's SHA-256 and SHA-1
+				examples, every test case of RFC 4231 (HMAC-SHA256) and RFC 2202 (HMAC-SHA1), RFC 5869's SHA-256
+				cases (HKDF), and RFC 4648's (Base64, Base32 and hex). <code>Sha256</code> wraps Roc's builtin
+				<code>Crypto.SHA256</code>; <code>Sha1</code> is the package's own Roc. The server platform's tests
+				also compare SHA-256, HMAC, HKDF, Base64 and hex with Node's <code>crypto</code> through a running
+				server, and the auth package's tests compare authenticator codes with Node's.
 			</p>
 
 			<Heading id="limits">What isn't here</Heading>
 			<ul>
-				<li>Encryption and random bytes: they are the server platform's <code>AesGcm</code> and <code>Random</code>.</li>
+				<li>Encryption and random bytes, which need the operating system: they are the server platform's <code>AesGcm</code> and <code>Random</code>.</li>
 				<li>Password hashing (bcrypt, scrypt, Argon2): not yet. SHA-256 and HKDF are too fast to protect passwords.</li>
 				<li>
-					Public-key cryptography: the server platform's <code>P256</code> has as much as Web Push needs
-					(ES256 signatures, ECDH with a key pair made for one call, and a new key pair). Verifying a signature, other
-					curves and RSA: not yet.
+					Public-key cryptography: the server platform's <code>P256</code> has what Web Push needs (ES256
+					signatures, ECDH with a key pair made for one call, and a new key pair). Verifying a signature,
+					other curves and RSA: not yet.
 				</li>
 			</ul>
 		</NoHydration>

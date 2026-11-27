@@ -40,25 +40,23 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/markdown</code>]}
 				title="Markdown, parsed in Roc and rendered as markup"
 			>
-				A Markdown parser in plain Roc: CommonMark, and GitHub's tables, strikethrough, task lists, bare
-				links and footnotes. The <code>{"<Markdown>"}</code> component renders it as the platform's markup, so a
-				post or a docs page is one tag. Raw HTML in the source is shown as text, and a link that could
-				run script points nowhere, unless you say otherwise. Frontmatter is read into a record you
-				declare, and a folder of posts becomes a typed list, checked when the app is built.
+				A Markdown parser in plain Roc: CommonMark, plus GitHub's tables, strikethrough, task lists, bare
+				links and footnotes. The <code>{"<Markdown>"}</code> component renders it as the platform's markup,
+				so a post is one tag. Raw HTML shows as text and a link that could run script points nowhere, unless
+				you say otherwise. Frontmatter is read into a record you declare, and a folder of posts becomes a
+				typed list, checked when the app is built.
 			</PageHero>
 			<p>
-				Use this package for text that people write as Markdown: a blog, docs pages, release notes, a comment
-				box with a preview. The parser turns the text into Roc values, the component turns those into markup,
-				and the frontmatter reader turns a file's header into a record whose type you declare. All three are
-				plain Roc, so they run the same on the server, in the browser and in a test.
+				Use it for text people write in Markdown: a blog, docs pages, release notes, a comment preview. The
+				parser, the component and the frontmatter reader are plain Roc, so they run the same on the server,
+				in the browser and in a test.
 			</p>
 
 			<Heading id="first">A first page</Heading>
 			<p>
 				Name the package in the app's header, as for <a href={Paths.ecosystem_charts}>charts</a>:
-				<code>{"markdown: \"../packages/markdown/main.roc\""}</code>. Then a component imports
-				<code>markdown.Markdown</code> and gives it some Markdown. Here the Markdown is a file of the
-				site's own, imported as text:
+				<code>{"markdown: \"../packages/markdown/main.roc\""}</code>. A component then imports
+				<code>markdown.Markdown</code> and gives it Markdown, here a file of the site's own, imported as text:
 			</p>
 			<Code title={Sources.markdown_walk.file} source={Sources.markdown_walk.rocx} plain numbers={Bool.False} />
 			<Code title={Sources.markdown_use.file} source={Sources.markdown_use.rocx} />
@@ -71,25 +69,23 @@ view! = |_|
 				<Code source={Html.to_str(<MarkdownDemo />)} markup numbers={Bool.False} />
 			</details>
 			<p>
-				The component renders wherever the page renders: on the server, or here, when the site was built. Each
-				heading gets an <code>id</code> made from its text, as GitHub makes one
-				(<code>a-morning-by-the-river</code>). A tight list, one with no blank lines between its items, shows
-				its items without <code>{"<p>"}</code> around them.
+				The component renders wherever the page does: on the server, or here, when the site was built. Each
+				heading gets an <code>id</code> from its text, as on GitHub (<code>a-morning-by-the-river</code>). A
+				tight list (no blank lines between items) has no <code>{"<p>"}</code> around its items.
 			</p>
 			<p>
-				<code>rocx build</code> copies the component from the package's <code>components/</code> folder into
-				the app (<code>Generated/markdown/Markdown.roc</code>), because a package can't import the platform's
-				<code>Html</code> for the server and the browser at once. You don't register anything: it is a package,
-				not a plugin.
+				<code>rocx build</code> copies the component from the package's <code>components/</code> into the app
+				(<code>Generated/markdown/Markdown.roc</code>), because a package can't import the platform's
+				<code>Html</code> for server and browser at once. There is nothing to register: it is a package, not
+				a plugin.
 			</p>
 
 			<Heading id="document">The document is data</Heading>
 			<p>
 				<code>Md.parse</code> turns Markdown into a document: a list of <code>Block</code>s (paragraphs,
-				headings, lists…), each holding <code>Inline</code>s (text, emphasis, links…). It is a tree of plain Roc
-				values that any function can walk. A table of contents is the list of headings, and a reading time is
-				a count of words. Parse once, and give the same document to <code>{"<Markdown>"}</code> as
-				<code>doc</code>:
+				headings, lists…), each holding <code>Inline</code>s (text, emphasis, links…), plain Roc values any
+				function can walk. A table of contents is the list of headings; a reading time is a word count. Parse
+				once, and give the document to <code>{"<Markdown>"}</code> as <code>doc</code>:
 			</p>
 			<Code title={Sources.markdown_toc.file} source={Sources.markdown_toc.rocx} />
 			<div class="rendered">
@@ -97,20 +93,19 @@ view! = |_|
 				<MarkdownToc />
 			</div>
 			<p>
-				Two headings with the same text get <code>intro</code> and <code>intro-1</code>, so every link in the
-				list goes to its own heading. Blocks and inlines compare with <code>==</code>, so a test can check a
-				parse without rendering it.
+				Two headings with the same text get <code>intro</code> and <code>intro-1</code>, so each link finds its
+				own heading. Blocks and inlines compare with <code>==</code>, so a test can check a parse without
+				rendering it.
 			</p>
 
 			<Heading id="hooks">Hooks</Heading>
 			<p>
-				A hook is a function that draws one kind of node your own way. <code>{"<Markdown>"}</code> has one for
-				each kind an app is likely to want to change: <code>heading</code>, <code>code</code>,
-				<code>link</code> and <code>image</code>, plus <code>footnote</code> and <code>notes</code> for
-				<a href="#footnotes">footnotes</a>. A hook is given what the node says, with its children already
-				rendered, and returns the element. Here headings get an anchor, code blocks are drawn by this site's own
-				<code>{"<Code>"}</code> (coloured by the highlighter these docs use), and links to other sites open in a
-				new tab:
+				A hook draws one kind of node your own way. <code>{"<Markdown>"}</code> has hooks for
+				<code>heading</code>, <code>code</code>, <code>link</code> and <code>image</code>, plus
+				<code>footnote</code> and <code>notes</code> for <a href="#footnotes">footnotes</a>. A hook gets what
+				the node says, its children already rendered, and returns the element. Here headings get an anchor,
+				code blocks are drawn by this site's <code>{"<Code>"}</code> (with these docs' highlighter), and links
+				to other sites open in a new tab:
 			</p>
 			<Code title={Sources.markdown_hooks_sample.file} source={Sources.markdown_hooks_sample.rocx} plain numbers={Bool.False} />
 			<Code title={Sources.markdown_hooks.file} source={Sources.markdown_hooks.rocx} />
@@ -119,15 +114,14 @@ view! = |_|
 				<MarkdownHooks />
 			</div>
 			<p>
-				The defaults are public too (<code>Markdown.heading</code>, <code>Markdown.code</code>,
+				The defaults are public (<code>Markdown.heading</code>, <code>Markdown.code</code>,
 				<code>Markdown.link</code>, <code>Markdown.image</code>, <code>Markdown.footnote</code>,
-				<code>Markdown.notes</code>), so a hook can handle some nodes and fall back on the default for the rest,
-				as the link hook above does.
+				<code>Markdown.notes</code>), so a hook can fall back on them, as the link hook above does.
 			</p>
 			<p>
-				To colour code, <code>Markdown.highlight(lines)</code> makes a ready <code>code</code> hook from any
+				To colour code, <code>Markdown.highlight(lines)</code> makes a <code>code</code> hook from any
 				highlighter. <code>lines(text, lang)</code> returns the code's lines, each a list of tokens
-				(<code>{"{ kind : Str, text : Str }"}</code>). Each token with a kind becomes a
+				(<code>{"{ kind : Str, text : Str }"}</code>). A token with a kind becomes a
 				<code>{"<span class=\"t-kind\">"}</code> for your CSS to colour.
 			</p>
 
@@ -137,8 +131,8 @@ view! = |_|
 					<thead><tr><th>Prop</th><th>What it is</th></tr></thead>
 					<tbody>
 						<tr><td><code>source : Str</code></td><td>The Markdown.</td></tr>
-						<tr><td><code>doc : List(Block)</code></td><td>Or the document, already parsed, when you parsed it for something else too (a table of contents).</td></tr>
-						<tr><td><code>raw : [Escape, Drop]</code></td><td>What to do with raw HTML in the source: show it as text (<code>Escape</code>, the default) or leave it out (<code>Drop</code>).</td></tr>
+						<tr><td><code>doc : List(Block)</code></td><td>Or the document, already parsed for something else too (a table of contents).</td></tr>
+						<tr><td><code>raw : [Escape, Drop]</code></td><td>Raw HTML in the source: shown as text (<code>Escape</code>, the default) or left out (<code>Drop</code>).</td></tr>
 						<tr><td><code>class : Str</code></td><td>The class of the <code>{"<div>"}</code> it renders in: <code>"markdown"</code> by default.</td></tr>
 						<tr><td><code>{"heading : Markdown.Heading -> Html"}</code></td><td>Draws a heading, given <code>{"{ level, id, text, children }"}</code>. The default is <code>{"<h2 id=\"…\">"}</code> for a level 2.</td></tr>
 						<tr><td><code>{"code : Markdown.Code -> Html"}</code></td><td>Draws a code block, given <code>{"{ lang, info, text }"}</code>. <code>lang</code> is the info string's first word (<code>roc</code> after three backticks), or <code>""</code>. The default is <code>{"<pre><code class=\"language-roc\">"}</code>.</td></tr>
@@ -150,22 +144,22 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				Every prop has a default, so <code>{"<Markdown source={text} />"}</code> is a whole use: give it either
-				<code>source</code> or <code>doc</code>. The component is <a href={"${Paths.components}#kinds"}>pure</a>
-				(its <code>view</code> has no <code>!</code>): it makes markup from its props and runs nothing after.
+				Every prop has a default: give <code>source</code> or <code>doc</code>, and
+				<code>{"<Markdown source={text} />"}</code> is a whole use. The component is
+				<a href={"${Paths.components}#kinds"}>pure</a> (its <code>view</code> has no <code>!</code>): it makes
+				markup from its props and runs nothing after.
 			</p>
 
 			<Heading id="footnotes">Footnotes</Heading>
 			<p>
 				Footnotes are GitHub's: <code>{"[^salt]"}</code> in the text refers to a note, and
-				<code>{"[^salt]: About 2% of the flour's weight."}</code> on a line of its own is the note. The parser
-				numbers the notes in the order the text first refers to them and puts them at the end of the document.
-				A note nothing refers to is left out, and a reference to a note that isn't there stays text, as on
-				GitHub. The default hooks draw what GitHub draws: a numbered <code>{"<sup>"}</code> link, and a list of
-				notes, each with a link back (<code>↩</code>) to every reference. The back links are labelled in
-				English, so a page in another language gives its own <code>notes</code> hook.
-				<code>Md.footnote_problems(source)</code> lists what is wrong with a file's footnotes, for a build or a
-				test to check.
+				<code>{"[^salt]: About 2% of the flour's weight."}</code> on its own line is the note. Notes are
+				numbered in the order the text first refers to them, and put at the end. A note nothing refers to is
+				left out; a reference to a missing note stays text, as on GitHub. The default hooks draw what GitHub
+				draws: a numbered <code>{"<sup>"}</code> link, and a list of notes, each with a link back
+				(<code>↩</code>) to every reference. The back links are labelled in English, so a page in another
+				language gives its own <code>notes</code> hook. <code>Md.footnote_problems(source)</code> lists what is
+				wrong with a file's footnotes, for a build or a test.
 			</p>
 
 			<Heading id="safety">Safe by default</Heading>
@@ -186,30 +180,29 @@ view! = |_|
 			<p>
 				Either way, the link's <code>href</code> is <code>about:invalid#rocx-unsafe-url</code>. A URL may be
 				relative, or start with <code>http:</code>, <code>https:</code>, <code>mailto:</code> or
-				<code>tel:</code>. Anything else is replaced, even with tabs or line breaks hidden in it, as the platform
-				does for every <code>href</code> it renders (see <a href={Paths.safety}>Safety</a>).
+				<code>tel:</code>. Anything else is replaced, even with tabs or line breaks hidden in it, as the
+				platform does for every <code>href</code> (<a href={Paths.safety}>Safety</a>).
 			</p>
 			<p>
 				For HTML text from a source you wrote yourself, <code>Md.to_html_with(doc, {"{ raw: Trusted }"})</code>
-				writes raw HTML as it is and checks no URLs. <code>{"<Markdown>"}</code> has no such option, because the
-				platform's <code>Html</code> has no way to put a string into a page as markup.
+				writes raw HTML as it is and checks no URLs. <code>{"<Markdown>"}</code> has no such option: the
+				platform's <code>Html</code> can't put a string into a page as markup.
 			</p>
 
 			<Heading id="frontmatter">Frontmatter and collections</Heading>
 			<p>
-				A post often starts with frontmatter: YAML between two <code>---</code> lines. You declare its shape as
-				a record type. Make it a nominal type (<code>:=</code>) so that its fields can have defaults
-				(<code>??</code>), and add <code>parser_for : _</code> so Roc writes the parser for it. The record's
-				types say what each value is: <code>2026</code> is a number for a <code>U64</code> field and text for a
-				<code>Str</code> one.
+				Frontmatter is YAML between two <code>---</code> lines at the top of a post. Declare its shape as a
+				record type: a nominal type (<code>:=</code>), so fields can have defaults (<code>??</code>), with
+				<code>parser_for : _</code>, so Roc writes its parser. The field types decide each value:
+				<code>2026</code> is a number for a <code>U64</code> field and text for a <code>Str</code> one.
 			</p>
 			<Code title={Sources.markdown_heron.file} source={Sources.markdown_heron.rocx} plain numbers={Bool.False} />
 			<p>
 				A collection is a folder of such files, as in Astro. <code>Collection.load</code> reads each file's
-				frontmatter into the record and parses its body. Loaded in a top-level value, the files are read when
-				the app is built, so a file whose frontmatter is wrong fails the build, naming the file and the field:
-				<code>{"winter: draft: expected true or false, found \"maybe\""}</code>. This page's two posts are
-				listed by hand:
+				frontmatter into the record and parses its body. In a top-level value, the files are read when the app
+				is built, so bad frontmatter fails the build, naming the file and the field:
+				<code>{"winter: draft: expected true or false, found \"maybe\""}</code>. This page lists its two posts
+				by hand:
 			</p>
 			<Code title={Sources.markdown_posts.file} source={Sources.markdown_posts.rocx} />
 			<div class="rendered">
@@ -218,28 +211,27 @@ view! = |_|
 			</div>
 			<p>
 				An entry is <code>{"{ id, data, body, doc }"}</code>: its path without <code>.md</code>, its
-				frontmatter, its body, and its body parsed. <code>Frontmatter.read(source)</code> does the same for a
-				single file. The YAML reader covers what frontmatter uses: maps, lists (<code>- item</code> or
+				frontmatter, its body, and the body parsed. <code>Frontmatter.read(source)</code> does the same for one
+				file. The YAML reader covers what frontmatter uses: maps, lists (<code>- item</code> or
 				<code>[a, b]</code>), inline maps, quoted and plain text, <code>|</code> and <code>{">"}</code> blocks,
 				comments, and null, which leaves a field to its default. It doesn't read anchors, aliases or tags.
 			</p>
 			<Callout kind="note" title="In an app, rocx build finds the files">
 				<p>
-					You don't have to list the files in an app. Each lower-case folder under the app's
-					<code>content/</code> is a collection: <code>rocx build</code> finds its Markdown files, at any depth,
-					and writes a module for it, such as <code>Generated/Content/Posts.roc</code> for
-					<code>content/posts/</code>, with each file imported as text. Put the frontmatter's type beside them
-					(<code>content/posts/Post.roc</code>), and <code>Posts.all</code> is every entry, read as the app is
-					built, and <code>{"Posts.get(id)"}</code> is one. A new post is a new file and nothing else. Without a
-					type, the module has <code>Posts.files</code> alone, for the app to read its own way.
+					In an app you don't list the files. Each lower-case folder under <code>content/</code> is a
+					collection: <code>rocx build</code> finds its Markdown files, at any depth, and writes a module for
+					it, such as <code>Generated/Content/Posts.roc</code> for <code>content/posts/</code>, each file
+					imported as text. Put the frontmatter's type beside them (<code>content/posts/Post.roc</code>), and
+					<code>Posts.all</code> is every entry, read as the app is built, and <code>{"Posts.get(id)"}</code>
+					is one. A new post is just a new file. Without a type, the module has only <code>Posts.files</code>,
+					for the app to read its own way.
 				</p>
 			</Callout>
 
 			<Heading id="modules">The modules</Heading>
 			<p>
-				The parser is plain Roc on no platform, so the server, a component in the browser and a test use the
-				same functions. <code>roc test packages/markdown/main.roc</code> runs its tests, 202 of them examples
-				from the CommonMark and GitHub Flavored Markdown specs. The full API is in the package's README.
+				<code>roc test packages/markdown/main.roc</code> runs the package's tests, 202 of them examples from
+				the CommonMark and GitHub Flavored Markdown specs. The package's README has the full API.
 			</p>
 			<TableWrap>
 				<table>
@@ -249,7 +241,7 @@ view! = |_|
 						<tr><td><code>Block</code></td><td>A block: <code>Paragraph</code>, <code>Heading</code>, <code>Code</code>, <code>Quote</code>, <code>Unordered</code>, <code>Ordered</code>, <code>Table</code>, <code>Raw</code> (an HTML block), <code>Rule</code>, <code>Footnotes</code>. A list's item is <code>{"{ task : [None, Open, Done], blocks }"}</code>. <code>Block.plain(doc)</code> is the document's words.</td></tr>
 						<tr><td><code>Inline</code></td><td>What text is made of: <code>Text</code>, <code>Code</code>, <code>Emph</code>, <code>Strong</code>, <code>Strike</code>, <code>Link</code>, <code>Image</code>, <code>Raw</code>, <code>Footnote</code>, <code>Break</code>, <code>SoftBreak</code>. <code>Inline.plain</code> is the words.</td></tr>
 						<tr><td><code>Frontmatter</code></td><td><code>read(source)</code> decodes the frontmatter into your record and returns the body too; <code>split(source)</code> separates them without decoding.</td></tr>
-						<tr><td><code>Yaml</code></td><td>The YAML that frontmatter is written in: <code>parse</code>, <code>decode</code> (into any type with a parser), <code>get</code>, <code>describe(problem)</code>.</td></tr>
+						<tr><td><code>Yaml</code></td><td>The YAML frontmatter is written in: <code>parse</code>, <code>decode</code> (into any type with a parser), <code>get</code>, <code>describe(problem)</code>.</td></tr>
 						<tr><td><code>Collection</code></td><td>Files as entries: <code>load</code>, <code>entry</code>, <code>find</code>, <code>describe</code>, and the type <code>Collection.Entry(data)</code>.</td></tr>
 					</tbody>
 				</table>
@@ -257,15 +249,15 @@ view! = |_|
 
 			<Heading id="browser">In the browser</Heading>
 			<p>
-				The examples on this page are rendered once, when the site is built, inside
-				<code>{"<NoHydration>"}</code>. The browser keeps the server's markup, and none of the parser is in its
-				wasm. Do the same for a post or a docs page. A page that hydrates <code>{"<Markdown>"}</code> carries the
-				parser to the browser: measured in a small app, about 225 KB more wasm (73 KB gzipped).
+				This page's examples are rendered once, when the site is built, inside <code>{"<NoHydration>"}</code>:
+				the browser keeps the server's markup, and none of the parser is in its wasm. Do the same for a post
+				or a docs page. Hydrating <code>{"<Markdown>"}</code> carries the parser to the browser: about 225 KB
+				more wasm (73 KB gzipped), measured in a small app.
 			</p>
 			<p>
-				A live preview is where that is worth it. Keep what is typed in a signal, <code>draft!</code>, set by a
+				A live preview is worth that. Keep the text in a signal, <code>draft!</code>, set by a
 				<code>{"<textarea>"}</code>'s <code>on:input.value</code>, and render it in a hole:
-				<code>{"{Markdown.view({ source: draft!() })}"}</code>. The hole renders it again whenever the draft
+				<code>{"{Markdown.view({ source: draft!() })}"}</code>. The hole renders again whenever the draft
 				changes.
 			</p>
 
@@ -275,13 +267,13 @@ view! = |_|
 				<li>
 					The parser passes 649 of CommonMark 0.31.2's 652 examples. The other three are bare links
 					(<code>https://…</code>, <code>www.…</code>, <code>someone@example.com</code>), which GitHub's
-					extension makes links of and CommonMark leaves as text. All of GitHub's extension examples pass except
-					the tag filter.
+					extension links and CommonMark leaves as text. Every GitHub extension example passes except the tag
+					filter.
 				</li>
 				<li><code>{"<Markdown>"}</code>, its hooks and <code>Markdown.highlight</code>, on the server and in the browser.</li>
 				<li>Frontmatter read into a record, collections found by <code>rocx build</code> under <code>content/</code>, and a bad file failing the build.</li>
 			</ul>
-			<p>Not yet (each is a proposal in <code>packages/markdown/PROPOSALS.md</code>):</p>
+			<p>Not yet (each a proposal in <code>packages/markdown/PROPOSALS.md</code>):</p>
 			<ul>
 				<li>Trusted raw HTML in <code>{"<Markdown>"}</code>, or HTML from an allowlist.</li>
 				<li>The highlighter these docs use, in a package of its own, so any app can colour code.</li>
@@ -289,8 +281,8 @@ view! = |_|
 			</ul>
 			<p>
 				Limits: a reference's label is case folded for ASCII, Latin-1, Latin Extended-A, Greek, Cyrillic and
-				<code>ß</code>, not all of Unicode. There are no heading attributes (<code>{"{#id}"}</code>), smart
-				quotes or maths.
+				<code>ß</code>, not all of Unicode. No heading attributes (<code>{"{#id}"}</code>), smart quotes or
+				maths.
 			</p>
 			<details>
 				<summary>The component: <code>{Sources.markdown_component.file}</code></summary>
