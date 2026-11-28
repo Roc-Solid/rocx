@@ -7812,8 +7812,9 @@ proposed a light route check (the page's middleware, no render) for a phone's gu
   session cookie), the header's links to every members page and back, a query's pages in place and by
   document, a text post composed and published (its endpoint's redirect to the new post), accounts
   connected through the server's redirects, signing out, the app reopened still signed in, a
-  provider's sign-in opened in the system's browser, back to a long page at its scroll; phone-hello
-  and pomodoro as before.
+  provider's sign-in opened in the system's browser, back to a long page at its scroll; the tasks
+  example's question before leaving a task with changes (its Cancel link and back stopped, Keep
+  editing, Leave without saving); phone-hello and pomodoro as before.
 - **Docs:** spike/native-apps/README.md (Pages, sessions and the server; the hosted functions; the
   runner's steps; gaps), DESIGN.md (§3, §8, §9, §13), DECISIONS.md.
 
@@ -7858,7 +7859,8 @@ presence and shared state.
 - **Tested:** SSE parsing (events across reads, a character cut between them, comments) and a stream
   read as it comes (cargo); a large app's board on the Mac runner and the emulator heard a post made
   and published in a browser tab (Chromium) and read itself again; the checkboxes example's channel
-  resynced, heard what curl and another runner said, and what the phone said reached the other.
+  resynced, heard what curl and another runner said, and what the phone said reached the other; its
+  stream, dropped by the server's restart, opened again half a second later and resynced.
 - **Docs:** spike/native-apps/README.md, DESIGN.md (§9, §13), DECISIONS.md.
 
 **Why.** The same wire as the browser's keeps the server unchanged and the semantics one; a stream
