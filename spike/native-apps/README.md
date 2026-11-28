@@ -477,8 +477,9 @@ background, or else the `body`'s, under the whole screen; the system bars' icons
 Anything else (a property, a pseudo-class, an at-rule) is warned of once, `rocx: CSS … isn't on
 phones yet: ignored`, in logcat and, at build time, by `build.sh` (`phone: …`), and never fails the
 build: the user's answer to question 1. Not warned of, as a phone has no use for them: `cursor`,
-`user-select`, `transition` and `animation` (which wait: below), scrollbars, `will-change` and the
-like.
+`user-select`, scrollbars, `will-change` and the like; nor `transition` and `animation`: a change to
+a view's `opacity` or `transform` with a transition is animated (its duration and delay; the
+applier's `animate()`), the rest change at once and `@keyframes` don't run (below).
 
 Compared with Chromium at 412 px (`--es snapshot <ms>` saves the whole page as the phone draws it,
 at twice its CSS px, to the app's external files, `page.png`): a large app's landing page (5,856 px
@@ -534,8 +535,9 @@ dev server:
    not CSS's line boxes), with no space where the markup's whitespace sits between two inline boxes;
    `vertical-align` and baselines aren't kept (a line's items are centred); floats, tables (rows are
    flex rows, cells share them), `column-count`, `@font-face` (the system's fonts stand in), dark
-   mode (`prefers-color-scheme` is light), `:active` (no pressed state but the applier's), the
-   `transition`s and `animation`s (properties change at once), `filter`, `backdrop-filter`,
+   mode (`prefers-color-scheme` is light), `:active` (no pressed state but the applier's),
+   transitions but of opacity and transform (colours and sizes change at once), `animation`s and
+   `@keyframes`, `filter`, `backdrop-filter`,
    `clip-path` but `inset(50%)`, `background-image: url()`, more than one outer `box-shadow` (the
    first is drawn), `text-shadow`, `text-indent`, `hyphens`, `overflow-wrap: normal` (Android breaks
    a word that doesn't fit) and a `:has()` left of a rule's subject reprojecting all its element

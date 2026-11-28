@@ -7824,8 +7824,8 @@ by the platform keeps the drawn text the measured text.
 
 **Costs.** Two layout engines (Chromium's and Taffy's) and two text engines: an app's text wraps
 where its fonts do (Roboto against a Mac's SF). CSS's line boxes are approximated (a text beside an
-inline box wraps as one piece), as are sticky (top only) and baselines; transitions, animations,
-filters, `@font-face` and dark mode wait. The APK grows about 0.85 MB (Taffy and its CSS parser).
+inline box wraps as one piece), as are sticky (top only) and baselines; transitions but of opacity
+and transform, animations, filters, `@font-face` and dark mode wait. The APK grows about 0.85 MB (Taffy and its CSS parser).
 The projection is the engine's own, kept in step with runtime.js's DOM by the conformance suite
 (DESIGN §12) still to come.
 
