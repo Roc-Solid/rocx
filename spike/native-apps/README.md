@@ -773,6 +773,7 @@ D-142's, the same app (its dev server, load average 4–6):
 | A calendar post's glide between days | 16 frames, p50 17 ms, p99 18 ms |
 | A tap to the screen patched | 0.24–0.48 ms (a header link, before its navigation) |
 | A still page | no frames drawn (Choreographer asked for none) |
+| `on:frame` (the uptime example's sparklines gliding after a live check, in the dev client) | a render a frame, the host's tick 2.6 ms on average (at most 5–11 ms: unoptimised Roc), each frame resending the redrawn `<svg>`s whole (about 23 KB of ops for four) |
 
 ## Gaps and next steps
 
@@ -822,7 +823,8 @@ D-142's, the same app (its dev server, load average 4–6):
    roles beyond the platform's own views, picked files' own names from the photo picker, a glide's lift
    above what clips it (D-031's `lift`: a card gliding out of a box that clips is cut off), a view
    transition's named groups' own morph (a named element stays as it is), the Meta key (Android's own:
-   ⌘K reaches no app, Ctrl+K does).
+   ⌘K reaches no app, Ctrl+K does), and an `<svg>` an `on:frame` redraws sent whole each frame (one
+   property, D-063's: a chart's glide costs a few ms a frame).
 9. **Typing.** Once, `adb shell input text` typed while the keyboard was still starting gave a
    doubled first letter ("hhello"); with the keyboard up it never did. Whether that is adb and
    Gboard or the applier isn't settled (a plain `EditText` app would tell).

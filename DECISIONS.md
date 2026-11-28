@@ -8255,7 +8255,8 @@ the page has its own:
   keyboard half) and taking arrows and Enter, a publishing step's `pulse`, a comment flying in, the
   calendar's posts gliding as arrow keys move them between days, the header's current link easing to
   its colour, pages cross-fading and rising under a header that stays, a ripple on a pressed link,
-  nothing moving with "remove animations".
+  nothing moving with "remove animations"; `on:frame` in the dev client with the uptime example (its
+  sparklines gliding after each live check).
 - **Measured** (emulator, a large app, the Mac's load about 4–6): a step pulsing, 484 frames in 8 s,
   none janky, the host's tick 0.38–0.43 ms a frame (at most about 1 ms), the app's process at 8–12%
   CPU; navigations with page transitions and the palette's transitions, frames p50 17 ms, p99 21–24
@@ -8277,7 +8278,9 @@ taps look like; the page's own `:active` wins where it has one.
 
 **Costs.** The main thread draws each frame's change (a shadow or colour repaints its view); a frame
 transition doesn't move what is around the view until it ends. Keyframes of sizes, gradients,
-outlines and SVG paint don't move; a run's colour inside a text doesn't transition; a glide isn't
+outlines and SVG paint don't move; an `<svg>` an `on:frame` handler redraws is sent whole each
+frame (one property: a chart's glide costs a few milliseconds a frame); a run's colour inside a text
+doesn't transition; a glide isn't
 lifted above a box that clips it (runtime.js's `lift`); a view transition's named groups don't morph
 (a named element stays as it is); the Meta key is Android's. A page's change records the screen's
 drawing once (under a millisecond). Ops 9 (`MOVE`) and 10 (`SNAPSHOT`), and two JNI functions
