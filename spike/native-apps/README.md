@@ -584,8 +584,9 @@ applier's `animate()`), the rest change at once and `@keyframes` don't run (belo
 
 Compared with Chromium at 412 px (`--es snapshot <ms>` saves the whole page as the phone draws it,
 at twice its CSS px, to the app's external files, `page.png`): a large app's landing page (5,856 px
-tall on the phone, 5,847 in Chromium), its sign-in page and eight members pages (the board,
-calendar, analytics, accounts, organizations, profile, billing, a new post) match in structure,
+tall on the phone, 5,847 in Chromium), its sign-in page and its members pages (the board with its
+timeline and drafts, the calendar with posts, a post's page, the composer, analytics, accounts with
+connected ones, organizations, profile, billing; the header's menus open) match in structure,
 sizes, spacing, colours, wrapping, grids and headers; the differences left are the fonts' (Chromium
 on the Mac has SF Pro Rounded for `ui-rounded`, a phone Roboto, a little wider, so a line can break
 a word earlier), the checkboxes and radios (the platform's own, D-139's), and the page's timed
