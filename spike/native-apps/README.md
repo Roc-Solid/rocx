@@ -195,6 +195,12 @@ The computer's address is `ipconfig getifaddr en0` (en1, en2; Linux's `hostname 
   differs) says to rebuild the dev client; rocx dev rebuilds it at its next start. A build that crashes the dev client natively (its
   library's code ends the process while it loads or mounts) is shown on the red screen at the next
   start instead of being loaded again.
+- **The app's phone halves** (D-139, D-141): when the app has an `android/` folder, rocx dev builds
+  its Kotlin into a dex (`build.sh <app> --halves`: kotlinc against the dev client's shell, then d8,
+  some seconds; again only when the folder's Kotlin changed, at the next build) and names it in
+  `latest.json` (`halves`); the client loads it from memory (`InMemoryDexClassLoader`) over its own
+  classes before the build starts, so its element and page halves work in the dev loop as in an
+  APK. The dev client keeps Kotlin's library whole for them (2.3 MB).
 - **Store rules.** Loading downloaded native code is fine in a debug build; Google Play bans it in a
   release, so this is the dev client's alone: an app's APK links its Roc in (`libapp.so`).
 
@@ -734,8 +740,7 @@ D-141's, the same large app with its page halves, signed in (load average about 
    `popover` (D-139's recommendation for menus: light dismiss done natively), drags, accessibility
    roles beyond the platform's own views, the keyboard's other keys (only Enter: a hardware
    keyboard's keys outside a field reach no handler and no half), picked files' own names from the
-   photo picker, phone halves for the dev client (loading an app's Kotlin at run time), Roc's
-   `transition:` directives (in, out, move: an Undo toast goes without its slide) and `on:frame`.
+   photo picker, Roc's `transition:` directives (in, out, move: an Undo toast goes without its slide) and `on:frame`.
 9. **Typing.** Once, `adb shell input text` typed while the keyboard was still starting gave a
    doubled first letter ("hhello"); with the keyboard up it never did. Whether that is adb and
    Gboard or the applier isn't settled (a plain `EditText` app would tell).

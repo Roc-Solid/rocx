@@ -334,6 +334,7 @@ pub fn restart(platform: Box<dyn Platform>, origin: &str, path: &str) {
     engine::reset();
     native::forget_shown();
     media::forget();
+    pages::reset();
     GENERATION.fetch_add(1, Ordering::Relaxed);
     INBOX.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clear();
     engine::init(origin.to_string(), path.to_string());

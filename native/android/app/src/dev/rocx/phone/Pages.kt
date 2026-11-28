@@ -98,10 +98,17 @@ class Held internal constructor(private val token: Long) {
     }
 }
 
-/** The app's page halves (`appPageHalves`, which build.sh writes from its android/ folder). */
+/** The app's page halves ([Halves.pages]: its APK's, or the dev client's build's). */
 object Pages {
-    private val halves: List<PageHalf> by lazy { appPageHalves }
+    private val halves: List<PageHalf> get() = Halves.pages
     private var page: Page? = null
+
+    /** A new build of the app (the dev client's): its halves started afresh, as for a new process. */
+    fun restart(activity: Activity, origin: String, path: String) {
+        page = null
+        Rocx.ask("page-events", "")
+        start(activity, origin, path)
+    }
 
     /** Before the app's first page is asked for (`Rocx.start`): the halves' events named, and each started once a process. */
     fun start(activity: Activity, origin: String, path: String) {

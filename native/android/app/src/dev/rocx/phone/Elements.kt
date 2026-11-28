@@ -159,9 +159,25 @@ object Host {
     }
 }
 
-/** The app's halves, by tag (`appHalves`, which build.sh writes from the app's android/ folder). */
+/**
+ * The app's phone halves (D-139, D-141): its APK's, which build.sh lists from its android/ folder
+ * (`appHalves`, `appPageHalves`), or the dev client's, loaded with a build rocx dev serves (`DevHalves`).
+ */
+object Halves {
+    var elements: List<ElementHalf> = appHalves
+    var pages: List<PageHalf> = appPageHalves
+}
+
+/** The app's halves, by tag ([Halves.elements]). */
 object Elements {
-    private val halves: Map<String, ElementHalf> by lazy { appHalves.associateBy { it.tag } }
+    private var byTag: Pair<List<ElementHalf>, Map<String, ElementHalf>>? = null
+    private val halves: Map<String, ElementHalf>
+        get() {
+            val now = Halves.elements
+            val known = byTag
+            if (known != null && known.first === now) return known.second
+            return now.associateBy { it.tag }.also { byTag = Pair(now, it) }
+        }
 
     /** An event for the half of `tag`, if the app has one. */
     fun event(activity: Activity, view: Long, tag: String, name: String, target: Long, value: String) {

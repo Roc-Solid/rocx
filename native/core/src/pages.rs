@@ -60,6 +60,17 @@ thread_local! {
     static PAGES: RefCell<Pages> = RefCell::default();
 }
 
+/// A dev client's new build (`crate::restart`): what the last build's page held goes (the events
+/// the halves hear stay: they named them as they started, before the build did).
+#[cfg_attr(not(feature = "dynamic"), allow(dead_code))]
+pub(crate) fn reset() {
+    PAGES.with(|pages| {
+        let mut pages = pages.borrow_mut();
+        let wanted = std::mem::take(&mut pages.wanted);
+        *pages = Pages { wanted, ..Pages::default() };
+    });
+}
+
 fn wants(event: &str) -> bool {
     PAGES.with(|pages| pages.borrow().wanted.iter().any(|each| each == event))
 }

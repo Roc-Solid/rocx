@@ -4,10 +4,16 @@
 #   native/android/build.sh spike/native-apps/phone-hello [--origin http://10.0.2.2:8095] [--label "Phone hello"] [--opt dev] [--stories]
 #   native/android/build.sh --dev-client
 #   native/android/build.sh <app dir> --host-only   (the host and shell again, the app's last Roc kept)
+#   native/android/build.sh <app dir> --halves <out.dex>   (the app's phone halves for the dev client)
 #
 # The dev client (`--dev-client`, for `rocx dev --android`): no app in it, but the host as
 # libhost.so (native/android-dev), which loads each build of an app rocx dev serves; steps 3, 5 and
-# 6 alone, into native/android/build/dev-client/rocx-dev.apk (dev.rocx.devclient, "rocx dev").
+# 6 alone, into native/android/build/dev-client/rocx-dev.apk (dev.rocx.devclient, "rocx dev"). It
+# keeps Kotlin's library whole, for the app's halves it loads.
+#
+# An app's phone halves for the dev client (`--halves <out.dex>`, D-141; rocx dev runs it when the
+# app's android/ folder changed): its Kotlin and their list (`dev.rocx.devhalves.DevHalves`) compiled
+# against the dev client's shell (built first), into one dex, which the client loads with each build.
 #
 # 1. The app's browser copy (rocx generate --client), whose main.roc is the app on web/platform.
 # 2. Its Roc for the phone: web/platform's arm64musl target, the app alone as an archive (Roc has no
@@ -35,6 +41,7 @@ label=""
 opt="speed"
 dev_client=""
 host_only=""
+halves_out=""
 # --stories: the browser copy as `rocx generate --dev` writes it (the components' stories in it), so
 # the phone asks for the stylesheet a server built that way (`rocx build --dev`, an app's own dev
 # build) has: the stylesheet's name is a hash of what it holds, and the stories' styles are in it.
@@ -47,6 +54,7 @@ while [ $# -gt 0 ]; do
         --dev-client) dev_client=1; shift ;;
         --host-only) host_only=1; shift ;;
         --stories) generate_dev="--dev"; shift ;;
+        --halves) halves_out="$2"; shift 2 ;;
         -*) echo "build.sh: unknown option $1" >&2; exit 2 ;;
         *) app="$1"; shift ;;
     esac
@@ -92,6 +100,35 @@ if ! [ -d "$(rustc --print sysroot 2>/dev/null)/lib/rustlib/aarch64-linux-androi
     rust_env=(RUSTUP_HOME="$repo/.tools/rust/rustup" CARGO_HOME="$repo/.tools/rust/cargo" PATH="$repo/.tools/rust/cargo/bin:$PATH")
 fi
 mkdir -p "$out"
+
+# ---- The app's phone halves for the dev client (--halves) ----
+if [ -n "$halves_out" ]; then
+    shell_jar="$here/build/dev-client/classes/shell.jar"
+    [ -f "$shell_jar" ] || { echo "build.sh: --halves needs the dev client built first (build.sh --dev-client)" >&2; exit 1; }
+    work="$out/halves"
+    rm -rf "$work"
+    mkdir -p "$work/gen" "$work/dex"
+    kt=()
+    while IFS= read -r file; do kt+=("$file"); done < <(find "$app/android" -name '*.kt' | sort)
+    [ ${#kt[@]} -gt 0 ] || { echo "build.sh: $app/android has no Kotlin" >&2; exit 1; }
+    elements=""
+    pages=""
+    for file in "${kt[@]}"; do
+        pkg="$(sed -n 's/^package[[:space:]]\{1,\}\([A-Za-z0-9_.]*\).*/\1/p' "$file" | head -1)"
+        for half in $(sed -n 's/^[[:space:]]*object[[:space:]]\{1,\}\([A-Za-z0-9_]*\)[[:space:]]*:[[:space:]]*ElementHalf(.*/\1/p' "$file"); do elements="$elements${elements:+, }${pkg:+$pkg.}$half"; done
+        for half in $(sed -n 's/^[[:space:]]*object[[:space:]]\{1,\}\([A-Za-z0-9_]*\)[[:space:]]*:[[:space:]]*PageHalf(.*/\1/p' "$file"); do pages="$pages${pages:+, }${pkg:+$pkg.}$half"; done
+    done
+    printf 'package dev.rocx.devhalves\n\nimport dev.rocx.phone.ElementHalf\nimport dev.rocx.phone.PageHalf\n\n// Written by native/android/build.sh --halves: the app'"'"'s phone halves, for the dev client (D-141).\nobject DevHalves {\n    @JvmField val elements: List<ElementHalf> = listOf(%s)\n    @JvmField val pages: List<PageHalf> = listOf(%s)\n}\n' "$elements" "$pages" > "$work/gen/DevHalves.kt"
+    step "the app's phone halves for the dev client: ${elements}${elements:+${pages:+, }}${pages}"
+    JAVA_HOME="$java_home" "$kotlinc" -nowarn -no-reflect -jvm-target 1.8 -classpath "$android_jar:$shell_jar" -d "$work/halves.jar" \
+        "${kt[@]}" "$work/gen/DevHalves.kt" 2>&1 | grep -v "^warning: unable to find kotlin-stdlib" >&2 || true
+    [ -f "$work/halves.jar" ] || { echo "build.sh: kotlinc failed on the app's halves" >&2; exit 1; }
+    "$java_home/bin/java" -cp "$build_tools/lib/d8.jar" com.android.tools.r8.D8 --release --min-api 29 \
+        --lib "$android_jar" --classpath "$shell_jar" --classpath "$kotlin_lib/kotlin-stdlib.jar" --output "$work/dex" "$work/halves.jar" >&2
+    cp "$work/dex/classes.dex" "$halves_out.part" && mv "$halves_out.part" "$halves_out"
+    echo "$halves_out"
+    exit 0
+fi
 
 if [ -n "$host_only" ] && [ -f "$out/libapp-roc.a" ]; then
     step "the app's Roc as last built (--host-only)"
@@ -176,8 +213,14 @@ if [ ! -f "$out/dex/classes.dex" ] || [ -n "$(find "$here/app/src" "$here/app/ru
     JAVA_HOME="$java_home" "$kotlinc" -nowarn -no-reflect -jvm-target 1.8 -classpath "$android_jar" -d "$out/classes/shell.jar" \
         $(find "$here/app/src" -name '*.kt') "$gen/AppHalves.kt" ${app_kt[@]+"${app_kt[@]}"} 2>&1 | grep -v "^warning: unable to find kotlin-stdlib" >&2 || true
     [ -f "$out/classes/shell.jar" ] || { echo "build.sh: kotlinc failed" >&2; exit 1; }
+    # The dev client keeps Kotlin's library whole: the app's halves it loads use what the shell doesn't.
+    keep_kotlin=()
+    if [ -n "$dev_client" ]; then
+        printf -- '-keep class kotlin.** { *; }\n' > "$out/dev-client.pro"
+        keep_kotlin=(--pg-conf "$out/dev-client.pro")
+    fi
     "$java_home/bin/java" -cp "$build_tools/lib/d8.jar" com.android.tools.r8.R8 --release --min-api 29 \
-        --lib "$android_jar" --pg-conf "$here/app/rules.pro" --output "$out/dex" \
+        --lib "$android_jar" --pg-conf "$here/app/rules.pro" ${keep_kotlin[@]+"${keep_kotlin[@]}"} --output "$out/dex" \
         "$out/classes/shell.jar" "$kotlin_lib/kotlin-stdlib.jar" >&2
 fi
 cp "$out/dex/classes.dex" "$stage/classes.dex"

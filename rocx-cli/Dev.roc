@@ -514,7 +514,7 @@ Dev := [].{
 			Err(Failed(message)) => {
 				# The phone shows why on its red screen until the next build.
 				match a.phone {
-					On(phone) => Dev.phone_latest!(phone, "latest.json", Dev.epoch_ms!({}).to_str(), "", message)
+					On(phone) => Dev.phone_latest!(phone, "latest.json", Dev.epoch_ms!({}).to_str(), "", message, "")
 					Off => {}
 				}
 				Err(Failed(message))
@@ -718,7 +718,8 @@ Dev := [].{
 		dir = Fs.join([phone.served, "rocx", "android"])
 		before = Fs.entries!(dir).keep_if(|name| name.starts_with("app-") and name.ends_with(".so"))
 		Dev.quiet!(Cmd.new(phone.clang).args(["-shared", "-o", Fs.join([dir, file]), "-Wl,--whole-archive", archive, "-Wl,--no-whole-archive", "-L", Fs.dirname(stub), "-lhost", "-Wl,-z,max-page-size=16384"]), "the phone's library")?
-		Dev.phone_latest!(phone, "latest.next.json", build, file, "")
+		halves = Dev.phone_halves!(phone)
+		Dev.phone_latest!(phone, "latest.next.json", build, file, "", halves)
 		last = before.last() ?? ""
 		for name in before {
 			if name != last {
@@ -728,11 +729,49 @@ Dev := [].{
 		Ok({})
 	}
 
+	## The app's phone halves for the dev client (D-141): the Kotlin in its android/ folder, built
+	## into a dex (`native/android/build.sh --halves`, kotlinc and d8, some seconds) when it changed,
+	## served beside the builds' libraries as `halves-<hash>.dex`, which latest.json names. "" for an
+	## app with none, or halves that don't build (said here: the build goes on without them).
+	phone_halves! : Phone => Str
+	phone_halves! = |phone| {
+		home = Fs.dirname(Fs.dirname(phone.work))
+		folder = Fs.join([home, "android"])
+		var $sources = []
+		for entry in Fs.entries!(folder) {
+			if entry.ends_with(".kt") {
+				$sources = $sources.append(entry).append(Fs.read_or_empty!(Fs.join([folder, entry])))
+			}
+		}
+		if $sources.is_empty() {
+			return ""
+		}
+		dir = Fs.join([phone.served, "rocx", "android"])
+		name = "halves-${Dev.fnv($sources)}.dex"
+		if !File.exists!(Fs.join([dir, name])) {
+			_ = Stderr.line!("rocx dev --android: building the app's phone halves (its android/ folder)")
+			match Dev.quiet!(Cmd.new(Fs.join([phone.rocx, "native", "android", "build.sh"])).args([home, "--halves", Fs.join([dir, name])]), "the app's phone halves") {
+				Ok({}) => {}
+				Err(Failed(why)) => {
+					_ = Stderr.line!(why)
+					return ""
+				}
+			}
+			for old in Fs.entries!(dir) {
+				if old.starts_with("halves-") and old != name {
+					Fs.delete!(Fs.join([dir, old]))
+				}
+			}
+		}
+		name
+	}
+
 	## Names a build for the dev client (`/rocx/android/latest.json`, or `latest.next.json` until it
-	## is announced): its library, or why there is none (`error`, shown on the phone's red screen).
-	phone_latest! : Phone, Str, Str, Str, Str => {}
-	phone_latest! = |phone, name, build, file, error| {
-		json = "{\"build\":${Text.json_string(build)},\"file\":${Text.json_string(file)},\"fingerprint\":${Text.json_string(phone.fingerprint)},\"built\":${Dev.epoch_ms!({}).to_str()},\"error\":${Text.json_string(error)}}\n"
+	## is announced): its library, or why there is none (`error`, shown on the phone's red screen), and
+	## the app's phone halves (`halves`, a dex; "" for none).
+	phone_latest! : Phone, Str, Str, Str, Str, Str => {}
+	phone_latest! = |phone, name, build, file, error, halves| {
+		json = "{\"build\":${Text.json_string(build)},\"file\":${Text.json_string(file)},\"fingerprint\":${Text.json_string(phone.fingerprint)},\"built\":${Dev.epoch_ms!({}).to_str()},\"error\":${Text.json_string(error)},\"halves\":${Text.json_string(halves)}}\n"
 		latest = Fs.join([phone.served, "rocx", "android", name])
 		_ = Fs.write!("${latest}.building", json)
 		_ = File.rename!("${latest}.building", latest)

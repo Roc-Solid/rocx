@@ -98,6 +98,7 @@ class RocxActivity : Activity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         // rocx dev launching the client again, or its page's link, with its server.
         given(intent)?.let { dev?.begin(it) }
     }

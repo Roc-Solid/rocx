@@ -175,13 +175,19 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
                             show("Loading the new build…")
                             val fetched = SystemClock.uptimeMillis()
                             val bytes = get("$origin/rocx/android/${latest.getString("file")}")
+                            // The app's phone halves (D-141), when the build names them.
+                            val halves = latest.optString("halves")
+                            val halvesBytes = if (halves.isEmpty()) null else get("$origin/rocx/android/$halves")
                             val file = File(activity.filesDir, "app-$build.so")
                             val partial = File(activity.filesDir, "app-$build.so.part")
                             partial.writeBytes(bytes)
                             partial.renameTo(file)
                             val took = SystemClock.uptimeMillis() - fetched
                             seen = build
-                            main.post { load(file, built, took, bytes.size) }
+                            main.post {
+                                DevHalves.use(halves, halvesBytes)
+                                load(file, built, took, bytes.size)
+                            }
                         }
                     }
                 }
@@ -204,7 +210,12 @@ class DevClient(private val activity: Activity, private val screen: ScrollView) 
         Rocx.applier = Applier(activity, screen)
         // Noted until it is mounted: if its code ends the process, the next run says so (`begin`).
         prefs.edit().putString("loading", file.name.removePrefix("app-").removeSuffix(".so")).commit()
-        val said = Rocx.reload(file.absolutePath, origin, "/")
+        // Where each build opens: `/`, or the intent's `path` extra (`adb shell am start … --es path
+        // /login`), as an app's activity takes it.
+        val path = activity.intent?.getStringExtra("path") ?: "/"
+        // The app's page halves start before its first page is asked for (D-141).
+        Pages.restart(activity, origin, path)
+        val said = Rocx.reload(file.absolutePath, origin, path)
         prefs.edit().remove("loading").commit()
         if (said.isNotEmpty()) {
             showError("The app didn't load", said)

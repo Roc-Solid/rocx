@@ -8121,8 +8121,13 @@ found more that wasn't the app's: a menu's items could never be tapped, a plain 
   heatmap, the timeline's presets and its flight to a draft, live updates from another client. Two
   differences are the app's own (its join form posts to a page that takes GET, in Chromium too; its
   command palette opens only from a keyboard).
-- **Docs:** spike/native-apps/README.md (Page halves; what works; gaps), DESIGN.md (§7, §10),
-  DECISIONS.md.
+- **In the dev client** (`rocx dev --android`): rocx dev builds the app's `android/` folder into a
+  dex when its Kotlin changed (`build.sh <app> --halves`: kotlinc against the dev client's shell,
+  then d8) and names it in `latest.json`; the client loads it from memory over its own classes (which
+  keep Kotlin's library whole for it) before each build starts, so element and page halves work in
+  the dev loop too. The client also opens at an intent's `path`, as an app's activity does.
+- **Docs:** spike/native-apps/README.md (Page halves; the dev mode's halves; what works; gaps),
+  DESIGN.md (§7, §10), DECISIONS.md.
 
 **Why.** The app's scripts are its semantics: written once more in Kotlin beside them, as its elements'
 halves are (D-139), they keep its markup and server as they are, and the hooks are what those scripts
@@ -8133,7 +8138,8 @@ drawn is CSS's rule, which a menu, a dropdown or a badge hanging out of its box 
 **Costs.** The app keeps each half in step with its script. A half sees events, not the page's
 listeners: a script's own listeners on elements are an element half's. Touch forwarding looks at every
 view under a finger down (well under a millisecond at a thousand views); it doesn't follow rotation or
-scale transforms. The dev client still has no halves (`rocx dev --android`). Subgrid tracks sized per
-row may not line up where a row's content is wider than the others'.
+scale transforms. The dev client is 2.3 MB with Kotlin's library whole, and a change to the halves
+alone is picked up at the next build. Subgrid tracks sized per row may not line up where a row's
+content is wider than the others'.
 
 **Reversible:** yes: pages.rs, Pages.kt and Touches.kt go; page scripts do nothing on a phone again.
