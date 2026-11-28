@@ -1479,6 +1479,7 @@ fn flag(on: bool) -> String {
 /// The ops that bring the screen from what was sent last to what the document says now: the
 /// views' changes, applied by `apply` at once, then their layout, whose frames are returned.
 pub fn render() -> Vec<u8> {
+    let began = std::time::Instant::now();
     let (root, mut views, title, loading) = engine::with(|engine| {
         let (root, views, loading) = project(engine);
         (root, views, engine.title.clone(), loading)
@@ -1571,9 +1572,11 @@ pub fn render() -> Vec<u8> {
         Some(ops.bytes)
     });
     let Some(first) = first else { return Vec::new() };
+    let projected = began.elapsed();
     if !first.is_empty() {
         crate::apply_now(&first);
     }
+    let applied = began.elapsed();
     // The layout: the views' styles, children and texts given to Taffy, then laid out.
     let started = std::time::Instant::now();
     TREE.with(|tree| {
@@ -1658,11 +1661,20 @@ pub fn render() -> Vec<u8> {
         shown.views = std::mem::take(&mut views);
     });
     LAST_LAYOUT.with(|last| last.set(laid_out.as_secs_f64() * 1000.0));
+    let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
+    let count = SHOWN.with(|shown| shown.borrow().as_ref().map(|shown| shown.views.len()).unwrap_or(0));
+    let said = format!("rocx: render of {count} views: projected and diffed in {:.2} ms, {} bytes applied in {:.2} ms, laid out in {:.2} ms, {} bytes of frames", ms(projected), first.len(), ms(applied - projected), ms(laid_out), ops.bytes.len());
+    RENDERS.with(|renders| {
+        let n = renders.get();
+        renders.set(n + 1);
+        crate::log(if n < 3 { crate::Level::Info } else { crate::Level::Debug }, &said);
+    });
     ops.bytes
 }
 
 thread_local! {
     static LAST_LAYOUT: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    static RENDERS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// `on:viewport`'s: what each element was last told (`top,left,width,height`), and what it is
     /// to be told after this render.
     static VIEWPORTS: RefCell<(HashMap<NodeId, String>, Vec<(NodeId, String)>)> = RefCell::new((HashMap::new(), Vec::new()));
