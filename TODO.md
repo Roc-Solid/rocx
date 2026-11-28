@@ -41,14 +41,15 @@ When an item lands, delete its line here in the same commit.
   with text measured by the platform (D-137), navigation, guards, redirects, sessions in a cookie
   jar and form posts as the browser's (D-138), images, video, form controls, file uploads and an
   app's own Kotlin halves of its custom elements (D-139), live updates and channels (D-140), page
-  halves for its page scripts and touches on what is drawn (D-141, also in the dev client); a dev
-  mode (`rocx dev --android [--lan]`). Next: phase 0's conformance suite (the engine on
+  halves for its page scripts and touches on what is drawn (D-141, also in the dev client); CSS
+  animations and transitions, Roc's transition directives and glides, page transitions, `on:frame`,
+  a hardware keyboard's keys and a press's ripple (D-142); a dev mode (`rocx dev --android [--lan]`).
+  Next: phase 0's conformance suite (the engine on
   `web/test/app` against Chromium), CSS at build time (it's parsed on the phone: about 15 ms for
   1,500 rules on the emulator), HTTPS (plain http only) and gzip, `rocx build --android` (signing,
   other ABIs, an icon), an app link for providers' sign-in to come back, `popover` with light
-  dismiss, inline boxes in a line of text (an approximation now), `@font-face`, dark mode,
-  `@keyframes`, Roc's `transition:` directives and `on:frame`, a hardware keyboard's keys outside
-  fields; then iOS (a fork target for Xcode's link). The fork's dev backend puts some
+  dismiss, inline boxes in a line of text (an approximation now), `@font-face`, dark mode, a
+  glide's lift above what clips it and view transitions' named groups (D-142's gaps); then iOS (a fork target for Xcode's link). The fork's dev backend puts some
   `arm64mac` string literals where Roc's refcounting misreads them (README.md's gaps). Open
   questions: 3 and 9 in DESIGN.md §15. examples/pomodoro's next gap, left for later by the user:
   **an alert while the app is in the background** (a session that ends with the screen off says

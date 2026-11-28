@@ -265,6 +265,13 @@ case; at first it breaks the line, and the build reports it.
 > misses them, `order` by sorting the items); text measured by `StaticLayout` over JNI; absolute
 > boxes drawn in their containing block's view and fixed ones on a layer over the scrolling page; a
 > render projects again only what changed (README.md, CSS and layout).
+>
+> **Status (2026-11-28, D-142):** `@keyframes`, `animation` and `transition` run on Android before
+> phase 4: the host (native/core's motion.rs) keeps what moves and works out each moving view's look
+> each frame of the display (Choreographer's), as the Web Animations model and CSS Easing say, and
+> sends it as the projection's own properties; `prefers-reduced-motion` is Android's "remove
+> animations". Roc's transition directives, glides and a navigation's view transition too (README.md,
+> Motion, keys and presses).
 
 ### 6.4 SVG
 
@@ -304,6 +311,12 @@ the phone build instead.
 > its box, a menu's items, gets it), a finger down off the focused field blurs it, the keyboard goes
 > with its field, and a page script's listeners on `window` (capturing and bubbling, a held event
 > sent on later, Android's back as Escape) are an app's page halves'.
+>
+> **Status (2026-11-28, D-142):** a hardware keyboard's keys are `keydown` and `keyup` on the focused
+> element or the body, with their key, code and modifier keys as runtime.js gives them to Roc
+> (`on:keydown.Mod+K`, `.keys`, `<Document>`'s handlers), and a page half's; links and buttons take
+> the focus from Tab. The pressed state is Android's ripple, unless the page styles `:active`, which
+> follows a press.
 
 ## 8. Pages and navigation
 

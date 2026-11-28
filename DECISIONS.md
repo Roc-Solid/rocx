@@ -8143,3 +8143,145 @@ alone is picked up at the next build. Subgrid tracks sized per row may not line 
 content is wider than the others'.
 
 **Reversible:** yes: pages.rs, Pages.kt and Touches.kt go; page scripts do nothing on a phone again.
+
+## D-142 Motion on a phone: CSS animations and transitions, Roc's transitions, a keyboard's keys, a press's feedback
+
+**Status.** Built (2026-11-28).
+
+**Context.** A large app ran on a phone with nothing moving. It uses six of Roc's transition
+directives (its Undo toast slides out with `transition:out`, its command palette comes with
+`transition:in`, its calendar's posts glide with `transition:move` as arrow keys move them between
+days, a post's comments fly in and out), six `@keyframes` with ten `animation`s (a toast's `toast-in`,
+a publishing step's `pulse`, the landing page's `flow`, its view transitions' `page-enter` and
+`page-leave`), thirty-nine CSS `transition`s (colours, backgrounds, shadows, rotations, widths) and
+one `on:frame` (an area chart's bands gliding to new data). Since D-137 a phone animated a change of
+opacity or transform alone, with its own duration and Android's default easing; Roc's directives,
+`@keyframes`, `on:frame` and `<Document>`'s handlers were warned of and ignored; a hardware keyboard's
+keys reached the page only as a field's Enter, so the app's palette (⌘K, `/`) never opened; and a tap
+showed nothing until its handler's result did.
+
+**Options.**
+1. Who runs a frame: (a) Android's own animators (`ViewPropertyAnimator`, `ValueAnimator`) given
+   each animation by the host's ops, Kotlin working out the easing, the iterations and the values;
+   (b) the host (native/core, Rust) keeping what moves and working out each moving view's look on
+   each frame of the display, which Kotlin's `Choreographer` asks for and the applier sets as it sets
+   any change; (c) Roc, per frame (out: Roc's code runs only where the app asks, `on:frame`).
+2. Size transitions: lay the page out each frame (as a browser does); or move the transitioning view's
+   own frame alone, what it pushes around it going to its place at once; or none.
+3. Page transitions (D-040's view transitions): a picture of the page left over the new one, each
+   animated by the page's `::view-transition-old(root)` and `-new(root)` rules, named elements left
+   out; or a native slide of the whole screen.
+4. Feedback for a tap: Android's ripple on what is tappable; the page's `:active` alone (most apps'
+   CSS has none: nothing); a dimming.
+5. ⌘K: the app's own key handling sees the Meta key; Android keeps it.
+
+**Decision.** 1(b), 2 the view's own frame, 3 the picture with the page's rules, 4 the ripple unless
+the page has its own:
+
+- **motion.rs** (native/core): the Web Animations timing model (phases, fill, iterations, direction,
+  play state; an animation starts at the display's next frame, showing its start until then), CSS
+  Easing (`cubic-bezier()` solved as Chromium's `gfx::CubicBezier`, the keywords, `steps()` with its
+  jumps, `linear()`'s points), interpolation as CSS's (numbers and lengths linearly, colours
+  premultiplied, a transform's parts each), and the stacking of what moves one view (transitions
+  under animations, Roc's over both, a glide on top). A tick works out every moving view's look as
+  the projection's own properties (`style.opacity`, `style.transform`, `style.background`,
+  `style.color`, `style.border`, `style.shadow`, `style.ring`) and frames, and sends what changed as
+  the same ops; a key no animation moves any more goes back to the view's own. Kotlin
+  (`Frames.kt`) asks the host for a frame each vsync while it says something moves
+  (`Platform::frames`, `Rocx.tick`), and stops when nothing does: no frame is drawn for a still page.
+- **CSS animations**: css.rs parses `@keyframes` (and keeps the page's `::view-transition-*` rules)
+  and expands `animation` and `transition` into their longhands, so the cascade orders them; each
+  keyframe is resolved for its element (`Computed::with`: its custom properties, its colour, a
+  shorthand expanded), its transform once the element is laid out (a share of its size). Declared
+  again unchanged, an animation keeps running; no longer named, it stops; `animationend` is told.
+- **CSS transitions**: a change of a property `transition-property` names (or `all`) starts one from
+  what is shown (a transition interrupted starts where it is) to the view's own; a width, height or
+  inset its style changed moves the view's frame (`MOVE`, op 9: placed and laid out at once, its
+  parent not), what it pushes around it going to its place at once; a layout change alone starts
+  none, as CSS's computed values say. An anonymous text view takes its element's `color` transition
+  (a flex link's text). `transitionend` is told.
+- **Roc's transition directives**, as runtime.js has them: `tr`/`tro` kept by element; a part a
+  `<Show>` (an `if`, a `match`) switches away from, or a row a `.map` drops, with transitions out in
+  it stays in the engine's document, inert, its holes no longer running, until its elements'
+  animations end, then goes; what comes plays in; nested parts' are their own. `transition:move` with
+  `key`: between two renders, each view that glides and that a change of the page's structure moved
+  plays from where it was seen (its running glide counted) to its place; a keyed one that came as one
+  with the same key went glides from the other's place, plays no transition in, and the other's part
+  goes at once; one a moving parent carries is passed over. Less motion (Android's "remove
+  animations", which is also `prefers-reduced-motion: reduce`) plays none of these, as runtime.js's.
+- **Page transitions**: a navigation to another page, where the app asked for view transitions
+  (`<html data-rocx-transitions>`), pictures the screen as it is before anything changes
+  (`SNAPSHOT`, op 10), cleared where views with a `view-transition-name` are (they stay, live, and
+  show through), puts the picture over everything and animates it as `::view-transition-old(root)`
+  says, and the new page's outermost views that hold no named one as `::view-transition-new(root)`
+  says (a browser's cross-fade without such rules); the picture goes once its animation is over.
+- **`on:frame`**: its handler runs each frame of the display while its element is on the page, given
+  the time since its last frame in microseconds (at most 100 ms), as runtime.js's; frames stop with it.
+- **Keys** (`Keys.kt`, `Rocx.key`): `keydown` and `keyup` on the focused element, or the body, with
+  the key as `KeyboardEvent.key` names it, its `code` and the modifier keys (runtime.js's `keysOf`;
+  Mod is Ctrl, as on Linux and Windows); `on:keydown.Mod+K` matches as `keyCombo` (exactly those
+  modifier keys, a letter in either case or its place); a handler that takes it (`preventDefault`)
+  keeps a field from typing it; `<Document>`'s and `<Window>`'s handlers hear what the elements
+  didn't stop, and page halves hear `keydown` (`KeyPress` reads its value). Links, buttons, summaries
+  and what has a `tabindex` take a keyboard's focus (Tab; Enter on one is a click). `Browser.call!`'s
+  `focus` and `reveal` wait for the render that makes their element's view (a field the same handler
+  showed was never focused before). Android keeps the Meta key (⌘) for itself: neither it nor Meta+K
+  reaches an app, Chrome included, so a phone's palette opens with Ctrl+K and `/`.
+- **Pressed**: a tappable view (a link, a button, a label, a summary, one with a click handler) has
+  Android's ripple as its foreground (`Press.kt`), shaped as its CSS box, in its element's colour at
+  12% (Material's pressed state), or its `-webkit-tap-highlight-color`; none where the page styles it
+  `:active` (the page's feedback) or that colour is transparent. `:active` follows a press (Android's
+  tap timeout, a finger that scrolls never presses), worth a render only where the page's CSS has it.
+- **Ported from runtime.js, and the phone's own** (for one runtime later): ported, the transition
+  directives (`setTransition`, `transitioned`, `entered`, `leave`, `keep`, `dropRow`'s and
+  `settleShow`'s leaving parts, `play`'s hidden-to-own keyframes), the glides (`measure`, `glide`,
+  `glideFrames`' FLIP translation and scale), `on:frame` (`bind`'s `frame` tick), keys (`keysOf`,
+  `keyCombo`, `listener`'s `.keys` and named keys, `listenOn` for `<Document>`/`<Window>`),
+  `transitionsWanted` and the place a navigation's view transition starts. What is the browser's
+  own, done by the host as a browser's engine does it: CSS animations and transitions (the Web
+  Animations timing model, CSS Easing, interpolation), view transitions' pictures. What is the
+  phone's own: Choreographer's frames (`Frames.kt`, `Rocx.tick`), MOVE and SNAPSHOT, Android's
+  ripple and pressed state (`Press.kt`, `Touches.kt`), hardware keys from `dispatchKeyEvent`
+  (`Keys.kt`), Android's focus search for Tab, "remove animations" as reduced motion.
+- **Tested:** cargo tests (easing curves against Chromium's values, `steps()`' jumps, `linear()`, the
+  timing model's phases, fill, iterations and directions, premultiplied colour mixing, implicit
+  keyframes and per-keyframe easing, a transition from what was shown and back to the view's own, an
+  out-transition held at its end, a glide over the view's own transform, endless and paused
+  animations, the shorthands' longhands; through the projection, a background and a width
+  transition, keyframes with a custom property, a page's change pictured with its named header left
+  out; key combos as `keyCombo` matches them); the Mac runner (`tick:`, `key:`, `focus:`) against a
+  large app's dev server; the emulator: its Undo toast sliding in (`toast-in`) and out
+  (`transition:out`), its palette fading and scaling in, opening with Ctrl+K and `/` (the app's
+  keyboard half) and taking arrows and Enter, a publishing step's `pulse`, a comment flying in, the
+  calendar's posts gliding as arrow keys move them between days, the header's current link easing to
+  its colour, pages cross-fading and rising under a header that stays, a ripple on a pressed link,
+  nothing moving with "remove animations".
+- **Measured** (emulator, a large app, the Mac's load about 4–6): a step pulsing, 484 frames in 8 s,
+  none janky, the host's tick 0.38–0.43 ms a frame (at most about 1 ms), the app's process at 8–12%
+  CPU; navigations with page transitions and the palette's transitions, frames p50 17 ms, p99 21–24
+  ms, no slow UI-thread frame (the janky ones the emulator GPU's slow draw commands, as D-141's
+  scrolling); the page left recorded in 0.5–0.85 ms (2.2–5.2 ms as pixels: a display list replaced
+  the bitmap); a tap patched in 0.24–0.48 ms; a still page draws no frame.
+- **Docs:** spike/native-apps/README.md (Motion, keys and presses; what moves in CSS; gaps 3 and 8),
+  DESIGN.md (§6.3, §7), DECISIONS.md, TODO.md's D-063 line.
+
+**Why.** The host keeps one model of what moves, the browser's, in Rust, where iOS gets it too and
+cargo tests it against the specs; Kotlin only sets what each frame says, as it sets any change, so
+the timing, easing and stacking of transitions, animations, Roc's directives and glides can't differ
+between them, and a page's CSS means on a phone what it means in Chromium. Android's animators would
+have meant that model again in Kotlin (and Swift), each animation's keyframes and fill handed over
+as ops. A frame costs a JNI call and a fraction of a millisecond, no Roc. Moving the transitioning
+view's frame alone keeps a size transition cheap (laying the page out each frame wouldn't be); a
+progress bar's fill, the case apps have, moves nothing else. The ripple is what an Android app's
+taps look like; the page's own `:active` wins where it has one.
+
+**Costs.** The main thread draws each frame's change (a shadow or colour repaints its view); a frame
+transition doesn't move what is around the view until it ends. Keyframes of sizes, gradients,
+outlines and SVG paint don't move; a run's colour inside a text doesn't transition; a glide isn't
+lifted above a box that clips it (runtime.js's `lift`); a view transition's named groups don't morph
+(a named element stays as it is); the Meta key is Android's. A page's change records the screen's
+drawing once (under a millisecond). Ops 9 (`MOVE`) and 10 (`SNAPSHOT`), and two JNI functions
+(`Rocx.tick`, `Rocx.key`), are new.
+
+**Reversible:** yes: motion.rs, Frames.kt, Keys.kt and Press.kt go; the applier animates opacity and
+transform changes again, and keys, `on:frame` and Roc's directives are ignored, as before.
