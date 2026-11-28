@@ -77,6 +77,12 @@ pub struct View {
     pub z: (i32, bool),
     /// Its `order` in a flex or grid box.
     pub order: i32,
+    /// It makes a stacking context (positioned with a `z-index`, fixed, sticky, translucent,
+    /// transformed): what is positioned in it is drawn in it, over its in-flow content.
+    pub stacking: bool,
+    /// For an absolutely positioned view drawn in a stacking context above its containing block:
+    /// that containing block (its frame is Taffy's in it, moved into where it is drawn).
+    pub hoisted_from: Option<u64>,
 }
 
 impl View {
@@ -93,6 +99,8 @@ impl View {
             origin: (Length::Percent(50.0), Length::Percent(50.0)),
             z: (0, false),
             order: 0,
+            stacking: false,
+            hoisted_from: None,
         }
     }
 }
@@ -1426,6 +1434,9 @@ impl<'a> Projection<'a> {
             props.insert("style.transition".into(), transitions);
         }
         let transform = values::transform(c.get("transform"), c.get("translate"), c.get("scale"), c.get("rotate"), c.ctx);
+        let position = c.get("position").unwrap_or("static");
+        let z_index = c.get("z-index").is_some_and(|z| z.trim().parse::<i32>().is_ok());
+        view.stacking = (position != "static" && z_index) || matches!(position, "fixed" | "sticky") || props.contains_key("style.opacity") || !transform.is_identity();
         if !transform.is_identity() {
             view.transform = Some(transform);
             let origin = values::split(c.get("transform-origin").unwrap_or("50% 50%"), None);
@@ -1469,7 +1480,24 @@ impl<'a> Projection<'a> {
                 }
                 at = self.parents.get(&up).copied();
             }
-            hoisted.entry(block).or_default().push(id);
+            // Drawn in the nearest stacking context at or above its containing block (a header's
+            // menu over the header's row beneath it, as CSS paints positioned boxes over in-flow
+            // ones), not past a view that scrolls (it scrolls with what it is in).
+            let mut stack = block;
+            while stack != root {
+                let Some(view) = self.views.get(&stack) else { break };
+                if view.stacking || view.kind.starts_with("scroll") || view.props.contains_key("style.clip") {
+                    break;
+                }
+                match self.parents.get(&stack) {
+                    Some(up) => stack = *up,
+                    None => break,
+                }
+            }
+            if let Some(view) = self.views.get_mut(&id) {
+                view.hoisted_from = (stack != block).then_some(block);
+            }
+            hoisted.entry(stack).or_default().push(id);
         }
         for &id in &ids {
             let view = &self.views[&id];
@@ -1995,8 +2023,51 @@ pub fn render() -> Vec<u8> {
             let tree = tree.borrow();
             let mut ids: Vec<u64> = views.keys().copied().collect();
             ids.sort();
+            // Each view's parent as drawn, for a hoisted view's frame (moved from its containing
+            // block into the stacking context it is drawn in).
+            let mut drawn_in: HashMap<u64, u64> = HashMap::new();
+            for (id, view) in views.iter() {
+                for child in &view.children {
+                    drawn_in.insert(*child, *id);
+                }
+            }
+            let mut placed: HashMap<u64, [f32; 2]> = HashMap::new();
+            fn place(id: u64, views: &HashMap<u64, View>, drawn_in: &HashMap<u64, u64>, tree: &layout::Tree, placed: &mut HashMap<u64, [f32; 2]>, depth: u32) -> [f32; 2] {
+                if let Some(at) = placed.get(&id) {
+                    return *at;
+                }
+                let own = tree.frame(id).map(|(frame, _)| [frame[0], frame[1]]).unwrap_or([0.0, 0.0]);
+                let mut at = own;
+                if let Some(block) = views.get(&id).and_then(|view| view.hoisted_from)
+                    && depth < 64
+                {
+                    // Its containing block's place, in what it is drawn in.
+                    let target = drawn_in.get(&id).copied();
+                    let mut up = Some(block);
+                    while let Some(view) = up {
+                        if Some(view) == target {
+                            break;
+                        }
+                        let offset = place(view, views, drawn_in, tree, placed, depth + 1);
+                        at[0] += offset[0];
+                        at[1] += offset[1];
+                        up = drawn_in.get(&view).copied();
+                    }
+                }
+                placed.insert(id, at);
+                at
+            }
             for id in ids {
-                let frame = if id == LAYER { Some(([0.0, 0.0, screen.width, screen.height], [screen.width, screen.height])) } else { tree.frame(id) };
+                let frame = if id == LAYER {
+                    Some(([0.0, 0.0, screen.width, screen.height], [screen.width, screen.height]))
+                } else if views[&id].hoisted_from.is_some() {
+                    tree.frame(id).map(|(frame, content)| {
+                        let at = place(id, &views, &drawn_in, &tree, &mut placed, 0);
+                        ([at[0], at[1], frame[2], frame[3]], content)
+                    })
+                } else {
+                    tree.frame(id)
+                };
                 let Some(frame) = frame else { continue };
                 if shown.frames.get(&id) != Some(&frame) {
                     ops.frame(id, frame.0);
@@ -2352,7 +2423,7 @@ mod tests {
     fn displays_make_their_boxes() {
         use Make::*;
         let views = screen(
-            ".row { display: flex; } .hidden { display: none; } .contents { display: contents; } .chip { display: inline-block; padding: 2px; } .abs { position: absolute; } .box { position: relative; } li { list-style: none; } p::before { content: '★ '; } .deco::after { content: ''; position: absolute; inset: 0; }",
+            ".row { display: flex; } .hidden { display: none; } .contents { display: contents; } .chip { display: inline-block; padding: 2px; } .abs { position: absolute; } .box { position: relative; z-index: 1; } li { list-style: none; } p::before { content: '★ '; } .deco::after { content: ''; position: absolute; inset: 0; }",
             vec![
                 El("div", &[("class", "row")], vec![Text("text alone "), El("span", &[], vec![Text("an item")])]),
                 El("div", &[("class", "hidden")], vec![Text("gone")]),
@@ -2378,6 +2449,22 @@ mod tests {
         assert!(block.children.iter().any(|child| *child & AFTER != 0), "a decorative ::after is a box of its own");
         let (_, in_flow) = find(&views, "text", "★ in flow");
         assert_eq!(in_flow.kind, "text");
+    }
+
+    #[test]
+    fn a_menu_is_drawn_in_its_stacking_context_over_what_follows() {
+        use Make::*;
+        let css = "body { margin: 0; } header { position: sticky; top: 0; z-index: 10; } details { position: relative; } .menu { position: absolute; top: 30px; left: 8px; width: 100px; } nav { height: 20px; }";
+        let views = screen(css, vec![El("header", &[], vec![El("form", &[], vec![El("details", &[("open", "")], vec![El("summary", &[], vec![Text("Org")]), El("div", &[("class", "menu")], vec![Text("menu")])])]), El("nav", &[], vec![Text("links")])])]);
+        let (menu, _) = find(&views, "text", "menu");
+        let (header, _) = views.iter().find(|(_, view)| view.tag == "header").map(|(id, view)| (*id, view)).unwrap();
+        assert!(views[&header].children.contains(&menu), "drawn in the header (a stacking context), not in its details");
+        assert_eq!(views[&header].children.last(), Some(&menu), "over the nav that follows");
+        let (summary, _) = find(&views, "text", "Org");
+        let details = views.iter().find(|(_, view)| view.flow.contains(&summary)).map(|(id, _)| *id).unwrap();
+        let at = frame_of(details).unwrap();
+        let form = frame_of(views.iter().find(|(_, view)| view.tag == "form").map(|(id, _)| *id).unwrap()).unwrap();
+        assert_eq!(frame_of(menu).map(|f| [f[0], f[1]]), Some([form[0] + at[0] + 8.0, form[1] + at[1] + 30.0]), "where its containing block puts it");
     }
 
     #[test]
