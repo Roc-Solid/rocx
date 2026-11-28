@@ -25,6 +25,7 @@ import android.widget.ScrollView
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Applies a batch of the native host's ops (native/core/src/native.rs) to Android views: one call
@@ -553,7 +554,13 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             val shift = if (edge.first) {
                 val want = scrolled.scrollY + edge.second * density - y
                 want.coerceIn(0f, max(0f, parentTop + parentBottom - y - view.height))
-            } else 0f
+            } else {
+                // `bottom`: kept that far above the scroll view's bottom edge, no higher than its
+                // parent's top.
+                val visible = scrolled.height - scrolled.paddingTop - scrolled.paddingBottom
+                val want = scrolled.scrollY + visible - edge.second * density - (y + view.height)
+                want.coerceIn(min(0f, parentTop - y), 0f)
+            }
             view.translationY = base + shift
         }
     }

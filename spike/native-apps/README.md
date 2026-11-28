@@ -551,8 +551,9 @@ scrolling on; its scroll is sent (`scroll` events) when something listens. An ab
 view is laid out in its containing block and drawn in the stacking context that is in (the nearest
 view above it positioned with a `z-index`, fixed, sticky, translucent or transformed, or the page; not
 past one that scrolls or clips), so a header's menu is drawn over the row beneath it. `position:
-fixed` views sit on a layer over the page that doesn't scroll; `position: sticky` keeps its `top` from its scroll
-view's edge within its parent, moved by the applier as the scroll goes. `on:viewport` handlers are
+fixed` views sit on a layer over the page that doesn't scroll; `position: sticky` keeps its `top`
+(or `bottom`) from its scroll view's edge within its parent, moved by the applier as the scroll
+goes. `on:viewport` handlers are
 told their element's scroll and size after each layout that changed them (a header that packs what
 doesn't fit into "More" does).
 
@@ -636,7 +637,7 @@ dev server:
    `clip-path` but `inset(50%)`, `background-image: url()`, more than one outer `box-shadow` (the
    first is drawn), `text-shadow`, `text-indent`, `hyphens`, `overflow-wrap: normal` (Android breaks
    a word that doesn't fit) and a `:has()` left of a rule's subject reprojecting all its element
-   holds. `position: sticky` keeps a top edge only. The projection is incremental, the CSS still
+   holds. The projection is incremental, the CSS still
    parsed on the phone (a 150 KB sheet of 1,491 rules in 7.5 ms on the Mac, about twice that on
    the emulator; again on a rotation).
 4. **CSS at build time.** Parsed on the phone now; the design's build-time table (and `rocx check
