@@ -428,6 +428,11 @@ StripeRules := [].{
 	no_customer : Str -> Bool
 	no_customer = |json| StripeRules.text(json, ["error", "code"]) == "resource_missing" and StripeRules.text(json, ["error", "param"]) == "customer"
 
+	## Whether an answer of `status` says the thing asked for isn't there (a 404, `resource_missing`):
+	## a customer deleted at Stripe already, which `forget!` takes as done.
+	missing : U16, Str -> Bool
+	missing = |status, json| status == 404 and StripeRules.text(json, ["error", "code"]) == "resource_missing"
+
 	## Whether `id` has the shape of a Checkout Session's id (`cs_test_…`, `cs_live_…`), so nothing
 	## else is put in a URL.
 	is_session_id : Str -> Bool
@@ -678,6 +683,8 @@ expect StripeRules.problem(400, "{\"error\":{\"type\":\"invalid_request_error\",
 expect StripeRules.problem(502, "<html>") == "Stripe answered 502"
 expect StripeRules.no_customer("{\"error\":{\"code\":\"resource_missing\",\"param\":\"customer\",\"message\":\"No such customer\"}}")
 expect !StripeRules.no_customer("{\"error\":{\"code\":\"resource_missing\",\"param\":\"line_items[0][price]\"}}")
+expect StripeRules.missing(404, "{\"error\":{\"code\":\"resource_missing\",\"param\":\"id\",\"message\":\"No such customer: 'cus_1'\"}}")
+expect !StripeRules.missing(400, "{\"error\":{\"code\":\"resource_missing\"}}") and !StripeRules.missing(404, "{\"error\":{\"code\":\"api_key_expired\"}}")
 expect StripeRules.is_session_id("cs_test_a1B2") and !StripeRules.is_session_id("cs_test/../x") and !StripeRules.is_session_id("sub_1")
 expect StripeRules.price_in("{\"object\":\"list\",\"data\":[{\"id\":\"price_pro\",\"lookup_key\":\"pro_monthly\"}],\"has_more\":false}") == Ok("price_pro")
 expect StripeRules.price_in("{\"object\":\"list\",\"data\":[],\"has_more\":false}") == Err(NoPrice)

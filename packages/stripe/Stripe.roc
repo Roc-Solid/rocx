@@ -12,6 +12,7 @@ import StripeRules
 import StripeStore
 import "migrations/0001_stripe.sql" as table : Str
 import "migrations/0002_refunds.sql" as refunds : Str
+import "migrations/0003_forgotten.sql" as forgotten : Str
 
 ## Payments and subscriptions through Stripe, as a plugin (D-082): Stripe's hosted Checkout for a
 ## one-time payment or a subscription (`checkout!`), its hosted Customer Portal for managing one
@@ -156,7 +157,7 @@ Stripe := [].{
 	api_version : Str
 	api_version = "2025-03-31.basil"
 
-	## The Stripe plugin: the tables (`stripe/0001_stripe` and `stripe/0002_refunds`, the same on
+	## The Stripe plugin: the tables (`stripe/0001_stripe` to `stripe/0003_forgotten`, the same on
 	## SQLite and Postgres), and a look at the keys once the server has started (`stripe.keys`: test or live mode). It needs a database, and
 	## `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`: outside `--dev`, a server without them doesn't
 	## start; under `--dev` it starts with Stripe off (each call answers `StripeErr`, the webhook
@@ -167,7 +168,7 @@ Stripe := [].{
 		at = options.webhook_at
 		{
 			name: "stripe",
-			migrations: [{ name: "0001_stripe", sql: table }, { name: "0002_refunds", sql: refunds }],
+			migrations: [{ name: "0001_stripe", sql: table }, { name: "0002_refunds", sql: refunds }, { name: "0003_forgotten", sql: forgotten }],
 			starts: [|_context| keys_needed!({})],
 			checks: [{ name: "stripe.keys", run!: |_context| keys!(at) }],
 			needs: [Database],
@@ -401,6 +402,32 @@ Stripe := [].{
 		Ok(rows.map(|row| { session: row.id, prices: prices_of(row.prices), amount_total: row.amount_total, currency: row.currency, paid_ms: row.updated_at }))
 	}
 
+	## Forgets `user`, for the app deleting them: their customer deleted at Stripe, which cancels
+	## any subscription of theirs there at once (no refund is made; their invoices stay at Stripe, as
+	## tax law wants them kept), then the package's rows of theirs (their customer, checkouts and
+	## subscriptions), in one transaction. A customer Stripe doesn't have is forgotten all the same.
+	## The customer's id is kept as forgotten, so Stripe's events about it (its deletion, its
+	## subscription's end) are taken and kept nowhere. Someone who never checked out has nothing to
+	## delete at Stripe. On the log.
+	forget! : Str => Try({}, [StripeErr(Str), DbErr(Str), ..others])
+	forget! = |user| {
+		customer =
+			match StripeStore.customer_of!(user).map_err(unread)? {
+				Found(id) => id
+				Missing => ""
+			}
+		if !customer.is_empty() {
+			match asked!(Delete, StripeRules.api_path("/v1/customers", customer), [], "", 3) {
+				Ok(_) => {}
+				Err(Refused(status, said)) if StripeRules.missing(status, said) => {}
+				Err(problem) => return Err(stripe_err(problem))
+			}
+		}
+		Db.transaction!(|{}| StripeStore.forget_user!({ user, customer, now: now!({}) }))?
+		Log.info!("stripe: user forgotten", { user, customer })
+		Ok({})
+	}
+
 	## `user`'s Stripe customer (`cus_…`), for anything else of Stripe's API; `NoCustomer` when they
 	## have never checked out.
 	customer! : Str => Try(Str, [NoCustomer, DbErr(Str), ..others])
@@ -513,7 +540,7 @@ fetched! = |path, fields| asked!(Get, path, fields, "", 3)
 ## isn't; `Unreached(why)` when there was none. A network error, a 409 (the same key in use), a 429
 ## or a 5xx is tried again, `tries` times in all, half a second and then a second later, with the
 ## same idempotency key, unless Stripe says not to (`Stripe-Should-Retry: false`).
-asked! : [Get, Post], Str, List((Str, Str)), Str, U64 => Try(Str, [Refused(U16, Str), Unreached(Str)])
+asked! : [Get, Post, Delete], Str, List((Str, Str)), Str, U64 => Try(Str, [Refused(U16, Str), Unreached(Str)])
 asked! = |method, path, fields, key, tries| {
 	secret = (Env.var!("STRIPE_SECRET_KEY") ?? "").trim()
 	if secret.is_empty() {
@@ -525,6 +552,7 @@ asked! = |method, path, fields, key, tries| {
 		match method {
 			Get => Http.fetch!(url, { headers: headers, query: fields, timeout_ms: 30_000 })
 			Post => Http.fetch!(url, { method: Post, headers: headers, body: Http.form(fields), timeout_ms: 30_000 })
+			Delete => Http.fetch!(url, { method: Delete, headers: headers, timeout_ms: 30_000 })
 		}
 	match answer {
 		Ok(res) if res.ok => Ok(res.text())
@@ -881,9 +909,20 @@ recorded! = |on_event!, event, ready| {
 }
 
 ## What `event` says, kept in the package's tables: the app's user it is about, and what it is
-## about, as `on_event!` is given it.
+## about, as `on_event!` is given it. One about a forgotten customer (`forget!`) is about no one,
+## and nothing of it is kept.
 kept! : StripeRules.Event, Read, I64 => Try((Str, Stripe.About), [DbErr(Str), ..others])
-kept! = |event, ready, now|
+kept! = |event, ready, now| {
+	about_customer =
+		match ready {
+			Sub(read) => read.customer
+			Sess(read) => read.customer
+			Inv(read) => read.customer
+			Deleted(customer) | Charged(_, customer) | Else(customer) => customer
+		}
+	if !about_customer.is_empty() and StripeStore.forgotten!(about_customer).map_err(unread)? {
+		return Ok(("", Other))
+	}
 	match ready {
 		Sess(read) => {
 			user = if (read.user.is_empty()) known!(read.customer)? else read.user
@@ -926,6 +965,7 @@ kept! = |event, ready, now|
 			Ok((user, Other))
 		}
 	}
+}
 
 ## The plugin's start: outside `--dev`, a server without its keys doesn't start (under `--dev` it
 ## starts with Stripe off, and `keys!` says so).

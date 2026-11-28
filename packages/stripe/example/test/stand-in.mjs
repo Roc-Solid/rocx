@@ -257,6 +257,16 @@ export async function standIn() {
 			}
 			if (method === "GET") return { status: 200, body: query.getAll("expand[]").includes("default_payment_method") ? expanded(subscription, "default_payment_method") : subscription };
 		}
+		if (method === "DELETE" && (match = /^\/v1\/customers\/([^/]+)$/.exec(path))) {
+			// Deleting a customer cancels its subscriptions at once, as Stripe does.
+			const id = decodeURIComponent(match[1]);
+			if (!customers.has(id)) return refused(404, `No such customer: '${id}'`, { code: "resource_missing", param: "id" });
+			customers.delete(id);
+			for (const subscription of subscriptions.values()) {
+				if (subscription.customer === id && subscription.status !== "canceled") Object.assign(subscription, { status: "canceled", ended_at: now(), canceled_at: now() });
+			}
+			return { status: 200, body: { id, object: "customer", deleted: true } };
+		}
 		if (method === "GET" && (match = /^\/v1\/customers\/([^/]+)$/.exec(path))) {
 			const customer = customers.get(decodeURIComponent(match[1]));
 			if (!customer) return refused(404, `No such customer: '${decodeURIComponent(match[1])}'`, { code: "resource_missing", param: "id" });

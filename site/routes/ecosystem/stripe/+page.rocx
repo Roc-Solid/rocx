@@ -233,11 +233,18 @@ view! = |_|
 
 			<Heading id="tables">The tables</Heading>
 			<p>
-				The plugin's migrations (<code>stripe/0001_stripe</code>, then <code>stripe/0002_refunds</code>) make
-				four tables, the same on SQLite and Postgres: <code>stripe_customers</code> (each user's Stripe
-				customer), <code>stripe_checkouts</code>, <code>stripe_subscriptions</code> (as the events last said)
-				and <code>stripe_events</code> (those handled, swept after 30 days). Your users stay in your table; the
-				package knows them by your id.
+				The plugin's migrations (<code>stripe/0001_stripe</code> to <code>stripe/0003_forgotten</code>) make
+				five tables, the same on SQLite and Postgres: <code>stripe_customers</code> (each user's Stripe
+				customer), <code>stripe_checkouts</code>, <code>stripe_subscriptions</code> (as the events last said),
+				<code>stripe_events</code> (those handled, swept after 30 days) and <code>stripe_forgotten</code>
+				(customers whose users were deleted). Your users stay in your table; the package knows them by your
+				id.
+			</p>
+			<p>
+				Deleting someone, <code>{"Stripe.forget!(user)"}</code> deletes their customer at Stripe, which ends
+				their subscription there at once (no refund), then their rows here. Their invoices stay at Stripe, as
+				tax law wants. Stripe's events about that customer afterwards are taken and kept nowhere, so they
+				can't bring the rows back.
 			</p>
 
 			<Heading id="safety">Safety</Heading>

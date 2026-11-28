@@ -44,6 +44,28 @@ StripeStore := [].{
 		Ok({})
 	}
 
+	## Whether `customer` is one whose user the app deleted (`Stripe.forget!`).
+	forgotten! : Str => Try(Bool, [DbErr(Str), BadRow(Str), ..others])
+	forgotten! = |customer| {
+		rows : List({ customer_id : Str })
+		rows = Db.all!("select customer_id from stripe_forgotten where customer_id = $1", [Text(customer)])?
+		Ok(!rows.is_empty())
+	}
+
+	## Forgets `user` (the app deleted them): `customer` (theirs, "" for none) kept as forgotten,
+	## and their customer's, checkouts' and subscriptions' rows deleted. Run it in a transaction, so
+	## it goes all at once (`Stripe.forget!` does).
+	forget_user! : { user : Str, customer : Str, now : I64 } => Try({}, [DbErr(Str), ..others])
+	forget_user! = |gone| {
+		if !gone.customer.is_empty() {
+			_ = Db.run!("insert into stripe_forgotten (customer_id, forgotten_at) values ($1, $2) on conflict do nothing", [Text(gone.customer), Int(gone.now)])?
+		}
+		_ = Db.run!("delete from stripe_subscriptions where user_id = $1", [Text(gone.user)])?
+		_ = Db.run!("delete from stripe_checkouts where user_id = $1", [Text(gone.user)])?
+		_ = Db.run!("delete from stripe_customers where user_id = $1", [Text(gone.user)])?
+		Ok({})
+	}
+
 	## Forgets `customer` (Stripe deleted it): the next checkout of its user makes another.
 	forget! : Str => Try(U64, [DbErr(Str), ..others])
 	forget! = |customer| Db.run!("delete from stripe_customers where customer_id = $1", [Text(customer)])

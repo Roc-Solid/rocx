@@ -274,6 +274,7 @@ All of these read the package's tables, never Stripe:
 | `subscriptions! : Str => Try(List(Stripe.Subscription), [DbErr(Str), ..])` | all of them, the one changed last first |
 | `payments! : Str => Try(List(Stripe.Payment), [DbErr(Str), ..])` | their one-time payments that were paid (and not refunded in full, nor disputed), the newest first |
 | `customer! : Str => Try(Str, [NoCustomer, DbErr(Str), ..])` | their Stripe customer (`cus_…`) |
+| `forget! : Str => Try({}, [StripeErr(Str), DbErr(Str), ..])` | the user forgotten: their customer deleted at Stripe (their subscription ends), their rows gone ([Deleting a user](#deleting-a-user)) |
 
 `subscribed!` and `paid_for!` are a no when the database can't be read (and an error on the log),
 so a page they guard stays shut.
@@ -400,10 +401,25 @@ Stripe answers a key it has seen (for 24 hours) as it did the first time, and ma
 refund = Stripe.post_with!({ path: "/v1/refunds", fields: [("payment_intent", intent)], idempotency_key: "refund-order-${order.id}" })?
 ```
 
+## Deleting a user
+
+`Stripe.forget!(user) : Try({}, [StripeErr(Str), DbErr(Str), ..])`, for an app deleting someone
+(with packages/auth's `Auth.forget!` and its own rows): their customer deleted at Stripe, which ends
+any subscription of theirs there at once (no refund is made: refund first, with `post_with!`, if one
+is owed), then their customer's, checkouts' and subscriptions' rows, in one transaction. Their
+invoices stay at Stripe, which keeps them as tax law wants. A customer Stripe doesn't have any more
+is forgotten all the same; someone who never checked out has nothing to delete there. Ask it before
+deleting the app's own rows: if Stripe can't be reached, nothing is deleted, and it can be asked
+again.
+
+The customer's id is kept as forgotten (`stripe_forgotten`), so the events Stripe sends after (the
+subscription's end, the customer's deletion, whose metadata still names the user) are taken (a 200)
+and kept nowhere: they can't bring the user's rows back. `on_event!` is given them with no user.
+
 ## The tables
 
-`stripe/0001_stripe` and `stripe/0002_refunds`, the same on SQLite and on Postgres (times are
-milliseconds, given by the package):
+`stripe/0001_stripe`, `stripe/0002_refunds` and `stripe/0003_forgotten`, the same on SQLite and on
+Postgres (times are milliseconds, given by the package):
 
 - `stripe_customers`: `user_id`, `customer_id`, `created_at`;
 - `stripe_checkouts`: `id`, `user_id`, `customer_id`, `mode`, `prices` (JSON), `status`,
@@ -411,7 +427,8 @@ milliseconds, given by the package):
   `amount_total`, `currency`, `subscription_id`, `payment_intent`, `created_at`, `updated_at`;
 - `stripe_subscriptions`: `id`, `user_id`, `customer_id`, `status`, `items` (JSON),
   `current_period_end`, `cancel_at_period_end`, `cancel_at`, `trial_end`, `version`, `updated_at`;
-- `stripe_events`: `id`, `event_type`, `created_at`, `handled_at`; swept after 30 days.
+- `stripe_events`: `id`, `event_type`, `created_at`, `handled_at`; swept after 30 days;
+- `stripe_forgotten`: `customer_id`, `forgotten_at`: customers whose users were forgotten.
 
 ## Safety
 

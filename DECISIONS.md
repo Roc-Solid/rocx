@@ -7655,3 +7655,46 @@ an address where it used to read a column of its own.
 
 **Reversible:** yes, while apps can read the ids: the table stays, and `admit!` goes back to the
 app's own lookup.
+
+## D-135 packages/stripe forgets a user: `Stripe.forget!`
+
+**Status.** Built (2026-11-28).
+
+**Context.** An app deleting a person (a request to erase their data) deletes its own rows and
+packages/auth's (`Auth.forget!`, D-134). The package's rows name the user too (their customer,
+checkouts, subscriptions), and Stripe keeps a customer whose subscription goes on charging. Only the
+package knows both. Deleting the rows alone isn't enough: Stripe's next event about the subscription
+names the user in its metadata, and the package would write its row again.
+
+**Options.**
+1. The app deletes the package's rows by SQL and the customer through `Stripe.post!`.
+2. `Stripe.forget!(user)`: the customer deleted at Stripe, the rows deleted, and the customer kept as
+   forgotten so later events keep nothing.
+
+**Decision.** 2 (the user, 2026-11-28).
+
+- **`Stripe.forget!(user) : Try({}, [StripeErr(Str), DbErr(Str), ..])`**: `DELETE /v1/customers/<id>`
+  (Stripe ends the customer's subscriptions at once, with no refund, and keeps their invoices), then
+  `stripe_subscriptions`, `stripe_checkouts` and `stripe_customers` rows of the user deleted, in one
+  transaction. A 404 `resource_missing` (Stripe has no such customer) is taken as done
+  (`StripeRules.missing`). Nothing is asked of Stripe for a user with no customer. On the log.
+- **`stripe/0003_forgotten`**: `stripe_forgotten (customer_id, forgotten_at)`. An event whose object's
+  customer is there is recorded (handled once, a 200) and kept nowhere; `on_event!` is given it with no
+  user. The customer's id names no person once Stripe deleted it.
+- The package's requests take `DELETE` now beside `GET` and `POST` (tried again as they are).
+- The example's stand-in for Stripe answers `DELETE /v1/customers/<id>` as Stripe does: the customer
+  gone, its subscriptions `canceled`, a 404 `resource_missing` for one it hasn't.
+- **Tested:** `StripeRules.missing`'s expects; the example's tests on SQLite and Postgres (a subscriber
+  forgotten: the one `DELETE`, the customer gone at Stripe, its subscription ended, no row left, the pro
+  pages shut; the subscription's end and the customer's deletion sent after, answered 200, bringing
+  nothing back; forgotten again and someone who never checked out, nothing asked of Stripe).
+- **Docs:** packages/stripe's README (Deleting a user, the API, the tables), the docs site's Stripe page
+  (the tables), DECISIONS.md.
+
+**Why.** Erasing a person is the app's to decide and the packages' to carry out, each for what it
+keeps; the subscription must stop at Stripe, not only here, and a tombstone is the one way an event
+that comes after can't undo it.
+
+**Costs.** A row per forgotten customer, kept for good. No refund: an app that owes one refunds first.
+
+**Reversible:** yes: the function and the table go; deleted customers stay deleted at Stripe.

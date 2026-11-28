@@ -49,6 +49,22 @@ post! = |{ body, .. }|
 	}
 `;
 
+/** A route the tests add: a user forgotten (`Stripe.forget!`), as an app that deletes a person would. */
+const forgetRoute = `import pf.Server
+import pf.Endpoint
+import stripe.Stripe
+
+## POST /test/forget: \`user\` forgotten, their customer deleted at Stripe. Written by
+## packages/stripe's tests into the app they build; the example has none.
+post! : { request : Server.Request, params : {}, context : {}, body : { user : Str } } => Try({}, Endpoint.Refusal)
+post! = |{ body, .. }|
+	match Stripe.forget!(body.user) {
+		Ok({}) => Ok({})
+		Err(StripeErr(why)) => Err(Status(502, why))
+		Err(DbErr(why)) => Err(Status(503, why))
+	}
+`;
+
 const example = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The example for `database`, in build/<database>/app: its folder. */
@@ -65,6 +81,8 @@ function app(database) {
 	writeFileSync(join(dir, "routes", "test", "refund", "+server.roc"), refundRoute);
 	mkdirSync(join(dir, "routes", "test", "price"), { recursive: true });
 	writeFileSync(join(dir, "routes", "test", "price", "+server.roc"), priceRoute);
+	mkdirSync(join(dir, "routes", "test", "forget"), { recursive: true });
+	writeFileSync(join(dir, "routes", "test", "forget", "+server.roc"), forgetRoute);
 	return dir;
 }
 
@@ -228,6 +246,40 @@ for (const database of databases) {
 			const portal = await client.post("/api/billing/portal", {});
 			assert.equal(portal.status, 303);
 			assert.equal(portal.location, "/");
+		});
+
+		test("Stripe.forget!: the customer deleted at Stripe, its subscription ended there at once, the user's rows gone; Stripe's events about it after keep nothing; nothing asked of Stripe for someone with no customer", async () => {
+			const { client, user } = await signedIn("fay@example.com");
+			const id = await checkout(client, "price_pro");
+			const { session, subscription } = stripe.complete(id);
+			for (const event of [stripe.event("checkout.session.completed", session), stripe.event("customer.subscription.updated", subscription)]) {
+				assert.equal((await deliver(event)).status, 200);
+			}
+			assert.equal((await client.get("/pro")).status, 200, "a subscriber");
+			const from = stripe.requests.length;
+			const forgotten = await server.client().json("/test/forget", { user });
+			assert.equal(forgotten.status, 200, forgotten.text);
+			assert.deepEqual(stripe.since(from), [`DELETE /v1/customers/${subscription.customer}`]);
+			assert.equal(stripe.customers.has(subscription.customer), false, "deleted at Stripe");
+			const ended = stripe.update(subscription.id, {});
+			assert.equal(ended.status, "canceled", "its subscription ended with it");
+			for (const table of ["stripe_customers", "stripe_checkouts", "stripe_subscriptions"]) {
+				assert.equal(await count(`select count(*) as n from ${table} where user_id = '${user}'`), 0, table);
+			}
+			assert.equal((await client.get("/pro")).location, "/?subscribe=1", "no longer a subscriber");
+			// What Stripe sends after: the subscription's end (its metadata still naming the user) and the customer's deletion.
+			for (const event of [stripe.event("customer.subscription.deleted", ended), stripe.event("customer.deleted", { id: subscription.customer, object: "customer", deleted: true })]) {
+				const answer = await deliver(event);
+				assert.equal(answer.status, 200, `${event.type}: ${answer.text}`);
+			}
+			assert.equal(await count(`select count(*) as n from stripe_subscriptions where id = '${subscription.id}' or user_id = '${user}'`), 0, "nothing brought back");
+			assert.equal(await count(`select count(*) as n from stripe_customers where user_id = '${user}'`), 0);
+			// Forgotten again, and someone who never checked out: nothing to ask Stripe.
+			const again = stripe.requests.length;
+			assert.equal((await server.client().json("/test/forget", { user })).status, 200);
+			const { user: never } = await signedIn("gus@example.com");
+			assert.equal((await server.client().json("/test/forget", { user: never })).status, 200);
+			assert.deepEqual(stripe.since(again), []);
 		});
 
 		test("the webhook takes Stripe's signature only: forged, too old, missing or of another body is a 400; one good v1 among several will do", async () => {
