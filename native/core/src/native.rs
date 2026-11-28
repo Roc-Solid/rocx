@@ -729,6 +729,11 @@ impl<'a> Projection<'a> {
         if self.clickable(node, &tag) {
             view.props.insert("click".into(), "true".into());
         }
+        // D-139: a double tap is a `dblclick` (after its two clicks, as a browser's).
+        if self.engine.listens(node, "dblclick") {
+            view.props.insert("click".into(), "true".into());
+            view.props.insert("dblclick".into(), "true".into());
+        }
         if attr("disabled").is_some() {
             view.props.insert("disabled".into(), "true".into());
         }

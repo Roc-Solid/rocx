@@ -263,6 +263,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 }
             }
             "options" -> if (view is SelectBox) view.option(key, value)
+            "dblclick" -> if (value == "true") doubles.add(id) else doubles.remove(id)
             "maxlength", "readonly", "required", "autofocus", "inputmode", "enterkeyhint", "min", "max", "autocomplete", "invalid", "multiple", "appearance" -> field(id, view, key, value)
             "svg" -> if (view is SvgView) view.drawing(value)
             "placeholder" -> if (view is EditText) view.hint = value
@@ -275,7 +276,18 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             }
             "click" -> if (view !is EditText && view !is CompoundButton && view !is SelectBox) {
                 if (value == "true") {
-                    view.setOnClickListener { if (!applying) Rocx.event(id, "click", "") }
+                    view.setOnClickListener {
+                        if (applying) return@setOnClickListener
+                        Rocx.event(id, "click", "")
+                        // A second tap soon after on a view that listens for it: `dblclick` (D-139).
+                        val now = SystemClock.uptimeMillis()
+                        if (doubles.contains(id) && now - (lastTap[id] ?: 0L) < 350L) {
+                            lastTap.remove(id)
+                            Rocx.event(id, "dblclick", "")
+                        } else {
+                            lastTap[id] = now
+                        }
+                    }
                 } else {
                     view.setOnClickListener(null)
                     view.isClickable = false
@@ -401,6 +413,9 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
     private val dateValues = HashMap<Long, String>()
     private val focusedWith = HashMap<Long, String>()
     private val fieldProps = HashMap<Long, HashMap<String, String>>()
+    /** Views with a `dblclick` handler, and when each was last tapped. */
+    private val doubles = HashSet<Long>()
+    private val lastTap = HashMap<Long, Long>()
 
     /** The keyboard a field's `type` (and `inputmode`) asks for. */
     private fun inputType(type: String, mode: String?): Int = when (mode) {
