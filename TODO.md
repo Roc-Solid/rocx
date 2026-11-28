@@ -16,7 +16,10 @@ When an item lands, delete its line here in the same commit.
   for the server (signals.rs replaced) and then the browser (runtime.js retired, hydration by the
   engine, JavaScript kept to the DOM, hydrating and browser APIs). Feasible; in five phases, the first
   (one core for the server and the phone) changing nothing in the browser. Its open questions wait
-  on the user.
+  on the user. **Order (the user, 2026-11-28): polish both targets first, the browser and Android,
+  then consolidate into one runtime**, when two finished engines show what can be shared and what
+  can't. Meanwhile, a phone decision (D-137 onwards) says what it ported from runtime.js and what is
+  the phone's own, so the consolidation starts from that list.
 - **The page's wasm and runtime aren't cached** (found in that investigation): only files named by
   their content are served `immutable` (the stylesheet), and `app.wasm`, `runtime.js` and
   `start.js` have fixed names and no `ETag` or `Last-Modified`, so every visit downloads them again.
