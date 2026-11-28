@@ -130,6 +130,38 @@ impl Platform for Android {
         }
     }
 
+    fn density(&self) -> f32 {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return 1.0 };
+        let Ok(mut env) = vm.get_env() else { return 1.0 };
+        let asked = (|| -> jni::errors::Result<f32> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            env.call_static_method(&class, "density", "()F", &[])?.f()
+        })();
+        asked.unwrap_or_else(|_| {
+            let _ = env.exception_clear();
+            1.0
+        })
+    }
+
+    fn cache_dir(&self) -> Option<String> {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return None };
+        let Ok(mut env) = vm.get_env() else { return None };
+        let asked = (|| -> jni::errors::Result<String> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let dir = env.call_static_method(&class, "cacheDir", "()Ljava/lang/String;", &[])?.l()?;
+            let dir = JString::from(dir);
+            Ok(env.get_string(&dir).map(String::from).unwrap_or_default())
+        })();
+        match asked {
+            Ok(dir) if !dir.is_empty() => Some(dir),
+            Ok(_) => None,
+            Err(_) => {
+                let _ = env.exception_clear();
+                None
+            }
+        }
+    }
+
     fn scroll(&self) -> (f32, f32) {
         let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return (0.0, 0.0) };
         let Ok(mut env) = vm.get_env() else { return (0.0, 0.0) };
@@ -463,4 +495,12 @@ pub extern "system" fn Java_dev_rocx_phone_Rocx_back(_env: JNIEnv, _class: JClas
 pub extern "system" fn Java_dev_rocx_phone_Rocx_send(mut env: JNIEnv, _class: JClass, id: jlong, name: JString, value: JString) {
     let (name, value) = (text(&mut env, &name), text(&mut env, &value));
     core::event(id as u64, &name, &value);
+}
+
+/// `Rocx.ask(what, arg)`: what the shell asks the host (D-139), on the main thread: a URL's
+/// cookies, an element's attribute, a file input's files (`core::ask`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_ask<'local>(mut env: JNIEnv<'local>, _class: JClass, what: JString, arg: JString) -> JString<'local> {
+    let (what, arg) = (text(&mut env, &what), text(&mut env, &arg));
+    env.new_string(core::ask(&what, &arg)).unwrap_or_default()
 }

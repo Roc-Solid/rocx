@@ -13,7 +13,8 @@
 //! says it), `nav:<to>` (`Router.navigate!`), `back` (Android's back), `where` (the location and
 //! the history), `cookies` (the jar), `at:<id>` (a tap on the view with that id) and `at:<id>=<text>`
 //! (typing into it), `textarea:<text>` (typing into the first text area), `check:<text>` (the checkbox
-//! or radio beside that text, toggled); layout's (D-137): `boxes` (each element's box on the page),
+//! or radio beside that text, toggled); controls' (D-139): `choose:<id>=<value>` (a select's or a
+//! date field's choice), `pick:<id>=<path>,…` (files from the system's picker); layout's (D-137): `boxes` (each element's box on the page),
 //! `width:<dp>` (the screen's width, 412 at first: a rotation), `time` (how long the last layout took).
 //!
 //! Options: `--origin <url>`, `--path <start path>`, `--files <dir>` (where the cookie jar is kept,
@@ -45,6 +46,10 @@ impl Platform for Mac {
     }
     fn call(&self, name: &str, arg: &str, _origin: &str) -> bool {
         println!("  call {name} {arg}");
+        true
+    }
+    fn pick(&self, view: u64, accept: &str, multiple: bool) -> bool {
+        println!("  pick #{view} (accept {accept:?}{})", if multiple { ", several" } else { "" });
         true
     }
     fn focus(&self, views: &[u64]) -> bool {
@@ -165,7 +170,7 @@ fn main() {
                     }
                     None => {
                         // A checkbox's view says whether it is checked now, as Android's does.
-                        let checkbox = core::native::shown_views().get(&id).filter(|view| view.kind == "checkbox").map(|view| view.props.get("checked").map(String::as_str) != Some("true"));
+                        let checkbox = core::native::shown_views().get(&id).filter(|view| matches!(view.kind, "checkbox" | "radio")).map(|view| view.props.get("checked").map(String::as_str) != Some("true"));
                         match checkbox {
                             Some(now) => {
                                 println!("check #{id}: {now}");
@@ -198,7 +203,7 @@ fn main() {
                     let children = &views[parent].children;
                     for pair in children.windows(2) {
                         let (Some(first), Some(second)) = (views.get(&pair[0]), views.get(&pair[1])) else { continue };
-                        if first.kind == "checkbox" && second.props.get("text").is_some_and(|text| text.contains(value)) {
+                        if matches!(first.kind, "checkbox" | "radio") && second.props.get("text").is_some_and(|text| text.contains(value)) {
                             found = Some((pair[0], first.props.get("checked").map(String::as_str) != Some("true")));
                             break 'look;
                         }
@@ -212,6 +217,38 @@ fn main() {
                     }
                     None => println!("no checkbox beside {value:?}"),
                 }
+            }
+            // D-139: what a phone's own controls send. `choose:<id>=<value>` (a select's choice, or a
+            // date field's), `pick:<id>=<path>[,<path>…]` (files from the system's picker).
+            "choose" => {
+                let (id, chosen) = value.split_once('=').unwrap_or((value, ""));
+                let id: u64 = id.trim_start_matches('#').parse().unwrap_or(0);
+                println!("choose {chosen:?} (#{id})");
+                core::event(id, "input", chosen);
+                core::event(id, "change", chosen);
+            }
+            "pick" => {
+                let (id, paths) = value.split_once('=').unwrap_or((value, ""));
+                let id: u64 = id.trim_start_matches('#').parse().unwrap_or(0);
+                let files: Vec<String> = paths
+                    .split(',')
+                    .filter(|path| !path.is_empty())
+                    .map(|path| {
+                        let name = path.rsplit('/').next().unwrap_or(path);
+                        let size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+                        let kind = match name.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str() {
+                            "jpg" | "jpeg" => "image/jpeg",
+                            "png" => "image/png",
+                            "webp" => "image/webp",
+                            "mp4" => "video/mp4",
+                            "mov" => "video/quicktime",
+                            _ => "application/octet-stream",
+                        };
+                        format!("{{\"name\":\"{name}\",\"type\":\"{kind}\",\"size\":{size},\"path\":\"{path}\"}}")
+                    })
+                    .collect();
+                println!("pick {} file(s) (#{id})", files.len());
+                core::event(id, "files", &format!("[{}]", files.join(",")));
             }
             "enter" => match find("input", None) {
                 Some(id) => {

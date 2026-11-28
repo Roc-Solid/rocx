@@ -57,6 +57,20 @@ object Rocx {
         return (java.lang.Float.floatToRawIntBits(w).toLong() shl 32) or (java.lang.Float.floatToRawIntBits(h).toLong() and 0xffffffffL)
     }
 
+    /**
+     * What the shell asks the host (D-139), on the main thread: `cookie` (the `cookie` header the
+     * app's jar sends to a URL: a video's player), `attr` (`<id>\n<name>`: an element's attribute,
+     * for an element's phone half), `files` (`<id>`: the files a file input holds, as JSON). "" for
+     * nothing.
+     */
+    @JvmStatic external fun ask(what: String, arg: String): String
+
+    /** The screen's density, pixels a CSS px (D-139: `srcset`). */
+    @JvmStatic fun density(): Float = applier?.activity?.resources?.displayMetrics?.density ?: 1f
+
+    /** Where files the app may lose are kept (D-139: images, picked files). */
+    @JvmStatic fun cacheDir(): String = applier?.activity?.cacheDir?.path ?: ""
+
     /** Where what outlives the process is kept (the app's files: the cookie jar), before `start`. */
     @JvmStatic external fun files(dir: String)
 

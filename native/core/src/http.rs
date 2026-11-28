@@ -54,7 +54,12 @@ const POOLED: usize = 6;
 pub fn send(id: u64, method: String, url: String, headers: Vec<(String, String)>, body: String, retry: bool) {
     let made = crate::generation();
     std::thread::spawn(move || {
-        let result = fetch(&method, &url, &headers, &body, retry).map_err(|why| format!("{method} {url}: {why}"));
+        // A form's files are read now, off the main thread (D-139: `controls::expand`).
+        let content_type = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("content-type")).map(|(_, value)| value.as_str());
+        let result = crate::controls::expand(content_type, &body)
+            .and_then(|bytes| fetch_bytes(&method, &url, &headers, &bytes, retry))
+            .map(|raw| Answered { status: raw.status, headers: raw.headers, body: String::from_utf8_lossy(&raw.body).into_owned(), url: raw.url, redirected: raw.redirected })
+            .map_err(|why| format!("{method} {url}: {why}"));
         crate::post(crate::Message::Answer(made, id, result));
     });
 }
@@ -66,10 +71,32 @@ fn now_ms() -> u64 {
 /// A request, its redirects followed and its cookies kept, as `fetch` makes one: the answer at the
 /// end.
 pub fn fetch(method: &str, url: &str, headers: &[(String, String)], body: &str, retry: bool) -> Result<Answered, String> {
+    let raw = fetch_bytes(method, url, headers, body.as_bytes(), retry)?;
+    Ok(Answered { status: raw.status, headers: raw.headers, body: String::from_utf8_lossy(&raw.body).into_owned(), url: raw.url, redirected: raw.redirected })
+}
+
+/// An answer as bytes (an image's, a video's part: D-139), with what `Answered` says beside it.
+#[derive(Clone, Debug, Default)]
+pub struct Bytes {
+    pub status: u16,
+    pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
+    pub url: String,
+    pub redirected: bool,
+}
+
+impl Bytes {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers.iter().find(|(each, _)| each.eq_ignore_ascii_case(name)).map(|(_, value)| value.as_str())
+    }
+}
+
+/// `fetch` with a body of bytes and the answer's as bytes (D-139: a file's upload, an image).
+pub fn fetch_bytes(method: &str, url: &str, headers: &[(String, String)], body: &[u8], retry: bool) -> Result<Bytes, String> {
     let mut method = method.to_string();
     let mut url = url.to_string();
     let mut headers = headers.to_vec();
-    let mut body = body.to_string();
+    let mut body = body.to_vec();
     let mut redirected = false;
     for _ in 0..=20 {
         let mut sent = headers.clone();
@@ -86,7 +113,7 @@ pub fn fetch(method: &str, url: &str, headers: &[(String, String)], body: &str, 
             // ended, for a navigation to open it in the system's browser (a page's fetch would be
             // refused there by CORS, and the browser would load it).
             if at.is_some_and(|at| at.origin != next.origin) {
-                return Ok(Answered { status, headers: answer_headers, body: answer_body, url: next.href(), redirected: true });
+                return Ok(Bytes { status, headers: answer_headers, body: answer_body, url: next.href(), redirected: true });
             }
             if (status == 303 && method != "HEAD") || (matches!(status, 301 | 302) && method == "POST") {
                 method = "GET".into();
@@ -97,7 +124,7 @@ pub fn fetch(method: &str, url: &str, headers: &[(String, String)], body: &str, 
             redirected = true;
             continue;
         }
-        return Ok(Answered { status, headers: answer_headers, body: answer_body, url, redirected });
+        return Ok(Bytes { status, headers: answer_headers, body: answer_body, url, redirected });
     }
     Err("too many redirects".into())
 }
@@ -119,11 +146,11 @@ fn place(url: &str) -> Result<(String, String, String), String> {
 
 /// One request and its answer, on a kept connection when there is one (sent again on a new one if
 /// the server had closed it).
-fn once(method: &str, url: &str, headers: &[(String, String)], body: &str, retry: bool) -> Result<(u16, Vec<(String, String)>, String), String> {
+fn once(method: &str, url: &str, headers: &[(String, String)], body: &[u8], retry: bool) -> Result<Answer, String> {
     let (authority, address, path) = place(url)?;
-    let request = request_text(method, &authority, &path, headers, body, true);
+    let request = request_bytes(method, &authority, &path, headers, body, true);
     if let Some(stream) = pooled(&address) {
-        match exchange(stream, request.as_bytes(), method) {
+        match exchange(stream, &request, method) {
             Ok((answer, reusable)) => {
                 if let Some(stream) = reusable {
                     give_back(&address, stream);
@@ -136,7 +163,7 @@ fn once(method: &str, url: &str, headers: &[(String, String)], body: &str, retry
         }
     }
     let stream = connect(&address, retry)?;
-    match exchange(stream, request.as_bytes(), method) {
+    match exchange(stream, &request, method) {
         Ok((answer, reusable)) => {
             if let Some(stream) = reusable {
                 give_back(&address, stream);
@@ -149,6 +176,10 @@ fn once(method: &str, url: &str, headers: &[(String, String)], body: &str, retry
 }
 
 fn request_text(method: &str, authority: &str, path: &str, headers: &[(String, String)], body: &str, keep: bool) -> String {
+    String::from_utf8_lossy(&request_bytes(method, authority, path, headers, body.as_bytes(), keep)).into_owned()
+}
+
+fn request_bytes(method: &str, authority: &str, path: &str, headers: &[(String, String)], body: &[u8], keep: bool) -> Vec<u8> {
     let mut text = format!("{method} {path} HTTP/1.1\r\nhost: {authority}\r\nuser-agent: rocx-native\r\n");
     if !keep {
         text.push_str("connection: close\r\n");
@@ -163,8 +194,9 @@ fn request_text(method: &str, authority: &str, path: &str, headers: &[(String, S
         text.push_str(&format!("content-length: {}\r\n", body.len()));
     }
     text.push_str("\r\n");
-    text.push_str(body);
-    text
+    let mut bytes = text.into_bytes();
+    bytes.extend_from_slice(body);
+    bytes
 }
 
 enum Exchange {
@@ -173,7 +205,7 @@ enum Exchange {
     Failed(String),
 }
 
-type Answer = (u16, Vec<(String, String)>, String);
+type Answer = (u16, Vec<(String, String)>, Vec<u8>);
 
 /// Sends a request and reads its answer whole; the connection back if another request may use it.
 fn exchange(mut stream: TcpStream, request: &[u8], method: &str) -> Result<(Answer, Option<TcpStream>), Exchange> {
@@ -194,7 +226,7 @@ fn exchange(mut stream: TcpStream, request: &[u8], method: &str) -> Result<(Answ
     let body = read_body(&mut reader, &framing).map_err(|why| Exchange::Failed(why.to_string()))?;
     let closes = version == "HTTP/1.0" || headers.iter().any(|(name, value)| name == "connection" && value.to_ascii_lowercase().contains("close"));
     let reusable = (!closes && !matches!(framing, Framing::UntilClosed) && reader.buffer().is_empty()).then(|| reader.into_inner());
-    Ok(((status, headers, String::from_utf8_lossy(&body).into_owned()), reusable))
+    Ok(((status, headers, body), reusable))
 }
 
 /// An answer's status line and headers; none if the connection closed before any of it came.

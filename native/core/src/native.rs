@@ -37,6 +37,8 @@ use crate::css::{self, Computed, Pseudo, State};
 use crate::dom::{Dom, Kind, NodeId};
 use crate::engine::{self, Engine};
 use crate::layout::{self, Content, Role};
+use crate::controls;
+use crate::media;
 use crate::svg;
 use crate::values::{self, Ctx, Length};
 use std::cell::RefCell;
@@ -424,42 +426,126 @@ impl<'a> Projection<'a> {
             "input" => {
                 let kind = attr("type").unwrap_or_default().to_ascii_lowercase();
                 if kind == "checkbox" || kind == "radio" {
-                    view.kind = "checkbox";
+                    view.kind = if kind == "radio" { "radio" } else { "checkbox" };
+                    // `appearance: none`: the CSS draws it, not the platform (D-139).
+                    if computed.get("appearance").or_else(|| computed.get("-webkit-appearance")).is_some_and(|look| look == "none") {
+                        view.props.insert("appearance".into(), "none".into());
+                    }
                     // A tap's state until the app sets it (`engine::dispatch`, D-138).
                     let checked = self.engine.values.get(&node).map(|now| now == "true").unwrap_or_else(|| attr("checked").is_some());
                     view.props.insert("checked".into(), flag(checked));
                     view.props.insert("type".into(), kind);
-                    view.content = Content::Fixed { width: 13.0, height: 13.0 };
+                    view.content = Content::Field { width: 13.0, height: 13.0 };
                 } else if kind == "hidden" {
                     return None;
+                } else if kind == "file" {
+                    // D-139: a button that opens the system's picker (`controls::activation`), saying
+                    // what it holds, as a browser's file input does.
+                    let files = controls::files_of(node);
+                    let said = match files.len() {
+                        0 => if attr("multiple").is_some() { "Choose files" } else { "Choose a file" }.to_string(),
+                        1 => files[0].name.clone(),
+                        n => format!("{n} files"),
+                    };
+                    view.kind = "text";
+                    let piece = Piece { key: native_id(node), text: said, style: computed.clone(), link: None, decoration: None };
+                    self.text_view(&mut view, &[piece], &computed, true, true);
+                    view.props.insert("click".into(), "true".into());
                 } else {
                     view.kind = "input";
                     view.props.insert("value".into(), self.values.get(&node).cloned().or_else(|| attr("value")).unwrap_or_default());
                     view.props.insert("placeholder".into(), attr("placeholder").unwrap_or_default());
                     view.props.insert("type".into(), kind);
+                    self.field_props(node, &mut view);
                     self.placeholder(node, &computed, &mut view);
                     let line = computed.line_height().unwrap_or(computed.font_size * 1.2);
-                    view.content = Content::Fixed { width: computed.font_size * 10.0, height: line.ceil() };
+                    view.content = Content::Field { width: computed.font_size * 10.0, height: line.ceil() };
                 }
+            }
+            "select" => {
+                // D-139: the chosen option's label, as text; a tap opens the phone's own list of
+                // the options (`options`), and a choice is the select's `input` and `change`.
+                view.kind = "select";
+                let value = controls::value_of(self.dom, self.values, node);
+                let mut options = Vec::new();
+                let mut label = String::new();
+                for option in controls::options_of(self.dom, node) {
+                    let own = controls::option_value(self.dom, option);
+                    let text = attr_of(self.dom, option, "label").unwrap_or_else(|| controls::text_of(self.dom, option).split_whitespace().collect::<Vec<_>>().join(" "));
+                    let group = parent_tag(self.dom, option, "optgroup").and_then(|group| attr_of(self.dom, group, "label")).unwrap_or_default();
+                    let disabled = self.dom.attr(option, "disabled").is_some() || parent_tag(self.dom, option, "optgroup").is_some_and(|group| self.dom.attr(group, "disabled").is_some());
+                    if label.is_empty() && own == value {
+                        label = text.clone();
+                    }
+                    options.push(format!("{{\"label\":\"{}\",\"value\":\"{}\",\"group\":\"{}\",\"disabled\":{disabled}}}", escape(&text), escape(&own), escape(&group)));
+                }
+                view.props.insert("options".into(), format!("[{}]", options.join(",")));
+                view.props.insert("value".into(), value);
+                if label.is_empty() {
+                    label = "\u{a0}".into();
+                }
+                let piece = Piece { key: native_id(node), text: label, style: computed.clone(), link: None, decoration: None };
+                self.text_view(&mut view, &[piece], &computed, true, true);
+                view.props.insert("style.nowrap".into(), "true".into());
+                self.field_props(node, &mut view);
             }
             "textarea" => {
                 view.kind = "textarea";
                 let value = self.values.get(&node).cloned().unwrap_or_else(|| self.text_content(node));
                 view.props.insert("value".into(), value);
                 view.props.insert("placeholder".into(), attr("placeholder").unwrap_or_default());
+                self.field_props(node, &mut view);
                 self.placeholder(node, &computed, &mut view);
                 let rows = attr("rows").and_then(|rows| rows.parse::<f32>().ok()).unwrap_or(2.0);
                 let line = computed.line_height().unwrap_or(computed.font_size * 1.2);
-                view.content = Content::Fixed { width: computed.font_size * 10.0, height: (line * rows).ceil() };
+                view.content = Content::Field { width: computed.font_size * 10.0, height: (line * rows).ceil() };
             }
             "img" => {
+                // D-139: the source a browser on this screen picks, its file loaded off the main
+                // thread; its size in pixels (over its density) is the element's natural size.
                 view.kind = "image";
                 view.props.insert("alt".into(), attr("alt").unwrap_or_default());
-                if let Some(src) = attr("src") {
-                    view.props.insert("src".into(), src);
+                let screen = SCREEN.with(|screen| *screen.borrow());
+                let media = css::Media { width: screen.width, height: screen.height, dark: screen.dark };
+                let picked = media::pick(attr("src").as_deref(), attr("srcset").as_deref(), attr("sizes").as_deref(), crate::density(), media);
+                let mut natural = None;
+                if let Some((url, density)) = picked
+                    && let media::Image::Ready { path, width, height } = media::image(&self.resolve(&url))
+                {
+                    view.props.insert("src".into(), path);
+                    natural = Some((width as f32 / density, height as f32 / density));
+                    view.props.insert("natural".into(), format!("{} {}", width as f32 / density, height as f32 / density));
                 }
-                let size = |name: &str| attr(name).and_then(|value| value.trim().trim_end_matches("px").parse::<f32>().ok());
-                view.content = Content::Fixed { width: size("width").unwrap_or(0.0), height: size("height").unwrap_or(0.0) };
+                view.props.insert("fit".into(), computed.get("object-fit").unwrap_or("fill").to_string());
+                view.props.insert("position".into(), media::position(computed.get("object-position"), computed.ctx));
+                view.content = self.replaced_size(node, natural, None);
+            }
+            "video" => {
+                // D-139: a native player; its poster (an image, loaded as an <img>'s) shown until it
+                // plays, its natural size the video's once the player knows it, else the poster's.
+                view.kind = "video";
+                if let Some(src) = attr("src").filter(|src| !src.is_empty()).or_else(|| self.source_of(node)) {
+                    view.props.insert("src".into(), self.resolve(&src));
+                }
+                let mut natural = None;
+                if let Some(poster) = attr("poster").filter(|poster| !poster.is_empty())
+                    && let media::Image::Ready { path, width, height } = media::image(&self.resolve(&poster))
+                {
+                    view.props.insert("poster".into(), path);
+                    natural = Some((width as f32, height as f32));
+                }
+                if let Some(src) = view.props.get("src")
+                    && let Some((width, height)) = media::video_size(src)
+                {
+                    natural = Some((width as f32, height as f32));
+                }
+                for flag in ["controls", "muted", "loop", "autoplay"] {
+                    if attr(flag).is_some() {
+                        view.props.insert(flag.into(), "true".into());
+                    }
+                }
+                view.props.insert("fit".into(), computed.get("object-fit").unwrap_or("contain").to_string());
+                view.content = self.replaced_size(node, natural, Some((300.0, 150.0)));
             }
             "svg" => {
                 view.kind = "svg";
@@ -523,11 +609,11 @@ impl<'a> Projection<'a> {
         // Replaced elements: a percentage size of theirs adds nothing to their container's
         // intrinsic size (CSS sizing's compressible rule), as a browser's.
         match view.kind {
-            "svg" | "image" => view.style.item_is_replaced = true,
-            "input" | "textarea" | "checkbox" => view.style.item_is_compressible_replaced = true,
+            "svg" | "image" | "video" => view.style.item_is_replaced = true,
+            "input" | "textarea" | "checkbox" | "radio" | "select" => view.style.item_is_compressible_replaced = true,
             _ => {}
         }
-        if view.kind == "svg"
+        if matches!(view.kind, "svg" | "image" | "video")
             && view.style.aspect_ratio.is_none()
             && let Content::Fixed { width, height } = view.content
             && width > 0.0
@@ -546,6 +632,20 @@ impl<'a> Projection<'a> {
         Some(id)
     }
 
+    /// A field's attributes the phone's field follows (D-139): `maxlength`, `readonly`, `required`,
+    /// `autofocus`, `inputmode`, `enterkeyhint`, `min`, `max`, `autocomplete`, and the message a form
+    /// that wasn't sent left beside it (`invalid`).
+    fn field_props(&self, node: NodeId, view: &mut View) {
+        for name in ["maxlength", "readonly", "required", "autofocus", "inputmode", "enterkeyhint", "min", "max", "autocomplete", "multiple"] {
+            if let Some(value) = self.dom.attr(node, name) {
+                view.props.insert(name.into(), if value.is_empty() { "true".into() } else { value.to_string() });
+            }
+        }
+        if let Some(said) = controls::invalid_message(node) {
+            view.props.insert("invalid".into(), said);
+        }
+    }
+
     /// A field's hint colour, from `::placeholder`.
     fn placeholder(&mut self, node: NodeId, computed: &Computed, view: &mut View) {
         let hint = self.sheet.compute(self.el(node), computed, &[], Some(Pseudo::Placeholder));
@@ -554,10 +654,47 @@ impl<'a> Projection<'a> {
         }
     }
 
+    /// A URL the page names (`src`, `poster`), as the phone asks for it: the page's server's for a
+    /// path or a relative one, a picked file's (`file://`) or another site's as it is.
+    fn resolve(&self, url: &str) -> String {
+        if url.starts_with("file://") || url.starts_with("http://") || url.starts_with("https://") {
+            return url.to_string();
+        }
+        if url.starts_with('/') {
+            return self.engine.full_url(url);
+        }
+        let page = self.engine.full_url(&self.engine.path);
+        crate::url::Url::parse(&page).and_then(|page| page.join(url)).map(|url| url.href()).unwrap_or_else(|| self.engine.full_url(url))
+    }
+
+    /// A `<video>`'s first `<source src>`.
+    fn source_of(&self, node: NodeId) -> Option<String> {
+        self.dom.children(node).find(|&child| self.dom.tag(child) == Some("source")).and_then(|source| self.dom.attr(source, "src")).map(str::to_string)
+    }
+
+    /// A replaced element's size for layout: its `width` and `height` attributes (HTML's
+    /// presentational hints, which CSS overrides), else its natural size (`natural`, once known),
+    /// one side from the other by its ratio; `fallback` when neither says (a video's 300 by 150).
+    fn replaced_size(&self, node: NodeId, natural: Option<(f32, f32)>, fallback: Option<(f32, f32)>) -> Content {
+        let size = |name: &str| self.dom.attr(node, name).and_then(|value| value.trim().trim_end_matches("px").parse::<f32>().ok()).filter(|value| *value >= 0.0);
+        let ratio = match (size("width"), size("height")) {
+            (Some(w), Some(h)) if w > 0.0 && h > 0.0 => Some(w / h),
+            _ => natural.filter(|(w, h)| *w > 0.0 && *h > 0.0).map(|(w, h)| w / h),
+        };
+        let (width, height) = match (size("width"), size("height"), natural.or(fallback)) {
+            (Some(w), Some(h), _) => (w, h),
+            (Some(w), None, _) => (w, ratio.map(|r| w / r).unwrap_or(0.0)),
+            (None, Some(h), _) => (ratio.map(|r| h * r).unwrap_or(0.0), h),
+            (None, None, Some((w, h))) => (w, h),
+            (None, None, None) => (0.0, 0.0),
+        };
+        Content::Fixed { width, height }
+    }
+
     /// Whether a tap on the element goes to it: a link, a button, a label, a summary, or an
     /// element with a click handler.
     fn clickable(&self, node: NodeId, tag: &str) -> bool {
-        matches!(tag, "button" | "label" | "summary" | "select") || (tag == "a" && self.dom.attr(node, "href").is_some()) || self.engine.listens(node, "click") || self.dom.attr(node, "role").is_some_and(|role| matches!(role, "button" | "link" | "tab" | "menuitem" | "option" | "checkbox" | "switch"))
+        matches!(tag, "button" | "label" | "summary") || (tag == "a" && self.dom.attr(node, "href").is_some()) || self.engine.listens(node, "click") || self.dom.attr(node, "role").is_some_and(|role| matches!(role, "button" | "link" | "tab" | "menuitem" | "option" | "checkbox" | "switch"))
     }
 
     /// An element's children as its layout sees them: runs of inline content, boxes in the flow
@@ -1267,6 +1404,22 @@ impl<'a> Projection<'a> {
     }
 }
 
+fn attr_of(dom: &Dom, node: NodeId, name: &str) -> Option<String> {
+    dom.attr(node, name).map(str::to_string)
+}
+
+/// The nearest element above `node` with this tag.
+fn parent_tag(dom: &Dom, node: NodeId, tag: &str) -> Option<NodeId> {
+    let mut at = dom.nodes.get(node)?.parent;
+    while let Some(up) = at {
+        if dom.tag(up) == Some(tag) {
+            return Some(up);
+        }
+        at = dom.nodes.get(up)?.parent;
+    }
+    None
+}
+
 fn z_of(c: &Computed) -> (i32, bool) {
     let positioned = !matches!(c.get("position").unwrap_or("static"), "static");
     let z = c.get("z-index").and_then(|z| z.trim().parse::<i32>().ok()).filter(|_| positioned || c.get("z-index").is_some()).unwrap_or(0);
@@ -1568,7 +1721,7 @@ pub fn render() -> Vec<u8> {
                     shown.frames.insert(id, frame);
                 }
                 let view = &views[&id];
-                if matches!(view.kind, "text" | "input" | "textarea")
+                if matches!(view.kind, "text" | "input" | "textarea" | "image" | "video" | "select")
                     && let Some(inset) = tree.inset(id)
                 {
                     let inset = format!("{} {} {} {}", inset[0], inset[1], inset[2], inset[3]);

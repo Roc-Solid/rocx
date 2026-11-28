@@ -29,6 +29,8 @@ class RocxActivity : Activity() {
         screen.setOnApplyWindowInsetsListener { view, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            // The keyboard up (D-139): the focused field kept in view above it.
+            if (insets.isVisible(WindowInsets.Type.ime())) view.post { Focus.keepInView(screen) }
             WindowInsets.CONSUMED
         }
         val meta = packageManager.getActivityInfo(componentName, PackageManager.GET_META_DATA).metaData

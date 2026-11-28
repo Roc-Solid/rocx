@@ -2846,6 +2846,7 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
         with(|engine| {
             engine.values.insert(node, value.to_string());
         });
+        crate::controls::set_invalid(node, None);
     }
     // A checkbox's or radio's tap (its view's `click`, with whether it is checked now): what it
     // holds, until the app sets its `checked` (a radio's group mates in its form unchecked).
@@ -2921,11 +2922,12 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
             (form, link)
         });
         if let Some(form) = form {
-            if !dispatch(form, "submit", "") {
-                submitted(form, Some(node));
-            }
+            submit_form(form, Some(node));
         } else if let Some((href, target, download, replace, noscroll)) = link {
             crate::nav::tapped_link(&href, target.as_deref(), download, replace, noscroll);
+        } else if let Some(activation) = with(|engine| crate::controls::activation(&engine.dom, &path)) {
+            // D-139: a summary's, a label's, a file input's default action.
+            activate(activation);
         }
     }
     // The keyboard's Enter in a form's field submits it, as a browser's implicit submission does
@@ -2949,13 +2951,99 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
             }
             (button || fields == 1).then_some(form)
         });
-        if let Some(form) = form
-            && !dispatch(form, "submit", "")
-        {
-            submitted(form, None);
+        if let Some(form) = form {
+            submit_form(form, None);
         }
     }
     prevented
+}
+
+/// A form submitted by its button or the keyboard's Enter, as `requestSubmit` does (D-139): not
+/// while a field keeps it back (`controls::invalid`: the field focused, its message beside it),
+/// then its `submit` event, then, unless a handler took it, sent.
+fn submit_form(form: NodeId, submitter: Option<NodeId>) {
+    if let Some((field, said)) = with(|engine| crate::controls::invalid(&engine.dom, &engine.values, form, submitter)) {
+        crate::controls::set_invalid(field, Some(said));
+        dispatch(field, "invalid", "");
+        crate::focus(&views_up(field));
+        return;
+    }
+    if !dispatch(form, "submit", "") {
+        submitted(form, submitter);
+    }
+}
+
+/// A node's view, then those of the elements above it (the first that has one is the one shown).
+fn views_up(node: NodeId) -> Vec<u64> {
+    with(|engine| {
+        let mut chain = Vec::new();
+        let mut at = Some(node);
+        while let Some(each) = at {
+            chain.push(each as u64 + 1);
+            at = engine.dom.nodes.get(each).and_then(|each| each.parent);
+        }
+        chain
+    })
+}
+
+/// A tap's default action (D-139, `controls::activation`): a `<details>` opened or closed (its
+/// `toggle` fired), a label's control used (a checkbox or radio toggled as its own tap does, a file
+/// input's picker opened, a field focused), a file input's picker opened.
+fn activate(activation: crate::controls::Activation) {
+    use crate::controls::Activation;
+    match activation {
+        Activation::Toggle(details) => {
+            with(|engine| {
+                if engine.dom.attr(details, "open").is_some() {
+                    engine.dom.remove_attr(details, "open");
+                } else {
+                    engine.dom.set_attr(details, "open", "");
+                }
+            });
+            dispatch(details, "toggle", "");
+        }
+        Activation::Pick(input) => pick(input),
+        Activation::Label(control) => {
+            let (tag, kind, checked) = with(|engine| {
+                let kind = engine.dom.attr(control, "type").unwrap_or("").to_ascii_lowercase();
+                let checked = engine.values.get(&control).map(|now| now == "true").unwrap_or_else(|| engine.dom.attr(control, "checked").is_some());
+                (engine.dom.tag(control).unwrap_or("").to_string(), kind, checked)
+            });
+            if with(|engine| engine.dom.attr(control, "disabled").is_some()) {
+                return;
+            }
+            match (tag.as_str(), kind.as_str()) {
+                ("input", "checkbox") => {
+                    let now = (!checked).to_string();
+                    dispatch(control, "click", &now);
+                    dispatch(control, "input", &now);
+                    dispatch(control, "change", &now);
+                }
+                ("input", "radio") if !checked => {
+                    dispatch(control, "click", "true");
+                    dispatch(control, "input", "true");
+                    dispatch(control, "change", "true");
+                }
+                ("input", "radio") => {}
+                ("input", "file") => pick(control),
+                ("button", _) => {
+                    dispatch(control, "click", "");
+                }
+                _ => {
+                    crate::focus(&views_up(control));
+                }
+            }
+        }
+    }
+}
+
+/// A file input's picker opened by the phone (its `accept` and `multiple`); what is picked comes
+/// back as the input's `files` event (`crate::event`).
+fn pick(input: NodeId) {
+    let (accept, multiple, disabled) = with(|engine| (engine.dom.attr(input, "accept").unwrap_or("").to_string(), engine.dom.attr(input, "multiple").is_some(), engine.dom.attr(input, "disabled").is_some()));
+    if !disabled && !crate::pick(input as u64 + 1, &accept, multiple) {
+        crate::log(crate::Level::Warn, "rocx native: this platform has no file picker");
+    }
 }
 
 // ---- Requests ----
@@ -3229,8 +3317,52 @@ pub fn submit(method: String, url: String, body: String, input: String) -> Resul
 }
 
 fn send_action(method: &str, url: &str, body: &str, input: &str) {
+    // An arg naming a picked file (D-054's `fileOf`, D-139): sent as a form with files.
+    if let Some((content_type, form)) = files_form(body) {
+        send_submission(url, None, method, vec![("content-type".to_string(), content_type)], &form, input, true, false, None);
+        return;
+    }
     let headers = if method == "GET" || method == "HEAD" { Vec::new() } else { vec![("content-type".to_string(), "application/json".to_string())] };
     send_submission(url, None, method, headers, body, input, true, false, None);
+}
+
+/// An action's JSON as a form with files (runtime.js's `filesForm`), if a top-level field of it
+/// holds the URL of a file a file input was given (or a list of them): each such file a part of
+/// that field's name, the other fields as a form's (text as it is, a number or a flag as written, a
+/// list as its items, null left out).
+fn files_form(json: &str) -> Option<(String, String)> {
+    let arg = json::parse(json)?;
+    let Value::Object(fields) = &arg else { return None };
+    let file = |value: &Value| value.as_str().and_then(crate::controls::file_of);
+    let holds = fields.iter().any(|(_, value)| file(value).is_some() || value.as_array().is_some_and(|items| !items.is_empty() && items.iter().all(|item| file(item).is_some())));
+    if !holds {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for (name, value) in fields {
+        let items: Vec<&Value> = match value.as_array() {
+            Some(items) => items.iter().collect(),
+            None => vec![value],
+        };
+        for item in items {
+            if let Some(found) = file(item) {
+                parts.push((name.to_string(), crate::controls::Part::File(found)));
+            } else if item.is_null() {
+                continue;
+            } else {
+                let text = match item {
+                    Value::String(text) => text.to_string(),
+                    Value::Bool(flag) => flag.to_string(),
+                    Value::Number(json::Number::Whole(n)) => n.to_string(),
+                    Value::Number(json::Number::Negative(n)) => n.to_string(),
+                    Value::Number(json::Number::Fraction(n)) => n.to_string(),
+                    _ => return None,
+                };
+                parts.push((name.to_string(), crate::controls::Part::Text(text)));
+            }
+        }
+    }
+    Some(crate::controls::multipart(&parts, &crate::controls::boundary()))
 }
 
 /// `Router.app!`'s route table (D-040): its pages (which a link may navigate to, D-138), and the paths
@@ -3273,7 +3405,8 @@ fn submitted(form: NodeId, submitter: Option<NodeId>) {
         let method = of("method", "formmethod").to_ascii_lowercase();
         let action = of("action", "formaction");
         let action = if action.is_empty() { engine.path.clone() } else { action };
-        let mut fields = Vec::new();
+        // Each named field's value, in order (a file input's files, D-139).
+        let mut parts: Vec<(String, crate::controls::Part)> = Vec::new();
         let mut stack = vec![form];
         while let Some(node) = stack.pop() {
             let tag = engine.dom.tag(node).unwrap_or("");
@@ -3284,9 +3417,13 @@ fn submitted(form: NodeId, submitter: Option<NodeId>) {
                 let kind = engine.dom.attr(node, "type").unwrap_or("").to_ascii_lowercase();
                 let checkable = matches!(kind.as_str(), "checkbox" | "radio");
                 let checked = engine.values.get(&node).map(|now| now == "true").unwrap_or_else(|| engine.dom.attr(node, "checked").is_some());
-                if !(checkable && !checked) && !matches!(kind.as_str(), "submit" | "button" | "reset" | "image" | "file") {
-                    let value = if checkable { None } else { engine.values.get(&node).cloned() }.or_else(|| engine.dom.attr(node, "value").map(str::to_string)).unwrap_or_else(|| if checkable { "on".into() } else { String::new() });
-                    fields.push(format!("{}={}", encode(name), encode(&value)));
+                if kind == "file" {
+                    for file in crate::controls::files_of(node) {
+                        parts.push((name.to_string(), crate::controls::Part::File(file)));
+                    }
+                } else if !(checkable && !checked) && !matches!(kind.as_str(), "submit" | "button" | "reset" | "image") {
+                    let value = if checkable { engine.dom.attr(node, "value").unwrap_or("on").to_string() } else { crate::controls::value_of(&engine.dom, &engine.values, node) };
+                    parts.push((name.to_string(), crate::controls::Part::Text(value)));
                 }
             }
             let at = stack.len();
@@ -3296,9 +3433,17 @@ fn submitted(form: NodeId, submitter: Option<NodeId>) {
         if let Some(button) = submitter
             && let Some(name) = engine.dom.attr(button, "name")
         {
-            fields.push(format!("{}={}", encode(name), encode(engine.dom.attr(button, "value").unwrap_or(""))));
+            parts.push((name.to_string(), crate::controls::Part::Text(engine.dom.attr(button, "value").unwrap_or("").to_string())));
         }
-        let fields = fields.join("&");
+        // As URL-encoded fields (a file by its name, as a browser's URL-encoded form sends one).
+        let fields = parts
+            .iter()
+            .map(|(name, part)| match part {
+                crate::controls::Part::Text(value) => format!("{}={}", encode(name), encode(value)),
+                crate::controls::Part::File(file) => format!("{}={}", encode(name), encode(&file.name)),
+            })
+            .collect::<Vec<_>>()
+            .join("&");
         if method != "post" {
             return Some(Submitted::Get(action, fields));
         }
@@ -3311,34 +3456,33 @@ fn submitted(form: NodeId, submitter: Option<NodeId>) {
         };
         let reload = [submitter, Some(form)].into_iter().flatten().any(|node| reloads(&engine.dom, node));
         let enctype = of("enctype", "formenctype").to_ascii_lowercase();
-        if enctype == "multipart/form-data" {
-            engine.warn_once("multipart", "rocx native: a form with files (multipart/form-data) isn't on phones yet: sent as a plain form");
-        }
+        // A form with files (D-054, D-139): its fields and files as `multipart/form-data`.
+        let (content_type, body) = if enctype == "multipart/form-data" { crate::controls::multipart(&parts, &crate::controls::boundary()) } else { ("application/x-www-form-urlencoded".to_string(), fields.clone()) };
         match key {
             Some(key) if !reload && enctype != "text/plain" => {
                 let query = action.split_once('?').map(|(_, query)| query.split('#').next().unwrap_or("").to_string()).unwrap_or_default();
                 let input = [query, fields.clone()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join("&");
                 let plain = !engine.actions.contains_key(&key);
-                Some(Submitted::Endpoint { key, url: action, fields, input, plain })
+                Some(Submitted::Endpoint { key, url: action, body, content_type, input, plain })
             }
-            _ => Some(Submitted::Document(action, fields)),
+            _ => Some(Submitted::Document(action, body, content_type)),
         }
     });
     enum Submitted {
         Get(String, String),
-        Endpoint { key: String, url: String, fields: String, input: String, plain: bool },
-        Document(String, String),
+        Endpoint { key: String, url: String, body: String, content_type: String, input: String, plain: bool },
+        Document(String, String, String),
     }
     match found {
-        Some(Submitted::Endpoint { key, url, fields, input, plain }) => {
+        Some(Submitted::Endpoint { key, url, body, content_type, input, plain }) => {
             let url = (url != key).then_some(url);
-            send_submission(&key, url, "POST", vec![("content-type".into(), "application/x-www-form-urlencoded".into())], &fields, &input, false, plain, Some(form));
+            send_submission(&key, url, "POST", vec![("content-type".into(), content_type)], &body, &input, false, plain, Some(form));
         }
         Some(Submitted::Get(action, fields)) => {
             let path = action.split(['?', '#']).next().unwrap_or("");
             crate::nav::navigate(&if fields.is_empty() { path.to_string() } else { format!("{path}?{fields}") }, crate::nav::Options { scroll: true, ..Default::default() });
         }
-        Some(Submitted::Document(action, fields)) => crate::nav::post(&action, crate::nav::Form { method: "POST".into(), body: fields, content_type: "application/x-www-form-urlencoded".into() }),
+        Some(Submitted::Document(action, body, content_type)) => crate::nav::post(&action, crate::nav::Form { method: "POST".into(), body, content_type }),
         None => {}
     }
 }

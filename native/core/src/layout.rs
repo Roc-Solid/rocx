@@ -25,6 +25,9 @@ pub enum Content {
     Text { version: u64, chars: Vec<usize>, font_size: f32, line_height: f32, nowrap: bool },
     /// A replaced element's own size (`<svg>`'s attributes, a field's), its ratio when it keeps one.
     Fixed { width: f32, height: f32 },
+    /// A field's own size (D-139: an `<input>`'s, a `<textarea>`'s rows): kept as it is when one side
+    /// is given, where an image's keeps its ratio.
+    Field { width: f32, height: f32 },
 }
 
 /// What the phone measures a text with: a width to wrap at (none: on one line), or its narrowest
@@ -304,6 +307,7 @@ impl View<'_> {
                         _ => Size { width: *width, height: *height },
                     }
                 }
+                Content::Field { width, height } => Size { width: known.width.unwrap_or(*width), height: known.height.unwrap_or(*height) },
                 Content::Text { version, .. } => {
                     let width = match known.width {
                         Some(w) => Width::AtMost(w),
