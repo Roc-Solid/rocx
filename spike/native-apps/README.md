@@ -81,6 +81,8 @@ bin/rocx dev spike/native-apps/phone-hello --port 8095
 
 # The APK: native/android/build/phone-hello/phone-hello.apk
 native/android/build.sh spike/native-apps/phone-hello --origin http://10.0.2.2:8095 --label "Phone hello"
+# (against a server an app built with `rocx build --dev` or `rocx generate --dev`: add --stories,
+# so the phone asks for the same stylesheet, whose name is a hash of the stories' styles too)
 
 # The emulator (headless, its AVD left as it is), the APK installed and opened
 ~/Library/Android/sdk/emulator/emulator -avd Medium_Phone_API_37.0 -no-window -no-audio \
