@@ -844,7 +844,7 @@ pub fn link_with_text(text: &str) -> Option<u64> {
 pub fn describe() -> String {
     engine::with(|engine| {
         let entries: Vec<String> = engine.nav.history.iter().enumerate().map(|(at, entry)| if at == engine.nav.index { format!("[{}]", entry.target) } else { entry.target.clone() }).collect();
-        format!("at {} (history: {}){}", engine.path, entries.join(" "), if engine.nav.routing { ", routing" } else { "" })
+        format!("at {} (history: {}){}; {} answers kept", engine.path, entries.join(" "), if engine.nav.routing { ", routing" } else { "" }, engine.answers_kept())
     })
 }
 
