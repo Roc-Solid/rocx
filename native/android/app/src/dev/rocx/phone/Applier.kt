@@ -79,6 +79,9 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         }
         if (stickies.isNotEmpty()) screen.post { stick() }
         batches++
+        // A picture of the whole page, for comparing with a browser's (`--es snapshot <ms>`: that
+        // long after the second batch, to the app's external files, page.png, at twice CSS px).
+        if (batches == 2) activity.intent?.getStringExtra("snapshot")?.toLongOrNull()?.let { wait -> screen.postDelayed({ snapshot() }, wait) }
         if (batches <= 2) {
             Rocx.say(Log.INFO, "batch $batches: ${ops.size} bytes, ${views.size} views, applied in ${SystemClock.uptimeMillis() - started} ms, ${SystemClock.uptimeMillis() - Process.getStartUptimeMillis()} ms after the process started")
         }
@@ -250,6 +253,22 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                     view.isClickable = false
                 }
             }
+            // A scroll view whose scroll the app listens to (on:scroll, on:viewport): `scroll` with
+            // `top,left` in dp, at most once a frame.
+            "watch" -> if (value == "true") {
+                var asked = false
+                view.setOnScrollChangeListener { scrolled, _, _, _, _ ->
+                    if (!asked) {
+                        asked = true
+                        scrolled.postOnAnimation {
+                            asked = false
+                            val inner = (scrolled as? ViewGroup)?.getChildAt(0)
+                            val left = if (scrolled is HorizontalScrollView) scrolled.scrollX else (inner as? HorizontalScrollView)?.scrollX ?: 0
+                            Rocx.event(id, "scroll", "${scrolled.scrollY / density},${left / density}")
+                        }
+                    }
+                }
+            } else view.setOnScrollChangeListener(null)
             "canvas" -> CssPaint.colour(value)?.let { colour ->
                 screen.setBackgroundColor(colour)
                 activity.window.decorView.setBackgroundColor(colour)
@@ -268,7 +287,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
 
     private fun style(id: Long, view: View, name: String, value: String) {
         when (name) {
-            "background", "gradient", "border", "borderStyle", "radius", "shadow", "outline" -> {
+            "background", "gradient", "border", "borderStyle", "radius", "shadow", "ring", "outline" -> {
                 val paint = paintOf(view)
                 paint.set(name, value)
                 if (paint.empty && view !is EditText) view.background = null
@@ -335,6 +354,19 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 else -> Gravity.START
             }
         }
+    }
+
+    private fun snapshot() {
+        val root = views[rootId] ?: return
+        val scale = 2f / density
+        val bitmap = android.graphics.Bitmap.createBitmap((root.width * scale).toInt().coerceAtLeast(1), (root.height * scale).toInt().coerceAtLeast(1), android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        (screen.background as? android.graphics.drawable.ColorDrawable)?.let { canvas.drawColor(it.color) }
+        canvas.scale(scale, scale)
+        root.draw(canvas)
+        val file = java.io.File(activity.getExternalFilesDir(null), "page.png")
+        file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        Rocx.say(Log.INFO, "snapshot: ${file.path} (${bitmap.width}x${bitmap.height})")
     }
 
     /** `position: sticky` views: their edge (top or not) and its offset in dp. */

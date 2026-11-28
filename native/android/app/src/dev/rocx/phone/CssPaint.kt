@@ -38,6 +38,9 @@ class CssPaint(private val density: Float) : Drawable() {
     var radiusPercent = BooleanArray(4)
     var shadow: FloatArray? = null
     var shadowColour = 0
+    /** An inset shadow drawn as a ring inside the box (`inset 0 0 0 2px`): its width in dp. */
+    var ring = 0f
+    var ringColour = 0
     var outline: FloatArray? = null
     var outlineColour = 0
 
@@ -48,7 +51,7 @@ class CssPaint(private val density: Float) : Drawable() {
     private var shaders: List<Shader> = emptyList()
 
     val empty: Boolean
-        get() = background == null && gradient == null && borderWidths.all { it == 0f } && shadow == null && outline == null
+        get() = background == null && gradient == null && borderWidths.all { it == 0f } && shadow == null && outline == null && ring == 0f
 
     fun hasCorners(): Boolean = radii.any { it > 0f }
 
@@ -116,6 +119,12 @@ class CssPaint(private val density: Float) : Drawable() {
                 canvas.drawPath(outer, fill)
             }
             fill.shader = null
+        }
+        if (ring > 0f) {
+            stroke.pathEffect = null
+            stroke.strokeWidth = ring * density
+            stroke.color = ringColour
+            canvas.drawPath(rounded(bounds, r, ring * density / 2f), stroke)
         }
         drawBorders(canvas, bounds, r)
         outline?.let { o ->
@@ -268,6 +277,11 @@ class CssPaint(private val density: Float) : Drawable() {
                 } else {
                     shadow = null
                 }
+            }
+            "ring" -> {
+                val parts = value.split(" ")
+                ring = if (parts.size == 2) parts[0].toFloatOrNull() ?: 0f else 0f
+                ringColour = if (parts.size == 2) colour(parts[1]) ?: Color.TRANSPARENT else 0
             }
             "outline" -> {
                 val parts = value.split(" ")

@@ -2578,7 +2578,13 @@ fn fill(element: NodeId, all: &[&Vec<Value>], own: &[&Vec<Value>], owner: Option
                 let wanted = attr.get(3).and_then(Value::as_str).map(str::to_string);
                 with(|engine| engine.listeners.entry(element).or_default().push(Listener { event: name.to_string(), kind: kind.to_string(), runner, wanted, scope: scope.clone(), owner }));
             }
-            "frame" | "view" | "tr" | "tro" | "k" | "ko" => with(|engine| {
+            // `on:viewport` (D-137): its handler told the element's scroll and size once it is laid
+            // out and each time they change (native::render's `viewports`, `fire`).
+            "view" => {
+                let runner = attr.get(2).and_then(Value::as_u64).unwrap_or(0);
+                with(|engine| engine.listeners.entry(element).or_default().push(Listener { event: "viewport".to_string(), kind: kind.to_string(), runner, wanted: None, scope: scope.clone(), owner }));
+            }
+            "frame" | "tr" | "tro" | "k" | "ko" => with(|engine| {
                 engine.warn_once(&format!("attr {kind}"), &format!("rocx native: `{kind}` ({}) isn't on phones yet: ignored", attr_name(kind)));
             }),
             _ => {}
@@ -2811,6 +2817,17 @@ const REMADE: &str = "\u{1}remade";
 /// An event on a native view (`id`, the node it shows), given its value (what a field holds now):
 /// the handlers of the node and of each element above it, as the DOM bubbles it. A tap on a
 /// button in a form (not `type="button"`) submits the form too.
+/// An event for the element alone, which doesn't bubble (`on:viewport`'s, D-137): its own handlers
+/// for it run, given `value`.
+pub fn fire(node: NodeId, event: &str, value: &str) {
+    let listeners: Vec<(u64, Scope, Option<u64>)> = with(|engine| engine.listeners.get(&node).map(|listeners| listeners.iter().filter(|listener| listener.event == event).map(|listener| (listener.runner, listener.scope.clone(), listener.owner)).collect()).unwrap_or_default());
+    for (runner, scope, owner) in listeners {
+        if with(|engine| engine.kept.contains_key(&runner)) {
+            handle(runner, value.to_string(), scope, owner, None, None);
+        }
+    }
+}
+
 pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
     if event == "input" {
         with(|engine| {

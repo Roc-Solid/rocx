@@ -229,6 +229,12 @@ impl Tree {
         Some([layout.border.top + layout.padding.top, layout.border.right + layout.padding.right, layout.border.bottom + layout.padding.bottom, layout.border.left + layout.padding.left])
     }
 
+    /// A view's border widths, `top right bottom left`.
+    pub fn border(&self, view: u64) -> Option<[f32; 4]> {
+        let layout = &self.nodes[*self.by_view.get(&view)?].final_layout;
+        Some([layout.border.top, layout.border.right, layout.border.bottom, layout.border.left])
+    }
+
     /// How many nodes it has (for tests and the log).
     pub fn len(&self) -> usize {
         self.by_view.len()
@@ -264,6 +270,29 @@ impl View<'_> {
                 }
             }
         }
+        // A flex box sized by what it holds (a flex item, an inline box) is as wide as that, but no
+        // wider than its room unless its narrowest is: CSS's fit-content, where Taffy's takes the
+        // widest (its items' bases on one line) and spills over.
+        let style = &self.tree.node(node_id).style;
+        if style.display == Display::Flex
+            && inputs.known_dimensions.width.is_none()
+            && style.size.width == Dimension::auto()
+            && inputs.run_mode != RunMode::PerformHiddenLayout
+            && let AvailableSpace::Definite(room) = inputs.available_space.width
+        {
+            let first = self.cached(node_id, inputs, block_ctx);
+            if first.size.width <= room + 0.5 {
+                return first;
+            }
+            let narrowest = LayoutInput { run_mode: RunMode::ComputeSize, axis: taffy::RequestedAxis::Horizontal, available_space: Size { width: AvailableSpace::MinContent, height: inputs.available_space.height }, ..inputs };
+            let least = self.cached(node_id, narrowest, None).size.width;
+            let fitted = LayoutInput { known_dimensions: Size { width: Some(room.max(least)), height: inputs.known_dimensions.height }, ..inputs };
+            return self.cached(node_id, fitted, None);
+        }
+        self.cached(node_id, inputs, block_ctx)
+    }
+
+    fn cached(&mut self, node_id: NodeId, inputs: LayoutInput, block_ctx: Option<&mut taffy::BlockContext<'_>>) -> LayoutOutput {
         taffy::compute_cached_layout(self, node_id, inputs, |view, node_id, inputs| {
             let display = view.tree.node(node_id).style.display;
             let has_children = !view.tree.node(node_id).children.is_empty();
@@ -296,14 +325,8 @@ impl View<'_> {
             }
             match &content {
                 Content::None => Size { width: known.width.unwrap_or(0.0), height: known.height.unwrap_or(0.0) },
-                Content::Fixed { width, height } => {
-                    let ratio = if *width > 0.0 { height / width } else { 0.0 };
-                    match (known.width, known.height) {
-                        (Some(w), None) => Size { width: w, height: if ratio > 0.0 { w * ratio } else { *height } },
-                        (None, Some(h)) => Size { width: if ratio > 0.0 { h / ratio } else { *width }, height: h },
-                        _ => Size { width: *width, height: *height },
-                    }
-                }
+                // Its own size (a ratio it keeps is its style's `aspect_ratio`, which Taffy applies).
+                Content::Fixed { width, height } => Size { width: known.width.unwrap_or(*width), height: known.height.unwrap_or(*height) },
                 Content::Text { version, .. } => {
                     let width = match known.width {
                         Some(w) => Width::AtMost(w),
@@ -604,7 +627,10 @@ fn plain_units(value: &str, c: &Computed) -> String {
             return;
         }
         let keep = word.ends_with("px") || word.ends_with('%') || word.ends_with("fr") || word.parse::<f32>().is_ok() || !word.starts_with(|ch: char| ch.is_ascii_digit() || ch == '.' || ch == '-');
-        if keep {
+        if word.parse::<f32>().is_ok_and(|n| n == 0.0) {
+            // A bare 0 is 0px (Taffy's parser wants the unit).
+            out.push_str("0px");
+        } else if keep {
             out.push_str(word);
         } else {
             match values::px(word, c.ctx) {
@@ -662,9 +688,26 @@ fn grid_tracks(value: &str, c: &Computed) -> Option<(Vec<GridTemplateComponent<S
         return Some((Vec::new(), Vec::new()));
     }
     let plain = plain_units(value, c);
-    let parsed: taffy::GridTemplateTracks<String, GridTemplateComponent<String>> = plain.parse().ok()?;
+    let parsed: taffy::GridTemplateTracks<String, GridTemplateComponent<String>> = match plain.parse() {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            warn_once(format!("CSS grid tracks `{value}` aren't on phones yet: one column"));
+            return None;
+        }
+    };
     let names = if parsed.line_names.iter().all(|names| names.is_empty()) { Vec::new() } else { parsed.line_names };
     Some((parsed.tracks, names))
+}
+
+thread_local! {
+    static WARNED: std::cell::RefCell<std::collections::HashSet<String>> = std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Says something about layout once.
+fn warn_once(said: String) {
+    if WARNED.with(|warned| warned.borrow_mut().insert(said.clone())) {
+        crate::log(crate::Level::Warn, &format!("rocx native: {said}"));
+    }
 }
 
 fn grid_areas(value: &str) -> Option<GridTemplateAreas<String>> {
@@ -962,6 +1005,8 @@ mod tests {
         assert_eq!(g.display, Display::Grid);
         assert_eq!(g.grid_template_columns.len(), 1);
         assert!(g.grid_template_columns[0].is_auto_repetition());
+        let two = style(&computed("display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) [end];"), Role::Element, None);
+        assert_eq!(two.grid_template_columns.len(), 1, "minmax(0, …): a bare 0 read");
         let areas = g.grid_template_areas.as_ref().expect("areas");
         assert_eq!((areas.row_count, areas.column_count), (2, 2));
         assert_eq!(areas.areas[0].column_end, 3);
@@ -1005,6 +1050,51 @@ mod tests {
         assert_eq!(f[6], [64.0, 0.0, 116.0, 10.0]);
         assert_eq!(f[7], [192.0, 0.0, 8.0, 8.0], "absolute: in its containing block, its top right corner");
         assert_eq!(f[8], [10.0, 40.0, 180.0, 40.0], "four five-letter words at 8 px a letter wrap onto two lines of 180");
+    }
+
+    #[test]
+    fn a_field_and_its_button_share_a_wrapping_row() {
+        let mut tree = Tree::default();
+        let row = style(&computed("display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; width: 372px;"), Role::Element, None);
+        let grow = style(&computed("flex: 1 1 240px;"), Role::Element, None);
+        let mut input = style(&computed("display: inline-block; box-sizing: border-box; padding: 10px 12px; border: 1.5px solid red; width: 100%;"), Role::Element, None);
+        input.item_is_compressible_replaced = true;
+        let button = style(&computed("display: inline-flex; padding: 0 18px; height: 40px;"), Role::Element, None);
+        let label = style(&computed("display: block;"), Role::Element, None);
+        let (field, none, text) = (Content::Fixed { width: 160.0, height: 17.0 }, Content::None, Content::Fixed { width: 70.0, height: 20.0 });
+        let wants: Vec<(u64, Want)> = vec![
+            (1, Want { style: &row, children: &[2, 4], content: &none }),
+            (2, Want { style: &grow, children: &[3], content: &none }),
+            (3, Want { style: &input, children: &[], content: &field }),
+            (4, Want { style: &button, children: &[5], content: &none }),
+            (5, Want { style: &label, children: &[], content: &text }),
+        ];
+        tree.sync(1, wants.into_iter());
+        tree.compute(1, 412.0, 800.0, &mut Rough);
+        assert_eq!(frames(&tree, &[2, 3, 4, 5]), vec![[0.0, 0.0, 254.0, 40.0], [0.0, 0.0, 254.0, 40.0], [266.0, 0.0, 106.0, 40.0], [18.0, 0.0, 70.0, 40.0]]);
+    }
+
+    #[test]
+    fn a_flex_item_that_holds_a_long_text_fits_its_room() {
+        let mut tree = Tree::default();
+        let column = style(&computed("display: flex; flex-direction: column; align-items: flex-start; width: 372px;"), Role::Element, None);
+        let alert = style(&computed("display: flex; gap: 8px; padding: 10px 12px;"), Role::Element, None);
+        let icon = style(&computed("width: 19px; height: 19px; flex: none;"), Role::Element, None);
+        let block = style(&computed("display: block;"), Role::Element, None);
+        let text = Content::Text { version: 1, chars: vec![9, 5, 5, 4, 2, 4, 8, 4, 3, 2, 5], font_size: 16.0, line_height: 20.0, nowrap: false };
+        let none = Content::None;
+        let wants: Vec<(u64, Want)> = vec![
+            (1, Want { style: &column, children: &[2], content: &none }),
+            (2, Want { style: &alert, children: &[3, 4], content: &none }),
+            (3, Want { style: &icon, children: &[], content: &none }),
+            (4, Want { style: &block, children: &[], content: &text }),
+        ];
+        tree.sync(1, wants.into_iter());
+        tree.compute(1, 412.0, 800.0, &mut Rough);
+        let f = frames(&tree, &[2, 4]);
+        assert_eq!(f[0][2], 372.0, "no wider than the column");
+        assert_eq!(f[1][2], 372.0 - 24.0 - 19.0 - 8.0, "its text wraps in what is left");
+        assert_eq!(f[1][3], 40.0, "on two lines");
     }
 
     #[test]

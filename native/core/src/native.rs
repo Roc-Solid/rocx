@@ -73,6 +73,8 @@ pub struct View {
     pub origin: (Length, Length),
     /// How it is ordered among its siblings: `z-index`, and whether it is positioned.
     pub z: (i32, bool),
+    /// Its `order` in a flex or grid box.
+    pub order: i32,
 }
 
 impl View {
@@ -88,6 +90,7 @@ impl View {
             transform: None,
             origin: (Length::Percent(50.0), Length::Percent(50.0)),
             z: (0, false),
+            order: 0,
         }
     }
 }
@@ -438,8 +441,9 @@ impl<'a> Projection<'a> {
                     view.props.insert("placeholder".into(), attr("placeholder").unwrap_or_default());
                     view.props.insert("type".into(), kind);
                     self.placeholder(node, &computed, &mut view);
-                    let line = computed.line_height().unwrap_or(computed.font_size * 1.2);
-                    view.content = Content::Fixed { width: computed.font_size * 10.0, height: line.ceil() };
+                    // A field's line is the font's own (`normal`), whatever its line-height, as a
+                    // browser's is.
+                    view.content = Content::Fixed { width: computed.font_size * 10.0, height: (computed.font_size * 1.2).ceil() };
                 }
             }
             "textarea" => {
@@ -497,6 +501,8 @@ impl<'a> Projection<'a> {
                 let has_inline_box = items.iter().any(|item| matches!(item, Item::Box(_, false)));
                 if Self::items_of(&display) {
                     view.flow = self.as_items(items, &computed);
+                    // `order` (Taffy has none): the items laid out, and drawn, in its order.
+                    view.flow.sort_by_key(|child| self.views.get(child).map(|child| child.order).unwrap_or(0));
                 } else if !has_block && has_inline_box {
                     role = Role::Line;
                     view.flow = self.line(items, &computed);
@@ -504,6 +510,10 @@ impl<'a> Projection<'a> {
                     view.flow = self.blocks(items, &computed);
                 }
                 if is_scroller(&computed) {
+                    // Its scroll told to the host (`scroll` events) when something listens.
+                    if self.engine.listens(node, "scroll") || self.engine.listens(node, "viewport") {
+                        view.props.insert("watch".into(), "true".into());
+                    }
                     view.kind = match (scrolls(computed.get("overflow-x")), scrolls(computed.get("overflow-y"))) {
                         (true, true) => "scrollxy",
                         (true, false) => "scrollx",
@@ -536,6 +546,7 @@ impl<'a> Projection<'a> {
             view.style.aspect_ratio = Some(width / height);
         }
         self.paint(&mut view, &computed);
+        view.order = computed.get("order").and_then(|order| order.trim().parse().ok()).unwrap_or(0);
         if matches!(view.kind, "input" | "textarea") {
             view.props.extend(text_props(&computed));
         }
@@ -956,7 +967,10 @@ impl<'a> Projection<'a> {
                     fields.push(format!("\"{}\":\"{}\"", key, escape(value)));
                 }
             }
-            if let Some(background) = piece.style.colour_of("background-color").filter(|c| c >> 24 != 0) {
+            // An inline element's background (the block's own is the view's paint).
+            if !std::ptr::eq(&*piece.style, computed)
+                && let Some(background) = piece.style.colour_of("background-color").filter(|c| c >> 24 != 0)
+            {
                 fields.push(format!("\"bg\":\"{}\"", values::argb(background)));
             }
             if let Some(decoration) = &piece.decoration {
@@ -1003,7 +1017,7 @@ impl<'a> Projection<'a> {
         }
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         for (key, value) in &view.props {
-            if key == "text" || key == "runs" || key.starts_with("style.font") || matches!(key.as_str(), "style.lineHeight" | "style.letterSpacing" | "style.nowrap" | "style.pre" | "style.maxLines" | "style.tabular") {
+            if key == "text" || key == "runs" || key.starts_with("style.font") || matches!(key.as_str(), "style.lineHeight" | "style.lineScale" | "style.letterSpacing" | "style.nowrap" | "style.pre" | "style.maxLines" | "style.tabular") {
                 key.hash(&mut hasher);
                 value.hash(&mut hasher);
             }
@@ -1058,10 +1072,16 @@ impl<'a> Projection<'a> {
         if let Some(shadow) = c.get("box-shadow").and_then(|shadow| values::shadow(shadow, c.color, c.ctx)) {
             props.insert("style.shadow".into(), shadow);
         }
+        if let Some(ring) = c.get("box-shadow").and_then(|shadow| values::inset_shadow(shadow, c.color, c.ctx)) {
+            props.insert("style.ring".into(), ring);
+        }
         if let Some(opacity) = c.get("opacity").and_then(|o| if let Some(p) = o.strip_suffix('%') { p.trim().parse::<f32>().ok().map(|p| p / 100.0) } else { values::number(o) }).filter(|o| *o < 1.0) {
             props.insert("style.opacity".into(), format!("{}", opacity.max(0.0)));
         }
-        if c.is("visibility", "hidden") || c.is("visibility", "collapse") {
+        // Clipped away whole (`clip-path: inset(50%)`, `clip: rect(0 0 0 0)`: a visually hidden
+        // element's) shows nothing.
+        let clipped_away = c.get("clip-path").is_some_and(|path| path.replace(' ', "").starts_with("inset(50%")) || c.get("clip").is_some_and(|clip| clip.replace([' ', ','], "") == "rect(0000)" || clip.replace(' ', "") == "rect(0,0,0,0)");
+        if c.is("visibility", "hidden") || c.is("visibility", "collapse") || clipped_away {
             props.insert("style.visibility".into(), "hidden".into());
         }
         if c.get("outline-style").is_some_and(|style| style != "none") {
@@ -1428,8 +1448,17 @@ fn text_props(c: &Computed) -> BTreeMap<String, String> {
         props.insert("style.italic".into(), "true".into());
     }
     props.insert("style.fontFamily".into(), family(c.get("font-family")).into());
-    if let Some(line) = c.line_height() {
-        props.insert("style.lineHeight".into(), format!("{line:.2}"));
+    // A unitless line-height scales with each run's size (a big run's line is taller); a length
+    // is every line's.
+    match c.get("line-height").filter(|line| *line != "normal").and_then(values::number) {
+        Some(scale) => {
+            props.insert("style.lineScale".into(), format!("{scale:.3}"));
+        }
+        None => {
+            if let Some(line) = c.line_height() {
+                props.insert("style.lineHeight".into(), format!("{line:.2}"));
+            }
+        }
     }
     if let Some(spacing) = c.get("letter-spacing").filter(|s| *s != "normal").and_then(|s| values::px(s, c.ctx)) {
         props.insert("style.letterSpacing".into(), format!("{spacing:.2}"));
@@ -1503,10 +1532,14 @@ pub fn render() -> Vec<u8> {
                 }
             }
         }
+        // A view made again (its kind changed) is put back in its parent: the parent's children are
+        // sent again though their ids are the same.
+        let remade: std::collections::HashSet<u64> = ids.iter().filter(|id| old.get(id).is_some_and(|was| was.kind != views[id].kind)).map(|id| **id).collect();
         for &id in &ids {
             let view = &views[id];
             let was = was(id, view);
-            if was.map(|was| &was.children) != Some(&view.children) && (matches!(view.kind, "box" | "scrollx" | "scrolly" | "scrollxy" | "layer") || was.is_some_and(|was| !was.children.is_empty())) {
+            let moved = !remade.is_empty() && view.children.iter().any(|child| remade.contains(child));
+            if (moved || was.map(|was| &was.children) != Some(&view.children)) && (matches!(view.kind, "box" | "scrollx" | "scrolly" | "scrollxy" | "layer") || was.is_some_and(|was| !was.children.is_empty())) {
                 ops.children(*id, &view.children);
             }
         }
@@ -1515,7 +1548,7 @@ pub fn render() -> Vec<u8> {
         for &id in gone {
             ops.destroy(id);
         }
-        if old_root != Some(root) {
+        if old_root != Some(root) || remade.contains(&root) {
             ops.root(root);
         }
         if title != old_title
@@ -1598,6 +1631,27 @@ pub fn render() -> Vec<u8> {
             shown.frames.retain(|id, _| views.contains_key(id));
             shown.insets.retain(|id, _| views.contains_key(id));
         });
+        // `on:viewport`: an element's scroll and its padding box's size, as runtime.js tells it
+        // (`scrollTop,scrollLeft,clientWidth,clientHeight`), when they changed.
+        let listening: Vec<(u64, NodeId)> = engine::with(|engine| views.keys().filter(|id| **id & !LOW == 0).filter_map(|id| node_of(*id).map(|node| (*id, node))).filter(|(_, node)| engine.listens(*node, "viewport")).collect());
+        if !listening.is_empty() {
+            TREE.with(|tree| {
+                let tree = tree.borrow();
+                VIEWPORTS.with(|viewports| {
+                    let mut viewports = viewports.borrow_mut();
+                    for (id, node) in listening {
+                        let Some((frame, _)) = shown.frames.get(&id) else { continue };
+                        let border = tree.border(id).unwrap_or([0.0; 4]);
+                        let (top, left) = SCROLLS.with(|scrolls| scrolls.borrow().get(&node).copied()).unwrap_or((0.0, 0.0));
+                        let said = format!("{},{},{},{}", top.round(), left.round(), (frame[2] - border[1] - border[3]).round(), (frame[3] - border[0] - border[2]).round());
+                        if viewports.0.get(&node) != Some(&said) {
+                            viewports.0.insert(node, said.clone());
+                            viewports.1.push((node, said));
+                        }
+                    }
+                });
+            });
+        }
         for view in views.values_mut() {
             view.style = taffy::Style::default();
         }
@@ -1609,6 +1663,23 @@ pub fn render() -> Vec<u8> {
 
 thread_local! {
     static LAST_LAYOUT: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    /// `on:viewport`'s: what each element was last told (`top,left,width,height`), and what it is
+    /// to be told after this render.
+    static VIEWPORTS: RefCell<(HashMap<NodeId, String>, Vec<(NodeId, String)>)> = RefCell::new((HashMap::new(), Vec::new()));
+    /// How far each scrolling view is scrolled (its `scroll` events'), `top,left` in dp.
+    static SCROLLS: RefCell<HashMap<NodeId, (f32, f32)>> = RefCell::new(HashMap::new());
+}
+
+/// A scrolling view's scroll (its `scroll` event's value, `top,left`).
+pub fn scrolled(node: NodeId, value: &str) {
+    let mut parts = value.split(',').map(|part| part.trim().parse::<f32>().unwrap_or(0.0));
+    let (top, left) = (parts.next().unwrap_or(0.0), parts.next().unwrap_or(0.0));
+    SCROLLS.with(|scrolls| scrolls.borrow_mut().insert(node, (top, left)));
+}
+
+/// What `on:viewport` handlers are to be told now (their element's scroll or size changed), taken.
+pub fn viewports() -> Vec<(NodeId, String)> {
+    VIEWPORTS.with(|viewports| std::mem::take(&mut viewports.borrow_mut().1))
 }
 
 /// How long the last layout took, in ms (the log's).
