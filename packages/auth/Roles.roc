@@ -16,8 +16,12 @@ import Rules
 ## Roles.grant!({ user, role: Pro, via: Paid, by: "stripe", ends: At(period_end) })
 ## Roles.revoke!({ user, role: Pro, via: Gift, by: admin })
 ## Roles.has!(user, Pro)                                                         # Bool
+## Roles.current!(user)                                                          # [Pro], once a request
 ## Roles.of!(user)                                                               # every grant, past ones too
 ## ```
+##
+## What a user may do is not stored: it is the app's own function of what a request knows (D-132),
+## `can(me, UsePro)`, reading the roles `current!` gave its middleware.
 ##
 ## Granting again while a grant lasts changes its end (and its `by` and note): a row is one
 ## unbroken stretch, so a monthly payment that grants until the next period's end keeps one row.
@@ -96,6 +100,25 @@ Roles := [].{
 				Bool.False
 			}
 		}
+
+	## The roles `user` holds now, each once, whatever the reasons: one read, for a middleware to put
+	## beside who a request is, so the app's own checks (a `can` of its own, D-132) ask a list rather
+	## than the database. A role the app's tags no longer read (one renamed since) is left out, and
+	## said on the log.
+	current! : Str => Try(List(role), [DbErr(Str), BadRow(Str), ..others]) where [role.Json.Parseable([InvalidJson(Str)])]
+	current! = |user| {
+		rows = AuthStore.current_roles!(user, now!({}))?
+		var $held = []
+		for row in rows {
+			match Json.parse(row) {
+				Ok(role) => {
+					$held = $held.append(role)
+				}
+				Err(_) => Log.warn!("auth: a role the app's tags don't read, left out", { user, role: row })
+			}
+		}
+		Ok($held)
+	}
 
 	## Every grant `user` has had, the latest given first, with where each stands now. A row whose
 	## role or reason the app's tags no longer read (one renamed since) is left out, and said on the

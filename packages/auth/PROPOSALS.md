@@ -60,8 +60,9 @@ and nested transactions (D-076). And one more the user asked for: impersonation
   org's owners, and at most so many at once. The count and the grant must be one step (two owners
   at once can't both take the last seat): a row for the org that each grant changes first, so they
   take turns on every database, and the count read from the grants after it.
-- **A gate in the package** (`Roles.required(role, refusal)`), if apps write the same
-  `required_with` step.
+- **A gate in the package**: since D-132 a check is the app's own (`Policy.need` in a route, `can`
+  in a folder's `+middleware.roc`), so a package middleware would save a folder three lines;
+  only if apps write the same one.
 - **An admin's page** (packages/admin, as its jobs page): a user's grants, given and ended there.
 - **Roles on Turso**: the open grant is a partial unique index and an upsert on it; not tried on
   Turso yet.

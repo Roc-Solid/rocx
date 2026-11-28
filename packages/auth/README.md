@@ -240,6 +240,7 @@ Roles.grant!({ user, role: Pro, via: Gift, by: admin })                         
 Roles.grant!({ user, role: Pro, via: Paid, by: "stripe", ends: At(period_end) })
 Roles.revoke!({ user, role: Pro, via: Gift, by: admin })                          # Bool: one lasted
 Roles.has!(user, Pro)                                                            # Bool
+Roles.current!(user)                                                             # [Pro]: what they hold now
 Roles.of!(user)                                                                  # every grant, past ones too
 Roles.forget!(user)                                                              # the user is gone
 ```
@@ -253,6 +254,7 @@ Roles.State : [Current, Ended, Revoked({ at_ms : I64, by : Str })]
 Roles.grant! : Roles.Grant(role, via) => Try({}, [DbErr(Str), ..])
 Roles.revoke! : { user : Str, role : role, via : via, by : Str } => Try(Bool, [DbErr(Str), ..])
 Roles.has! : Str, role => Bool
+Roles.current! : Str => Try(List(role), [DbErr(Str), BadRow(Str), ..])
 Roles.of! : Str => Try(List(Roles.Held(role, via)), [DbErr(Str), BadRow(Str), ..])
 Roles.forget! : Str => Try(U64, [DbErr(Str), ..])
 ```
@@ -277,14 +279,60 @@ Roles.forget! : Str => Try(U64, [DbErr(Str), ..])
 - **The tags are kept as their JSON** (`"Pro"`): a tag
   renamed in the app leaves its old grants unread, so `of!` leaves them out (said on the log) and
   `has!` doesn't count them. Rename by updating the rows, as any stored value's.
-- **A gate** is the app's middleware: `Auth.required_with` with `Roles.has!` in its step, answering
-  anyone else as the app likes (a 403, the pricing page). The example asks in its `/pro` route.
+- **`current!` is what a request reads**: the roles held now, each once, in one query, for the
+  middleware to put beside who the request is (below). `has!` is for a check outside a request (a
+  job). A role the app's tags no longer read is left out of both, and said on the log.
 
 Paid roles are the app's to write from its payments: with packages/stripe, a function that reads the
 user's subscription (`Stripe.subscription!`) and grants `via: Paid` until its period's end (a few days
 more, for the card's retries) or revokes it once it has ended, run from `on_event!` for every event
 about that user, and now and then for everyone who pays. It reads the state, not the event, so events
 that come twice or out of order change nothing, and a missed one is made up.
+
+### What a user may do
+
+Roles are stored; what a user may do is not (D-132). It is a function of the app's own, from what
+the request knows: the roles its middleware read once with `current!`, and anything else (a list
+of admins, the org they act in). A route asks for an action, not for the roles behind it, so a
+rule that changes changes in one place, and, being pure, it is tested with `expect`. The package
+has no type for it: the actions, the rules and who they read are the app's.
+
+```roc
+# Middlewares.roc: who a signed-in request is, with the roles held now
+Me : { user : Str, email : Str, session : Str, real_user : Str, roles : List(Role), admin : Bool }
+roles = Roles.current!(session.user)       # in `Auth.required_with`'s step: one read a request
+
+# Policy.roc: what they may do
+Action : [UsePro, Impersonate]
+
+can : { roles : List(Role), admin : Bool, .. }, Action -> Bool
+can = |me, action|
+	match action {
+		UsePro => me.admin or me.roles.contains(Pro)
+		Impersonate => me.admin
+	}
+
+need : { roles : List(Role), admin : Bool, .. }, Action -> Try({}, Endpoint.Refusal)
+need = |me, action| if (can(me, action)) Ok({}) else Err(Forbidden)
+
+# a route
+Policy.need(context, UsePro)?
+```
+
+- **Who it reads is an open record** (`{ roles, admin, .. }`): a request's `Me` is one, and so is
+  a record a job builds for someone outside a request (their roles read with `current!`).
+- **Each action may say its own refusal**: `need` can answer a 402 that offers Pro for one and a
+  404 for another, so an admin page doesn't say it is there.
+- **A check about a thing** (this post, this org) is an action that carries it, `Edit(post)`,
+  ruled `post.author == me.user or me.admin`: the route reads the thing, then asks.
+- **A folder of routes** asks once, in its `+middleware.roc`, before any route under it.
+- **Behind impersonation**, `roles` are the user acted as (what the routes show), and `admin` is
+  who really signed in, so what only an admin may do stays theirs.
+- **Roles that can't be read are an error, not none**: the example's middleware answers 503, so
+  nobody is let through as someone holding less than they do, or more.
+
+The example: `Policy.roc` (`UsePro`, `Administer`, `Impersonate`, `Grant`), its middleware's `Me`,
+and its routes, each asking `need`.
 
 ## Two-factor sign-in
 

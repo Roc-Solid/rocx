@@ -126,7 +126,7 @@ function app(database, fake) {
 	const dir = join(example, "build", database, "app");
 	rmSync(dir, { recursive: true, force: true });
 	mkdirSync(dir, { recursive: true });
-	for (const each of ["routes", "migrations", "Middlewares.roc"]) cpSync(join(example, each), join(dir, each), { recursive: true });
+	for (const each of ["routes", "migrations", "Middlewares.roc", "Policy.roc"]) cpSync(join(example, each), join(dir, each), { recursive: true });
 	const providers = [
 		"Auth.google",
 		"Auth.github",

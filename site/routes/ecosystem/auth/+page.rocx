@@ -8,9 +8,9 @@ import ../../../Generated/Sources
 import ../../../Generated/Paths
 
 ## The auth package, a plugin: the package's example app file by file, how signing in goes (a mailed
-## link, a provider, the dev sign-in), who gets in, sessions and the middleware, roles, two-factor sign-in,
-## the providers, what a failed sign-in says, the tables, safety, and what comes next. Static:
-## signing in needs a server.
+## link, a provider, the dev sign-in), who gets in, sessions and the middleware, roles, what a user
+## may do, two-factor sign-in, the providers, what a failed sign-in says, the tables, safety, and
+## what comes next. Static: signing in needs a server.
 meta = {
 	title: "Auth",
 	description: "Sign-in for Roc Solid apps, as a plugin: by a mailed link or at Google, GitHub and any OpenID Connect provider; two-factor sign-in with an authenticator app; sessions kept as hashed tokens in the app's database; middleware that hands the signed-in user on. No pages: the app's own.",
@@ -21,6 +21,7 @@ meta = {
 		{ id: "sessions", label: "Sessions and middleware" },
 		{ id: "impersonation", label: "Impersonation" },
 		{ id: "roles", label: "Roles" },
+		{ id: "permissions", label: "What a user may do" },
 		{ id: "two-factor", label: "Two-factor sign-in" },
 		{ id: "providers", label: "Providers" },
 		{ id: "failed", label: "When it fails" },
@@ -204,7 +205,7 @@ view! = |_|
 				<code>Roles</code> is a module of the package (<code>import auth.Roles</code>); its table comes with
 				the plugin.
 			</p>
-			<Code title="Roles" source={"Role : [Pro, Admin]           # your own tags\nVia : [Paid, Trial, Gift]     # why someone holds one\n\nRoles.grant!({ user, role: Pro, via: Gift, by: admin })                          # for good\nRoles.grant!({ user, role: Pro, via: Paid, by: \"stripe\", ends: At(period_end) })\nRoles.revoke!({ user, role: Pro, via: Gift, by: admin })\nRoles.has!(user, Pro)                                                            # Bool\nRoles.of!(user)                                                                  # every grant, past ones too\nRoles.forget!(user)                                                              # the user is gone"} numbers={Bool.False} />
+			<Code title="Roles" source={"Role : [Pro, Admin]           # your own tags\nVia : [Paid, Trial, Gift]     # why someone holds one\n\nRoles.grant!({ user, role: Pro, via: Gift, by: admin })                          # for good\nRoles.grant!({ user, role: Pro, via: Paid, by: \"stripe\", ends: At(period_end) })\nRoles.revoke!({ user, role: Pro, via: Gift, by: admin })\nRoles.has!(user, Pro)                                                            # Bool\nRoles.current!(user)                                                             # [Pro]: held now\nRoles.of!(user)                                                                  # every grant, past ones too\nRoles.forget!(user)                                                              # the user is gone"} numbers={Bool.False} />
 			<ul>
 				<li>
 					Someone holds a role while any of their grants of it lasts, one grant for each reason: a
@@ -228,6 +229,33 @@ view! = |_|
 					reads the user's subscription and grants Pro until its period's end, or revokes it once it ended, run
 					for every event about them. It reads the state, not the event, so events that come twice or out of
 					order change nothing.
+				</li>
+			</ul>
+
+			<Heading id="permissions">What a user may do</Heading>
+			<p>
+				Roles are stored; what a user may do is not. It is a function of your own over what the request
+				knows: the roles its middleware read once with <code>Roles.current!</code>, and anything else (a
+				list of admins, the org they act in). A route asks for an action, not the roles behind it
+				(<code>Policy.need(context, UsePro)?</code>), so a rule changes in one place, and
+				<code>expect</code> tests it. The example's, beside its middleware's <code>Me</code> (above):
+			</p>
+			<Code title={Sources.auth_example_policy.file} source={Sources.auth_example_policy.rocx} />
+			<ul>
+				<li>
+					It takes an open record, <code>{"{ roles, admin, .. }"}</code>: a request's context is one, and so is a
+					record a job builds for someone (their roles from <code>current!</code>).
+				</li>
+				<li>
+					Each action can say its own refusal: a 402 that offers Pro for one, a 404 for an admin page.
+				</li>
+				<li>
+					A check about a thing is an action that carries it, <code>Edit(post)</code>: the route reads the
+					post, then asks.
+				</li>
+				<li>
+					A folder of routes asks once, in its <code>+middleware.roc</code>. Behind impersonation, the roles
+					are the user acted as, and <code>admin</code> is who really signed in.
 				</li>
 			</ul>
 

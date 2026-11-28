@@ -7487,3 +7487,57 @@ it, in every event the package reads, so keeping it costs nothing and asks Strip
 writes them all.
 
 **Reversible:** yes: the fields go, and older rows read as before.
+
+## D-132 What a user may do: the app's own function of what a request knows
+
+**Status.** Built (2026-11-28).
+
+**Context.** Roles (D-127) say what a user holds, and why. What a user may do was asked of them
+directly, wherever it mattered: `Roles.has!(user, Pro)` in a route, an admin list read again in
+the next, and an app's "an admin, or someone holding Pro" written out at each place that needed
+it. Each `has!` is a query, so a request that asked three times read the table three times; and a
+rule that changed (admins get Pro too; a new role that may do the same) changed everywhere it was
+written.
+
+**Options.**
+1. Permissions stored: a table of what each role (or user) may do, edited at run time.
+2. A permission type in the package (`Roles.Permission`, a gate middleware taking a role).
+3. The roles held now read once a request into its context, and what a user may do a pure
+   function of the app's own over that context, never stored.
+
+**Decision.** 3.
+
+- **`Roles.current!(user) : Try(List(role), [DbErr(Str), BadRow(Str), ..])`**: the roles held
+  now, each once, in one query (`select distinct role` over the open grants that last); a role
+  the app's tags no longer read is left out and said on the log, as `of!` does. `has!` stays for a
+  check outside a request.
+- **The rest is the app's**, a module of its own (the example's `Policy.roc`): its actions as a
+  tag union (`[UsePro, Administer, Impersonate, Grant]`), `can : { roles : List(Role), admin :
+  Bool, .. }, Action -> Bool`, and `need` (the same as a route's answer, `Try({}, Endpoint.Refusal)`,
+  so a route writes `Policy.need(context, UsePro)?`). Who it reads is an open record: a request's
+  context is one, and a job builds one for someone outside a request.
+- **A check about a thing** is an action that carries it (`Edit(post)`, `ManageOrg(org)`): the
+  route reads the thing, then asks. Nothing in the package or the shape changes for it; a list of
+  permissions worked out in the middleware couldn't hold one, which is why it is a function.
+- **The example**: its middleware's `Me` gains `roles` (the user the routes see) and `admin` (who
+  really signed in, from `ADMIN_EMAILS`, read each request, so taking someone off the list ends
+  their admin at once); roles that can't be read are a 503, not none. `/pro`, `/admin`,
+  `/impersonate`, `/roles/grant` and `/roles/revoke` ask `need`; `/roles` says `can(…, UsePro)`.
+- `ADMIN_EMAILS` stays a list rather than an `Admin` role: the first admin would need granting
+  from somewhere, and a role granted from the list would outlive the address's removal from it.
+- `rocx new`'s template has no roles yet, so it gets no `Policy.roc`.
+- **Tested:** `Policy`'s `expect`s (each rule, a refusal); the example's tests (unchanged: Pro
+  given, revoked, run out and behind impersonation, admins' routes, now through the roles the
+  middleware read).
+- **Docs:** packages/auth's README (`current!`, What a user may do) and PROPOSALS (6), the docs
+  site's Auth page (What a user may do, the example's `Policy.roc`).
+
+**Why.** Roles are facts about a user, kept with their history; permissions are rules, and rules
+belong in code: changed by a commit, never by a migration, and tested with `expect`. One read a
+request makes every check after it free, and the actions as tags make the compiler ask about each
+one a `match` doesn't cover.
+
+**Costs.** A query on every signed-in request, also for routes that ask nothing (an indexed read,
+beside the user's row the middleware reads already). A context type with two more fields.
+
+**Reversible:** yes: `current!` goes, and routes ask `has!` again.

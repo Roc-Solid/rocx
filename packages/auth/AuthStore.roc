@@ -308,6 +308,14 @@ AuthStore := [].{
 		Ok(!rows.is_empty())
 	}
 
+	## The roles (each its JSON) `user` holds at `now`, for any reason, each once.
+	current_roles! : Str, I64 => Try(List(Str), [DbErr(Str), BadRow(Str), ..others])
+	current_roles! = |user, now| {
+		rows : List({ role : Str })
+		rows = Db.all!("select distinct role from auth_roles where user_id = $1 and closed_at is null and (ends_at is null or ends_at > $2) order by role", [Text(user), Int(now)])?
+		Ok(rows.map(|row| row.role))
+	}
+
 	## Every grant `user` has had, the latest given first.
 	roles_of! : Str => Try(List(AuthStore.RoleRow), [DbErr(Str), BadRow(Str), ..others])
 	roles_of! = |user| Db.all!("select id, role, via, granted_by, granted_at, ends_at, note, closed_at, revoked_by from auth_roles where user_id = $1 order by granted_at desc, id", [Text(user)])

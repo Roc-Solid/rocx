@@ -11,7 +11,8 @@
 ## its secrets are sealed under a key from `APP_SECRET`. Roles (`Roles`, D-127): an admin gives
 ## someone Pro as a gift, for good or for days (`/roles/grant`), and ends it (`/roles/revoke`);
 ## anyone may start a two-week trial once (`/trial`); `/roles` lists one's grants, past ones too,
-## and `/pro` is for those who hold it.
+## and `/pro` is for those who hold it. What each may do is `Policy`'s (D-132), from the roles the
+## middleware read once a request.
 app [program] { auth: "../main.roc", crypto: "../../crypto/main.roc", email: "../../email/main.roc", pf: platform "../../../server/platform/main.roc" }
 
 import auth.Auth

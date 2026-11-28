@@ -42,14 +42,18 @@ Accounts := [].{
 			}
 		}
 
-	## Whether user `id` may act as others (`/impersonate`): their address is on `ADMIN_EMAILS`
-	## (commas between).
+	## Whether user `id` is an admin: their address is on `ADMIN_EMAILS` (`listed!`).
 	admin! : Str => Bool
 	admin! = |id|
 		match Accounts.user!(id) {
-			Ok(Found(user)) => (Env.var!("ADMIN_EMAILS") ?? "").split_on(",").map(|each| each.trim().with_ascii_lowercased()).contains(user.email)
+			Ok(Found(user)) => Accounts.listed!(user.email)
 			_ => Bool.False
 		}
+
+	## Whether `email` is on `ADMIN_EMAILS` (commas between). Read each time, so taking someone off
+	## the list ends what only an admin may do at their next request.
+	listed! : Str => Bool
+	listed! = |email| (Env.var!("ADMIN_EMAILS") ?? "").split_on(",").map(|each| each.trim().with_ascii_lowercased()).contains(email)
 
 	## What a user may hold (packages/auth's `Roles`, D-127): Pro, which the `/pro` page asks for.
 	Role : [Pro]

@@ -188,6 +188,7 @@ SiteSources := [].{
 		Whole("auth_example_main", "packages/auth/example/main.roc"),
 		Whole("auth_example_accounts", "packages/auth/example/Accounts.roc"),
 		Whole("auth_example_middlewares", "packages/auth/example/Middlewares.roc"),
+		Whole("auth_example_policy", "packages/auth/example/Policy.roc"),
 		Whole("auth_example_signed_in", "packages/auth/example/routes/(signed-in)/+middleware.roc"),
 		Whole("auth_example_sign_in", "packages/auth/example/routes/api/sign-in/+server.roc"),
 		Whole("auth_example_link", "packages/auth/example/routes/api/sign-in/link/+server.roc"),
