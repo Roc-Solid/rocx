@@ -17,7 +17,10 @@
 //! date field's choice), `pick:<id>=<path>,…` (files from the system's picker); layout's (D-137):
 //! `boxes` (each element's box on the page), `width:<dp>` (the screen's width, 412 at first: a
 //! rotation), `time` (how long the last layout took), `bench:<n>` (n renders with nothing changed,
-//! timed).
+//! timed); motion's (D-142): `tick:<ms>` (that long of the display's frames, 16 ms each, on a clock of
+//! the runner's: what moves sends its looks, `ops` prints them), `key:<combo>` (a hardware keyboard's
+//! key down and up, `Mod+K`, `/`, `ArrowDown`, `Escape`, to the focused element or the body:
+//! whether a handler took it), `moving` (whether anything still moves).
 //!
 //! Options: `--origin <url>`, `--path <start path>`, `--files <dir>` (where the cookie jar is kept,
 //! as an app's files dir).
@@ -33,6 +36,9 @@ struct Mac {
 }
 
 static SHOW_OPS: AtomicBool = AtomicBool::new(false);
+/// The display's clock, the runner's own (D-142: `tick:<ms>`), and whether frames were asked for.
+static CLOCK: Mutex<f64> = Mutex::new(0.0);
+static FRAMES: AtomicBool = AtomicBool::new(false);
 static WARNINGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 impl Platform for Mac {
@@ -61,6 +67,9 @@ impl Platform for Mac {
     fn reveal(&self, views: &[u64]) -> bool {
         println!("  reveal #{}", views.first().copied().unwrap_or(0));
         true
+    }
+    fn frames(&self) {
+        FRAMES.store(true, Ordering::Relaxed);
     }
     fn log(&self, level: Level, text: &str) {
         if level == Level::Warn {
@@ -172,6 +181,40 @@ fn main() {
                 println!("{n} renders: {:.2} ms each", started.elapsed().as_secs_f64() * 1000.0 / n as f64);
             }
             "time" => println!("laid out in {:.2} ms", core::native::last_layout_ms()),
+            // D-142: frames of the display, 16 ms apart, on the runner's clock.
+            "tick" => {
+                let ms: f64 = value.parse().unwrap_or(1000.0);
+                let mut clock = CLOCK.lock().unwrap();
+                let until = *clock + ms;
+                let mut frames = 0;
+                while *clock < until {
+                    *clock += 16.0;
+                    frames += 1;
+                    if !core::tick(*clock) {
+                        break;
+                    }
+                }
+                println!("{frames} frames ({:.0} ms on), {}", *clock, if core::native::moving() { "still moving" } else { "nothing moves" });
+            }
+            "moving" => println!("{}", if core::native::moving() || FRAMES.load(Ordering::Relaxed) && core::native::moving() { "moving" } else { "still" }),
+            "key" => {
+                // `Mod+K`: the key last, the modifier keys before it (Mod is Ctrl on a phone).
+                let mut parts: Vec<&str> = value.split('+').collect();
+                let key = if value.ends_with('+') && value.len() > 1 { "+" } else { parts.pop().unwrap_or("") };
+                let held = |name: &str| parts.iter().any(|part| *part == name || (name == "Ctrl" && *part == "Mod"));
+                let flags: String = [held("Shift"), held("Ctrl"), held("Alt"), held("Meta"), held("Ctrl")].iter().map(|on| if *on { '1' } else { '0' }).collect();
+                let typed = if key.len() == 1 && !held("Shift") { key.to_lowercase() } else { key.to_string() };
+                let code = match key {
+                    single if single.len() == 1 && single.chars().all(|c| c.is_ascii_alphabetic()) => format!("Key{}", single.to_uppercase()),
+                    single if single.len() == 1 && single.chars().all(|c| c.is_ascii_digit()) => format!("Digit{single}"),
+                    "/" => "Slash".into(),
+                    other => other.to_string(),
+                };
+                let value = format!("{flags}{typed}\t{code}");
+                let taken = core::key(0, "keydown", &value);
+                core::key(0, "keyup", &value);
+                println!("key {key:?}{}", if taken { ": taken" } else { "" });
+            }
             // A view by its id (`show` prints them): `at:<id>` taps it, `at:<id>=<text>` types into it.
             "at" => {
                 let (id, text) = value.split_once('=').map(|(id, text)| (id, Some(text))).unwrap_or((value, None));

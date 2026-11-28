@@ -74,6 +74,12 @@ class CssPaint(private val density: Float) : Drawable() {
         return Path().apply { addRoundRect(box, a, Path.Direction.CW) }
     }
 
+    /** Its border box's shape for a box of `w` by `h` px (D-142: a ripple's mask). */
+    fun shape(w: Int, h: Int): Path {
+        val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())
+        return rounded(rect, cornerRadii(rect.width(), rect.height()))
+    }
+
     /** What a box with this paint clips its children to: its padding box's corners. */
     fun clipPath(w: Int, h: Int): Path {
         val rect = RectF(0f, 0f, w.toFloat(), h.toFloat())

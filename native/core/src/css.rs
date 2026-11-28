@@ -214,11 +214,13 @@ pub struct Media {
     pub width: f32,
     pub height: f32,
     pub dark: bool,
+    /// The phone's "remove animations" (D-142): `prefers-reduced-motion: reduce`.
+    pub reduced: bool,
 }
 
 impl Default for Media {
     fn default() -> Media {
-        Media { width: 412.0, height: 915.0, dark: false }
+        Media { width: 412.0, height: 915.0, dark: false, reduced: false }
     }
 }
 
@@ -237,6 +239,22 @@ pub struct Sheet {
     has_contexts: Vec<Compound>,
     /// While parsing: the `@container` query the rules being read are in.
     container: Option<Rc<String>>,
+    /// `@keyframes`, by name (D-142): each keyframe's places (0 to 1) and declarations; the last
+    /// one of a name wins, as in a browser.
+    keyframes: HashMap<String, Rc<Vec<KeyframeRule>>>,
+    /// The page's view transitions' rules (D-142, D-040's: `::view-transition-old(root)`,
+    /// `::view-transition-new(root)`): what each pseudo-element of each name is given.
+    view_transitions: Vec<(String, String, Rc<Vec<Declaration>>)>,
+    /// The rules whose subject is styled while pressed (`:active` in its compound, D-142).
+    active_rules: Vec<usize>,
+}
+
+/// A keyframe of `@keyframes`: where it is (each of its selector's places, `from` 0, `to` 1) and
+/// what it says.
+#[derive(Clone, Debug)]
+pub struct KeyframeRule {
+    pub at: Vec<f64>,
+    pub declarations: Vec<(String, String)>,
 }
 
 thread_local! {
@@ -251,7 +269,7 @@ impl Sheet {
             if let Some((_, _, sheet)) = cache.borrow().iter().find(|(text, seen, _)| *seen == media && text == css) {
                 return sheet.clone();
             }
-            let mut sheet = Sheet { rules: Vec::new(), by_id: HashMap::default(), by_class: HashMap::default(), by_tag: HashMap::default(), others: Vec::new(), pseudos: Vec::new(), warnings: Vec::new(), media, has_contexts: Vec::new(), container: None };
+            let mut sheet = Sheet { rules: Vec::new(), by_id: HashMap::default(), by_class: HashMap::default(), by_tag: HashMap::default(), others: Vec::new(), pseudos: Vec::new(), warnings: Vec::new(), media, has_contexts: Vec::new(), container: None, keyframes: HashMap::default(), view_transitions: Vec::new(), active_rules: Vec::new() };
             sheet.parse(UA, false);
             sheet.parse(css, true);
             sheet.index();
@@ -267,6 +285,44 @@ impl Sheet {
 
     pub fn warnings(&self) -> &[String] {
         &self.warnings
+    }
+
+    /// The `@keyframes` of a name (D-142).
+    pub fn keyframes(&self, name: &str) -> Option<&Rc<Vec<KeyframeRule>>> {
+        self.keyframes.get(name)
+    }
+
+    /// What `::view-transition-<part>(<name>)` (`part`: old, new, group, image-pair) is given, in
+    /// order (D-142): the declarations of each rule for it.
+    pub fn view_transition(&self, part: &str, name: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for (each, named, declarations) in &self.view_transitions {
+            if each == part && (named == name || named == "*") {
+                for declaration in declarations.iter() {
+                    expand_into(&declaration.name, &declaration.value, &mut out);
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether the page styles an element while it is pressed (a rule with `:active` on it matches
+    /// it, given as pressed: D-142's tap feedback is then the page's own).
+    pub fn styles_active<'a, E: Elem<'a>>(&self, pressed: E) -> bool {
+        self.active_rules.iter().any(|&at| {
+            let rule = &self.rules[at];
+            rule.selector.pseudo.is_none() && Matcher.complex(&rule.selector.complex, pressed) && self.container_holds(rule, pressed)
+        })
+    }
+
+    /// Whether any rule asks for `:active` (a press is told to the engine only then).
+    pub fn has_active(&self) -> bool {
+        !self.active_rules.is_empty()
+    }
+
+    /// Whether the page has view transitions' rules at all.
+    pub fn has_view_transitions(&self) -> bool {
+        !self.view_transitions.is_empty()
     }
 
     fn warn(&mut self, said: String) {
@@ -305,6 +361,9 @@ impl Sheet {
             }
         }
         for (at, rule) in self.rules.iter().enumerate() {
+            if rule.selector.complex.parts[0].0.pseudos.iter().any(|pseudo| matches!(pseudo, Class::Active)) {
+                self.active_rules.push(at);
+            }
             if rule.selector.pseudo.is_some() {
                 self.pseudos.push(at);
                 continue;
@@ -372,7 +431,13 @@ impl Sheet {
                         }
                     }
                     "layer" | "scope" | "starting-style" if name == "layer" => self.parse(body, page),
-                    "font-face" | "keyframes" | "-webkit-keyframes" | "page" | "property" | "counter-style" | "view-transition" | "starting-style" | "scope" | "font-feature-values" => {
+                    "keyframes" | "-webkit-keyframes" => {
+                        let named = condition.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+                        if !named.is_empty() {
+                            self.keyframes.insert(named, Rc::new(keyframe_rules(body)));
+                        }
+                    }
+                    "font-face" | "page" | "property" | "counter-style" | "view-transition" | "starting-style" | "scope" | "font-feature-values" => {
                         if page && name != "view-transition" && name != "property" {
                             self.warn(format!("CSS @{name} isn't on phones yet: ignored"));
                         }
@@ -387,6 +452,14 @@ impl Sheet {
             }
             let declarations = Rc::new(declarations(body));
             for selector in values::split(&prelude, Some(',')) {
+                // The page's view transitions' pseudo-elements (D-142): kept apart, for a phone's
+                // change of page.
+                if let Some(rest) = selector.trim().strip_prefix("::view-transition-")
+                    && let Some((part, name)) = rest.split_once('(')
+                {
+                    self.view_transitions.push((part.trim().to_string(), name.trim_end_matches(')').trim().to_string(), declarations.clone()));
+                    continue;
+                }
                 match parse_selector(&selector) {
                     Ok(Some(selector)) => {
                         let order = self.rules.len();
@@ -491,6 +564,7 @@ const KNOWN: &[&str] = &[
     "color", "background", "background-color", "background-image", "opacity", "visibility", "box-shadow", "transform", "translate", "scale", "rotate", "transform-origin",
     "font", "font-family", "font-size", "font-weight", "font-style", "font-variant-numeric", "line-height", "letter-spacing", "word-spacing", "text-align", "text-transform", "text-decoration", "text-decoration-line", "text-decoration-color", "text-decoration-style", "text-decoration-thickness", "text-underline-offset",
     "white-space", "white-space-collapse", "text-wrap", "text-wrap-mode", "text-indent", "vertical-align", "list-style", "list-style-type", "list-style-position", "content", "pointer-events", "object-fit", "object-position", "hyphens",
+    "-webkit-tap-highlight-color",
     "clip", "clip-path",
     "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "fill-opacity", "stroke-opacity", "text-anchor", "rx", "ry", "r",
 ];
@@ -624,7 +698,7 @@ fn feature(part: &str, media: Media) -> bool {
         }
     }
     let Some((name, value)) = inner.split_once(':') else {
-        return matches!(inner, "color" | "hover" | "pointer" | "any-pointer" | "orientation" | "width" | "height");
+        return matches!(inner, "color" | "hover" | "pointer" | "any-pointer" | "orientation" | "width" | "height") || (inner == "prefers-reduced-motion" && media.reduced);
     };
     let (name, value) = (name.trim(), value.trim());
     let length = values::px(value, ctx);
@@ -635,7 +709,8 @@ fn feature(part: &str, media: Media) -> bool {
         "min-height" => length.is_some_and(|n| media.height >= n),
         "orientation" => (value == "portrait") == (media.height >= media.width),
         "prefers-color-scheme" => (value == "dark") == media.dark,
-        "prefers-reduced-motion" | "prefers-contrast" | "forced-colors" | "inverted-colors" => matches!(value, "no-preference" | "none"),
+        "prefers-reduced-motion" => (value == "reduce") == media.reduced,
+        "prefers-contrast" | "forced-colors" | "inverted-colors" => matches!(value, "no-preference" | "none"),
         "hover" | "any-hover" => value == "none",
         "pointer" | "any-pointer" => value == "coarse",
         "display-mode" => value == "standalone",
@@ -1266,7 +1341,7 @@ pub struct Computed {
 /// What a child inherits (besides `font-size` and `color`, worked out on their own).
 const INHERITED: &[&str] = &[
     "font-family", "font-weight", "font-style", "font-variant-numeric", "line-height", "letter-spacing", "word-spacing", "text-align", "text-transform", "text-indent",
-    "white-space", "visibility", "overflow-wrap", "word-break", "hyphens", "list-style-type", "list-style-position", "cursor", "pointer-events", "direction", "text-wrap", "-webkit-text-fill-color", "-webkit-line-clamp-inherited",
+    "white-space", "visibility", "overflow-wrap", "word-break", "hyphens", "list-style-type", "list-style-position", "cursor", "pointer-events", "direction", "text-wrap", "-webkit-text-fill-color", "-webkit-line-clamp-inherited", "-webkit-tap-highlight-color",
 ];
 
 impl PartialEq for Computed {
@@ -1369,6 +1444,34 @@ impl Computed {
             values.insert("font-weight".into(), weight.to_string());
         }
         Computed { values, custom, font_size, color, ctx }
+    }
+
+    /// These values with `declarations` over them (a keyframe's, a Roc transition's hidden style,
+    /// D-142): their `var()`s resolved in the element's scope, shorthands expanded, its colour worked
+    /// out again when they set it.
+    pub fn with(&self, declarations: &[(String, String)]) -> Computed {
+        let mut values = self.values.clone();
+        let mut longhands = Vec::new();
+        let mut color = self.color;
+        for (name, value) in declarations {
+            if name.starts_with("--") {
+                continue;
+            }
+            let value = if value.contains("var(") { resolve_vars(value, &self.custom, 0) } else { value.to_string() };
+            let value = value.trim();
+            if value.is_empty() {
+                continue;
+            }
+            longhands.clear();
+            expand(name, value, &mut longhands);
+            for (long, value) in longhands.drain(..) {
+                if long == "color" {
+                    color = values::colour(&value, self.color).unwrap_or(color);
+                }
+                values.insert(long, value);
+            }
+        }
+        Computed { values, custom: self.custom.clone(), font_size: self.font_size, color, ctx: self.ctx }
     }
 
     /// A property's computed value (for one CSS inherits, its parent's when it sets none).
@@ -1810,8 +1913,41 @@ fn expand(name: &str, value: &str, out: &mut Vec<(String, String)>) {
                 out.push(("white-space".into(), "nowrap".into()));
             }
         }
+        // D-142: as their longhands, so a later longhand overrides one layer's part.
+        "transition" | "animation" => out.extend(crate::motion::expand(name, value)),
         _ => out.push((name.to_string(), value.to_string())),
     }
+}
+
+/// A declaration as its longhands (`expand`), for what isn't cascaded (a view transition's rules).
+fn expand_into(name: &str, value: &str, out: &mut Vec<(String, String)>) {
+    expand(name, value, out);
+}
+
+/// `@keyframes`' body: each keyframe's places (`from`, `to`, percentages; several a rule) and its
+/// declarations, the shorthands kept (a keyframe's are applied over the element's own: `Computed::with`).
+fn keyframe_rules(body: &str) -> Vec<KeyframeRule> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    let text = body;
+    while at < text.len() {
+        let Some(open) = text[at..].find('{').map(|found| at + found) else { break };
+        let close = matching(text, open);
+        let places: Vec<f64> = text[at..open]
+            .split(',')
+            .filter_map(|place| match place.trim().to_ascii_lowercase().as_str() {
+                "from" => Some(0.0),
+                "to" => Some(1.0),
+                other => other.strip_suffix('%').and_then(|p| p.trim().parse::<f64>().ok()).map(|p| p / 100.0),
+            })
+            .collect();
+        let declarations = declarations(&text[open + 1..close.min(text.len())]).into_iter().map(|declaration| (declaration.name, declaration.value)).collect();
+        if !places.is_empty() {
+            out.push(KeyframeRule { at: places, declarations });
+        }
+        at = close + 1;
+    }
+    out
 }
 
 const BORDER_STYLES: [&str; 10] = ["none", "hidden", "dotted", "dashed", "solid", "double", "groove", "ridge", "inset", "outset"];
@@ -2019,7 +2155,7 @@ mod tests {
         let css = "@media (max-width: 600px) { .a { color: red; } } @media (min-width: 761px) and (max-width: 1000px) { .a { color: blue; } }
             @media (width <= 500px) { .b { color: green; } } @supports (display: grid) { .c { color: navy; } } @layer base { .d { color: teal; } }
             .a::before { content: '★'; color: gold; } .a:hover { color: black; } ::view-transition-old(root) { animation: none; }";
-        let sheet = Sheet::of(css, Media { width: 412.0, height: 915.0, dark: false });
+        let sheet = Sheet::of(css, Media { width: 412.0, height: 915.0, dark: false, reduced: false });
         assert!(sheet.warnings().is_empty(), "{:?}", sheet.warnings());
         let mut doc = Doc::new();
         let body = doc.add(0, "body", &[]);
@@ -2030,7 +2166,7 @@ mod tests {
         let before = sheet.compute(El(&doc, a), &computed, &[], Some(Pseudo::Before));
         assert_eq!(before.get("content"), Some("'★'"));
         assert_eq!(before.get("color"), Some("gold"));
-        let wide = Sheet::of(css, Media { width: 800.0, height: 600.0, dark: false });
+        let wide = Sheet::of(css, Media { width: 800.0, height: 600.0, dark: false, reduced: false });
         let mut doc2 = Doc::new();
         let body2 = doc2.add(0, "body", &[]);
         let only_a = doc2.add(body2, "div", &[("class", "a")]);

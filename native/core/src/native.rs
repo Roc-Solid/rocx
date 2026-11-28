@@ -28,7 +28,14 @@
 //! 6 TITLE    text:str                     the screen's title (`<Title>`)
 //! 7 FRAME    id:u64 x:f32 y:f32 w:f32 h:f32   where a view is in its parent, and its size (dp)
 //! 8 EXTENT   id:u64 w:f32 h:f32           the size of what a scrolling view holds (the page's too)
+//! 9 MOVE     id:u64 x:f32 y:f32 w:f32 h:f32   a frame mid-transition (D-142): the view placed there
+//!                                          at once, its parent not laid out again
 //! ```
+//!
+//! What moves (D-142: CSS transitions and animations, Roc's transition directives, glides) is
+//! motion.rs's: the projection says what each view declares (`Moves`), the render starts what a
+//! change starts, and the display's frames (`tick`) send each moving view's looks as these same
+//! ops: `SET` of `style.opacity`, `style.transform`, `style.background`… and `MOVE`.
 //!
 //! Numbers are little-endian; a string is its UTF-8 length (u32) and its bytes. The Kotlin
 //! applier (native/android) walks a batch in one JNI call.
@@ -39,6 +46,7 @@ use crate::engine::{self, Engine};
 use crate::layout::{self, Content, Role};
 use crate::controls;
 use crate::media;
+use crate::motion::{self, Animation, Easing, Fill, Keyframe, Kind as Moving, Motion, Timing, Track};
 use crate::svg;
 use crate::values::{self, Ctx, Length};
 use std::cell::RefCell;
@@ -91,6 +99,79 @@ pub struct View {
     /// whether its column gap is its own: Taffy has no subgrids, so it takes a copy of the parent's
     /// tracks (each row sizes them for itself: they line up where the content does).
     pub subgrid: Option<bool>,
+    /// What moves it (D-142): its CSS transitions and animations, Roc's transitions.
+    pub motion: Option<Box<Moves>>,
+}
+
+/// What may move a view (D-142), as its style and its element's directives say.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct Moves {
+    /// Each key's CSS transition (`motion::keys_of` of each property `transition-property` names).
+    pub transitions: Vec<(String, Timing)>,
+    /// The CSS animations `animation-name` names, their keyframes resolved for the element.
+    pub animations: Vec<CssAnimation>,
+    /// Roc's `transition:in` and `transition:out`: the hidden look and the pace.
+    pub enter: Option<(Pose, Timing)>,
+    pub leave: Option<(Pose, Timing)>,
+    /// `transition:move`'s pace.
+    pub glide: Option<Timing>,
+}
+
+/// A CSS animation on an element: its name, its place in the element's list, its timing and its
+/// keyframes (each one's place, its segment's easing, its look).
+#[derive(Clone, PartialEq, Debug)]
+pub struct CssAnimation {
+    pub name: String,
+    pub index: usize,
+    pub timing: Timing,
+    pub easing: Easing,
+    pub paused: bool,
+    pub frames: Vec<(f64, Option<Easing>, Pose)>,
+}
+
+/// A look a keyframe or a hidden style gives an element: the keys it sets (motion.rs's), as the
+/// projection writes them, its transform waiting for the element's frame (a translation can be a
+/// share of its size).
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct Pose {
+    pub looks: BTreeMap<String, String>,
+    pub transform: Option<(values::Transform, (Length, Length))>,
+}
+
+impl Pose {
+    /// Its looks, its transform resolved for a frame.
+    fn resolve(&self, frame: [f32; 4]) -> BTreeMap<String, String> {
+        let mut out = self.looks.clone();
+        if let Some((transform, origin)) = &self.transform {
+            out.insert("style.transform".into(), transform_look(transform, origin, frame));
+        }
+        out
+    }
+}
+
+/// A transform as the applier takes it (`tx ty sx sy degrees ox oy`), for a frame.
+fn transform_look(transform: &values::Transform, origin: &(Length, Length), frame: [f32; 4]) -> String {
+    let [tx, ty, sx, sy, rotate] = transform.resolve(frame[2], frame[3]);
+    let ox = origin.0.px(frame[2]).unwrap_or(frame[2] / 2.0);
+    let oy = origin.1.px(frame[3]).unwrap_or(frame[3] / 2.0);
+    format!("{tx} {ty} {sx} {sy} {rotate} {ox} {oy}")
+}
+
+/// `transform-origin`, as a view's.
+fn origin_of(c: &Computed) -> (Length, Length) {
+    let origin = values::split(c.get("transform-origin").unwrap_or("50% 50%"), None);
+    let axis = |word: Option<&String>| -> Length {
+        match word.map(|w| w.as_str()) {
+            Some("left") | Some("top") => Length::Percent(0.0),
+            Some("right") | Some("bottom") => Length::Percent(100.0),
+            Some("center") | None => Length::Percent(50.0),
+            Some(other) => values::length(other, c.ctx).unwrap_or(Length::Percent(50.0)),
+        }
+    };
+    let (first, second) = (origin.first(), origin.get(1));
+    // `top left` and `left top` are one origin.
+    let swapped = first.is_some_and(|w| w == "top" || w == "bottom") || second.is_some_and(|w| w == "left" || w == "right");
+    if swapped { (axis(second), axis(first)) } else { (axis(first), axis(second)) }
 }
 
 impl View {
@@ -111,6 +192,7 @@ impl View {
             hoisted_from: None,
             container: false,
             subgrid: None,
+            motion: None,
         }
     }
 }
@@ -118,7 +200,15 @@ impl View {
 thread_local! {
     static SHOWN: RefCell<Option<Shown>> = const { RefCell::new(None) };
     static TREE: RefCell<layout::Tree> = RefCell::new(layout::Tree::default());
-    static SCREEN: RefCell<Screen> = const { RefCell::new(Screen { width: 412.0, height: 915.0, dark: false }) };
+    static SCREEN: RefCell<Screen> = const { RefCell::new(Screen { width: 412.0, height: 915.0, dark: false, reduced: false }) };
+    /// What is moving (D-142), and the parts on their way out with how many of their elements'
+    /// animations are still playing.
+    static MOTION: RefCell<Motion> = RefCell::new(Motion::default());
+    static OUTS: RefCell<HashMap<u64, usize>> = RefCell::new(HashMap::new());
+    /// Where each view that glides was after the last render, on the page, by its id and its key.
+    static GLIDERS: RefCell<(HashMap<u64, [f32; 4]>, HashMap<String, (u64, [f32; 4])>)> = RefCell::new((HashMap::new(), HashMap::new()));
+    /// Whether the page's CSS styles a pressed element (`:active`): a press is told to the engine then.
+    static HAS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The element the phone's focus is on (`:focus`), and the one being pressed (`:active`).
     static FOCUS: RefCell<(Option<NodeId>, Option<NodeId>)> = const { RefCell::new((None, None)) };
 }
@@ -138,6 +228,20 @@ struct Screen {
     width: f32,
     height: f32,
     dark: bool,
+    /// The phone's "remove animations" (D-142).
+    reduced: bool,
+}
+
+/// The phone asks for less motion (Android's "remove animations", D-142): `prefers-reduced-motion:
+/// reduce` holds, and Roc's transitions and glides don't play, as runtime.js's don't.
+pub fn set_reduced_motion(reduced: bool) {
+    SCREEN.with(|screen| screen.borrow_mut().reduced = reduced);
+    LAST_KEY.with(|last| last.set(0));
+}
+
+/// Whether the page's CSS styles a pressed element (D-142: a press is worth a render only then).
+pub fn styles_active() -> bool {
+    HAS_ACTIVE.with(|has| has.get())
 }
 
 /// The screen's size changed (the activity's first layout, a rotation): media queries and
@@ -159,11 +263,16 @@ pub fn note(node: NodeId, event: &str) {
         match event {
             "focus" => focus.0 = Some(node),
             "blur" if focus.0 == Some(node) => focus.0 = None,
-            "pointerdown" => focus.1 = Some(node),
-            "pointerup" | "pointercancel" | "click" => focus.1 = None,
+            "pointerdown" | "active:1" => focus.1 = Some(node),
+            "pointerup" | "pointercancel" | "click" | "active:0" => focus.1 = None,
             _ => {}
         }
     });
+}
+
+/// The element the phone's focus is on (D-142: a key goes to it).
+pub fn focused() -> Option<NodeId> {
+    FOCUS.with(|focus| focus.borrow().0)
 }
 
 fn native_id(node: NodeId) -> u64 {
@@ -194,6 +303,11 @@ pub fn invalidate() {
 /// The screen is sent again, whole, on the next render (a new activity).
 pub fn forget_shown() {
     SHOWN.with(|shown| *shown.borrow_mut() = None);
+    MOTION.with(|motion| *motion.borrow_mut() = Motion::default());
+    GLIDERS.with(|gliders| *gliders.borrow_mut() = Default::default());
+    // Parts on their way out go at once: nothing plays their animations any more.
+    let outs: Vec<u64> = OUTS.with(|outs| outs.borrow_mut().drain().map(|(token, _)| token).collect());
+    DONE.with(|done| done.borrow_mut().extend(outs));
     CONTAINERS.with(|containers| containers.borrow_mut().clear());
     KEPT.with(|kept| *kept.borrow_mut() = Default::default());
     LAST_KEY.with(|last| last.set(0));
@@ -302,7 +416,8 @@ impl<'a> css::Elem<'a> for El<'a> {
 pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
     let (text, loading) = stylesheet(engine);
     let screen = SCREEN.with(|screen| *screen.borrow());
-    let sheet = css::Sheet::of(&text, css::Media { width: screen.width, height: screen.height, dark: screen.dark });
+    let sheet = css::Sheet::of(&text, css::Media { width: screen.width, height: screen.height, dark: screen.dark, reduced: screen.reduced });
+    HAS_ACTIVE.with(|has| has.set(sheet.has_active()));
     for warning in sheet.warnings() {
         engine.warn_once(warning, &format!("rocx native: {warning}"));
     }
@@ -675,7 +790,7 @@ impl<'a> Projection<'a> {
                 view.kind = "image";
                 view.props.insert("alt".into(), attr("alt").unwrap_or_default());
                 let screen = SCREEN.with(|screen| *screen.borrow());
-                let media = css::Media { width: screen.width, height: screen.height, dark: screen.dark };
+                let media = css::Media { width: screen.width, height: screen.height, dark: screen.dark, reduced: screen.reduced };
                 let picked = media::pick(attr("src").as_deref(), attr("srcset").as_deref(), attr("sizes").as_deref(), crate::density(), media);
                 let mut natural = None;
                 if let Some((url, density)) = picked
@@ -785,6 +900,10 @@ impl<'a> Projection<'a> {
         if self.clickable(node, &tag) {
             view.props.insert("click".into(), "true".into());
         }
+        // What a keyboard's Tab reaches (D-142): links, buttons, summaries, what has a `tabindex`.
+        if matches!(view.kind, "box" | "text") && self.focusable(node, &tag) {
+            view.props.insert("focusable".into(), "true".into());
+        }
         // D-139: a double tap is a `dblclick` (after its two clicks, as a browser's).
         if self.engine.listens(node, "dblclick") {
             view.props.insert("click".into(), "true".into());
@@ -814,6 +933,15 @@ impl<'a> Projection<'a> {
             view.style.aspect_ratio = Some(width / height);
         }
         self.paint(&mut view, &computed);
+        self.moves(node, &mut view, &computed);
+        // A tappable view's feedback while pressed (D-142): the platform's ripple, unless the page
+        // gives one of its own.
+        if view.props.get("click").is_some_and(|click| click == "true")
+            && matches!(view.kind, "box" | "text")
+            && let Some(colour) = self.press(node, &computed)
+        {
+            view.props.insert("press".into(), colour);
+        }
         view.order = computed.get("order").and_then(|order| order.trim().parse().ok()).unwrap_or(0);
         view.container = computed.get("container-type").or_else(|| computed.get("container")).is_some_and(|kind| kind.contains("size"));
         if matches!(view.kind, "input" | "textarea") {
@@ -883,6 +1011,18 @@ impl<'a> Projection<'a> {
             (None, None, None) => (0.0, 0.0),
         };
         Content::Fixed { width, height }
+    }
+
+    /// Whether the element takes the keyboard's focus (D-142, HTML's focusable areas): a link, a
+    /// button, a summary, one with a `tabindex` of 0 or more; not a disabled one.
+    fn focusable(&self, node: NodeId, tag: &str) -> bool {
+        if self.dom.attr(node, "disabled").is_some() {
+            return false;
+        }
+        match self.dom.attr(node, "tabindex").and_then(|index| index.trim().parse::<i32>().ok()) {
+            Some(index) => index >= 0,
+            None => matches!(tag, "button" | "summary") || (tag == "a" && self.dom.attr(node, "href").is_some()),
+        }
     }
 
     /// Whether a tap on the element goes to it: a link, a button, a label, a summary, or an
@@ -1493,31 +1633,108 @@ impl<'a> Projection<'a> {
         if c.is("pointer-events", "none") {
             props.insert("style.untouchable".into(), "true".into());
         }
-        // Transitions a phone's view can make (opacity, transform): `opacity 150 0,transform 120 0`
-        // (each property's duration and delay in ms); the applier animates a change to them.
-        if let Some(transitions) = transitions(c) {
-            props.insert("style.transition".into(), transitions);
-        }
         let transform = values::transform(c.get("transform"), c.get("translate"), c.get("scale"), c.get("rotate"), c.ctx);
         let position = c.get("position").unwrap_or("static");
         let z_index = c.get("z-index").is_some_and(|z| z.trim().parse::<i32>().is_ok());
         view.stacking = (position != "static" && z_index) || matches!(position, "fixed" | "sticky") || props.contains_key("style.opacity") || !transform.is_identity();
         if !transform.is_identity() {
             view.transform = Some(transform);
-            let origin = values::split(c.get("transform-origin").unwrap_or("50% 50%"), None);
-            let axis = |word: Option<&String>| -> Length {
-                match word.map(|w| w.as_str()) {
-                    Some("left") | Some("top") => Length::Percent(0.0),
-                    Some("right") | Some("bottom") => Length::Percent(100.0),
-                    Some("center") | None => Length::Percent(50.0),
-                    Some(other) => values::length(other, c.ctx).unwrap_or(Length::Percent(50.0)),
-                }
-            };
-            let (first, second) = (origin.first(), origin.get(1));
-            // `top left` and `left top` are one origin.
-            let swapped = first.is_some_and(|w| w == "top" || w == "bottom") || second.is_some_and(|w| w == "left" || w == "right");
-            view.origin = if swapped { (axis(second), axis(first)) } else { (axis(first), axis(second)) };
+            view.origin = origin_of(c);
         }
+    }
+
+    /// What may move an element's view (D-142): its CSS transitions (each property's timing, by the
+    /// keys it moves), its CSS animations (their keyframes resolved for it: its custom properties,
+    /// its colour), and Roc's transition directives on it (their hidden looks).
+    fn moves(&mut self, node: NodeId, view: &mut View, c: &Computed) {
+        let mut moves = Moves::default();
+        for (property, timing) in motion::transitions(c.get("transition-property"), c.get("transition-duration"), c.get("transition-timing-function"), c.get("transition-delay")) {
+            for key in motion::keys_of(&property) {
+                moves.transitions.retain(|(have, _)| have != key);
+                moves.transitions.push((key.to_string(), timing.clone()));
+            }
+        }
+        let get = |name: &str| c.get(name).map(str::to_string);
+        for (index, named) in motion::animations(&get).into_iter().enumerate() {
+            let Some(rules) = self.sheet.keyframes(&named.name).cloned() else {
+                self.warn(format!("CSS animation `{}` has no @keyframes: ignored", named.name));
+                continue;
+            };
+            let mut frames = Vec::new();
+            for rule in rules.iter() {
+                let easing = rule.declarations.iter().rev().find(|(name, _)| name == "animation-timing-function").and_then(|(_, value)| Easing::parse(value));
+                let declarations: Vec<(String, String)> = rule.declarations.iter().filter(|(name, _)| !name.starts_with("animation")).cloned().collect();
+                let pose = self.pose(c, &declarations);
+                for at in &rule.at {
+                    frames.push((*at, easing.clone(), pose.clone()));
+                }
+            }
+            moves.animations.push(CssAnimation { name: named.name, index, timing: named.timing, easing: named.easing, paused: named.paused, frames });
+        }
+        if let Some(own) = self.engine.motions.get(&node).cloned() {
+            let pace = |spec: &engine::Spec, fill: Fill| Timing::once(spec.ms, spec.delay, Easing::parse(&spec.easing).unwrap_or(Easing::Cubic([0.0, 0.0, 0.58, 1.0])), fill);
+            if let Some(spec) = &own.enter {
+                moves.enter = Some((self.pose(c, &spec.declarations()), pace(spec, Fill::Backwards)));
+            }
+            if let Some(spec) = &own.leave {
+                let timing = Timing { direction: motion::Direction::Reverse, ..pace(spec, Fill::Forwards) };
+                moves.leave = Some((self.pose(c, &spec.declarations()), timing));
+            }
+            if let Some(spec) = &own.glide {
+                moves.glide = Some(pace(spec, Fill::Backwards));
+            }
+        }
+        if moves != Moves::default() {
+            view.motion = Some(Box::new(moves));
+        }
+    }
+
+    /// The look `declarations` give an element over its own (a keyframe's, a hidden style's): the
+    /// keys they set, as the projection writes them.
+    fn pose(&mut self, c: &Computed, declarations: &[(String, String)]) -> Pose {
+        let changed = c.with(declarations);
+        let mut scratch = View::new("box", "");
+        self.paint(&mut scratch, &changed);
+        let mut pose = Pose::default();
+        for (name, _) in declarations {
+            let keys = motion::keys_of(name);
+            if keys.is_empty() && !name.starts_with("--") {
+                self.warn(format!("CSS `{name}` in an animation or a transition isn't on phones yet: it doesn't move"));
+            }
+            for key in keys {
+                match *key {
+                    "style.transform" => pose.transform = Some((values::transform(changed.get("transform"), changed.get("translate"), changed.get("scale"), changed.get("rotate"), changed.ctx), origin_of(&changed))),
+                    "style.opacity" => {
+                        pose.looks.insert(key.to_string(), scratch.props.get(*key).cloned().unwrap_or_else(|| "1".into()));
+                    }
+                    "style.shadow" => {
+                        pose.looks.insert(key.to_string(), changed.get("box-shadow").and_then(|shadow| values::shadow_any(shadow, changed.color, changed.ctx)).unwrap_or_default());
+                    }
+                    "style.color" => {
+                        pose.looks.insert(key.to_string(), values::argb(changed.color));
+                    }
+                    motion::FRAME => self.warn(format!("CSS `{name}` in an animation isn't on phones yet: it doesn't move (a transition of it does)")),
+                    key => {
+                        pose.looks.insert(key.to_string(), scratch.props.get(key).cloned().unwrap_or_default());
+                    }
+                }
+            }
+        }
+        pose
+    }
+
+    /// A tappable element's pressed look (D-142): none when the page gives it one (an `:active` rule
+    /// for it) or says none (`-webkit-tap-highlight-color: transparent`); `-webkit-tap-highlight-color`
+    /// when it says one; else its own colour, faint (12%), as Material's pressed state is.
+    fn press(&self, node: NodeId, c: &Computed) -> Option<String> {
+        if let Some(highlight) = c.get("-webkit-tap-highlight-color") {
+            return values::colour(highlight, c.color).filter(|colour| colour >> 24 != 0).map(values::argb);
+        }
+        let pressed = El { focus: (self.focus.0, Some(node)), ..self.el(node) };
+        if self.sheet.styles_active(pressed) {
+            return None;
+        }
+        Some(values::argb(0x1f00_0000 | (c.color & 0x00ff_ffff)))
     }
 
     /// The drawing tree: each view's children as they are drawn. A positioned (absolute) view goes
@@ -1732,44 +1949,6 @@ fn is_scroller(c: &Computed) -> bool {
     scrolls(c.get("overflow-x")) || scrolls(c.get("overflow-y"))
 }
 
-/// `transition` (or its longhands) as the properties a view animates: opacity and transform (and
-/// `translate`, `scale`, `rotate`, `all`), each with its duration and delay in ms.
-fn transitions(c: &Computed) -> Option<String> {
-    let time = |word: &str| -> Option<f32> {
-        let word = word.trim();
-        word.strip_suffix("ms").and_then(|ms| ms.trim().parse::<f32>().ok()).or_else(|| word.strip_suffix('s').and_then(|s| s.trim().parse::<f32>().ok()).map(|s| s * 1000.0))
-    };
-    let mut out = Vec::new();
-    let mut add = |property: &str, duration: f32, delay: f32| {
-        let names: &[&str] = match property {
-            "all" => &["opacity", "transform"],
-            "opacity" => &["opacity"],
-            "transform" | "translate" | "scale" | "rotate" => &["transform"],
-            _ => &[],
-        };
-        for name in names {
-            if duration > 0.0 && !out.iter().any(|(have, _, _): &(&str, f32, f32)| have == name) {
-                out.push((*name, duration, delay));
-            }
-        }
-    };
-    if let Some(shorthand) = c.get("transition").filter(|value| *value != "none") {
-        for layer in values::split(shorthand, Some(',')) {
-            let words = values::split(&layer, None);
-            let times: Vec<f32> = words.iter().filter_map(|word| time(word)).collect();
-            let property = words.iter().find(|word| time(word).is_none() && !word.contains('(') && !matches!(word.as_str(), "ease" | "linear" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end" | "allow-discrete" | "normal")).map(String::as_str).unwrap_or("all");
-            add(property, times.first().copied().unwrap_or(0.0), times.get(1).copied().unwrap_or(0.0));
-        }
-    } else if let Some(properties) = c.get("transition-property") {
-        let durations: Vec<f32> = values::split(c.get("transition-duration").unwrap_or("0s"), Some(',')).iter().filter_map(|d| time(d)).collect();
-        for (at, property) in values::split(properties, Some(',')).iter().enumerate() {
-            let duration = durations.get(at % durations.len().max(1)).copied().unwrap_or(0.0);
-            add(property.trim(), duration, 0.0);
-        }
-    }
-    (!out.is_empty()).then(|| out.iter().map(|(name, duration, delay)| format!("{name} {duration} {delay}")).collect::<Vec<_>>().join(","))
-}
-
 /// Whether pieces show anything (whitespace alone doesn't, but under `white-space: pre`).
 fn has_text(pieces: &[Piece], computed: &Computed) -> bool {
     let pre = matches!(computed.get("white-space"), Some("pre" | "pre-wrap" | "break-spaces"));
@@ -1961,7 +2140,7 @@ pub fn render() -> Vec<u8> {
         FOCUS.with(|focus| focus.borrow().hash(&mut hasher));
         SCREEN.with(|screen| {
             let screen = screen.borrow();
-            (screen.width.to_bits(), screen.height.to_bits(), screen.dark).hash(&mut hasher);
+            (screen.width.to_bits(), screen.height.to_bits(), screen.dark, screen.reduced).hash(&mut hasher);
         });
         css.len().hash(&mut hasher);
         loading.hash(&mut hasher);
@@ -1981,6 +2160,11 @@ pub fn render() -> Vec<u8> {
         (root, views, engine.title.clone(), loading)
     });
     let screen = SCREEN.with(|screen| *screen.borrow());
+    // What a change starts moving (D-142): CSS transitions (view, key, from, timing), and the views
+    // whose own size or transform their style changed (a transition of those is a change of style,
+    // not of layout, as CSS's).
+    let mut starts: Vec<(u64, String, String, Timing)> = Vec::new();
+    let mut restyled: std::collections::HashSet<(u64, &'static str)> = std::collections::HashSet::new();
     let first = SHOWN.with(|shown| {
         let mut shown = shown.borrow_mut();
         // Nothing shown yet and a stylesheet still on its way: the first frame waits for it, as a
@@ -2016,16 +2200,39 @@ pub fn render() -> Vec<u8> {
         for &id in &ids {
             let view = &views[id];
             let was = was(id, view);
+            // A key that moves (D-142): a change to it with a transition starts one, from what is
+            // shown; one an animation moves is the animation's to send.
+            let mut changed = |key: &String, value: &str, ops: &mut Ops| {
+                if let Some(was) = was
+                    && motion::KEYS.contains(&key.as_str())
+                {
+                    if let Some(timing) = transition_of(view, key) {
+                        let from = MOTION.with(|motion| motion.borrow().shown(*id, key).map(str::to_string)).or_else(|| was.props.get(key).cloned()).unwrap_or_default();
+                        starts.push((*id, key.clone(), from, timing));
+                        return;
+                    }
+                    if MOTION.with(|motion| motion.borrow().drives(*id, key)) {
+                        return;
+                    }
+                }
+                ops.set(*id, key, value);
+            };
             for (key, value) in &view.props {
                 if was.and_then(|was| was.props.get(key)) != Some(value) {
-                    ops.set(*id, key, value);
+                    changed(key, value, &mut ops);
                 }
             }
             if let Some(was) = was {
                 for key in was.props.keys() {
                     if !view.props.contains_key(key) {
-                        ops.set(*id, key, "");
+                        changed(key, "", &mut ops);
                     }
+                }
+                if was.transform != view.transform || was.origin != view.origin {
+                    restyled.insert((*id, "style.transform"));
+                }
+                if was.style.size != view.style.size || was.style.min_size != view.style.min_size || was.style.max_size != view.style.max_size || was.style.inset != view.style.inset {
+                    restyled.insert((*id, motion::FRAME));
                 }
             }
         }
@@ -2044,6 +2251,13 @@ pub fn render() -> Vec<u8> {
         gone.sort();
         for &id in gone {
             ops.destroy(id);
+            // What moved it stops; a part on its way out it was in counts it gone.
+            let ended = MOTION.with(|motion| motion.borrow_mut().forget(id));
+            out_ended(ended);
+        }
+        for id in remade.iter() {
+            let ended = MOTION.with(|motion| motion.borrow_mut().forget(*id));
+            out_ended(ended);
         }
         if old_root != Some(root) || remade.contains(&root) {
             ops.root(root);
@@ -2135,8 +2349,17 @@ pub fn render() -> Vec<u8> {
                     tree.frame(id)
                 };
                 let Some(frame) = frame else { continue };
+                let known = shown.frames.contains_key(&id);
                 if shown.frames.get(&id) != Some(&frame) {
-                    ops.frame(id, frame.0);
+                    // A size or place its style changed, with a transition (D-142): the view moves
+                    // there; what that moves around it goes at once.
+                    let timed = shown.frames.get(&id).filter(|old| old.0 != frame.0 && restyled.contains(&(id, motion::FRAME))).and_then(|old| transition_of(&views[&id], motion::FRAME).map(|timing| (old.0, timing)));
+                    if let Some((old, timing)) = timed {
+                        let from = MOTION.with(|motion| motion.borrow().shown(id, motion::FRAME).map(str::to_string)).unwrap_or_else(|| frame_text(old));
+                        starts.push((id, motion::FRAME.to_string(), from, timing));
+                    } else if !MOTION.with(|motion| motion.borrow().drives(id, motion::FRAME)) {
+                        ops.frame(id, frame.0);
+                    }
                     if views[&id].kind.starts_with("scroll") || id == root {
                         ops.extent(id, frame.1);
                     }
@@ -2162,7 +2385,13 @@ pub fn render() -> Vec<u8> {
                     None => String::new(),
                 };
                 if shown.transforms.get(&id).map(String::as_str).unwrap_or("") != transform {
-                    ops.set(id, "style.transform", &transform);
+                    let timed = (known && restyled.contains(&(id, "style.transform"))).then(|| transition_of(view, "style.transform")).flatten();
+                    if let Some(timing) = timed {
+                        let from = MOTION.with(|motion| motion.borrow().shown(id, "style.transform").map(str::to_string)).or_else(|| shown.transforms.get(&id).cloned()).unwrap_or_default();
+                        starts.push((id, "style.transform".into(), from, timing));
+                    } else if !MOTION.with(|motion| motion.borrow().drives(id, "style.transform")) {
+                        ops.set(id, "style.transform", &transform);
+                    }
                     if transform.is_empty() {
                         shown.transforms.remove(&id);
                     } else {
@@ -2212,6 +2441,8 @@ pub fn render() -> Vec<u8> {
             });
         }
         shown.views = std::mem::take(&mut views);
+        // What this render starts moving, and each moving view's look now (D-142).
+        moves_after_layout(shown, std::mem::take(&mut starts), screen.reduced, &mut ops);
     });
     LAST_LAYOUT.with(|last| last.set(laid_out.as_secs_f64() * 1000.0));
     let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
@@ -2225,7 +2456,275 @@ pub fn render() -> Vec<u8> {
     ops.bytes
 }
 
+/// A key's transition on a view, if its style has one (D-142).
+fn transition_of(view: &View, key: &str) -> Option<Timing> {
+    view.motion.as_ref()?.transitions.iter().find(|(have, _)| have == key).map(|(_, timing)| timing.clone())
+}
+
+fn frame_text(frame: [f32; 4]) -> String {
+    format!("{} {} {} {}", frame[0], frame[1], frame[2], frame[3])
+}
+
+/// A key's value as the view has it on its own (what an animation moves over), and its frame.
+fn under_of(shown: &Shown, id: u64, key: &str) -> (Option<String>, [f32; 4]) {
+    let frame = shown.frames.get(&id).map(|frame| frame.0).unwrap_or([0.0; 4]);
+    let own = match key {
+        "style.transform" => shown.transforms.get(&id).cloned(),
+        motion::FRAME => Some(frame_text(frame)),
+        key => shown.views.get(&id).and_then(|view| view.props.get(key).cloned()),
+    };
+    (own, frame)
+}
+
+/// A CSS animation as motion.rs plays it: a track a key its keyframes set, each keyframe's segment
+/// eased by its own timing function or the animation's, an implicit first keyframe the element's own.
+fn css_animation(animation: &CssAnimation, frame: [f32; 4]) -> Animation {
+    let resolved: Vec<(f64, Option<Easing>, BTreeMap<String, String>)> = animation.frames.iter().map(|(at, easing, pose)| (*at, easing.clone(), pose.resolve(frame))).collect();
+    let mut keys: Vec<String> = Vec::new();
+    for (_, _, looks) in &resolved {
+        for key in looks.keys() {
+            if !keys.contains(key) {
+                keys.push(key.clone());
+            }
+        }
+    }
+    let tracks = keys
+        .iter()
+        .map(|key| {
+            let mut frames: Vec<Keyframe> = resolved.iter().filter_map(|(at, easing, looks)| looks.get(key).map(|look| Keyframe { at: *at, look: Some(look.clone()), easing: Some(easing.clone().unwrap_or_else(|| animation.easing.clone())) })).collect();
+            if !frames.iter().any(|frame| frame.at <= 0.0) {
+                frames.insert(0, Keyframe { at: 0.0, look: None, easing: Some(animation.easing.clone()) });
+            }
+            Track::new(key, frames)
+        })
+        .collect();
+    let mut played = Animation::new(Moving::Css(animation.name.clone(), animation.index), animation.timing.clone(), tracks);
+    if animation.paused {
+        played.paused_at = Some(0.0);
+    }
+    played
+}
+
+/// Parts on their way out whose elements' animations are over (or never started): taken away by
+/// the next pump (`take_done`).
+fn out_ended(tokens: Vec<u64>) {
+    if tokens.is_empty() {
+        return;
+    }
+    OUTS.with(|outs| {
+        let mut outs = outs.borrow_mut();
+        for token in tokens {
+            if let Some(left) = outs.get_mut(&token) {
+                *left = left.saturating_sub(1);
+                if *left == 0 {
+                    outs.remove(&token);
+                    DONE.with(|done| done.borrow_mut().push(token));
+                }
+            }
+        }
+    });
+}
+
+/// The parts whose transitions out are over, taken (lib.rs takes them away, `engine::left`).
+pub fn take_done() -> Vec<u64> {
+    DONE.with(|done| std::mem::take(&mut *done.borrow_mut()))
+}
+
+/// What a render starts moving (D-142), after its layout: the CSS transitions its changes started
+/// (from what was shown to the view's own); the CSS animations each view's style names now; Roc's
+/// transitions in of what came and out of what is going; the glides of what a change of the page
+/// moved; then every moving view's look as it is now, into `ops`.
+fn moves_after_layout(shown: &Shown, starts: Vec<(u64, String, String, Timing)>, reduced: bool, ops: &mut Ops) {
+    let frame_of = |id: u64| shown.frames.get(&id).map(|frame| frame.0).unwrap_or([0.0; 4]);
+    let moves_of = |id: u64| shown.views.get(&id).and_then(|view| view.motion.as_deref());
+    let entering = engine::with(|engine| std::mem::take(&mut engine.entering));
+    let leaving = engine::leaving_now();
+    let moved = engine::with(|engine| std::mem::take(&mut engine.moved));
+    MOTION.with(|motion| {
+        let mut motion = motion.borrow_mut();
+        for (id, key, from, timing) in starts {
+            let track = Track::new(&key, vec![Keyframe { at: 0.0, look: Some(from), easing: None }, Keyframe { at: 1.0, look: None, easing: None }]);
+            motion.play(id, Animation::new(Moving::Transition(key), timing, vec![track]));
+        }
+        // CSS animations: each view's declared now, and those that had some.
+        let mut animated: Vec<u64> = shown.views.iter().filter(|(_, view)| view.motion.as_ref().is_some_and(|moves| !moves.animations.is_empty())).map(|(id, _)| *id).collect();
+        let had: Vec<u64> = motion.running.iter().filter(|(id, list)| !animated.contains(id) && list.iter().any(|animation| matches!(animation.kind, Moving::Css(..)))).map(|(id, _)| *id).collect();
+        animated.extend(had);
+        for id in animated {
+            let declared = moves_of(id).map(|moves| moves.animations.iter().map(|animation| css_animation(animation, frame_of(id))).collect()).unwrap_or_default();
+            motion.declare(id, declared);
+        }
+        // Roc's: what came plays from its hidden look to its own; what goes from its own to its
+        // hidden look, held there until its part is taken away. None for less motion.
+        for node in entering {
+            let id = native_id(node);
+            let Some((pose, timing)) = moves_of(id).and_then(|moves| moves.enter.clone()) else { continue };
+            if reduced {
+                continue;
+            }
+            let tracks = pose.resolve(frame_of(id)).into_iter().map(|(key, look)| Track::new(&key, vec![Keyframe { at: 0.0, look: Some(look), easing: None }])).collect();
+            motion.play(id, Animation::new(Moving::In, timing, tracks));
+        }
+        for (token, outs) in leaving {
+            let mut started = 0;
+            for node in outs {
+                let id = native_id(node);
+                let Some((pose, timing)) = moves_of(id).and_then(|moves| moves.leave.clone()) else { continue };
+                if reduced {
+                    continue;
+                }
+                let tracks = pose.resolve(frame_of(id)).into_iter().map(|(key, look)| Track::new(&key, vec![Keyframe { at: 0.0, look: Some(look), easing: None }])).collect();
+                motion.play(id, Animation::new(Moving::Out(token), timing, tracks));
+                started += 1;
+            }
+            if started == 0 {
+                DONE.with(|done| done.borrow_mut().push(token));
+            } else {
+                OUTS.with(|outs| outs.borrow_mut().insert(token, started));
+            }
+        }
+        glide(shown, &mut motion, moved && !reduced);
+        let now = motion.clock;
+        let frame = motion.frame(now, false, &|id, key| under_of(shown, id, key));
+        for (id, key, value) in frame.sets {
+            if key == motion::FRAME {
+                let n: Vec<f32> = value.split_whitespace().filter_map(|word| word.parse().ok()).collect();
+                if n.len() == 4 {
+                    ops.moved(id, [n[0], n[1], n[2], n[3]]);
+                }
+            } else {
+                ops.set(id, &key, &value);
+            }
+        }
+    });
+}
+
+/// `transition:move` (D-031, runtime.js's `measure` and `glide`): each view that glides and that a
+/// change of the page moved (`moved`) plays from where it was after the last render to where it is
+/// (FLIP), its size too; one with a key that came as one with the same key went glides from the
+/// other's place, plays no transition in, and the other's part goes at once. One inside another
+/// that glides moves with it. Places are on the page, as laid out.
+fn glide(shown: &Shown, motion: &mut Motion, moved: bool) {
+    let gliders: Vec<(u64, Timing, Option<String>, bool)> = shown
+        .views
+        .iter()
+        .filter_map(|(id, view)| {
+            let timing = view.motion.as_ref()?.glide.clone()?;
+            let node = node_of(*id)?;
+            let (key, leaving) = engine::with(|engine| (engine.keys.get(&node).cloned(), engine::is_leaving(engine, node)));
+            Some((*id, timing, key, leaving))
+        })
+        .collect();
+    GLIDERS.with(|last| {
+        let mut last = last.borrow_mut();
+        if gliders.is_empty() && last.0.is_empty() {
+            return;
+        }
+        // Each view's parent as drawn, for its place on the page.
+        let mut parents: HashMap<u64, u64> = HashMap::new();
+        for (id, view) in shown.views.iter() {
+            for child in &view.children {
+                parents.insert(*child, *id);
+            }
+        }
+        let page_box = |id: u64| -> Option<[f32; 4]> {
+            let frame = shown.frames.get(&id)?.0;
+            let (mut x, mut y) = (frame[0], frame[1]);
+            let mut at = parents.get(&id);
+            while let Some(parent) = at {
+                if let Some(up) = shown.frames.get(parent) {
+                    x += up.0[0];
+                    y += up.0[1];
+                }
+                at = parents.get(parent);
+            }
+            Some([x, y, frame[2], frame[3]])
+        };
+        let boxes: HashMap<u64, [f32; 4]> = gliders.iter().filter_map(|(id, ..)| page_box(*id).map(|place| (*id, place))).collect();
+        if moved {
+            let staying: std::collections::HashSet<u64> = gliders.iter().filter(|glider| !glider.3).map(|glider| glider.0).collect();
+            // The keyed ones that went (taken away, or on their way out): where they were.
+            let went: HashMap<&String, (u64, [f32; 4])> = last.1.iter().filter(|(_, (id, _))| !staying.contains(id)).map(|(key, place)| (key, *place)).collect();
+            let mut moving: Vec<(u64, [f32; 4], [f32; 4], Timing)> = Vec::new();
+            for (id, timing, key, leaving) in &gliders {
+                if *leaving {
+                    continue;
+                }
+                let Some(to) = boxes.get(id).copied() else { continue };
+                let from = match last.0.get(id) {
+                    Some(from) => *from,
+                    None => {
+                        let Some((other, from)) = key.as_ref().and_then(|key| went.get(key)).copied() else { continue };
+                        // A pair: no transition in for it, and the other's part gone at once.
+                        motion.stop(*id, |kind| matches!(kind, Moving::In));
+                        if let Some(token) = node_of(other).and_then(engine::leaving_token_of) {
+                            DONE.with(|done| done.borrow_mut().push(token));
+                        }
+                        from
+                    }
+                };
+                let resized = (from[2] - to[2]).abs() >= 0.5 || (from[3] - to[3]).abs() >= 0.5;
+                if (from[0] - to[0]).abs() >= 0.5 || (from[1] - to[1]).abs() >= 0.5 || resized {
+                    moving.push((*id, from, to, timing.clone()));
+                }
+            }
+            let ids: std::collections::HashSet<u64> = moving.iter().map(|each| each.0).collect();
+            for (id, from, to, timing) in moving {
+                let mut carried = false;
+                let mut at = parents.get(&id);
+                while let Some(parent) = at {
+                    if ids.contains(parent) {
+                        carried = true;
+                        break;
+                    }
+                    at = parents.get(parent);
+                }
+                if carried {
+                    continue;
+                }
+                let scale = |a: f32, b: f32| if b > 0.0 { a / b } else { 1.0 };
+                motion.play(id, Animation::new(Moving::Glide([from[0] - to[0], from[1] - to[1], scale(from[2], to[2]), scale(from[3], to[3])]), timing, Vec::new()));
+            }
+        }
+        let keyed: HashMap<String, (u64, [f32; 4])> = gliders.iter().filter(|glider| !glider.3).filter_map(|(id, _, key, _)| Some((key.clone()?, (*id, *boxes.get(id)?)))).collect();
+        *last = (boxes, keyed);
+    });
+}
+
+/// The display's frame at `now` (ms, D-142): every moving view's look, as ops; the parts whose
+/// transitions out ended are noted (`take_done`), and the events animations ended with
+/// (`animationend`, `transitionend`), by element.
+pub fn tick(now: f64) -> (Vec<u8>, Vec<(NodeId, &'static str, String)>) {
+    let mut ops = Ops::default();
+    let frame = SHOWN.with(|shown| {
+        let shown = shown.borrow();
+        let shown = shown.as_ref()?;
+        Some(MOTION.with(|motion| motion.borrow_mut().frame(now, true, &|id, key| under_of(shown, id, key))))
+    });
+    let Some(frame) = frame else { return (Vec::new(), Vec::new()) };
+    for (id, key, value) in frame.sets {
+        if key == motion::FRAME {
+            let n: Vec<f32> = value.split_whitespace().filter_map(|word| word.parse().ok()).collect();
+            if n.len() == 4 {
+                ops.moved(id, [n[0], n[1], n[2], n[3]]);
+            }
+        } else {
+            ops.set(id, &key, &value);
+        }
+    }
+    out_ended(frame.ended);
+    let events = frame.events.into_iter().filter(|(id, ..)| *id & !LOW == 0).filter_map(|(id, name, value)| Some((node_of(id)?, name, value))).collect();
+    (ops.bytes, events)
+}
+
+/// Whether anything moves (the display's frames are wanted).
+pub fn moving() -> bool {
+    MOTION.with(|motion| motion.borrow().moving())
+}
+
 thread_local! {
+    /// The parts on their way out whose animations are over: taken away after the render.
+    static DONE: RefCell<Vec<u64>> = const { RefCell::new(Vec::new()) };
     static LAST_LAYOUT: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
     static RENDERS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// What the last render came from (`render`'s fingerprint).
@@ -2310,6 +2809,15 @@ impl Ops {
             self.bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
+    /// A frame mid-transition (D-142).
+    fn moved(&mut self, id: u64, frame: [f32; 4]) {
+        self.bytes.push(9);
+        self.id(id);
+        for value in frame {
+            self.bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
     fn extent(&mut self, id: u64, size: [f32; 2]) {
         self.bytes.push(8);
         self.id(id);
@@ -2371,6 +2879,11 @@ pub fn describe(ops: &[u8]) -> Vec<String> {
                 let view = id(&mut at);
                 let (w, h) = (float(&mut at), float(&mut at));
                 out.push(format!("extent {view} {w} {h}"));
+            }
+            9 => {
+                let view = id(&mut at);
+                let (x, y, w, h) = (float(&mut at), float(&mut at), float(&mut at), float(&mut at));
+                out.push(format!("move {view} {x} {y} {w} {h}"));
             }
             other => {
                 out.push(format!("? op {other}"));
@@ -2573,10 +3086,56 @@ mod tests {
     #[test]
     fn transitions_a_view_can_make() {
         use Make::*;
-        let views = screen(".a { transition: opacity 0.15s ease, color 120ms; } .b { transition: transform 200ms 50ms; } .c { transition: background 120ms; }", vec![El("p", &[("class", "a")], vec![Text("a")]), El("p", &[("class", "b")], vec![Text("b")]), El("p", &[("class", "c")], vec![Text("c")])]);
-        assert_eq!(find(&views, "text", "a").1.props.get("style.transition").map(String::as_str), Some("opacity 150 0"));
-        assert_eq!(find(&views, "text", "b").1.props.get("style.transition").map(String::as_str), Some("transform 200 50"));
-        assert_eq!(find(&views, "text", "c").1.props.get("style.transition"), None, "a colour's waits");
+        let views = screen(".a { transition: opacity 0.15s ease, color 120ms; } .b { transition: transform 200ms 50ms; } .c { transition: background 120ms; } .d { transition: width 200ms; }", vec![El("p", &[("class", "a")], vec![Text("a")]), El("p", &[("class", "b")], vec![Text("b")]), El("p", &[("class", "c")], vec![Text("c")]), El("p", &[("class", "d")], vec![Text("d")])]);
+        let keys = |text: &str| -> Vec<(String, f64, f64)> { find(&views, "text", text).1.motion.as_ref().map(|moves| moves.transitions.iter().map(|(key, timing)| (key.clone(), timing.duration, timing.delay)).collect()).unwrap_or_default() };
+        assert_eq!(keys("a"), vec![("style.opacity".into(), 150.0, 0.0), ("style.color".into(), 120.0, 0.0)]);
+        assert_eq!(keys("b"), vec![("style.transform".into(), 200.0, 50.0)]);
+        assert_eq!(keys("c"), vec![("style.background".into(), 120.0, 0.0)], "a colour's too, since D-142");
+        assert_eq!(keys("d"), vec![(motion::FRAME.into(), 200.0, 0.0)], "a size's: its frame");
+    }
+
+    /// The ops a frame of the display at `now` sends, as the Mac runner prints them.
+    fn tick_at(now: f64) -> Vec<String> {
+        describe(&tick(now).0)
+    }
+
+    #[test]
+    fn a_change_with_a_transition_moves_from_what_was_shown() {
+        use Make::*;
+        let css = "body { margin: 0; } .c { background: #ffffff; transition: background-color 100ms linear, width 100ms linear; width: 100px; height: 10px; } .c.on { background: #000000; width: 200px; }";
+        screen(css, vec![El("div", &[("class", "c")], vec![])]);
+        let node = engine::with(|engine| (0..engine.dom.nodes.len()).find(|&node| engine.dom.attr(node, "class") == Some("c")).unwrap());
+        let id = native_id(node);
+        tick_at(1000.0);
+        engine::with(|engine| engine.dom.set_attr(node, "class", "c on"));
+        let ops = render();
+        assert!(!describe(&ops).iter().any(|op| op.starts_with(&format!("frame {id} "))), "its new width isn't sent at once: {:?}", describe(&ops));
+        assert!(moving());
+        assert!(tick_at(1016.0).is_empty(), "started at this frame, still where it was");
+        let half = tick_at(1066.0);
+        assert!(half.contains(&format!("set {id} style.background=\"#ff808080\"")), "{half:?}");
+        assert!(half.contains(&format!("move {id} 0 0 150 10")), "{half:?}");
+        let end = tick_at(1120.0);
+        assert!(end.contains(&format!("set {id} style.background=\"#ff000000\"")) && end.contains(&format!("move {id} 0 0 200 10")), "{end:?}");
+        assert!(!moving());
+    }
+
+    #[test]
+    fn keyframes_play_resolved_for_their_element() {
+        use Make::*;
+        let css = "body { margin: 0; } .dot { --tone: #ff0000; width: 10px; height: 10px; animation: pulse 1s linear infinite; } @keyframes pulse { 0% { box-shadow: 0 0 0 0 var(--tone); } 100% { box-shadow: 0 0 0 8px transparent; } } .toast { width: 10px; height: 10px; animation: toast-in 200ms linear; } @keyframes toast-in { from { opacity: 0; translate: 0 24px; } }";
+        screen(css, vec![El("div", &[("class", "dot")], vec![]), El("div", &[("class", "toast")], vec![])]);
+        let id = |class: &str| native_id(engine::with(|engine| (0..engine.dom.nodes.len()).find(|&node| engine.dom.attr(node, "class") == Some(class)).unwrap()));
+        let (dot, toast) = (id("dot"), id("toast"));
+        assert!(moving());
+        tick_at(0.0);
+        let half = tick_at(100.0);
+        assert!(half.contains(&format!("set {toast} style.opacity=\"0.5\"")), "{half:?}");
+        assert!(half.contains(&format!("set {toast} style.transform=\"0 12 1 1 0 5 5\"")), "{half:?}");
+        let pulse = tick_at(500.0);
+        assert!(pulse.contains(&format!("set {dot} style.shadow=\"0 0 0 4 #80ff0000\"")), "its tone, from its custom property: {pulse:?}");
+        assert!(pulse.contains(&format!("set {toast} style.opacity=\"\"")), "the toast back to its own once over: {pulse:?}");
+        assert!(moving(), "the pulse goes on");
     }
 
     #[test]
