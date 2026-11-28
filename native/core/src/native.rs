@@ -160,9 +160,16 @@ pub fn node_of(id: u64) -> Option<NodeId> {
     Some((low - 1) as NodeId)
 }
 
+/// The next render projects the document again even if nothing changed (the Mac runner's bench).
+pub fn invalidate() {
+    LAST_KEY.with(|last| last.set(0));
+}
+
 /// The screen is sent again, whole, on the next render (a new activity).
 pub fn forget_shown() {
     SHOWN.with(|shown| *shown.borrow_mut() = None);
+    KEPT.with(|kept| *kept.borrow_mut() = Default::default());
+    LAST_KEY.with(|last| last.set(0));
     TREE.with(|tree| *tree.borrow_mut() = layout::Tree::default());
 }
 
@@ -271,12 +278,57 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
     }
     let focus = FOCUS.with(|focus| *focus.borrow());
     let values = engine.values.clone();
+    // What changed outside the document since the last projection (a field's text, the focus) is
+    // marked on the document, and the last one's entries taken.
+    let (old_kept, last, may_reuse) = KEPT.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        let (entries, last, last_sheet, last_values, last_focus) = &mut *kept;
+        for (node, value) in values.iter() {
+            if last_values.get(node) != Some(value) && *node < engine.dom.nodes.len() {
+                engine.dom.touch(*node);
+            }
+        }
+        for node in last_values.keys() {
+            if !values.contains_key(node) && *node < engine.dom.nodes.len() {
+                engine.dom.touch(*node);
+            }
+        }
+        for (was, now) in [(last_focus.0, focus.0), (last_focus.1, focus.1)] {
+            if was != now {
+                for node in [was, now].into_iter().flatten() {
+                    if node < engine.dom.nodes.len() {
+                        engine.dom.touch(node);
+                    }
+                }
+            }
+        }
+        let may_reuse = last_sheet.as_ref().is_some_and(|last| Rc::ptr_eq(last, &sheet)) && SHOWN.with(|shown| shown.borrow().is_some());
+        (std::mem::take(entries), *last, may_reuse)
+    });
     let mut views = HashMap::new();
     let mut warnings = Vec::new();
+    let empty = HashMap::new();
+    let old_views = SHOWN.with(|shown| shown.borrow_mut().as_mut().map(|shown| std::mem::take(&mut shown.views)));
+    let kept_now;
     let root = {
         let dom = &engine.dom;
         let html = dom.children(dom.root).find(|&child| dom.tag(child) == Some("html"));
-        let mut projection = Projection { engine: &*engine, dom, sheet: &sheet, views: &mut views, values: &values, focus, warnings: &mut warnings, parents: HashMap::new() };
+        let mut projection = Projection {
+            engine: &*engine,
+            dom,
+            sheet: &sheet,
+            views: &mut views,
+            values: &values,
+            focus,
+            warnings: &mut warnings,
+            parents: HashMap::new(),
+            last,
+            old: old_views.as_ref().unwrap_or(&empty),
+            old_kept,
+            kept: crate::fx::HashMap::default(),
+            made: Vec::new(),
+            may_reuse,
+        };
         let ctx = Ctx { em: 16.0, rem: 16.0, vw: screen.width, vh: screen.height };
         let top = Computed::root(ctx);
         let root = match html {
@@ -284,8 +336,19 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
             None => projection.root(dom.root, &top),
         };
         projection.paint_tree(root);
+        kept_now = std::mem::take(&mut projection.kept);
         root
     };
+    // The last views back (the render compares with them), and this projection's entries kept.
+    if let Some(old) = old_views {
+        SHOWN.with(|shown| {
+            if let Some(shown) = shown.borrow_mut().as_mut() {
+                shown.views = old;
+            }
+        });
+    }
+    let version = engine.dom.version;
+    KEPT.with(|kept| *kept.borrow_mut() = (kept_now, version, Some(sheet.clone()), values.clone(), focus));
     for warning in warnings {
         engine.warn_once(&warning, &format!("rocx native: {warning}"));
     }
@@ -367,9 +430,54 @@ struct Projection<'a> {
     warnings: &'a mut Vec<String>,
     /// Each view's layout parent.
     parents: HashMap<u64, u64>,
+    /// What the last projection made, to take again what didn't change (`Kept`): the document's
+    /// version then, its views, its elements' entries; this projection's entries; the views made
+    /// so far, in order; whether the element being projected may take its children's again.
+    last: u64,
+    old: &'a HashMap<u64, View>,
+    old_kept: crate::fx::HashMap<NodeId, Kept>,
+    kept: crate::fx::HashMap<NodeId, Kept>,
+    made: Vec<u64>,
+    may_reuse: bool,
+}
+
+/// What an element's projection made (D-137): its item, the views of it and everything in it, their
+/// layout parents, its computed styles. Taken again as it is when nothing it comes from changed: its
+/// subtree, its parent's styles and the context its selectors see (its siblings, its ancestors).
+struct Kept {
+    items: bool,
+    item: (u64, bool, bool),
+    ids: Vec<u64>,
+    parents: Vec<(u64, u64)>,
+    computed: Rc<Computed>,
+}
+
+thread_local! {
+    /// The last projection's entries, the document's version then, its stylesheet, what fields
+    /// held and where the focus was.
+    static KEPT: RefCell<(crate::fx::HashMap<NodeId, Kept>, u64, Option<Rc<css::Sheet>>, crate::fx::HashMap<NodeId, String>, (Option<NodeId>, Option<NodeId>))> = RefCell::new(Default::default());
 }
 
 impl<'a> Projection<'a> {
+    /// A view made in this projection.
+    fn put(&mut self, id: u64, view: View) {
+        self.views.insert(id, view);
+        self.made.push(id);
+    }
+
+    /// An element's views from the last projection, taken again; false if one is missing.
+    fn take_again(&mut self, kept: &Kept) -> bool {
+        for id in &kept.ids {
+            let Some(view) = self.old.get(id) else { return false };
+            self.views.insert(*id, view.clone());
+            self.made.push(*id);
+        }
+        for (child, parent) in &kept.parents {
+            self.parents.insert(*child, *parent);
+        }
+        true
+    }
+
     fn el(&self, node: NodeId) -> El<'a> {
         El { dom: self.dom, node, values: self.values, focus: self.focus }
     }
@@ -393,8 +501,9 @@ impl<'a> Projection<'a> {
 
     /// The root element's view (the page), its canvas colour on it.
     fn root(&mut self, node: NodeId, top: &Computed) -> u64 {
-        let computed = self.compute(node, top);
-        let id = self.element(node, Rc::new(computed), true).unwrap_or(native_id(node));
+        let computed = Rc::new(self.compute(node, top));
+        let id = self.element(node, computed.clone(), true).unwrap_or(native_id(node));
+        self.keep(node, false, (id, true, false), 0, computed);
         // The canvas: the root element's background, or else the body's, under the whole screen.
         let background = |views: &HashMap<u64, View>, id: u64| views.get(&id).and_then(|view| view.props.get("style.background")).cloned();
         let body = self.views.get(&id).and_then(|view| view.flow.iter().copied().find(|child| self.views.get(child).is_some_and(|child| child.tag == "body")));
@@ -484,6 +593,14 @@ impl<'a> Projection<'a> {
             }
             _ => {}
         }
+        // Its children's projections may be taken again if it, its children's attributes and its
+        // styles didn't change (their selectors and inheritance see the same).
+        let saved = self.may_reuse;
+        self.may_reuse = saved
+            && self.dom.nodes[node].changed <= self.last
+            && self.old_kept.get(&node).is_some_and(|kept| *kept.computed == *computed)
+            && !self.dom.children(node).any(|child| self.dom.nodes[child].changed > self.last)
+            && !(self.dom.nodes[node].inside > self.last && self.sheet.has_context(self.el(node)));
         if view.kind == "box" {
             // A box: what it holds makes it a text view, a line of inline boxes, or a box of blocks.
             let items = self.items(node, &computed, Self::items_of(&display));
@@ -522,6 +639,7 @@ impl<'a> Projection<'a> {
                 }
             }
         }
+        self.may_reuse = saved;
         if self.clickable(node, &tag) {
             view.props.insert("click".into(), "true".into());
         }
@@ -553,7 +671,7 @@ impl<'a> Projection<'a> {
         for child in view.flow.clone() {
             self.parents.insert(child, id);
         }
-        self.views.insert(id, view);
+        self.put(id, view);
         Some(id)
     }
 
@@ -609,15 +727,34 @@ impl<'a> Projection<'a> {
                 pieces.push(Piece { key: native_id(child), text: "\u{2028}".into(), style: computed.clone(), link: None, decoration: None });
                 continue;
             }
+            // Nothing it comes from changed: what the last projection made of it, again.
+            if self.may_reuse
+                && self.dom.nodes[child].inside <= self.last
+                && let Some(kept) = self.old_kept.remove(&child)
+            {
+                if kept.items == items && self.take_again(&kept) {
+                    if !pieces.is_empty() {
+                        out.push(Item::Pieces(std::mem::take(pieces)));
+                    }
+                    let (id, block, positioned) = kept.item;
+                    out.push(if positioned { Item::Out(id) } else { Item::Box(id, block) });
+                    self.kept.insert(child, kept);
+                    continue;
+                }
+                self.old_kept.insert(child, kept);
+            }
             let child_computed = Rc::new(self.compute(child, computed));
             let display = child_computed.display().to_string();
             if display == "none" {
                 continue;
             }
             if display == "contents" {
+                let saved = std::mem::replace(&mut self.may_reuse, false);
                 self.children_items(child, &child_computed, items, pieces, out);
+                self.may_reuse = saved;
                 continue;
             }
+            let start = self.made.len();
             let positioned = matches!(child_computed.get("position"), Some("absolute" | "fixed"));
             let replaced = REPLACED.contains(&tag.as_str());
             let block_level = items || positioned || !display.starts_with("inline");
@@ -634,8 +771,9 @@ impl<'a> Projection<'a> {
                         if !pieces.is_empty() {
                             out.push(Item::Pieces(std::mem::take(pieces)));
                         }
-                        if let Some(id) = self.element(child, child_computed, holds_blocks) {
+                        if let Some(id) = self.element(child, child_computed.clone(), holds_blocks) {
                             out.push(Item::Box(id, holds_blocks));
+                            self.keep(child, items, (id, holds_blocks, false), start, child_computed);
                         }
                         continue;
                     }
@@ -649,8 +787,16 @@ impl<'a> Projection<'a> {
                 if let Some(view) = self.views.get_mut(&id) {
                     view.z = z_of(&child_computed);
                 }
+                self.keep(child, items, (id, block_level, positioned), start, child_computed);
             }
         }
+    }
+
+    /// What an element's projection made, kept for the next.
+    fn keep(&mut self, node: NodeId, items: bool, item: (u64, bool, bool), start: usize, computed: Rc<Computed>) {
+        let ids = self.made[start..].to_vec();
+        let parents = ids.iter().filter_map(|id| self.parents.get(id).map(|parent| (*id, *parent))).collect();
+        self.kept.insert(node, Kept { items, item, ids, parents, computed });
     }
 
     /// An inline element's content as pieces, when it is all inline (text, inline elements); none
@@ -803,7 +949,7 @@ impl<'a> Projection<'a> {
         view.style = layout::style(&style, Role::Element, style.get("text-align"));
         self.paint(&mut view, &style);
         view.z = z_of(&style);
-        self.views.insert(id, view);
+        self.put(id, view);
         if !pieces.is_empty() {
             out.push(Item::Pieces(std::mem::take(pieces)));
         }
@@ -881,7 +1027,7 @@ impl<'a> Projection<'a> {
                 self.parents.insert(child, id);
             }
             view.flow = children;
-            self.views.insert(id, view);
+            self.put(id, view);
             out.push(id);
         } else {
             let pieces: Vec<Piece> = items.into_iter().filter_map(|item| if let Item::Pieces(p) = item { Some(p) } else { None }).flatten().collect();
@@ -900,7 +1046,7 @@ impl<'a> Projection<'a> {
             return None;
         }
         view.style = layout::style(computed, Role::Anonymous, None);
-        self.views.insert(id, view);
+        self.put(id, view);
         Some(id)
     }
 
@@ -915,37 +1061,47 @@ impl<'a> Projection<'a> {
         };
         // The runs: each piece's text, transformed, whitespace collapsed across them.
         let mut runs: Vec<(String, &Piece)> = Vec::new();
-        let mut space = !first;
+        // A collapsed space goes where its whitespace was: the run it began in (an underlined
+        // link's run doesn't take the space before it).
+        let mut pending: Option<usize> = if first { None } else { Some(0) };
         let mut started = false;
         for piece in pieces {
             let transformed = transform_text(&piece.text, piece.style.get("text-transform"));
             let mut text = String::with_capacity(transformed.len());
+            let here = runs.len();
             for ch in transformed.chars() {
                 if ch == '\u{2028}' {
                     text.push('\n');
-                    space = false;
+                    pending = None;
                     started = true;
                     continue;
                 }
                 if collapse_spaces && (ch == ' ' || ch == '\t' || (ch == '\n' && !keep_breaks) || ch == '\r') {
-                    space = true;
+                    if pending.is_none() && (started || !first) {
+                        pending = Some(here);
+                    }
                     continue;
                 }
-                if space && started {
-                    text.push(' ');
-                } else if space && !first && !started && runs.iter().all(|(t, _)| t.is_empty()) {
-                    text.push(' ');
+                if let Some(at) = pending.take()
+                    && (started || !first)
+                {
+                    if at == here || runs.get(at).is_none() {
+                        text.push(' ');
+                    } else {
+                        runs[at].0.push(' ');
+                    }
                 }
-                space = false;
                 started = true;
                 text.push(ch);
             }
             runs.push((text, piece));
         }
-        if space && !last && started {
-            if let Some((text, _)) = runs.last_mut() {
-                text.push(' ');
-            }
+        if let Some(at) = pending
+            && !last
+            && started
+            && let Some((text, _)) = runs.get_mut(at).or(None)
+        {
+            text.push(' ');
         }
         let text: String = runs.iter().map(|(text, _)| text.as_str()).collect();
         if text.trim().is_empty() && !text.contains('\n') {
@@ -1480,6 +1636,34 @@ fn flag(on: bool) -> String {
 /// views' changes, applied by `apply` at once, then their layout, whose frames are returned.
 pub fn render() -> Vec<u8> {
     let began = std::time::Instant::now();
+    // Nothing that the views come from changed since the last render (the document, what fields
+    // hold, the title, the focus, the screen, the stylesheets): nothing to send.
+    let unchanged = engine::with(|engine| {
+        let (css, loading) = stylesheet(engine);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        engine.dom.version.hash(&mut hasher);
+        let mut values: Vec<(&NodeId, &String)> = engine.values.iter().collect();
+        values.sort();
+        values.hash(&mut hasher);
+        engine.title.hash(&mut hasher);
+        FOCUS.with(|focus| focus.borrow().hash(&mut hasher));
+        SCREEN.with(|screen| {
+            let screen = screen.borrow();
+            (screen.width.to_bits(), screen.height.to_bits(), screen.dark).hash(&mut hasher);
+        });
+        css.len().hash(&mut hasher);
+        loading.hash(&mut hasher);
+        let key = hasher.finish();
+        let shown = SHOWN.with(|shown| shown.borrow().is_some());
+        LAST_KEY.with(|last| {
+            let same = shown && last.get() == key;
+            last.set(key);
+            same
+        })
+    });
+    if unchanged {
+        return Vec::new();
+    }
     let (root, mut views, title, loading) = engine::with(|engine| {
         let (root, views, loading) = project(engine);
         (root, views, engine.title.clone(), loading)
@@ -1655,9 +1839,6 @@ pub fn render() -> Vec<u8> {
                 });
             });
         }
-        for view in views.values_mut() {
-            view.style = taffy::Style::default();
-        }
         shown.views = std::mem::take(&mut views);
     });
     LAST_LAYOUT.with(|last| last.set(laid_out.as_secs_f64() * 1000.0));
@@ -1675,6 +1856,8 @@ pub fn render() -> Vec<u8> {
 thread_local! {
     static LAST_LAYOUT: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
     static RENDERS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// What the last render came from (`render`'s fingerprint).
+    static LAST_KEY: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// `on:viewport`'s: what each element was last told (`top,left,width,height`), and what it is
     /// to be told after this render.
     static VIEWPORTS: RefCell<(HashMap<NodeId, String>, Vec<(NodeId, String)>)> = RefCell::new((HashMap::new(), Vec::new()));
@@ -1878,4 +2061,173 @@ pub fn shown_views() -> HashMap<u64, View> {
 /// A view's frame as last sent (the Mac runner's and tests').
 pub fn frame_of(id: u64) -> Option<[f32; 4]> {
     SHOWN.with(|shown| shown.borrow().as_ref().and_then(|shown| shown.frames.get(&id).map(|(frame, _)| *frame)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A document of the engine's own, from a tree of (tag, attributes, children or text): the
+    /// projection's input, as markup builds it.
+    enum Make<'a> {
+        El(&'a str, &'a [(&'a str, &'a str)], Vec<Make<'a>>),
+        Text(&'a str),
+    }
+
+    fn build(dom: &mut Dom, parent: NodeId, make: &Make) {
+        match make {
+            Make::El(tag, attrs, children) => {
+                let node = dom.element(tag);
+                for (name, value) in attrs.iter() {
+                    dom.set_attr(node, name, value);
+                }
+                dom.append(parent, node);
+                for child in children {
+                    build(dom, node, child);
+                }
+            }
+            Make::Text(text) => {
+                let node = dom.text(text);
+                dom.append(parent, node);
+            }
+        }
+    }
+
+    /// The screen a document shows, with `css`, laid out on a 400 dp wide screen.
+    fn screen(css: &str, body: Vec<Make>) -> HashMap<u64, View> {
+        engine::init("http://localhost:1".into(), "/".into());
+        forget_shown();
+        set_viewport(400.0, 800.0);
+        engine::with(|engine| {
+            let root = engine.dom.root;
+            let page = Make::El("html", &[], vec![Make::El("head", &[], vec![Make::El("style", &[], vec![Make::Text(css)])]), Make::El("body", &[], body)]);
+            build(&mut engine.dom, root, &page);
+        });
+        render();
+        shown_views()
+    }
+
+    fn find<'a>(views: &'a HashMap<u64, View>, kind: &str, text: &str) -> (u64, &'a View) {
+        let mut ids: Vec<&u64> = views.keys().collect();
+        ids.sort();
+        let id = **ids.iter().find(|id| views[id].kind == kind && views[id].props.get("text").is_some_and(|said| said == text)).unwrap_or_else(|| panic!("no {kind} says {text:?}"));
+        (id, &views[&id])
+    }
+
+    #[test]
+    fn inline_content_is_one_text_view_of_runs() {
+        use Make::*;
+        let views = screen(
+            "body { margin: 0; color: #111; } strong { color: #f00; } a { text-decoration: underline; } .pill { background: #eee; }",
+            vec![El("p", &[], vec![Text("Read   the "), El("strong", &[], vec![Text("terms")]), Text(" and "), El("a", &[("href", "/x")], vec![Text("more")]), Text(" "), El("span", &[("class", "pill")], vec![Text("new")])])],
+        );
+        let (_, p) = find(&views, "text", "Read the terms and more new");
+        assert_eq!(p.tag, "p");
+        let runs = p.props.get("runs").expect("runs");
+        assert!(runs.contains("\"s\":9,\"e\":14,\"color\":\"#ffff0000\""), "strong's run, red: {runs}");
+        assert!(runs.contains("\"deco\":\"underline"), "the link's underline: {runs}");
+        assert!(runs.contains("\"k\":"), "the link's run is tappable: {runs}");
+        assert!(runs.contains("\"bg\":\"#ffeeeeee\""), "an inline element's background: {runs}");
+    }
+
+    #[test]
+    fn displays_make_their_boxes() {
+        use Make::*;
+        let views = screen(
+            ".row { display: flex; } .hidden { display: none; } .contents { display: contents; } .chip { display: inline-block; padding: 2px; } .abs { position: absolute; } .box { position: relative; } li { list-style: none; } p::before { content: '★ '; } .deco::after { content: ''; position: absolute; inset: 0; }",
+            vec![
+                El("div", &[("class", "row")], vec![Text("text alone "), El("span", &[], vec![Text("an item")])]),
+                El("div", &[("class", "hidden")], vec![Text("gone")]),
+                El("div", &[("class", "contents")], vec![El("p", &[], vec![Text("lifted")])]),
+                El("div", &[], vec![Text("before "), El("span", &[("class", "chip")], vec![Text("chip")]), Text(" after")]),
+                El("div", &[("class", "box deco")], vec![El("span", &[("class", "abs")], vec![Text("floating")]), El("p", &[], vec![Text("in flow")])]),
+            ],
+        );
+        let (item, _) = find(&views, "text", "an item");
+        let row = *views.iter().find(|(_, view)| view.flow.contains(&item)).expect("the row").0;
+        let row_flow: Vec<String> = views[&row].flow.iter().map(|id| format!("{} {:?}", views[id].tag, views[id].props.get("text"))).collect();
+        assert_eq!(views[&row].flow.len(), 2, "text and an item, each a flex item: {row_flow:?}");
+        assert!(!views.values().any(|view| view.props.get("text").is_some_and(|text| text == "gone")));
+        let (_, lifted) = find(&views, "text", "★ lifted");
+        assert_eq!(lifted.tag, "p", "display: contents gives its child to its parent; ::before is a run");
+        let (chip, _) = find(&views, "text", "chip");
+        let line = views.values().find(|view| view.flow.contains(&chip)).expect("the chip's line");
+        assert_eq!(line.style.flex_wrap, taffy::FlexWrap::Wrap, "an inline box among text makes a line: {} {:?}", line.tag, line.style.display);
+        assert_eq!(line.flow.len(), 3);
+        let (floating, _) = find(&views, "text", "floating");
+        let block = views.values().find(|view| view.children.contains(&floating)).expect("its containing block");
+        assert!(block.flow.contains(&floating) && block.tag == "div", "drawn in its containing block");
+        assert!(block.children.iter().any(|child| *child & AFTER != 0), "a decorative ::after is a box of its own");
+        let (_, in_flow) = find(&views, "text", "★ in flow");
+        assert_eq!(in_flow.kind, "text");
+    }
+
+    #[test]
+    fn what_changed_is_projected_again_and_the_rest_taken() {
+        use Make::*;
+        let css = ".on { background: #00ff00; } .on + .card { color: #ff0000; } .list:has(.on) .head { color: #0000ff; } .card { padding: 4px; }";
+        let views = screen(css, vec![El("p", &[("class", "head")], vec![Text("head")]), El("div", &[("class", "list")], vec![El("div", &[("class", "card")], vec![Text("one")]), El("div", &[("class", "card")], vec![Text("two")]), El("div", &[("class", "card")], vec![El("span", &[], vec![Text("three")])])])]);
+        let (one, _) = find(&views, "text", "one");
+        assert_eq!(views[&one].props.get("style.background"), None);
+        // A class put on the first card: its paint, its next sibling's colour.
+        engine::with(|engine| engine.dom.set_attr(node_of(one).unwrap(), "class", "card on"));
+        render();
+        let views = shown_views();
+        let (one, _) = find(&views, "text", "one");
+        assert_eq!(views[&one].props.get("style.background").map(String::as_str), Some("#ff00ff00"));
+        let (two, _) = find(&views, "text", "two");
+        assert_eq!(views[&two].props.get("style.color").map(String::as_str), Some("#ffff0000"), "a sibling's selector sees the change");
+        // `.list:has(.on) .card`: what is in the list depends on its descendants.
+        let css = ".list:has(.on) .card { color: #0000ff; }";
+        let views = screen(css, vec![El("div", &[("class", "list")], vec![El("div", &[("class", "card")], vec![Text("first")]), El("div", &[("class", "card")], vec![Text("second")])])]);
+        let (first, _) = find(&views, "text", "first");
+        engine::with(|engine| engine.dom.set_attr(node_of(first).unwrap(), "class", "card on"));
+        render();
+        let views = shown_views();
+        let (second, _) = find(&views, "text", "second");
+        assert_eq!(views[&second].props.get("style.color").map(String::as_str), Some("#ff0000ff"), "a :has() left of the subject sees the change");
+        let css = ".on { background: #00ff00; } .on + .card { color: #ff0000; } .card { padding: 4px; }";
+        let views = screen(css, vec![El("div", &[("class", "list")], vec![El("div", &[("class", "card")], vec![Text("one")]), El("div", &[("class", "card on")], vec![Text("two")]), El("div", &[("class", "card")], vec![El("span", &[], vec![Text("three")])])])]);
+        let (two, _) = find(&views, "text", "two");
+        assert_eq!(views[&two].props.get("style.background").map(String::as_str), Some("#ff00ff00"));
+        // A text deep in the third card changed: only it.
+        let (three, _) = find(&views, "text", "three");
+        let text = engine::with(|engine| engine.dom.first_child(engine.dom.first_child(node_of(three).unwrap()).unwrap()).unwrap());
+        engine::with(|engine| engine.dom.set_text(text, "three!"));
+        render();
+        let views = shown_views();
+        let (three, _) = find(&views, "text", "three!");
+        assert_eq!(views[&three].props.get("style.color").map(String::as_str), Some("#ffff0000"), "projected again, its sibling's rule kept");
+        let (two, _) = find(&views, "text", "two");
+        assert_eq!(views[&two].props.get("style.background").map(String::as_str), Some("#ff00ff00"), "taken again as it was");
+    }
+
+    /// A page of about a thousand views: how long a render (the projection and its layout) takes.
+    /// `cargo test --release -p rocx-native-core thousand -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn thousand_views() {
+        use Make::*;
+        let css = ":root { --gap: 12px; --fg: #111; } body { margin: 0; font: 16px/1.5 system-ui; color: var(--fg); } .list { display: grid; gap: var(--gap); padding: 0 20px; }
+            .card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 16px; background: #fafafa; box-shadow: 0 1px 2px rgb(0 0 0 / 10%); }
+            .card h3 { margin: 0; font-size: 18px; font-weight: 700; } .card p { margin: 0; color: color-mix(in srgb, var(--fg) 70%, transparent); }
+            .row { display: flex; align-items: center; gap: 8px; } .badge { padding: 2px 8px; border-radius: 999px; background: #e0f7f1; font-size: 12px; }
+            .row a { margin-left: auto; color: #0a7; } .card:first-child { border: 1px solid #0a7; } .card:nth-child(2n) { background: #f4f4f4; }";
+        let cards: Vec<Make> = (0..200)
+            .map(|_| El("article", &[("class", "card")], vec![El("h3", &[], vec![Text("A post's title")]), El("p", &[], vec![Text("Its caption, long enough to wrap onto a second line on a phone's screen.")]), El("div", &[("class", "row")], vec![El("span", &[("class", "badge")], vec![Text("Scheduled")]), El("a", &[("href", "/post")], vec![Text("Open")])])]))
+            .collect();
+        let started = std::time::Instant::now();
+        let views = screen(css, vec![El("main", &[("class", "list")], cards)]);
+        let first = started.elapsed();
+        let mut again = std::time::Duration::ZERO;
+        let rounds: u32 = std::env::var("ROUNDS").ok().and_then(|n| n.parse().ok()).unwrap_or(20);
+        for _ in 0..rounds {
+            invalidate();
+            let at = std::time::Instant::now();
+            render();
+            again += at.elapsed();
+        }
+        eprintln!("{} views: first render {:.2} ms, again {:.2} ms each, last layout {:.2} ms", views.len(), first.as_secs_f64() * 1000.0, again.as_secs_f64() * 1000.0 / rounds as f64, last_layout_ms());
+        assert!(views.len() > 1000);
+    }
 }

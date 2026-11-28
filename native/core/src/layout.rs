@@ -9,7 +9,7 @@
 
 use crate::css::Computed;
 use crate::values::{self, Length};
-use std::collections::HashMap;
+use crate::fx::HashMap;
 use taffy::prelude::*;
 use taffy::{
     AlignContent, AlignItems, BoxSizing, CacheTree, CalcHandle, DetailedLayoutInfo, GridPlacement, GridTemplateArea, GridTemplateAreas, GridTemplateComponent, LayoutInput, LayoutOutput, Overflow, Point, Position, RunMode,
@@ -125,7 +125,7 @@ impl Tree {
     /// The tree brought to what the views are now: nodes made for new views, let go of for gone
     /// ones, styles, children and contents changed where they did (and those nodes dirtied).
     pub fn sync<'a>(&mut self, root: u64, views: impl Iterator<Item = (u64, Want<'a>)>) {
-        let mut seen: HashMap<u64, ()> = HashMap::new();
+        let mut seen: HashMap<u64, ()> = HashMap::default();
         let mut wanted: Vec<(usize, Vec<u64>)> = Vec::new();
         for (view, want) in views {
             seen.insert(view, ());

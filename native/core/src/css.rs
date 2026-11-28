@@ -18,7 +18,7 @@
 //! question 1. The design parses the CSS at build time instead; parsing on the phone stays for now.
 
 use crate::values::{self, Argb, Ctx};
-use std::collections::HashMap;
+use crate::fx::HashMap;
 use std::rc::Rc;
 
 /// The phone's user-agent stylesheet: what a browser shows unstyled HTML with (the HTML spec's
@@ -223,6 +223,9 @@ pub struct Sheet {
     pseudos: Vec<usize>,
     warnings: Vec<String>,
     media: Media,
+    /// Compounds with a `:has()` left of a rule's subject (`.list:has(.on) .card`): an element
+    /// matching one makes what is in it depend on its descendants (`has_context`).
+    has_contexts: Vec<Compound>,
 }
 
 thread_local! {
@@ -239,7 +242,7 @@ impl Sheet {
             {
                 return sheet.clone();
             }
-            let mut sheet = Sheet { rules: Vec::new(), by_id: HashMap::new(), by_class: HashMap::new(), by_tag: HashMap::new(), others: Vec::new(), pseudos: Vec::new(), warnings: Vec::new(), media };
+            let mut sheet = Sheet { rules: Vec::new(), by_id: HashMap::default(), by_class: HashMap::default(), by_tag: HashMap::default(), others: Vec::new(), pseudos: Vec::new(), warnings: Vec::new(), media, has_contexts: Vec::new() };
             sheet.parse(UA, false);
             sheet.parse(css, true);
             sheet.index();
@@ -259,8 +262,21 @@ impl Sheet {
         }
     }
 
+    /// Whether an element matches a compound with a `:has()` left of a rule's subject: what it holds
+    /// then depends on its descendants, so a phone projects all of it again when one changes.
+    pub fn has_context<'a, E: Elem<'a>>(&self, element: E) -> bool {
+        self.has_contexts.iter().any(|compound| Matcher.compound(compound, element))
+    }
+
     /// Each rule filed under its subject's id, else a class, else its tag (a browser's rule hash).
     fn index(&mut self) {
+        for rule in &self.rules {
+            for (compound, _) in rule.selector.complex.parts.iter().skip(1) {
+                if compound.pseudos.iter().any(|pseudo| matches!(pseudo, Class::Has(_))) {
+                    self.has_contexts.push(compound.clone());
+                }
+            }
+        }
         for (at, rule) in self.rules.iter().enumerate() {
             if rule.selector.pseudo.is_some() {
                 self.pseudos.push(at);
@@ -1225,10 +1241,17 @@ const INHERITED: &[&str] = &[
     "white-space", "visibility", "overflow-wrap", "word-break", "hyphens", "list-style-type", "list-style-position", "cursor", "pointer-events", "direction", "text-wrap", "-webkit-text-fill-color", "-webkit-line-clamp-inherited",
 ];
 
+impl PartialEq for Computed {
+    /// The same values (what an element's children inherit and its selectors' context gives it).
+    fn eq(&self, other: &Computed) -> bool {
+        self.font_size == other.font_size && self.color == other.color && self.ctx == other.ctx && self.values == other.values && (Rc::ptr_eq(&self.custom, &other.custom) || self.custom == other.custom)
+    }
+}
+
 impl Computed {
     /// The values above the root element: the screen's (`rem` and the viewport for lengths).
     pub fn root(ctx: Ctx) -> Computed {
-        Computed { values: HashMap::new(), custom: Rc::new(HashMap::new()), font_size: 16.0, color: 0xff000000, ctx: Ctx { em: 16.0, ..ctx } }
+        Computed { values: HashMap::default(), custom: Rc::new(HashMap::default()), font_size: 16.0, color: 0xff000000, ctx: Ctx { em: 16.0, ..ctx } }
     }
 
     fn cascade(parent: &Computed, ordered: &[(&str, &str)]) -> Computed {
@@ -1238,7 +1261,7 @@ impl Computed {
                 Rc::make_mut(&mut custom).insert(name.to_string(), value.trim().to_string());
             }
         }
-        let mut values: HashMap<String, String> = HashMap::new();
+        let mut values: HashMap<String, String> = HashMap::default();
         for name in INHERITED {
             if let Some(value) = parent.values.get(*name) {
                 values.insert(name.to_string(), value.clone());

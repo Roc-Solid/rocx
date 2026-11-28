@@ -33,6 +33,11 @@ pub struct Node {
     next: Option<NodeId>,
     /// Let go of (`free`): its id is used again once the next render is over (`recycle`).
     gone: bool,
+    /// The document's `version` when the node itself last changed (its attributes, its children,
+    /// its text), and when anything in it did: a phone's render projects again only what changed
+    /// since the last (native.rs, D-137).
+    pub changed: u64,
+    pub inside: u64,
 }
 
 /// The nodes between two comments: what a markup or list hole, a <Show>, a <For>, a row or a
@@ -70,17 +75,21 @@ pub struct Dom {
     sent: Vec<bool>,
     /// Tags and attribute names, each kept once (`name`).
     names: HashSet<Rc<str>>,
+    /// One more each time the document changes: a phone's render with nothing changed since the
+    /// last is skipped (native.rs, D-137).
+    pub version: u64,
 }
 
 impl Dom {
     pub fn new() -> Dom {
-        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new(), texts: Vec::new(), freed: Vec::new(), spare: Vec::new(), quiet: false, sent: Vec::new(), names: HashSet::default() };
+        let mut dom = Dom { nodes: Vec::new(), root: 0, ops: Vec::new(), texts: Vec::new(), freed: Vec::new(), spare: Vec::new(), quiet: false, sent: Vec::new(), names: HashSet::default(), version: 0 };
         dom.root = dom.element("rocx-root");
         dom
     }
 
     fn add(&mut self, kind: Kind) -> NodeId {
-        let node = Node { kind: Kind::Comment, parent: None, first: None, last: None, prev: None, next: None, gone: false };
+        self.version += 1;
+        let node = Node { kind: Kind::Comment, parent: None, first: None, last: None, prev: None, next: None, gone: false, changed: self.version, inside: self.version };
         let id = match self.spare.pop() {
             Some(id) => {
                 self.nodes[id] = node;
@@ -133,6 +142,7 @@ impl Dom {
 
     /// Detached nodes and everything inside them let go of for good (`free_range`).
     pub fn let_go(&mut self, mut nodes: Vec<NodeId>) -> Vec<NodeId> {
+        self.version += 1;
         let mut gone = Vec::new();
         while let Some(node) = nodes.pop() {
             if self.nodes[node].gone {
@@ -220,6 +230,22 @@ impl Dom {
         }
     }
 
+    /// A node changed (its attributes, its children, its text, what the phone says of it: its
+    /// focus, what a field holds): it, and everything above it, is projected again.
+    pub fn touch(&mut self, node: NodeId) {
+        self.version += 1;
+        let version = self.version;
+        self.nodes[node].changed = version;
+        let mut at = Some(node);
+        while let Some(up) = at {
+            if self.nodes[up].inside == version {
+                break;
+            }
+            self.nodes[up].inside = version;
+            at = self.nodes[up].parent;
+        }
+    }
+
     pub fn element(&mut self, tag: &str) -> NodeId {
         let tag = self.name(tag);
         self.add(Kind::Element { tag, attrs: Vec::new(), styles: Vec::new() })
@@ -268,6 +294,9 @@ impl Dom {
 
     /// The same, said to no one: the node is put somewhere else at once (`insert_before`).
     fn unlink(&mut self, node: NodeId) {
+        if let Some(parent) = self.nodes[node].parent {
+            self.touch(parent);
+        }
         let Some(parent) = self.nodes[node].parent.take() else { return };
         let (prev, next) = (self.nodes[node].prev.take(), self.nodes[node].next.take());
         match prev {
@@ -312,6 +341,7 @@ impl Dom {
     /// Puts `node` in `parent` before `before` (last with none). A fragment moves its children
     /// there, and is left empty.
     pub fn insert_before(&mut self, parent: NodeId, node: NodeId, before: Option<NodeId>) {
+        self.touch(parent);
         if self.is_fragment(node) {
             while let Some(child) = self.nodes[node].first {
                 self.unlink(child);
@@ -418,6 +448,7 @@ impl Dom {
     }
 
     pub fn set_text(&mut self, node: NodeId, data: &str) {
+        self.touch(node);
         self.op(7, &[node as u32], &[data]);
         if let Kind::Text(text) = &mut self.nodes[node].kind {
             text.clear();
@@ -440,6 +471,7 @@ impl Dom {
     }
 
     pub fn set_attr(&mut self, node: NodeId, name: &str, value: &str) {
+        self.touch(node);
         self.op(8, &[node as u32], &[name, value]);
         if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind
             && let Some(entry) = attrs.iter_mut().find(|(named, _)| &**named == name)
@@ -455,6 +487,7 @@ impl Dom {
 
     /// An attribute whose name and value are shared already (a template's written one).
     pub fn set_shared_attr(&mut self, node: NodeId, name: &Rc<str>, value: &Rc<str>) {
+        self.touch(node);
         self.op(8, &[node as u32], &[name, value]);
         if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind {
             match attrs.iter_mut().find(|(named, _)| named == name) {
@@ -465,6 +498,7 @@ impl Dom {
     }
 
     pub fn remove_attr(&mut self, node: NodeId, name: &str) {
+        self.touch(node);
         self.op(9, &[node as u32], &[name]);
         if let Kind::Element { attrs, .. } = &mut self.nodes[node].kind {
             attrs.retain(|(named, _)| &**named != name);
@@ -496,6 +530,7 @@ impl Dom {
     }
 
     pub fn set_style(&mut self, node: NodeId, name: &str, value: &str) {
+        self.touch(node);
         self.op(10, &[node as u32], &[name, value]);
         if let Kind::Element { styles, .. } = &mut self.nodes[node].kind {
             styles.retain(|(named, _)| named != name);
