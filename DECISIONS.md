@@ -7782,9 +7782,9 @@ in 7.5 ms on the Mac and about twice that on the emulator, once, and again on a 
   `:checked`, `:focus`/`:focus-visible`/`:focus-within` from the native focus, `:empty`, `::before`
   and `::after` with their `content`; a rule index by id, class and tag; the cascade with
   `!important` and the `style` attribute; shorthands expanded after `var()`; `@media` (a phone's
-  answers), `@supports`, `@layer`, `@container` against the screen; every length unit, `calc()`
-  kept when it has a percentage, every colour syntax with `color-mix()`; a user-agent sheet close
-  to the HTML spec's. What isn't done warns once, as D-063 said.
+  answers), `@supports`, `@layer`, `@container` against its container's laid-out width; every
+  length unit, `calc()` kept when it has a percentage, every colour syntax with `color-mix()`; a
+  user-agent sheet close to the HTML spec's. What isn't done warns once, as D-063 said.
 - **Boxes** (`native.rs`): projected by `display`, as CSS makes boxes: a block of inline content is
   one text view of styled runs (a link's run tappable on its own); an inline box among text makes
   its block a line, a flex row that wraps (CSS's line boxes approximated); `display: contents`,

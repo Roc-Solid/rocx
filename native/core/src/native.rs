@@ -54,6 +54,8 @@ const LINE: u64 = 1 << 41;
 const BEFORE: u64 = 1 << 42;
 const AFTER: u64 = 1 << 43;
 const MARKER: u64 = 1 << 44;
+/// An inline element's margin at its start or end, a run of the text it is in.
+const GAP: u64 = 1 << 46;
 /// The screen's layer: what is `position: fixed`, over the scrolling page.
 pub const LAYER: u64 = 1 << 45;
 const LOW: u64 = (1 << 40) - 1;
@@ -83,6 +85,8 @@ pub struct View {
     /// For an absolutely positioned view drawn in a stacking context above its containing block:
     /// that containing block (its frame is Taffy's in it, moved into where it is drawn).
     pub hoisted_from: Option<u64>,
+    /// It is a size container (`container-type`): `@container` queries ask its width.
+    pub container: bool,
 }
 
 impl View {
@@ -101,6 +105,7 @@ impl View {
             order: 0,
             stacking: false,
             hoisted_from: None,
+            container: false,
         }
     }
 }
@@ -170,6 +175,12 @@ pub fn node_of(id: u64) -> Option<NodeId> {
     Some((low - 1) as NodeId)
 }
 
+/// Whether a size container's width changed in the last layout: the screen is to be projected
+/// again, its `@container` queries answered (`lib.rs`'s pump does, a few rounds at most).
+pub fn take_rerender() -> bool {
+    CONTAINERS_MOVED.with(|moved| moved.get()) && LAST_KEY.with(|last| last.get() == 0)
+}
+
 /// The next render projects the document again even if nothing changed (the Mac runner's bench).
 pub fn invalidate() {
     LAST_KEY.with(|last| last.set(0));
@@ -178,6 +189,7 @@ pub fn invalidate() {
 /// The screen is sent again, whole, on the next render (a new activity).
 pub fn forget_shown() {
     SHOWN.with(|shown| *shown.borrow_mut() = None);
+    CONTAINERS.with(|containers| containers.borrow_mut().clear());
     KEPT.with(|kept| *kept.borrow_mut() = Default::default());
     LAST_KEY.with(|last| last.set(0));
     TREE.with(|tree| *tree.borrow_mut() = layout::Tree::default());
@@ -275,6 +287,9 @@ impl<'a> css::Elem<'a> for El<'a> {
     fn is(self, other: Self) -> bool {
         self.node == other.node
     }
+    fn container_width(self) -> Option<f32> {
+        CONTAINERS.with(|containers| containers.borrow().get(&self.node).copied())
+    }
 }
 
 /// The views the screen shows now (`project`), as the engine's document says; and whether a
@@ -312,7 +327,8 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
                 }
             }
         }
-        let may_reuse = last_sheet.as_ref().is_some_and(|last| Rc::ptr_eq(last, &sheet)) && SHOWN.with(|shown| shown.borrow().is_some());
+        let containers_moved = CONTAINERS_MOVED.with(|moved| moved.replace(false));
+        let may_reuse = !containers_moved && last_sheet.as_ref().is_some_and(|last| Rc::ptr_eq(last, &sheet)) && SHOWN.with(|shown| shown.borrow().is_some());
         (std::mem::take(entries), *last, may_reuse)
     });
     let mut views = HashMap::new();
@@ -419,6 +435,9 @@ struct Piece {
     link: Option<u64>,
     /// `text-decoration` of it and the inline elements it is in.
     decoration: Option<String>,
+    /// For a gap (an inline element's horizontal margin, border and padding at its start or end):
+    /// its width in px; its text is one object character the applier draws as that much room.
+    gap: f32,
 }
 
 /// What a child is to its parent's layout.
@@ -568,7 +587,7 @@ impl<'a> Projection<'a> {
                         n => format!("{n} files"),
                     };
                     view.kind = "text";
-                    let piece = Piece { key: native_id(node), text: said, style: computed.clone(), link: None, decoration: None };
+                    let piece = Piece { key: native_id(node), text: said, style: computed.clone(), link: None, decoration: None, gap: 0.0 };
                     self.text_view(&mut view, &[piece], &computed, true, true);
                     view.props.insert("click".into(), "true".into());
                 } else {
@@ -605,7 +624,7 @@ impl<'a> Projection<'a> {
                 if label.is_empty() {
                     label = "\u{a0}".into();
                 }
-                let piece = Piece { key: native_id(node), text: label, style: computed.clone(), link: None, decoration: None };
+                let piece = Piece { key: native_id(node), text: label, style: computed.clone(), link: None, decoration: None, gap: 0.0 };
                 self.text_view(&mut view, &[piece], &computed, true, true);
                 view.props.insert("style.nowrap".into(), "true".into());
                 self.field_props(node, &mut view);
@@ -764,6 +783,7 @@ impl<'a> Projection<'a> {
         }
         self.paint(&mut view, &computed);
         view.order = computed.get("order").and_then(|order| order.trim().parse().ok()).unwrap_or(0);
+        view.container = computed.get("container-type").or_else(|| computed.get("container")).is_some_and(|kind| kind.contains("size"));
         if matches!(view.kind, "input" | "textarea") {
             view.props.extend(text_props(&computed));
         }
@@ -862,7 +882,7 @@ impl<'a> Projection<'a> {
         for child in children {
             match &self.dom.nodes[child].kind {
                 Kind::Text(text) => {
-                    pieces.push(Piece { key: native_id(child), text: text.clone(), style: computed.clone(), link: None, decoration: None });
+                    pieces.push(Piece { key: native_id(child), text: text.clone(), style: computed.clone(), link: None, decoration: None, gap: 0.0 });
                     continue;
                 }
                 Kind::Element { .. } => {}
@@ -874,7 +894,7 @@ impl<'a> Projection<'a> {
             }
             let tag = self.dom.tag(child).unwrap_or("").to_string();
             if tag == "br" {
-                pieces.push(Piece { key: native_id(child), text: "\u{2028}".into(), style: computed.clone(), link: None, decoration: None });
+                pieces.push(Piece { key: native_id(child), text: "\u{2028}".into(), style: computed.clone(), link: None, decoration: None, gap: 0.0 });
                 continue;
             }
             // Nothing it comes from changed: what the last projection made of it, again.
@@ -955,6 +975,12 @@ impl<'a> Projection<'a> {
         let mut out = Vec::new();
         let link = self.clickable(node, self.dom.tag(node).unwrap_or("")).then(|| native_id(node));
         let decoration = computed.get("text-decoration-line").filter(|line| *line != "none").map(|line| format!("{line} {}", values::argb(computed.colour_of("text-decoration-color").unwrap_or(computed.color))));
+        // Its horizontal margin, border and padding: room at its start and end, as an inline box's.
+        let room = |side: &str| computed.px(&format!("margin-{side}"), 0.0).unwrap_or(0.0) + computed.px(&format!("padding-{side}"), 0.0).unwrap_or(0.0) + layout::border_width(computed, side);
+        let (start, end) = (room("left"), room("right"));
+        if start > 0.5 {
+            out.push(Piece { key: GAP | native_id(node), text: "\u{fffc}".into(), style: computed.clone(), link: None, decoration: None, gap: start });
+        }
         let before = self.pseudo_text(node, computed, Pseudo::Before);
         if let Some(piece) = before {
             out.push(piece);
@@ -964,6 +990,9 @@ impl<'a> Projection<'a> {
         }
         if let Some(piece) = self.pseudo_text(node, computed, Pseudo::After) {
             out.push(piece);
+        }
+        if end > 0.5 {
+            out.push(Piece { key: GAP | native_id(node), text: "\u{fffc}".into(), style: computed.clone(), link: None, decoration: None, gap: end });
         }
         for piece in &mut out {
             if piece.link.is_none() {
@@ -980,7 +1009,7 @@ impl<'a> Projection<'a> {
         let children: Vec<NodeId> = self.dom.children(node).collect();
         for child in children {
             match &self.dom.nodes[child].kind {
-                Kind::Text(text) => out.push(Piece { key: native_id(child), text: text.clone(), style: computed.clone(), link: None, decoration: None }),
+                Kind::Text(text) => out.push(Piece { key: native_id(child), text: text.clone(), style: computed.clone(), link: None, decoration: None, gap: 0.0 }),
                 Kind::Fragment => {
                     if !self.inline_children(child, computed, out) {
                         return false;
@@ -989,7 +1018,7 @@ impl<'a> Projection<'a> {
                 Kind::Comment => {}
                 Kind::Element { tag, .. } => {
                     if &**tag == "br" {
-                        out.push(Piece { key: native_id(child), text: "\u{2028}".into(), style: computed.clone(), link: None, decoration: None });
+                        out.push(Piece { key: native_id(child), text: "\u{2028}".into(), style: computed.clone(), link: None, decoration: None, gap: 0.0 });
                         continue;
                     }
                     let tag = tag.to_string();
@@ -1059,7 +1088,7 @@ impl<'a> Projection<'a> {
             }
         };
         let style = Rc::new(self.sheet.compute(self.el(node), computed, &[], Some(Pseudo::Marker)));
-        pieces.push(Piece { key: MARKER | native_id(node), text, style, link: None, decoration: None });
+        pieces.push(Piece { key: MARKER | native_id(node), text, style, link: None, decoration: None, gap: 0.0 });
     }
 
     /// A `::before` or `::after` with text and nothing else, as a piece of the line.
@@ -1070,7 +1099,7 @@ impl<'a> Projection<'a> {
             return None;
         }
         let bit = if which == Pseudo::Before { BEFORE } else { AFTER };
-        Some(Piece { key: bit | native_id(node), text, style: Rc::new(style), link: None, decoration: None })
+        Some(Piece { key: bit | native_id(node), text, style: Rc::new(style), link: None, decoration: None, gap: 0.0 })
     }
 
     /// An element's `::before` or `::after`: a piece of its line (text, inline), or a view of its
@@ -1086,14 +1115,14 @@ impl<'a> Projection<'a> {
         let positioned = matches!(style.get("position"), Some("absolute" | "fixed"));
         let display = style.display().to_string();
         if !positioned && !items && display == "inline" && !text.is_empty() {
-            pieces.push(Piece { key: id, text, style: Rc::new(style), link: None, decoration: None });
+            pieces.push(Piece { key: id, text, style: Rc::new(style), link: None, decoration: None, gap: 0.0 });
             return;
         }
         let mut view = View::new("box", if which == Pseudo::Before { "::before" } else { "::after" });
         let style = Rc::new(style);
         if !text.is_empty() {
             view.kind = "text";
-            let piece = Piece { key: id, text, style: style.clone(), link: None, decoration: None };
+            let piece = Piece { key: id, text, style: style.clone(), link: None, decoration: None, gap: 0.0 };
             self.text_view(&mut view, &[piece], &style, true, true);
         }
         view.style = layout::style(&style, Role::Element, style.get("text-align"));
@@ -1297,6 +1326,9 @@ impl<'a> Projection<'a> {
             }
             if let Some(link) = piece.link {
                 fields.push(format!("\"k\":{link}"));
+            }
+            if piece.gap > 0.0 {
+                fields.push(format!("\"gap\":{:.2}", piece.gap));
             }
             let length = run_text.encode_utf16().count();
             if !fields.is_empty() {
@@ -2105,6 +2137,23 @@ pub fn render() -> Vec<u8> {
                     }
                 }
             }
+            // `@container`: each size container's content width; one that changed has the screen
+            // projected again (`take_rerender`), its queries answered by it.
+            let mut widths: HashMap<NodeId, f32> = HashMap::new();
+            for (id, _) in views.iter().filter(|(_, view)| view.container) {
+                if let (Some(node), Some((frame, _)), Some(inset)) = (node_of(*id), tree.frame(*id), tree.inset(*id)) {
+                    widths.insert(node, (frame[2] - inset[1] - inset[3]).max(0.0));
+                }
+            }
+            CONTAINERS.with(|containers| {
+                let mut containers = containers.borrow_mut();
+                let moved = widths.iter().any(|(node, width)| containers.get(node).is_none_or(|was| (was - width).abs() > 0.5)) || containers.len() != widths.len();
+                if moved {
+                    *containers = widths;
+                    CONTAINERS_MOVED.with(|flag| flag.set(true));
+                    LAST_KEY.with(|last| last.set(0));
+                }
+            });
             shown.frames.retain(|id, _| views.contains_key(id));
             shown.insets.retain(|id, _| views.contains_key(id));
         });
@@ -2148,6 +2197,10 @@ thread_local! {
     static RENDERS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// What the last render came from (`render`'s fingerprint).
     static LAST_KEY: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Each size container's content width as last laid out (`@container` queries), and whether a
+    /// change to one wants the screen projected again, whole.
+    static CONTAINERS: RefCell<HashMap<NodeId, f32>> = RefCell::new(HashMap::new());
+    static CONTAINERS_MOVED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// `on:viewport`'s: what each element was last told (`top,left,width,height`), and what it is
     /// to be told after this render.
     static VIEWPORTS: RefCell<(HashMap<NodeId, String>, Vec<(NodeId, String)>)> = RefCell::new((HashMap::new(), Vec::new()));
@@ -2475,6 +2528,28 @@ mod tests {
         assert_eq!(find(&views, "text", "a").1.props.get("style.transition").map(String::as_str), Some("opacity 150 0"));
         assert_eq!(find(&views, "text", "b").1.props.get("style.transition").map(String::as_str), Some("transform 200 50"));
         assert_eq!(find(&views, "text", "c").1.props.get("style.transition"), None, "a colour's waits");
+    }
+
+    #[test]
+    fn an_inline_elements_margins_are_room_in_its_line() {
+        use Make::*;
+        let views = screen(".sep { margin: 0 8px; }", vec![El("p", &[], vec![Text("to accept"), El("span", &[("class", "sep")], vec![Text("·")]), El("a", &[("href", "#x")], vec![Text("Review")])])]);
+        let (_, p) = find(&views, "text", "to accept\u{fffc}·\u{fffc}Review");
+        let runs = p.props.get("runs").expect("runs");
+        assert!(runs.contains("{\"s\":9,\"e\":10,\"gap\":8.00}") && runs.contains("{\"s\":11,\"e\":12,\"gap\":8.00}"), "{runs}");
+    }
+
+    #[test]
+    fn container_queries_ask_their_container() {
+        use Make::*;
+        let css = "body { margin: 0; } .tools { container-type: inline-size; width: 300px; display: flex; } @container (max-width: 350px) { .page { display: none; } } @media (max-width: 350px) { .wide { display: none; } }";
+        screen(css, vec![El("div", &[("class", "tools")], vec![El("span", &[("class", "page")], vec![Text("dates")]), El("span", &[("class", "wide")], vec![Text("presets")])])]);
+        assert!(take_rerender(), "the container's width was learned");
+        render();
+        let views = shown_views();
+        assert!(!views.values().any(|view| view.props.get("text").is_some_and(|text| text == "dates")), "the container is 300 wide");
+        find(&views, "text", "presets");
+        assert!(!take_rerender());
     }
 
     #[test]

@@ -431,6 +431,14 @@ pub fn pump() {
     // `on:viewport` (D-137): what the layout found changed, told, and the screen made again (a
     // few rounds at most, as a browser's ResizeObserver loop stops).
     let told = native::viewports();
+    // A size container's width changed: its `@container` queries asked again (D-137).
+    if told.is_empty() && native::take_rerender() {
+        let depth = VIEWPORT_ROUNDS.fetch_add(1, Ordering::Relaxed);
+        if depth < 4 {
+            pump();
+        }
+        VIEWPORT_ROUNDS.fetch_sub(1, Ordering::Relaxed);
+    }
     if !told.is_empty() {
         let depth = VIEWPORT_ROUNDS.fetch_add(1, Ordering::Relaxed);
         if depth < 4 {

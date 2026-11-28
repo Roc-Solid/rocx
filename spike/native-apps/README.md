@@ -517,7 +517,8 @@ colour) and `::marker`. `:hover` and `:visited` match nothing; other pseudo-elem
 `!important`, the `style` attribute; shorthands expanded after `var()`; inheritance (a unitless
 `line-height` inherited as a number, an `em` one as px). At-rules: `@media` (width, height,
 orientation, colour scheme, reduced motion, hover and pointer as a phone's), `@supports`, `@layer`
-(its rules in place), `@container` (against the screen's width). Values: px, rem, em, %, vw/vh and
+(its rules in place), `@container` (against the nearest size container's width as last laid out, the
+screen's before that: a container whose width changes has the screen projected again). Values: px, rem, em, %, vw/vh and
 their `s`/`l`/`d` kin, vmin/vmax, ch, ex, pt…, `calc()`, `min()`, `max()`, `clamp()` (kept as an
 expression when a percentage is in it, resolved by Taffy against its basis), colours (hex, `rgb()`,
 `hsl()`, `hwb()`, `oklab()`, `oklch()`, named, `color-mix()`, `light-dark()`), gradients, shadows,
@@ -526,7 +527,8 @@ transforms.
 **Boxes** (`native.rs`'s projection, as CSS makes boxes of the DOM): an element's `display` says what
 it is. A block, or a flex or grid item, is a view; one whose content is all inline (text, `span`,
 `strong`, `a`…) is one **text view** (Kotlin's `TextBox`, a `StaticLayout`) whose runs carry their
-colour, weight, size, family, letter spacing, decoration and background, and a link's (or a tappable
+colour, weight, size, family, letter spacing, decoration and background, an inline element's
+horizontal margin, border and padding are room at its start and end, and a link's (or a tappable
 element's) run sends `click` to that element when tapped; whitespace collapses across runs as
 `white-space` says. Inline content beside blocks gets an anonymous text view. An inline box among
 text (`inline-block`, `inline-flex`, an `<svg>`, an image, a field, a button) makes its block a

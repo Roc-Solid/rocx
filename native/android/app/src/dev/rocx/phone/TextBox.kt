@@ -45,7 +45,7 @@ open class TextBox(context: Context, private val density: Float) : View(context)
         if (value.isEmpty()) props.remove(key) else props[key] = value
         spanned = null
         laid = null
-        if (key == "text") contentDescription = value
+        if (key == "text") contentDescription = value.replace("\uFFFC", "")
         invalidate()
     }
 
@@ -90,6 +90,12 @@ open class TextBox(context: Context, private val density: Float) : View(context)
             spacing?.let { if (p.textSize > 0f) p.letterSpacing = px(it) / p.textSize }
             if (tabular) p.fontFeatureSettings = "tnum"
         }
+    }
+
+    /** Room in a line, drawn as nothing (`gap`). */
+    private class GapSpan(val width: Int) : android.text.style.ReplacementSpan() {
+        override fun getSize(paint: Paint, text: CharSequence?, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int = width
+        override fun draw(canvas: Canvas, text: CharSequence?, start: Int, end: Int, x: Float, top: Int, y: Int, bottom: Int, paint: Paint) {}
     }
 
     /** The element a run's tap goes to. */
@@ -141,6 +147,8 @@ open class TextBox(context: Context, private val density: Float) : View(context)
                     if (deco.contains("underline")) out.setSpan(UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     if (deco.contains("line-through")) out.setSpan(StrikethroughSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     if (run.has("k")) out.setSpan(LinkSpan(run.optLong("k")), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    // An inline element's margin, border and padding at its start or end: room.
+                    if (run.has("gap")) out.setSpan(GapSpan(px(run.optDouble("gap").toFloat()).roundToInt()), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
             } catch (failure: Exception) {
                 Rocx.say(android.util.Log.ERROR, "text: runs that aren't JSON: ${failure.message}")
@@ -286,7 +294,7 @@ open class TextBox(context: Context, private val density: Float) : View(context)
 
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
-        info.text = props["text"]
+        info.text = props["text"]?.replace("\uFFFC", "")
         info.className = "android.widget.TextView"
     }
 }

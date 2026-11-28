@@ -12,7 +12,8 @@
 //! `::before` and `::after` (their `content` as text), `::placeholder` (a field's hint colour), and
 //! `::marker`; the others drop their rule. `@media` (width, height, orientation, colour scheme,
 //! reduced motion, hover and pointer as a phone's), `@supports`, `@layer` (its rules in place) and
-//! `@container` (against the screen's width) are read; `@keyframes` and `@font-face` are warned of.
+//! `@container` (against the nearest size container's width as last laid out) are read;
+//! `@keyframes` and `@font-face` are warned of.
 //!
 //! What a phone can't do (yet) only warns, once, and is ignored: the user's answer to D-063's
 //! question 1. The design parses the CSS at build time instead; parsing on the phone stays for now.
@@ -87,6 +88,10 @@ pub trait Elem<'a>: Copy + 'a {
     fn state(self, state: State) -> bool;
     /// Whether two handles are one element.
     fn is(self, other: Self) -> bool;
+    /// Its content box's width, if it is a size container (`container-type`) whose layout is known.
+    fn container_width(self) -> Option<f32> {
+        None
+    }
     fn has_class(self, class: &str) -> bool {
         self.attr("class").is_some_and(|classes| classes.split_ascii_whitespace().any(|each| each == class))
     }
@@ -198,6 +203,9 @@ struct Rule {
     selector: Selector,
     declarations: Rc<Vec<Declaration>>,
     order: usize,
+    /// The `@container` query it is in: evaluated against the nearest container above the element
+    /// (its width as last laid out), or the screen before that is known.
+    container: Option<Rc<String>>,
 }
 
 /// What `@media` asks about: the screen.
@@ -227,6 +235,8 @@ pub struct Sheet {
     /// Compounds with a `:has()` left of a rule's subject (`.list:has(.on) .card`): an element
     /// matching one makes what is in it depend on its descendants (`has_context`).
     has_contexts: Vec<Compound>,
+    /// While parsing: the `@container` query the rules being read are in.
+    container: Option<Rc<String>>,
 }
 
 thread_local! {
@@ -241,7 +251,7 @@ impl Sheet {
             if let Some((_, _, sheet)) = cache.borrow().iter().find(|(text, seen, _)| *seen == media && text == css) {
                 return sheet.clone();
             }
-            let mut sheet = Sheet { rules: Vec::new(), by_id: HashMap::default(), by_class: HashMap::default(), by_tag: HashMap::default(), others: Vec::new(), pseudos: Vec::new(), warnings: Vec::new(), media, has_contexts: Vec::new() };
+            let mut sheet = Sheet { rules: Vec::new(), by_id: HashMap::default(), by_class: HashMap::default(), by_tag: HashMap::default(), others: Vec::new(), pseudos: Vec::new(), warnings: Vec::new(), media, has_contexts: Vec::new(), container: None };
             sheet.parse(UA, false);
             sheet.parse(css, true);
             sheet.index();
@@ -263,6 +273,20 @@ impl Sheet {
         if !self.warnings.contains(&said) {
             self.warnings.push(said);
         }
+    }
+
+    /// Whether a rule's `@container` query holds for an element: against its nearest container's
+    /// width (`Elem::container_width`), or the screen's when none is known.
+    fn container_holds<'a, E: Elem<'a>>(&self, rule: &Rule, element: E) -> bool {
+        let Some(query) = &rule.container else { return true };
+        let mut at = element.parent();
+        while let Some(up) = at {
+            if let Some(width) = up.container_width() {
+                return media_applies(query, Media { width, ..self.media });
+            }
+            at = up.parent();
+        }
+        media_applies(query, self.media)
     }
 
     /// Whether an element matches a compound with a `:has()` left of a rule's subject: what it holds
@@ -335,11 +359,12 @@ impl Sheet {
                         }
                     }
                     "container" => {
-                        // Against the screen: a container is at most as wide as it.
-                        let query = condition.trim_start_matches(|c: char| c.is_alphanumeric() || c == '-' || c == '_').trim();
-                        if media_applies(query, self.media) {
-                            self.parse(body, page);
-                        }
+                        // Its rules hold where their element's nearest container answers the query
+                        // (`compute`), the screen standing in before a layout has said its width.
+                        let query = condition.trim_start_matches(|c: char| c.is_alphanumeric() || c == '-' || c == '_').trim().to_string();
+                        let outer = self.container.replace(Rc::new(query));
+                        self.parse(body, page);
+                        self.container = outer;
                     }
                     "supports" => {
                         if supports(condition) {
@@ -365,7 +390,7 @@ impl Sheet {
                 match parse_selector(&selector) {
                     Ok(Some(selector)) => {
                         let order = self.rules.len();
-                        self.rules.push(Rule { selector, declarations: declarations.clone(), order });
+                        self.rules.push(Rule { selector, declarations: declarations.clone(), order, container: self.container.clone() });
                     }
                     Ok(None) => {}
                     Err(why) => {
@@ -395,7 +420,7 @@ impl Sheet {
             Some(wanted) => {
                 for &at in &self.pseudos {
                     let rule = &self.rules[at];
-                    if rule.selector.pseudo == Some(wanted) && state.complex(&rule.selector.complex, element) {
+                    if rule.selector.pseudo == Some(wanted) && state.complex(&rule.selector.complex, element) && self.container_holds(rule, element) {
                         matched.push(rule);
                     }
                 }
@@ -422,7 +447,7 @@ impl Sheet {
                 candidates.dedup();
                 for at in candidates {
                     let rule = &self.rules[at];
-                    if state.complex(&rule.selector.complex, element) {
+                    if state.complex(&rule.selector.complex, element) && self.container_holds(rule, element) {
                         matched.push(rule);
                     }
                 }
