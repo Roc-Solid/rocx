@@ -69,7 +69,9 @@ pub fn rough_measure(content: &Content, width: Width) -> (f32, f32) {
                     line = next;
                 }
             }
-            (widest.max(line).min(most.max(words_widest)), rows)
+            // CSS's fit-content: a text that wraps is as wide as the room, not its longest line.
+            let _ = widest;
+            (total.min(most).max(words_widest.min(most)), rows)
         }
     };
     (w.ceil(), (rows as f32 * line_height).ceil())

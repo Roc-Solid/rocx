@@ -222,9 +222,9 @@ class TextBox(context: Context, private val density: Float) : View(context) {
             else -> if (nowrap && props["style.ellipsis"] != "true") ceil(maxContent()).toInt() + 1 else max(1, (widthDp * density).toInt())
         }
         val layout = layout(width)
-        var widest = 0f
-        for (line in 0 until layout.lineCount) widest = max(widest, layout.getLineWidth(line))
-        val w = if (mode == 0 && !nowrap) widest else width.toFloat()
+        // At most a width: CSS's fit-content, as wide as its widest unbroken line could be, but no
+        // wider than the width (a text that wraps is as wide as the room, not its longest line).
+        val w = if (mode == 0 && !nowrap) kotlin.math.min(ceil(maxContent()) + 1f, width.toFloat()) else width.toFloat()
         return Pair(ceil(w) / density, ceil(layout.height.toFloat()) / density)
     }
 

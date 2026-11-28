@@ -977,14 +977,27 @@ impl<'a> Projection<'a> {
     fn line(&mut self, items: Vec<Item>, computed: &Rc<Computed>) -> Vec<u64> {
         let count = items.len();
         let mut out = Vec::new();
-        for (at, item) in items.into_iter().enumerate() {
+        let inline_box = |item: Option<&Item>| matches!(item, Some(Item::Box(_, false)));
+        let items: Vec<Item> = items;
+        for (at, item) in items.iter().enumerate() {
             match item {
                 Item::Pieces(pieces) => {
-                    if has_text(&pieces, computed) {
-                        out.extend(self.anonymous_text(&pieces, computed, at == 0, at + 1 == count));
+                    if has_text(pieces, computed) {
+                        out.extend(self.anonymous_text(pieces, computed, at == 0, at + 1 == count));
+                    } else if at > 0 && inline_box(items.get(at - 1)) && inline_box(items.get(at + 1)) && pieces.iter().any(|piece| !piece.text.is_empty()) {
+                        // Whitespace between two inline boxes: a space's width between them.
+                        if let Some(first) = pieces.first() {
+                            let id = ANON | first.key;
+                            let mut space = View::new("box", "space");
+                            space.style = layout::style(computed, Role::Anonymous, None);
+                            space.style.size.width = taffy::Dimension::length((first.style.font_size * 0.27).round());
+                            space.style.flex_shrink = 0.0;
+                            self.put(id, space);
+                            out.push(id);
+                        }
                     }
                 }
-                Item::Box(id, _) | Item::Out(id) => out.push(id),
+                Item::Box(id, _) | Item::Out(id) => out.push(*id),
             }
         }
         out
@@ -2164,6 +2177,17 @@ mod tests {
         assert!(block.children.iter().any(|child| *child & AFTER != 0), "a decorative ::after is a box of its own");
         let (_, in_flow) = find(&views, "text", "★ in flow");
         assert_eq!(in_flow.kind, "text");
+    }
+
+    #[test]
+    fn whitespace_between_inline_boxes_is_a_space() {
+        use Make::*;
+        let views = screen(".chip { display: inline-block; }", vec![El("div", &[], vec![El("span", &[("class", "chip")], vec![Text("a")]), Text(" "), El("span", &[("class", "chip")], vec![Text("b")])])]);
+        let (a, _) = find(&views, "text", "a");
+        let line = views.values().find(|view| view.flow.contains(&a)).expect("the line");
+        assert_eq!(line.flow.len(), 3, "a, a space, b");
+        assert_eq!(views[&line.flow[1]].tag, "space");
+        assert_eq!(frame_of(line.flow[1]).map(|frame| frame[2]), Some(4.0), "about a quarter of the font's size");
     }
 
     #[test]
