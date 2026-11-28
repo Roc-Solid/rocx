@@ -53,6 +53,10 @@ pub enum Source {
     Item(u64, String),
     Submission(String),
     Selector(u64, String),
+    /// Where the app is (`Router.location!`, D-138): a navigation runs again what read it.
+    Location,
+    /// Whether a navigation is on its way (`Router.is_routing!`).
+    Routing,
 }
 
 /// The contexts provided above, and the boundaries around: what a computation is made in.
@@ -61,6 +65,9 @@ pub struct Scope {
     contexts: Rc<HashMap<String, u64>>,
     loading: Option<u64>,
     errored: Option<u64>,
+    /// The level it is in (D-040: a route's keyed part, made anew when a read of the location in it
+    /// won't follow a navigation: `nav::read_once`).
+    level: Option<u64>,
 }
 
 /// What runs when an owner runs again or goes: a box Roc kept (`on_cleanup!`), or the engine's own.
@@ -69,6 +76,10 @@ enum Cleanup {
     Timer(u64),
     Title(u64),
     Action(String),
+    /// A `use_before_leave!` listener (D-138), gone with its owner.
+    Leave(u64),
+    /// A `listen!`'s stream or a channel's subscriber (D-140), stopped with its owner.
+    Live(u64),
 }
 
 #[derive(Clone)]
@@ -161,6 +172,9 @@ struct Comp {
     /// Submissions waiting for it to read again (`revalidate`).
     revalidating: Vec<u64>,
     title_seq: u64,
+    /// What made it (`owner`), and whether it is an `if`'s or `match`'s part picking its branch.
+    owner: Option<u64>,
+    choosing: bool,
 }
 
 impl Comp {
@@ -204,6 +218,8 @@ impl Comp {
             boundary: None,
             revalidating: Vec::new(),
             title_seq: 0,
+            owner: None,
+            choosing: false,
         }
     }
 }
@@ -287,6 +303,10 @@ enum Write {
     Revalidate(Vec<String>),
     /// `retry!` (D-054): a submission (its endpoint, its id or 0 for the latest) sent again.
     Retried(String, u64),
+    /// `Router.navigate!` (D-040, D-138): once the handler is done.
+    Navigate { to: String, replace: bool, scroll: bool },
+    /// `Leave.retry!`: a leave let go after all.
+    LeaveRetry(u64, bool),
 }
 
 #[derive(Clone, Copy)]
@@ -330,11 +350,20 @@ struct Submission {
     sent: Sent,
     /// The transition it joined (optimistic writes, D-054): it ends once its submissions are done.
     transition: Option<u64>,
+    /// A form nothing on the page reads, sent as the browser would post it (D-118), and the form it
+    /// came from (emptied once it succeeds, D-122; its failure shown around it, D-121).
+    plain: bool,
+    form: Option<NodeId>,
+    /// How many navigations were committed when it was sent: its redirect is followed only if none
+    /// was since (D-138).
+    navigations: u64,
 }
 
 #[derive(Clone, Default)]
 struct Sent {
     method: String,
+    /// Where it goes, when not its endpoint's path (a form's URL with fields, `with_fields`).
+    url: Option<String>,
     headers: Vec<(String, String)>,
     body: String,
 }
@@ -367,6 +396,11 @@ pub enum Asked {
     Submission { key: String, id: u64 },
     /// A stylesheet a `<link rel="stylesheet">` names (the app's, a file since D-040).
     Sheet(String),
+    /// A navigation's document (D-138: `nav::answered`).
+    Navigation(u64),
+    /// What the app said on its channels, and asked of them (D-140: `live::sent`): the items, and
+    /// the stream it named.
+    LiveSend(Vec<(String, Option<u64>)>, Option<u64>),
 }
 
 /// A linked stylesheet: on its way, in (its text), or not to be had.
@@ -380,10 +414,20 @@ pub enum Sheet {
 /// A submission's result reading the page's reads again: how many are left, and the submission.
 struct Revalidation {
     left: usize,
-    /// The submission done once the reads are in; none for `Router.revalidate!`'s.
-    submission: Option<(String, u64)>,
-    status: u16,
-    body: String,
+    /// What is done once the reads are in.
+    then: Finish,
+}
+
+/// What a revalidation does once its reads are in (`revalidate`'s `done`).
+#[derive(Clone)]
+enum Finish {
+    /// `Router.revalidate!`'s: nothing.
+    Nothing,
+    /// A submission's result: it is done, its form emptied (D-122).
+    Result { key: String, entry: u64, status: u16, body: String },
+    /// A submission whose answer was a redirect, followed (D-138): done with no result; a plain
+    /// form's (D-118) leaves the list, its flash saying what happened.
+    Redirected { key: String, entry: u64, plain: bool },
 }
 
 /// What happens later, after what is running now (runtime.js's microtasks).
@@ -392,6 +436,10 @@ enum Task {
     ReleaseKept(u64),
     /// A handler whose answer is in, run again.
     Wake(u64),
+    /// `Router.navigate!`, once the handler that called it is done (D-138).
+    Navigate { to: String, replace: bool, scroll: bool },
+    /// `Leave.retry!`, likewise.
+    LeaveRetry(u64, bool),
 }
 
 pub struct Engine {
@@ -399,8 +447,14 @@ pub struct Engine {
     pub dom: Dom,
     /// What the app's server is: requests to a path go there (`http://10.0.2.2:8080`).
     pub origin: String,
-    /// Where the app is (`Router.location!`): the start path.
+    /// Where the app is (`Router.location!`): its path and query, as a navigation committed it.
     pub path: String,
+    /// Navigation (D-138): the route table, the history, the document being committed.
+    pub nav: crate::nav::Nav,
+    /// The root's computation (`mount`).
+    root: Option<u64>,
+    /// Live updates (D-140): `listen!`'s streams, the channels and their stream.
+    pub live: crate::live::Live,
     kept: HashMap<u64, Callable>,
     signals: HashMap<u64, Callable>,
     comps: HashMap<u64, Comp>,
@@ -473,6 +527,7 @@ pub fn reset() {
         for timer in engine.timers.values() {
             timer.stop.store(true, std::sync::atomic::Ordering::Relaxed);
         }
+        crate::live::stop_all(&engine.live);
     }
 }
 
@@ -487,6 +542,9 @@ pub fn init(origin: String, path: String) {
             dom: Dom::new(),
             origin,
             path,
+            nav: crate::nav::Nav::default(),
+            root: None,
+            live: crate::live::Live::default(),
             kept: HashMap::default(),
             signals: HashMap::default(),
             comps: HashMap::default(),
@@ -535,6 +593,32 @@ impl Engine {
         self.ids
     }
 
+    pub(crate) fn next_id(&mut self) -> u64 {
+        self.id()
+    }
+
+    /// A request of the host's own (a navigation's document, a stream's), sent once the engine is
+    /// let go of; its answer goes where `asked` says (`answered`).
+    pub(crate) fn ask(&mut self, asked: Asked, method: &str, url: String, headers: Vec<(String, String)>, body: String) {
+        let request = self.id();
+        self.asked.insert(request, asked);
+        self.outbox.push((request, method.to_string(), url, headers, body));
+    }
+
+    pub(crate) fn has_kept(&self, id: u64) -> bool {
+        self.kept.contains_key(&id)
+    }
+
+    /// A path the app gives, as the phone asks for it (`under`): the server's.
+    pub(crate) fn full_url(&self, url: &str) -> String {
+        self.under(url)
+    }
+
+    /// Whether an element has a handler for `event` (a view to make tappable, D-138).
+    pub fn listens(&self, node: NodeId, event: &str) -> bool {
+        self.listeners.get(&node).is_some_and(|listeners| listeners.iter().any(|listener| listener.event == event))
+    }
+
     fn comp(&mut self, id: u64) -> Option<&mut Comp> {
         self.comps.get_mut(&id)
     }
@@ -550,7 +634,9 @@ impl Engine {
     /// A new computation, adopted by its owner's run (or its last run's).
     fn new_comp(&mut self, kind: CompKind, runner: Callable, owner: Option<u64>, scope: Scope, target: Target, name: &str) -> u64 {
         let id = self.id();
-        self.comps.insert(id, Comp::new(kind, runner, scope, target, name));
+        let mut comp = Comp::new(kind, runner, scope, target, name);
+        comp.owner = owner;
+        self.comps.insert(id, comp);
         if let Some(owner) = owner
             && let Some(owner) = self.comps.get_mut(&owner)
         {
@@ -719,7 +805,7 @@ impl Engine {
     fn send(&mut self, key: &str, entry: u64, sent: Sent) {
         let request = self.id();
         self.asked.insert(request, Asked::Submission { key: key.to_string(), id: entry });
-        let full = self.under(key);
+        let full = self.under(sent.url.as_deref().unwrap_or(key));
         self.outbox.push((request, sent.method, full, sent.headers, sent.body));
     }
 
@@ -1265,6 +1351,13 @@ fn clean_up(cleanups: Vec<Cleanup>) {
                 engine.titles.remove(&owner);
                 show_title(engine);
             }),
+            Cleanup::Live(id) => crate::live::cleanup(id),
+            Cleanup::Leave(id) => with(|engine| {
+                if let Some(at) = engine.nav.listeners.iter().position(|listener| listener.id == id) {
+                    let listener = engine.nav.listeners.remove(at);
+                    engine.release_kept(listener.runner);
+                }
+            }),
             Cleanup::Action(key) => with(|engine| {
                 let left = engine.actions.get(&key).copied().unwrap_or(1).saturating_sub(1);
                 if left > 0 {
@@ -1307,6 +1400,8 @@ pub fn flush() {
             Some(Step::Apply(id)) => apply_reaction(id),
             Some(Step::Task(Task::Fallback(id))) => errored_fallback(id),
             Some(Step::Task(Task::ReleaseKept(id))) => with(|engine| engine.release_kept(id)),
+            Some(Step::Task(Task::Navigate { to, replace, scroll })) => crate::nav::navigate(&to, crate::nav::Options { replace, scroll, ..Default::default() }),
+            Some(Step::Task(Task::LeaveRetry(id, force))) => crate::nav::retry(id, force),
             Some(Step::Task(Task::Wake(id))) => {
                 let runs = with(|engine| engine.handlers.get(&id).is_some_and(|handler| engine.kept.contains_key(&handler.runner)));
                 if runs {
@@ -1408,7 +1503,9 @@ fn apply(writes: Vec<Write>) {
                 }
             }),
             Write::Optimistic(id, value) => hold(id, value),
-            Write::Revalidate(keys) => revalidate(None, Some(keys), 0, String::new()),
+            Write::Revalidate(keys) => revalidate(Finish::Nothing, Some(keys), None),
+            Write::Navigate { to, replace, scroll } => with(|engine| engine.tasks.push_back(Task::Navigate { to, replace, scroll })),
+            Write::LeaveRetry(id, force) => with(|engine| engine.tasks.push_back(Task::LeaveRetry(id, force))),
             Write::Retried(key, id) => retry_submission(&key, id),
             Write::Refresh(memo) => refresh(memo),
             Write::Retry(boundary) => errored_retry(boundary),
@@ -1670,6 +1767,10 @@ fn settle_show(id: u64, answer: String) {
     if let Some(old) = old {
         dispose(old);
     }
+    // What it makes is a level (D-040): a read of the location once, in it, makes it anew. An `if`'s
+    // or `match`'s part (D-070, `"b"`) belongs to the level around it.
+    let choosing_part = node.get("b").is_some();
+    let scope = if choosing_part { scope } else { Scope { level: Some(id), ..scope } };
     let with_box = node.get("with").and_then(Value::as_u64);
     let made = if holds && let Some(with_box) = with_box {
         // A function child: made when it shows, by its own computation, once, untracked.
@@ -1678,6 +1779,8 @@ fn settle_show(id: u64, answer: String) {
             let made = engine.new_comp(CompKind::Html, runner, None, scope.clone(), Target::Range(range), "");
             if let Some(comp) = engine.comp(made) {
                 comp.untracked = true;
+                comp.choosing = choosing_part;
+                comp.owner = Some(id);
             }
             made
         });
@@ -2537,17 +2640,174 @@ pub fn mount() {
         let (range, fragment) = engine.dom.make_range();
         let root = engine.dom.root;
         engine.dom.append(root, fragment);
-        engine.new_comp(CompKind::Root, std::ptr::null_mut(), None, Scope::default(), Target::Range(range), "")
+        let id = engine.new_comp(CompKind::Root, std::ptr::null_mut(), None, Scope::default(), Target::Range(range), "");
+        engine.root = Some(id);
+        id
     });
     run(root);
 }
+
+/// The root made anew in its place (D-040's `remakeRoot`, phase 1's way): everything the app shows,
+/// from the root layout down.
+pub(crate) fn remake_root() {
+    let Some((old, range)) = with(|engine| {
+        let old = engine.root?;
+        let Target::Range(range) = engine.comps.get(&old)?.target else { return None };
+        Some((old, range))
+    }) else {
+        return mount();
+    };
+    dispose(old);
+    let root = with(|engine| {
+        let id = engine.new_comp(CompKind::Root, std::ptr::null_mut(), None, Scope::default(), Target::Range(range), "");
+        engine.root = Some(id);
+        id
+    });
+    run(root);
+}
+
+// ---- What navigation asks of the engine (nav.rs, D-138) ----
+
+/// What a `listen!` or a subscription keeps (D-140): its box, what it runs in, and the id its
+/// owner's cleanup names.
+pub(crate) struct LiveHeld {
+    pub kept: u64,
+    pub scope: Scope,
+    pub owner: Option<u64>,
+    pub id: u64,
+}
+
+/// A handler kept for live updates, with a cleanup on what runs now (its owner going stops it);
+/// `required`: refused (the box given back) when nothing runs that it could go with.
+pub(crate) fn live_keep(runner: Callable, required: bool) -> Result<LiveHeld, Callable> {
+    with(|engine| {
+        engine.touch(false);
+        let id = engine.id();
+        let kept = engine.keep(runner);
+        if engine.push_cleanup(Cleanup::Live(id)).is_err() && required {
+            engine.kept.remove(&kept);
+            return Err(runner);
+        }
+        Ok(LiveHeld { kept, scope: engine.current_scope(), owner: engine.owner(), id })
+    })
+}
+
+/// A kept box let go of after what runs now (which may be its own handler).
+pub(crate) fn release_later(kept: u64) {
+    with(|engine| engine.tasks.push_back(Task::ReleaseKept(kept)));
+}
+
+/// Commits where the app is (`commitLocation`): what read it runs again.
+pub(crate) fn commit_location(to: &str) {
+    with(|engine| {
+        if engine.path == to {
+            return;
+        }
+        engine.path = to.to_string();
+        engine.schedule_observers(&Source::Location);
+    });
+}
+
+/// What read the location runs again, the location the same (the same page navigated to again).
+pub(crate) fn schedule_location() {
+    with(|engine| engine.schedule_observers(&Source::Location));
+}
+
+pub(crate) fn schedule_routing() {
+    with(|engine| engine.schedule_observers(&Source::Routing));
+}
+
+/// Whether a computation is still there.
+pub(crate) fn alive(engine: &Engine, id: u64) -> bool {
+    engine.comps.get(&id).is_some_and(|comp| !comp.disposed)
+}
+
+pub(crate) fn schedule_if_alive(id: u64) -> bool {
+    with(|engine| {
+        if !alive(engine, id) {
+            return false;
+        }
+        engine.schedule(id);
+        true
+    })
+}
+
+impl Engine {
+    /// What read a GET from the server now (`readers`).
+    pub(crate) fn readers_now(&self) -> Vec<u64> {
+        self.readers.iter().copied().collect()
+    }
+}
+
+/// A computation's reads of a GET, each with its answer now (`{"status":…,"body":…}`, if in); none
+/// for one that is gone or read nothing.
+pub(crate) fn reads_of(id: u64) -> Option<Vec<(String, Option<String>)>> {
+    with(|engine| {
+        let comp = engine.comps.get(&id).filter(|comp| !comp.disposed)?;
+        let reads: Vec<(String, Option<String>)> = comp
+            .calls
+            .iter()
+            .filter(|(key, _)| key.starts_with("GET "))
+            .map(|(key, request)| {
+                let answer = match engine.requests.get(request) {
+                    Some(Answer::Ok(json)) => Some(json.clone()),
+                    _ => None,
+                };
+                (key.clone(), answer)
+            })
+            .collect();
+        (!reads.is_empty()).then_some(reads)
+    })
+}
+
+/// A computation runs again, reading `keys` afresh (from the document's answers, if it has them).
+pub(crate) fn read_again(id: u64, keys: Vec<String>) {
+    with(|engine| {
+        if let Some(comp) = engine.comp(id) {
+            for key in &keys {
+                comp.calls.remove(key);
+            }
+        }
+        engine.schedule(id);
+    });
+}
+
+/// The `<Errored>` boundaries that show their fallback now.
+pub(crate) fn failed_boundaries() -> Vec<u64> {
+    with(|engine| engine.boundaries.iter().filter(|(_, boundary)| boundary.failed.is_some() && boundary.fallback.is_some() && engine.dom.connected(boundary.range.start)).map(|(&id, _)| id).collect())
+}
+
+/// A boundary that still shows its fallback, tried again.
+pub(crate) fn retry_failed(boundary: u64) {
+    let failed = with(|engine| engine.boundaries.get(&boundary).is_some_and(|boundary| boundary.failed.is_some() && engine.dom.connected(boundary.range.start)));
+    if failed {
+        errored_retry(boundary);
+    }
+}
+
+/// A level (a route's keyed part) made anew: run again, its part made as if its key had changed.
+pub(crate) fn remake_level(level: u64) {
+    with(|engine| {
+        if !alive(engine, level) {
+            return;
+        }
+        if let Some(comp) = engine.comp(level) {
+            comp.holds = Some(REMADE.to_string());
+        }
+        engine.schedule(level);
+    });
+}
+
+/// A level's case that no `<Show>` answers (D-040: it read the location once), so its part is made
+/// anew.
+const REMADE: &str = "\u{1}remade";
 
 // ---- Events ----
 
 /// An event on a native view (`id`, the node it shows), given its value (what a field holds now):
 /// the handlers of the node and of each element above it, as the DOM bubbles it. A tap on a
 /// button in a form (not `type="button"`) submits the form too.
-pub fn dispatch(node: NodeId, event: &str, value: &str) {
+pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
     if event == "input" {
         with(|engine| {
             engine.values.insert(node, value.to_string());
@@ -2562,6 +2822,9 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) {
         }
         path
     });
+    // Whether a handler took what the browser would do (`.prevent`, a submit's, a key's): the
+    // runtime's listener (a link's navigation, a form's sending) leaves it then.
+    let mut prevented = false;
     for at in &path {
         let listeners: Vec<(u64, Scope, Option<u64>, Option<String>, String)> = with(|engine| {
             engine.listeners.get(at).map(|listeners| listeners.iter().filter(|listener| listener.event == event).map(|listener| (listener.runner, listener.scope.clone(), listener.owner, listener.wanted.clone(), listener.kind.clone())).collect()).unwrap_or_default()
@@ -2570,23 +2833,61 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) {
             if kind != "onk" && wanted.is_some() && wanted.as_deref() != Some(value) {
                 continue;
             }
+            if kind == "onp" || event == "submit" || (kind != "onk" && wanted.as_deref().is_some_and(|wanted| !wanted.starts_with('.'))) {
+                prevented = true;
+            }
             if with(|engine| engine.kept.contains_key(&runner)) {
                 handle(runner, value.to_string(), scope, owner, None, None);
             }
         }
     }
-    if event == "click" {
-        let form = with(|engine| {
-            if engine.dom.tag(node) != Some("button") || engine.dom.attr(node, "type").is_some_and(|kind| kind.eq_ignore_ascii_case("button")) {
-                return None;
-            }
-            path.iter().copied().find(|&at| engine.dom.tag(at) == Some("form"))
+    if event == "click" && !prevented {
+        let (form, link) = with(|engine| {
+            let submits = engine.dom.tag(node) == Some("button") && !engine.dom.attr(node, "type").is_some_and(|kind| kind.eq_ignore_ascii_case("button") || kind.eq_ignore_ascii_case("reset"));
+            let form = if submits { path.iter().copied().find(|&at| engine.dom.tag(at) == Some("form")) } else { None };
+            // A link (D-138): the nearest `<a>` with an `href`, as the browser's `linkOf` finds it.
+            let link = path.iter().copied().find(|&at| engine.dom.tag(at) == Some("a")).and_then(|anchor| {
+                let href = engine.dom.attr(anchor, "href").or_else(|| engine.dom.attr(anchor, "xlink:href"))?.to_string();
+                Some((href, engine.dom.attr(anchor, "target").map(str::to_string), engine.dom.attr(anchor, "download").is_some(), engine.dom.attr(anchor, "replace").is_some(), engine.dom.attr(anchor, "noscroll").is_some()))
+            });
+            (form, link)
         });
         if let Some(form) = form {
-            dispatch(form, "submit", "");
-            submitted(form);
+            if !dispatch(form, "submit", "") {
+                submitted(form, Some(node));
+            }
+        } else if let Some((href, target, download, replace, noscroll)) = link {
+            crate::nav::tapped_link(&href, target.as_deref(), download, replace, noscroll);
         }
     }
+    // The keyboard's Enter in a form's field submits it, as a browser's implicit submission does
+    // (the form has a submit button, or this is its one field).
+    if event == "keydown" && value == "Enter" && !prevented {
+        let form = with(|engine| {
+            if engine.dom.tag(node) != Some("input") {
+                return None;
+            }
+            let form = path.iter().copied().find(|&at| engine.dom.tag(at) == Some("form"))?;
+            let (mut fields, mut button) = (0, false);
+            let mut stack = vec![form];
+            while let Some(at) = stack.pop() {
+                match engine.dom.tag(at) {
+                    Some("input") if !engine.dom.attr(at, "type").is_some_and(|kind| matches!(kind.to_ascii_lowercase().as_str(), "hidden" | "checkbox" | "radio" | "submit" | "button")) => fields += 1,
+                    Some("input") if engine.dom.attr(at, "type").is_some_and(|kind| kind.eq_ignore_ascii_case("submit")) => button = true,
+                    Some("button") if !engine.dom.attr(at, "type").is_some_and(|kind| kind.eq_ignore_ascii_case("button") || kind.eq_ignore_ascii_case("reset")) => button = true,
+                    _ => {}
+                }
+                stack.extend(engine.dom.children(at));
+            }
+            (button || fields == 1).then_some(form)
+        });
+        if let Some(form) = form
+            && !dispatch(form, "submit", "")
+        {
+            submitted(form, None);
+        }
+    }
+    prevented
 }
 
 // ---- Requests ----
@@ -2607,8 +2908,33 @@ pub fn fetch_for(method: &str, url: &str, headers: &str, body: &str) -> Result<S
             Some(Current::Probe(id)) => engine.probes.get(&id).and_then(|probe| probe.calls.get(&key).copied()),
             None => None,
         };
+        let seeded = if known.is_none() { engine.nav.answers.get(&key).cloned() } else { None };
         let request = match known {
             Some(request) => request,
+            // The server answered it as it made the page's document (D-138): read here, not asked.
+            None if seeded.is_some() => {
+                let request = engine.id();
+                engine.requests.insert(request, Answer::Ok(seeded.unwrap_or_default()));
+                match current {
+                    Some(Current::Comp(id)) => {
+                        if let Some(comp) = engine.comp(id) {
+                            comp.calls.insert(key.clone(), request);
+                        }
+                    }
+                    Some(Current::Handler(id)) => {
+                        if let Some(handler) = engine.handlers.get_mut(&id) {
+                            handler.calls.insert(key.clone(), request);
+                        }
+                    }
+                    Some(Current::Probe(id)) => {
+                        if let Some(probe) = engine.probes.get_mut(&id) {
+                            probe.calls.insert(key.clone(), request);
+                        }
+                    }
+                    None => {}
+                }
+                request
+            }
             None => {
                 let request = engine.id();
                 engine.requests.insert(request, Answer::Pending);
@@ -2656,11 +2982,20 @@ pub fn fetch_for(method: &str, url: &str, headers: &str, body: &str) -> Result<S
 
 /// Sends the requests made since the last time (`fetch_for` notes them while it holds the engine).
 pub fn send_requests() {
-    let outbox = with(|engine| {
+    let (outbox, origin) = with(|engine| {
         let outbox = std::mem::take(&mut engine.outbox);
-        outbox.into_iter().map(|request| (matches!(engine.asked.get(&request.0), Some(Asked::Sheet(_))), request)).collect::<Vec<_>>()
+        let origin = crate::url::Url::parse(&engine.origin).map(|url| url.origin);
+        (outbox.into_iter().map(|request| (matches!(engine.asked.get(&request.0), Some(Asked::Sheet(_))), request)).collect::<Vec<_>>(), origin)
     });
-    for (sheet, (id, method, url, headers, body)) in outbox {
+    for (sheet, (id, method, url, mut headers, body)) in outbox {
+        // As a page's request carries its site (D-138): a form's post without it is a cross-site one
+        // to a server that checks (SvelteKit's check, the app's own).
+        if !matches!(method.as_str(), "GET" | "HEAD")
+            && let Some(origin) = &origin
+            && !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("origin"))
+        {
+            headers.push(("origin".into(), origin.clone()));
+        }
         // A stylesheet holds the first frame (`native::render`): one its server refuses is given up
         // on at once, as a browser shows the page unstyled when a stylesheet's connection is
         // refused, not after the 3 s a read waits for a server being restarted.
@@ -2669,13 +3004,20 @@ pub fn send_requests() {
 }
 
 /// A request's answer, in (on the main thread): what waited for it runs again.
-pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), String>) {
+pub fn answered(id: u64, result: Result<crate::http::Answered, String>) {
     let asked = with(|engine| engine.asked.remove(&id));
     match asked {
+        Some(Asked::Navigation(navigation)) => crate::nav::answered(navigation, result),
+        Some(Asked::LiveSend(items, stream)) => crate::live::sent(items, stream, result),
         Some(Asked::Sheet(href)) => with(|engine| {
             let sheet = match result {
-                Ok((200, _, body)) => Sheet::Loaded(body),
-                Ok((status, _, _)) => {
+                // A browser takes a stylesheet only as CSS (a redirect to a sign-in page isn't one).
+                Ok(answer) if answer.status == 200 && answer.header("content-type").is_none_or(|kind| kind.to_ascii_lowercase().starts_with("text/css")) => Sheet::Loaded(answer.body),
+                Ok(answer) if answer.status == 200 => {
+                    log(Level::Warn, &format!("rocx native: the stylesheet {href} wasn't had: {} answered {}", answer.url, answer.header("content-type").unwrap_or("")));
+                    Sheet::Failed
+                }
+                Ok(crate::http::Answered { status, .. }) => {
                     log(Level::Warn, &format!("rocx native: the stylesheet {href} wasn't had: {status}"));
                     Sheet::Failed
                 }
@@ -2688,15 +3030,28 @@ pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), St
         }),
         Some(Asked::Submission { key, id: entry }) => {
             match result {
-                Ok((status, headers, body)) => {
-                    if headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("x-rocx-redirect")) {
-                        log(Level::Warn, "rocx native: a submission was answered with a redirect: pages aren't navigated on phones yet");
+                Ok(answer) => {
+                    let to = answer.header("x-rocx-redirect").map(str::to_string);
+                    let revalidating = answer.header("x-rocx-revalidate").and_then(|value| json::parse(value).and_then(Value::into_strings));
+                    let crate::http::Answered { status, headers, body, url, redirected } = answer;
+                    // A redirect of the endpoint's own (`x-rocx-redirect`), or one the client followed
+                    // (a middleware's, a plain form's flash back): where the app goes (`sendSubmission`).
+                    if to.is_some() || redirected {
+                        submission_redirect(&key, entry, to.unwrap_or(url), revalidating);
+                        return;
                     }
+                    let plain = with(|engine| engine.submissions.get(&key).and_then(|source| source.list.iter().find(|each| each.id == entry)).is_some_and(|each| each.plain));
                     if status == 200 {
                         // The reads the answer names (`x-rocx-revalidate`, `Router.revalidate!` in
                         // the endpoint, D-054), or every one.
-                        let keys = headers.iter().find(|(name, _)| name.eq_ignore_ascii_case("x-rocx-revalidate")).and_then(|(_, value)| json::parse(value).and_then(Value::into_strings));
-                        revalidate(Some((key, entry)), keys, status, body);
+                        let _ = headers;
+                        revalidate(Finish::Result { key, entry, status, body }, revalidating, None);
+                    } else if plain {
+                        // A plain form's answer that isn't where to go (a crash, a middleware's
+                        // refusal): shown where the form is, as the browser would show it (D-121).
+                        let form = with(|engine| engine.submissions.get(&key).and_then(|source| source.list.iter().find(|each| each.id == entry)).and_then(|each| each.form));
+                        fail_around(form, format!("POST {key}: {status}: {body}"));
+                        submission_done(&key, entry, status, body);
                     } else {
                         unread(&key, status, &body);
                         submission_done(&key, entry, status, body);
@@ -2711,7 +3066,7 @@ pub fn answered(id: u64, result: Result<(u16, Vec<(String, String)>, String), St
         _ => {
             let waiters = with(|engine| {
                 let answer = match result {
-                    Ok((status, _, body)) => {
+                    Ok(crate::http::Answered { status, body, .. }) => {
                         let mut answer = format!("{{\"status\":{status},\"body\":");
                         json::quote(&body, &mut answer);
                         answer.push('}');
@@ -2776,7 +3131,7 @@ pub fn submission(url: String, all: bool) -> String {
             return format!("{{\"cleared\":{},\"list\":[{}]}}", source.cleared, list.join(","));
         }
         if source.cleared {
-            return submission_json(&Submission { id: 0, state: "cleared", input: String::new(), json: false, status: 0, body: String::new(), sent: Sent::default(), transition: None }, false);
+            return submission_json(&Submission { id: 0, state: "cleared", input: String::new(), json: false, status: 0, body: String::new(), sent: Sent::default(), transition: None, plain: false, form: None, navigations: 0 }, false);
         }
         source.list.last().map(|entry| submission_json(entry, false)).unwrap_or_default()
     })
@@ -2803,14 +3158,20 @@ pub fn submit(method: String, url: String, body: String, input: String) -> Resul
 
 fn send_action(method: &str, url: &str, body: &str, input: &str) {
     let headers = if method == "GET" || method == "HEAD" { Vec::new() } else { vec![("content-type".to_string(), "application/json".to_string())] };
-    send_submission(url, method, headers, body, input, true);
+    send_submission(url, None, method, headers, body, input, true, false, None);
 }
 
-/// `Router.app!`'s route table (D-040). A phone shows one page, so only the paths of the app's
-/// endpoints that take a POST are kept (D-095).
+/// `Router.app!`'s route table (D-040): its pages (which a link may navigate to, D-138), and the paths
+/// of the app's endpoints that take a POST (D-095).
 pub fn app(routes: &str) {
-    let posts = json::parse(routes).and_then(|table| table.get("posts").cloned()).and_then(Value::into_strings).unwrap_or_default();
-    with(|engine| engine.posts = posts);
+    let table = json::parse(routes);
+    let posts = table.as_ref().and_then(|table| table.get("posts").cloned()).and_then(Value::into_strings).unwrap_or_default();
+    let pages = table.as_ref().map(crate::nav::pages_of).unwrap_or_default();
+    with(|engine| {
+        engine.posts = posts;
+        engine.nav.has_table = table.is_some();
+        engine.nav.pages = pages;
+    });
 }
 
 /// Whether one of the app's endpoints that take a POST is at an action's path (its query and hash
@@ -2828,24 +3189,28 @@ fn posted_to(posts: &[String], action: &str) -> bool {
     })
 }
 
-/// A form submitted: sent if it posts to one of the app's endpoints (D-095) or to one a component
-/// reads the submission of (`submitted`), its named fields URL-encoded.
-fn submitted(form: NodeId) {
+/// A form submitted (`submitted`): its named fields (and its button's, if it has a name),
+/// URL-encoded. One posting to one of the app's endpoints (D-095), or to one a component reads the
+/// submission of (`with_fields` URLs too), is sent by the host: as the runtime's if a component reads
+/// it, else as a plain form (D-118). Any other is the browser's, which a phone does as a navigation
+/// (D-138): a GET form goes to its URL with its fields as the query, a POST's answer (its redirect
+/// followed) is the page the app goes to.
+fn submitted(form: NodeId, submitter: Option<NodeId>) {
     let found = with(|engine| {
-        let method = engine.dom.attr(form, "method").unwrap_or("").to_ascii_lowercase();
-        let action = engine.dom.attr(form, "action").unwrap_or("").to_string();
-        if method != "post" || !(engine.actions.contains_key(&action) || posted_to(&engine.posts, &action)) {
-            return None;
-        }
+        let of = |name: &str, attribute: &str| submitter.and_then(|button| engine.dom.attr(button, attribute)).or_else(|| engine.dom.attr(form, name)).unwrap_or("").to_string();
+        let method = of("method", "formmethod").to_ascii_lowercase();
+        let action = of("action", "formaction");
+        let action = if action.is_empty() { engine.path.clone() } else { action };
         let mut fields = Vec::new();
         let mut stack = vec![form];
         while let Some(node) = stack.pop() {
             let tag = engine.dom.tag(node).unwrap_or("");
             if matches!(tag, "input" | "textarea" | "select")
                 && let Some(name) = engine.dom.attr(node, "name")
+                && engine.dom.attr(node, "disabled").is_none()
             {
                 let kind = engine.dom.attr(node, "type").unwrap_or("").to_ascii_lowercase();
-                if !(matches!(kind.as_str(), "checkbox" | "radio") && engine.dom.attr(node, "checked").is_none()) {
+                if !(matches!(kind.as_str(), "checkbox" | "radio") && engine.dom.attr(node, "checked").is_none()) && !matches!(kind.as_str(), "submit" | "button" | "reset" | "image" | "file") {
                     let value = engine.values.get(&node).cloned().or_else(|| engine.dom.attr(node, "value").map(str::to_string)).unwrap_or_else(|| if kind == "checkbox" { "on".into() } else { String::new() });
                     fields.push(format!("{}={}", encode(name), encode(&value)));
                 }
@@ -2854,11 +3219,67 @@ fn submitted(form: NodeId) {
             stack.extend(engine.dom.children(node));
             stack[at..].reverse();
         }
-        Some((action, fields.join("&")))
+        if let Some(button) = submitter
+            && let Some(name) = engine.dom.attr(button, "name")
+        {
+            fields.push(format!("{}={}", encode(name), encode(engine.dom.attr(button, "value").unwrap_or(""))));
+        }
+        let fields = fields.join("&");
+        if method != "post" {
+            return Some(Submitted::Get(action, fields));
+        }
+        // Its endpoint: one a component asks for (by its URL, or its URL with fields after it), or
+        // one of the app's that takes a POST.
+        let key = if engine.actions.contains_key(&action) {
+            Some(action.clone())
+        } else {
+            engine.actions.keys().filter(|known| action.starts_with(&format!("{known}?")) || action.starts_with(&format!("{known}&"))).max_by_key(|known| known.len()).cloned().or_else(|| posted_to(&engine.posts, &action).then(|| action.split(['?', '#']).next().unwrap_or("").to_string()))
+        };
+        let reload = [submitter, Some(form)].into_iter().flatten().any(|node| reloads(&engine.dom, node));
+        let enctype = of("enctype", "formenctype").to_ascii_lowercase();
+        if enctype == "multipart/form-data" {
+            engine.warn_once("multipart", "rocx native: a form with files (multipart/form-data) isn't on phones yet: sent as a plain form");
+        }
+        match key {
+            Some(key) if !reload && enctype != "text/plain" => {
+                let query = action.split_once('?').map(|(_, query)| query.split('#').next().unwrap_or("").to_string()).unwrap_or_default();
+                let input = [query, fields.clone()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join("&");
+                let plain = !engine.actions.contains_key(&key);
+                Some(Submitted::Endpoint { key, url: action, fields, input, plain })
+            }
+            _ => Some(Submitted::Document(action, fields)),
+        }
     });
-    if let Some((action, fields)) = found {
-        send_submission(&action, "POST", vec![("content-type".into(), "application/x-www-form-urlencoded".into())], &fields, &fields, false);
+    enum Submitted {
+        Get(String, String),
+        Endpoint { key: String, url: String, fields: String, input: String, plain: bool },
+        Document(String, String),
     }
+    match found {
+        Some(Submitted::Endpoint { key, url, fields, input, plain }) => {
+            let url = (url != key).then_some(url);
+            send_submission(&key, url, "POST", vec![("content-type".into(), "application/x-www-form-urlencoded".into())], &fields, &input, false, plain, Some(form));
+        }
+        Some(Submitted::Get(action, fields)) => {
+            let path = action.split(['?', '#']).next().unwrap_or("");
+            crate::nav::navigate(&if fields.is_empty() { path.to_string() } else { format!("{path}?{fields}") }, crate::nav::Options { scroll: true, ..Default::default() });
+        }
+        Some(Submitted::Document(action, fields)) => crate::nav::post(&action, crate::nav::Form { method: "POST".into(), body: fields, content_type: "application/x-www-form-urlencoded".into() }),
+        None => {}
+    }
+}
+
+/// Whether the app says a link or form is the browser's (`data-rocx-reload` on it or above it, but
+/// not `"off"`: D-124). A phone has no browser to load it, so it is navigated to all the same.
+fn reloads(dom: &Dom, node: NodeId) -> bool {
+    let mut at = Some(node);
+    while let Some(node) = at {
+        if let Some(marked) = dom.attr(node, "data-rocx-reload") {
+            return marked != "off";
+        }
+        at = dom.nodes.get(node).and_then(|node| node.parent);
+    }
+    false
 }
 
 fn encode(text: &str) -> String {
@@ -2874,15 +3295,23 @@ fn encode(text: &str) -> String {
 }
 
 /// Sends a submission (`submit`): a new one in its endpoint's list, pending until it is answered.
-fn send_submission(key: &str, method: &str, mut headers: Vec<(String, String)>, body: &str, input: &str, json: bool) {
-    headers.push(("accept".into(), "application/json".into()));
-    headers.push(("x-rocx-submission".into(), "1".into()));
-    let sent = Sent { method: method.to_string(), headers, body: if method == "GET" || method == "HEAD" { String::new() } else { body.to_string() } };
+/// A form nothing on the page reads (`plain`) goes as the browser would post it (D-118: `accept:
+/// text/html` and `x-rocx-in-place`), answered as a plain form, its redirect followed in place.
+fn send_submission(key: &str, url: Option<String>, method: &str, mut headers: Vec<(String, String)>, body: &str, input: &str, json: bool, plain: bool, form: Option<NodeId>) {
+    if plain {
+        headers.push(("accept".into(), "text/html,application/xhtml+xml,*/*;q=0.8".into()));
+        headers.push(("x-rocx-in-place".into(), "1".into()));
+    } else {
+        headers.push(("accept".into(), "application/json".into()));
+        headers.push(("x-rocx-submission".into(), "1".into()));
+    }
+    let sent = Sent { method: method.to_string(), url, headers, body: if method == "GET" || method == "HEAD" { String::new() } else { body.to_string() } };
     with(|engine| {
         let entry = engine.id();
         let transition = engine.join_transition();
+        let navigations = engine.nav.navigations;
         let source = engine.submissions.entry(key.to_string()).or_default();
-        source.list.push(Submission { id: entry, state: "pending", input: input.to_string(), json, status: 0, body: String::new(), sent: sent.clone(), transition });
+        source.list.push(Submission { id: entry, state: "pending", input: input.to_string(), json, status: 0, body: String::new(), sent: sent.clone(), transition, plain, form, navigations });
         source.cleared = false;
         engine.submissions_changed(key);
         engine.send(key, entry, sent);
@@ -2905,6 +3334,10 @@ fn retry_submission(key: &str, id: u64) {
         entry.status = 0;
         entry.body.clear();
         let (entry, sent) = (entry.id, entry.sent.clone());
+        let navigations = engine.nav.navigations;
+        if let Some(found) = engine.submissions.get_mut(key).and_then(|source| source.list.iter_mut().find(|each| each.id == entry)) {
+            found.navigations = navigations;
+        }
         // Sent again inside a transition (an optimistic write in the same handler): it joins it.
         if transition.is_some() {
             let joined = engine.join_transition();
@@ -2942,7 +3375,7 @@ fn submission_done(key: &str, id: u64, status: u16, body: String) {
 /// value shown meanwhile. With `keys` (`Router.revalidate!`'s, or an answer's
 /// `x-rocx-revalidate`, D-054), only the reads of a GET whose URL is one, or begins with one and a
 /// `/` or a `?` (`revalidate`).
-fn revalidate(submission: Option<(String, u64)>, keys: Option<Vec<String>>, status: u16, body: String) {
+fn revalidate(then: Finish, keys: Option<Vec<String>>, among: Option<Vec<u64>>) {
     let named = |call: &str| {
         let Some(rest) = call.strip_prefix("GET ") else { return false };
         let Some(keys) = &keys else { return true };
@@ -2950,12 +3383,12 @@ fn revalidate(submission: Option<(String, u64)>, keys: Option<Vec<String>>, stat
         keys.iter().any(|wanted| url == wanted || url.starts_with(&format!("{wanted}/")) || url.starts_with(&format!("{wanted}?")))
     };
     let targets = with(|engine| {
-        let targets: Vec<u64> = engine.readers.iter().copied().filter(|id| engine.comps.get(id).is_some_and(|comp| !comp.disposed && comp.calls.keys().any(|call| named(call)))).collect();
+        let targets: Vec<u64> = engine.readers.iter().copied().filter(|id| among.as_ref().is_none_or(|among| among.contains(id)) && engine.comps.get(id).is_some_and(|comp| !comp.disposed && comp.calls.keys().any(|call| named(call)))).collect();
         if targets.is_empty() {
             return targets;
         }
         let at = engine.id();
-        engine.revalidations.insert(at, Revalidation { left: targets.len(), submission: submission.clone(), status, body: body.clone() });
+        engine.revalidations.insert(at, Revalidation { left: targets.len(), then: then.clone() });
         for target in &targets {
             if let Some(comp) = engine.comp(*target) {
                 comp.revalidating.push(at);
@@ -2964,14 +3397,124 @@ fn revalidate(submission: Option<(String, u64)>, keys: Option<Vec<String>>, stat
         targets
     });
     if targets.is_empty() {
-        if let Some((key, entry)) = submission {
-            submission_done(&key, entry, status, body);
-        }
+        finished(then);
         return;
     }
     for target in targets {
         refresh(target);
     }
+}
+
+/// A revalidation's reads are in: what it does then.
+fn finished(then: Finish) {
+    match then {
+        Finish::Nothing => {}
+        Finish::Result { key, entry, status, body } => {
+            let form = with(|engine| engine.submissions.get(&key).and_then(|source| source.list.iter().find(|each| each.id == entry)).and_then(|each| each.form));
+            submission_done(&key, entry, status, body);
+            emptied(form);
+        }
+        Finish::Redirected { key, entry, plain } => {
+            let form = with(|engine| engine.submissions.get(&key).and_then(|source| source.list.iter().find(|each| each.id == entry)).and_then(|each| each.form));
+            submission_done(&key, entry, 200, String::new());
+            // Succeeded: its form empty again, unless the page it came back to says it was refused.
+            let refused = plain && with(|engine| json::parse(&engine.nav.flash).and_then(|flash| flash.get("status").and_then(Value::as_u64)).unwrap_or(0) >= 400);
+            if !refused {
+                emptied(form);
+            }
+            if plain {
+                with(|engine| {
+                    if let Some(source) = engine.submissions.get_mut(&key) {
+                        source.list.retain(|each| each.id != entry);
+                    }
+                    engine.submissions_changed(&key);
+                });
+            }
+        }
+    }
+}
+
+/// A form the host sent, emptied once it succeeded (D-122), as `form.reset()` does: what was typed
+/// in its fields forgotten, so each shows its `value` again. Not one marked `data-rocx-keep` (on it
+/// or above it), nor one gone from the screen.
+fn emptied(form: Option<NodeId>) {
+    let Some(form) = form else { return };
+    with(|engine| {
+        if !engine.dom.connected(form) {
+            return;
+        }
+        let mut at = Some(form);
+        while let Some(node) = at {
+            if engine.dom.attr(node, "data-rocx-keep").is_some() {
+                return;
+            }
+            at = engine.dom.nodes.get(node).and_then(|node| node.parent);
+        }
+        let mut stack = vec![form];
+        while let Some(node) = stack.pop() {
+            if matches!(engine.dom.tag(node), Some("input" | "textarea" | "select")) {
+                engine.values.remove(&node);
+            }
+            stack.extend(engine.dom.children(node));
+        }
+    });
+}
+
+/// What failed, shown where `node` is (`failAround`, D-121): the nearest `<Errored>` around it
+/// shows its fallback; with none, the log says so.
+fn fail_around(node: Option<NodeId>, problem: String) {
+    let nearest = with(|engine| {
+        let node = node?;
+        let mut best: Option<(u64, usize)> = None;
+        for (&id, boundary) in &engine.boundaries {
+            if boundary.failed.is_some() || !engine.dom.connected(boundary.range.start) {
+                continue;
+            }
+            // Inside: the node is among the range's (its depth below the range's parent says how near).
+            let inside = engine.dom.inside(boundary.range);
+            let mut depth = 0;
+            let mut at = Some(node);
+            let mut found = false;
+            while let Some(each) = at {
+                if inside.contains(&each) {
+                    found = true;
+                    break;
+                }
+                depth += 1;
+                at = engine.dom.nodes.get(each).and_then(|each| each.parent);
+            }
+            if found && best.is_none_or(|(_, nearest)| depth < nearest) {
+                best = Some((id, depth));
+            }
+        }
+        best.map(|(id, _)| id)
+    });
+    match nearest {
+        Some(boundary) => errored_fail(boundary, problem, None),
+        None => log(Level::Error, &format!("rocx: {problem}, and no <Errored> on the page is around the form to show it")),
+    }
+}
+
+/// A submission answered with a redirect (`sendSubmission`, D-138): where it goes is where the app
+/// goes, unless the visitor went elsewhere since it was sent; then what the navigation kept reads
+/// again (`submission_redirected`).
+fn submission_redirect(key: &str, entry: u64, to: String, keys: Option<Vec<String>>) {
+    let (sent_at, plain, navigations, before) = with(|engine| {
+        let found = engine.submissions.get(key).and_then(|source| source.list.iter().find(|each| each.id == entry));
+        (found.map(|each| each.navigations), found.is_some_and(|each| each.plain), engine.nav.navigations, engine.readers.iter().copied().collect::<Vec<u64>>())
+    });
+    if sent_at == Some(navigations) {
+        crate::nav::follow(&to, crate::nav::After { key: key.to_string(), entry, plain, keys, before });
+    } else {
+        finished(Finish::Redirected { key: key.to_string(), entry, plain });
+    }
+}
+
+/// A submission's redirect followed (`nav::follow`, once its page is in): what the page had read
+/// before and the navigation didn't read again from its document reads from the server (D-117),
+/// every read or the answer's `x-rocx-revalidate` keys; then the submission is done.
+pub(crate) fn submission_redirected(key: &str, entry: u64, plain: bool, keys: Option<Vec<String>>, rest: Vec<u64>) {
+    revalidate(Finish::Redirected { key: key.to_string(), entry, plain }, keys, Some(rest));
 }
 
 // ---- Optimistic values (`create_optimistic!`, D-054) ----
@@ -3050,9 +3593,7 @@ fn revalidated(id: u64) {
         done
     });
     for revalidation in done {
-        if let Some((key, entry)) = revalidation.submission {
-            submission_done(&key, entry, revalidation.status, revalidation.body);
-        }
+        finished(revalidation.then);
     }
 }
 
@@ -3345,17 +3886,65 @@ pub fn revalidate_keys(keys: String) -> Result<(), String> {
     })
 }
 
-/// `Router.navigate!` (D-040), from a handler: a phone shows one page yet, so it is logged, once,
-/// and ignored.
-pub fn navigate(to: String) -> Result<(), String> {
+/// `Router.navigate!` (D-040), from a handler: once it is done, as its writes are (`js_navigate`).
+pub fn navigate(to: String, replace: bool, scroll: bool) -> Result<(), String> {
+    with(|engine| match engine.handler() {
+        Some(handler) => {
+            handler.writes.push(Write::Navigate { to, replace, scroll });
+            Ok(())
+        }
+        None => Err(format!("Router.navigate!(\"{to}\") is a handler's: call it from an event, a timer or an effect's apply, not while computing (render <Navigate> to send the visitor elsewhere as a page renders)")),
+    })
+}
+
+/// `Router.is_routing!`: tracked.
+pub fn is_routing() -> bool {
     with(|engine| {
-        if engine.handler().is_none() {
-            return Err(format!("Router.navigate!(\"{to}\") is a handler's: call it from an event, a timer or an effect's apply, not while computing"));
+        engine.touch(true);
+        engine.track(Source::Routing);
+        engine.nav.routing
+    })
+}
+
+/// `Router.use_before_leave!` (D-040): a listener owned by what is running (it goes when that goes),
+/// asked before each navigation and back (`nav::may_leave`).
+pub fn before_leave(runner: Callable) -> Result<(), Callable> {
+    with(|engine| {
+        engine.touch(false);
+        let Some(Current::Comp(owner)) = engine.current else { return Err(runner) };
+        if engine.comps.get(&owner).is_none_or(|comp| comp.making.is_none()) {
+            return Err(runner);
         }
-        if engine.warned.insert("navigate".into()) {
-            log(Level::Warn, &format!("rocx native: Router.navigate!(\"{to}\"): pages aren't navigated on phones yet (one page): ignored"));
-        }
+        let kept = engine.keep(runner);
+        let id = engine.id();
+        let scope = engine.current_scope();
+        engine.nav.listeners.push(crate::nav::Listener { id, runner: kept, scope, owner: Some(owner) });
+        let _ = engine.push_cleanup(Cleanup::Leave(id));
         Ok(())
+    })
+}
+
+/// `Leave.retry!`: once the handler is done, as `navigate!` is.
+pub fn leave_retry(id: u64, force: bool) -> Result<(), String> {
+    with(|engine| match engine.handler() {
+        Some(handler) => {
+            handler.writes.push(Write::LeaveRetry(id, force));
+            Ok(())
+        }
+        None => Err("Leave.retry! is a handler's: call it from an event, a timer or an effect's apply, not while computing".into()),
+    })
+}
+
+/// The flash the page came with (`js_flash`): what reads it runs again when a navigation brings
+/// another (D-119).
+pub fn flash() -> String {
+    with(|engine| {
+        if let Some(Current::Comp(id)) = engine.current
+            && !engine.nav.flash_readers.contains(&id)
+        {
+            engine.nav.flash_readers.push(id);
+        }
+        engine.nav.flash.clone()
     })
 }
 
@@ -3507,8 +4096,40 @@ pub fn context_get(id: u64) -> Result<Callable, String> {
     with(|engine| engine.kept.get(&id).copied().map(roc::retain).ok_or_else(|| "rocx: a context's value was read after what provided it went".to_string()))
 }
 
+/// Whether a computation is an `if`'s or `match`'s part picking its branch (D-070), or made by one
+/// as it does: up to the first component, which reads for itself (`choosing`).
+fn choosing(engine: &Engine, id: u64) -> bool {
+    let mut at = Some(id);
+    while let Some(id) = at {
+        let Some(comp) = engine.comps.get(&id) else { return false };
+        if comp.choosing {
+            return true;
+        }
+        if comp.kind == CompKind::Component {
+            return false;
+        }
+        at = comp.owner;
+    }
+    false
+}
+
+/// `Router.location!` (`js_location`): a source the computation reading it tracks, so a navigation
+/// runs it again (D-040, D-138). A component's body, or a read inside `untrack!`, reads it once: the
+/// level it is in is made anew when it changes (`nav::read_once`).
 pub fn location() -> String {
-    with(|engine| engine.path.clone())
+    with(|engine| {
+        engine.touch(true);
+        engine.track(Source::Location);
+        if let Some(Current::Comp(id)) = engine.current
+            && let Some(comp) = engine.comps.get(&id)
+            && !choosing(engine, id)
+            && (comp.kind == CompKind::Component || comp.untracked || comp.making.as_ref().is_some_and(|making| making.untracked > 0))
+        {
+            let level = comp.scope.level;
+            crate::nav::read_once(engine, level);
+        }
+        engine.path.clone()
+    })
 }
 
 pub fn browser_call(name: String, arg: String) -> Result<(), String> {

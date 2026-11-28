@@ -4,11 +4,10 @@
 //! engine. One that ends the running computation (a read that waits, a failure) lets go of what
 //! it holds first, then jumps (`roc::abort`).
 //!
-//! Stubs, which fail with why (the nearest <Errored> shows it, or a handler's failure is logged):
-//! `listen!`, `subscribe!`, `say!`, `resync!` (streams and channels aren't on phones yet) and
-//! `live_publish!` (the server's, as in the browser). `Browser.call!` names no native handler yet
-//! (`crate::call_native` logs it). `request!`, `status!` and `flash!` answer what the browser's
-//! do: nothing.
+//! `live_publish!` fails, as the browser's does (it is the server's). `Browser.call!` goes to the
+//! platform's native handler by its name (`crate::call_native`). `request!` and `status!` answer
+//! what the browser's do: nothing. Navigation (`navigate!`, `is_routing!`, leaving) is nav.rs's
+//! (D-138), live updates (`listen!`, channels) live.rs's (D-140).
 
 use crate::abi::{RocErasedCallable as Callable, RocStr};
 use crate::engine;
@@ -231,35 +230,30 @@ pub extern "C" fn roc_fetch(method: RocStr, url: RocStr, headers: RocStr, body: 
     }
 }
 
-/// A stub: streams of events (`Endpoint.listen!`) aren't on phones yet.
+/// `Endpoint.listen!` (D-140): the endpoint's events, read as they come (`live::listen`).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_listen(url: RocStr, handler: Callable) {
-    let url = taken(url);
-    roc::release(handler);
-    fail(format!("rocx native: Endpoint.listen!({url}) isn't on phones yet (D-063's spike)"))
+    crate::live::listen(taken(url), handed(handler))
 }
 
-/// A stub: channels (`Endpoint.subscribe!`) aren't on phones yet.
+/// `Endpoint.subscribe!` (D-140): a channel, on the app's one stream (`live::subscribe`).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_subscribe(url: RocStr, handler: Callable) {
-    let url = taken(url);
-    roc::release(handler);
-    fail(format!("rocx native: Endpoint.subscribe!({url}) isn't on phones yet (D-063's spike)"))
+    if let Err(why) = crate::live::subscribe(taken(url), handed(handler)) {
+        fail(why)
+    }
 }
 
-/// A stub: channels aren't on phones yet.
+/// `Endpoint.say!` (D-140): what the app says on a channel, in the next post.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_say(url: RocStr, said: RocStr) {
-    let url = taken(url);
-    drop(taken(said));
-    fail(format!("rocx native: Endpoint.say!({url}) isn't on phones yet (D-063's spike)"))
+    crate::live::say(taken(url), taken(said))
 }
 
-/// A stub: channels aren't on phones yet.
+/// `Endpoint.resync!` (D-140): a resync of a channel the app subscribes to.
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_resync(url: RocStr) {
-    let url = taken(url);
-    fail(format!("rocx native: Endpoint.resync!({url}) isn't on phones yet (D-063's spike)"))
+    crate::live::resync(taken(url))
 }
 
 /// The server's, as in the browser.
@@ -321,11 +315,11 @@ pub extern "C" fn roc_cleanup(runner: Callable) {
     }
 }
 
-/// The browser's: the flash a page came with, and a phone's never comes with one.
+/// The browser's: the flash the page came with (its document's, D-138).
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_flash(found: RocStr) -> RocStr {
     drop(taken(found));
-    given("")
+    given(&engine::flash())
 }
 
 #[unsafe(no_mangle)]
@@ -392,11 +386,11 @@ pub extern "C" fn roc_submission_retry(key: RocStr, id: u64) {
     engine::submission_retry(taken(key), id)
 }
 
-// ---- Navigation (D-040) and the page's <head> (D-054): a phone shows one page ----
+// ---- Navigation (D-040, D-138) and the page's <head> (D-054) ----
 //
-// No links, history or back gesture yet (spike/native-apps/README.md, Pages): of the route table
-// only the endpoints that take a POST are kept (D-095), nothing is ever routing or leaving, and a
-// navigation is logged, once, and ignored. A <Meta>, <Link> or <Style> has no <head> to go in.
+// As the browser's (nav.rs): the route table kept, `navigate!` once the handler is done, routing
+// tracked, leave listeners asked before each navigation and back. A <Meta>, <Link> or <Style> has
+// no <head> to go in.
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_app(build: RocStr, _dev: bool, routes: RocStr) {
@@ -405,28 +399,37 @@ pub extern "C" fn roc_app(build: RocStr, _dev: bool, routes: RocStr) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_navigate(to: RocStr, _replace: bool, _scroll: bool) {
+pub extern "C" fn roc_navigate(to: RocStr, replace: bool, scroll: bool) {
     let to = taken(to);
-    if let Err(why) = engine::navigate(to) {
+    if let Err(why) = engine::navigate(to, replace, scroll) {
         fail(why)
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_is_routing() -> bool {
-    false
+    engine::is_routing()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_before_leave(listener: Callable) {
-    roc::release(listener)
+    if let Err(listener) = engine::before_leave(handed(listener)) {
+        roc::release(listener);
+        fail("Router.use_before_leave! is called in a component or a computation, which its listener goes with: in a handler or an effect's apply, nothing would own it".into())
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_leave_prevent(_id: u64) {}
+pub extern "C" fn roc_leave_prevent(id: u64) {
+    crate::nav::prevent(id)
+}
 
 #[unsafe(no_mangle)]
-pub extern "C" fn roc_leave_retry(_id: u64, _force: bool) {}
+pub extern "C" fn roc_leave_retry(id: u64, force: bool) {
+    if let Err(why) = engine::leave_retry(id, force) {
+        fail(why)
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn roc_head(key: RocStr, markup: RocStr) {

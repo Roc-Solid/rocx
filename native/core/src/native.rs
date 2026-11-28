@@ -242,8 +242,76 @@ impl Projection<'_> {
         if disabled {
             props.insert("disabled".into(), "true".into());
         }
+        // A tap (D-138): on a link or on what has a click handler, the view that is one sends
+        // `click` there; text that holds some has a tappable run for each (`links`).
+        if !matches!(kind, "button" | "input" | "textarea" | "checkbox") {
+            if let Some(target) = self.tap_target(node, false) {
+                props.insert("tap".into(), native_id(target).to_string());
+            } else if kind == "text"
+                && let Some(text) = props.get("text").cloned()
+            {
+                let links = self.link_runs(&[node], &text);
+                if !links.is_empty() {
+                    props.insert("links".into(), links);
+                }
+            }
+        }
         self.views.insert(id, View { kind, tag, props, children });
         Some(id)
+    }
+
+    /// The links (and elements with click handlers) in inline content, as runs of its text, `text`
+    /// (collapsed): `start:end:id` each (UTF-16 offsets, as Android's text has them), `,` between,
+    /// found in order. The applier makes each run tappable, sending `click` to its element.
+    fn link_runs(&self, nodes: &[NodeId], text: &str) -> String {
+        let mut found = Vec::new();
+        let mut stack: Vec<NodeId> = nodes.iter().rev().copied().collect();
+        while let Some(at) = stack.pop() {
+            if self.dom().tag(at).is_some() && self.tap_target(at, false).is_some() {
+                found.push(at);
+                continue;
+            }
+            let end = stack.len();
+            stack.extend(self.dom().children(at));
+            stack[end..].reverse();
+        }
+        let mut runs = Vec::new();
+        let mut from = 0;
+        for element in found {
+            let said = collapse(&self.inline_text(element));
+            let said = said.trim();
+            if said.is_empty() {
+                continue;
+            }
+            let Some(at) = text[from..].find(said) else { continue };
+            let (start, end) = (from + at, from + at + said.len());
+            runs.push(format!("{}:{}:{}", text[..start].encode_utf16().count(), text[..end].encode_utf16().count(), native_id(element)));
+            from = end;
+        }
+        runs.join(",")
+    }
+
+    /// What a tap on `node`'s view is a tap on: itself, if it is a link (`<a href>`) or has a click
+    /// handler; else, for text (`inside`), the first such element in it.
+    fn tap_target(&self, node: NodeId, inside: bool) -> Option<NodeId> {
+        let taps = |at: NodeId| (self.dom().tag(at) == Some("a") && self.dom().attr(at, "href").is_some()) || self.engine.listens(at, "click");
+        if taps(node) {
+            return Some(node);
+        }
+        if !inside {
+            return None;
+        }
+        let mut stack: Vec<NodeId> = self.dom().children(node).collect();
+        stack.reverse();
+        while let Some(at) = stack.pop() {
+            if taps(at) {
+                return Some(at);
+            }
+            let at_end = stack.len();
+            stack.extend(self.dom().children(at));
+            stack[at_end..].reverse();
+        }
+        None
     }
 
     /// An `<svg>`'s shapes, its CSS resolved (svg.rs).
@@ -384,7 +452,12 @@ impl Projection<'_> {
         }
         let id = ANON | native_id(nodes[0]);
         let mut props = styles.text_props();
+        // A tappable run for each link in it (D-138).
+        let links = self.link_runs(&nodes, &text);
         props.insert("text".into(), text);
+        if !links.is_empty() {
+            props.insert("links".into(), links);
+        }
         self.views.insert(id, View { kind: "text", tag: "anon".into(), props, children: Vec::new() });
         out.push(id);
     }

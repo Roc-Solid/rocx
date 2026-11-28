@@ -55,6 +55,36 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         }
     }
 
+    /** Each text view's link runs (`links`), applied again whenever its text changes. */
+    private val links = HashMap<Long, String>()
+
+    private fun linked(id: Long, view: TextView) {
+        val runs = links[id]
+        if (runs == null) {
+            if (view.text is android.text.Spannable) view.text = view.text.toString()
+            return
+        }
+        val text = android.text.SpannableString(view.text.toString())
+        for (run in runs.split(',')) {
+            val parts = run.split(':')
+            if (parts.size != 3) continue
+            val start = parts[0].toInt()
+            val end = parts[1].toInt()
+            val target = parts[2].toLong()
+            if (start < 0 || end > text.length || start >= end) continue
+            text.setSpan(object : android.text.style.ClickableSpan() {
+                override fun onClick(widget: View) {
+                    if (!applying) Rocx.event(target, "click", "")
+                }
+                // How a link looks is the stylesheet's, not the platform's blue underline.
+                override fun updateDrawState(paint: android.text.TextPaint) {}
+            }, start, end, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        view.text = text
+        view.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+        view.highlightColor = Color.TRANSPARENT
+    }
+
     private fun text(buffer: ByteBuffer): String {
         val bytes = ByteArray(buffer.int)
         buffer.get(bytes)
@@ -161,7 +191,15 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             return
         }
         when (key) {
-            "text" -> if (view is TextView && view.text.toString() != value) view.text = value
+            "text" -> if (view is TextView && view.text.toString() != value) {
+                view.text = value
+                linked(id, view)
+            }
+            // Its links' runs (D-138): `start:end:id`, each tappable, sending `click` to its element.
+            "links" -> if (view is TextView) {
+                if (value.isEmpty()) links.remove(id) else links[id] = value
+                linked(id, view)
+            }
             "value" -> if (view is EditText && view.text.toString() != value) {
                 view.setText(value)
                 view.setSelection(value.length)
@@ -171,6 +209,14 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             "disabled" -> view.isEnabled = value != "true"
             "checked" -> if (view is CheckBox) view.isChecked = value == "true"
             "alt" -> view.contentDescription = value
+            // A tap on a link, or on what has a click handler (D-138): `click` sent to that element.
+            "tap" -> if (value.isEmpty()) {
+                view.setOnClickListener(null)
+                view.isClickable = false
+            } else {
+                val target = value.toLong()
+                view.setOnClickListener { if (!applying) Rocx.event(target, "click", "") }
+            }
             "type" -> if (view is EditText) view.inputType = when (value) {
                 "password" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 "email" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS

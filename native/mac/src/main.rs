@@ -8,7 +8,13 @@
 //!
 //! Steps: `show` (the screen, as an outline), `ops` (print each batch of ops as it is applied, from
 //! here on), `wait:<ms>` (let answers and timers come), `tap:<text>` (a tap on the button that
-//! says it), `type:<text>` (typing into the first field), `css` (the CSS the phone ignores).
+//! says it), `type:<text>` (typing into the first field), `enter` (the keyboard's Enter in it),
+//! `css` (the CSS the phone ignores); navigation's (D-138): `link:<text>` (a tap on the link that
+//! says it), `nav:<to>` (`Router.navigate!`), `back` (Android's back), `where` (the location and
+//! the history), `cookies` (the jar).
+//!
+//! Options: `--origin <url>`, `--path <start path>`, `--files <dir>` (where the cookie jar is kept,
+//! as an app's files dir).
 
 use rocx_native_core::{self as core, Level, Platform};
 use std::sync::Mutex;
@@ -72,9 +78,20 @@ fn main() {
         origin = args.get(at + 1).cloned().unwrap_or(origin);
         args.drain(at..(at + 2).min(args.len()));
     }
+    let mut path = "/".to_string();
+    if let Some(at) = args.iter().position(|arg| arg == "--path") {
+        path = args.get(at + 1).cloned().unwrap_or(path);
+        args.drain(at..(at + 2).min(args.len()));
+    }
+    if let Some(at) = args.iter().position(|arg| arg == "--files") {
+        if let Some(dir) = args.get(at + 1) {
+            core::files(dir);
+        }
+        args.drain(at..(at + 2).min(args.len()));
+    }
     let (sender, woken) = channel();
     let started = Instant::now();
-    core::start(Box::new(Mac { wake: Mutex::new(sender) }), &origin, "/");
+    core::start(Box::new(Mac { wake: Mutex::new(sender) }), &origin, &path);
     println!("mounted in {:.1} ms", started.elapsed().as_secs_f64() * 1000.0);
     for step in args {
         let (name, value) = step.split_once(':').unwrap_or((step.as_str(), ""));
@@ -96,6 +113,32 @@ fn main() {
                 }
                 None => println!("no field"),
             },
+            "enter" => match find("input", None) {
+                Some(id) => {
+                    println!("enter (#{id})");
+                    core::event(id, "keydown", "Enter");
+                }
+                None => println!("no field"),
+            },
+            "link" => match core::nav::link_with_text(value) {
+                Some(id) => {
+                    println!("link {value:?} (#{id})");
+                    core::event(id, "click", "");
+                }
+                None => println!("no link says {value:?}"),
+            },
+            "nav" => {
+                println!("navigate {value:?}");
+                core::nav::navigate(value, core::nav::Options { scroll: true, ..Default::default() });
+                core::pump();
+            }
+            "back" => println!("back: {}", if core::back() { "went back" } else { "at the first entry: the app closes" }),
+            "where" => println!("{}", core::nav::describe()),
+            "cookies" => {
+                for cookie in core::cookies::JAR.lock().unwrap().as_ref().map(|jar| jar.cookies().to_vec()).unwrap_or_default() {
+                    println!("cookie {}={} (domain {}, path {}, expires {:?})", cookie.name, cookie.value.chars().take(12).collect::<String>(), cookie.domain, cookie.path, cookie.expires);
+                }
+            }
             "css" => {
                 for warning in WARNINGS.lock().unwrap().iter().filter(|warning| warning.contains("CSS")) {
                     println!("{warning}");
