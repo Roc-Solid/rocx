@@ -1465,6 +1465,21 @@ impl<'a> Projection<'a> {
     }
 }
 
+fn z_of(c: &Computed) -> (i32, bool) {
+    let positioned = !matches!(c.get("position").unwrap_or("static"), "static");
+    let z = c.get("z-index").and_then(|z| z.trim().parse::<i32>().ok()).filter(|_| positioned || c.get("z-index").is_some()).unwrap_or(0);
+    (z, positioned)
+}
+
+fn scrolls(value: Option<&str>) -> bool {
+    matches!(value.unwrap_or("visible"), "auto" | "scroll" | "overlay")
+}
+
+/// Whether a box scrolls what it holds (`overflow: auto` or `scroll` on an axis).
+fn is_scroller(c: &Computed) -> bool {
+    scrolls(c.get("overflow-x")) || scrolls(c.get("overflow-y"))
+}
+
 /// `transition` (or its longhands) as the properties a view animates: opacity and transform (and
 /// `translate`, `scale`, `rotate`, `all`), each with its duration and delay in ms.
 fn transitions(c: &Computed) -> Option<String> {
@@ -1501,21 +1516,6 @@ fn transitions(c: &Computed) -> Option<String> {
         }
     }
     (!out.is_empty()).then(|| out.iter().map(|(name, duration, delay)| format!("{name} {duration} {delay}")).collect::<Vec<_>>().join(","))
-}
-
-fn z_of(c: &Computed) -> (i32, bool) {
-    let positioned = !matches!(c.get("position").unwrap_or("static"), "static");
-    let z = c.get("z-index").and_then(|z| z.trim().parse::<i32>().ok()).filter(|_| positioned || c.get("z-index").is_some()).unwrap_or(0);
-    (z, positioned)
-}
-
-fn scrolls(value: Option<&str>) -> bool {
-    matches!(value.unwrap_or("visible"), "auto" | "scroll" | "overlay")
-}
-
-/// Whether a box scrolls what it holds (`overflow: auto` or `scroll` on an axis).
-fn is_scroller(c: &Computed) -> bool {
-    scrolls(c.get("overflow-x")) || scrolls(c.get("overflow-y"))
 }
 
 /// Whether pieces show anything (whitespace alone doesn't, but under `white-space: pre`).
