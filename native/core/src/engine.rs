@@ -8,9 +8,10 @@
 //! again once it is in. Each function here says which of runtime.js's it follows: where the two
 //! differ, the browser is right.
 //!
-//! Not here yet (spike/native-apps/README.md): hydration (a phone mounts from nothing),
-//! transitions and glides, drag and drop, `on:frame`, `on:viewport`, `<Document>`/`<Window>`
-//! handlers, `listen!` and channels, `Browser.call!`'s native handlers, keyed elements.
+//! Navigation is nav.rs's (D-138) and live updates live.rs's (D-140), each reaching in through the
+//! `pub(crate)` functions here. Not here yet (spike/native-apps/README.md): hydration (a phone mounts
+//! from nothing), transitions and glides, drag and drop, `on:frame`, `on:viewport`,
+//! `<Document>`/`<Window>` handlers, keyed elements.
 
 use crate::abi::RocErasedCallable as Callable;
 use crate::dom::{Dom, NodeId, Range};
@@ -605,6 +606,27 @@ impl Engine {
         self.outbox.push((request, method.to_string(), url, headers, body));
     }
 
+    /// Answers no read holds any more, let go of (a computation gone, a call it no longer makes, a
+    /// handler done): a page's answers don't outlive it (D-138).
+    fn forget_requests(&mut self, requests: &[u64]) {
+        for request in requests {
+            self.requests.remove(request);
+        }
+    }
+
+    /// A handler done: taken out, its requests' answers let go of.
+    fn end_handler(&mut self, id: u64) -> Option<Handler> {
+        let handler = self.handlers.remove(&id)?;
+        let requests: Vec<u64> = handler.calls.values().copied().collect();
+        self.forget_requests(&requests);
+        Some(handler)
+    }
+
+    /// How many answers the engine keeps now (the Mac runner's `where`).
+    pub fn answers_kept(&self) -> usize {
+        self.requests.len()
+    }
+
     pub(crate) fn has_kept(&self, id: u64) -> bool {
         self.kept.contains_key(&id)
     }
@@ -887,7 +909,9 @@ pub fn run(id: u64) -> Option<Outcome> {
             let old = std::mem::replace(&mut comp.made, making);
             comp.queries = comp.made.queries.clone();
             let used = std::mem::take(&mut comp.used);
+            let dropped: Vec<u64> = comp.calls.iter().filter(|(key, _)| !used.contains(*key)).map(|(_, &request)| request).collect();
             comp.calls.retain(|key, _| used.contains(key));
+            engine.forget_requests(&dropped);
             Some(old)
         });
         if let Some(old) = old {
@@ -1302,6 +1326,8 @@ pub fn dispose(id: u64) {
         let made = std::mem::take(&mut comp.made);
         let part = comp.part.take();
         let list = comp.list;
+        let requests: Vec<u64> = comp.calls.drain().map(|(_, request)| request).collect();
+        engine.forget_requests(&requests);
         engine.readers.remove(&id);
         engine.due.remove(&id);
         engine.dirty.remove(&id);
@@ -1467,7 +1493,9 @@ fn apply_reaction(id: u64) {
 fn refresh(memo: u64) {
     with(|engine| {
         if let Some(comp) = engine.comp(memo) {
-            comp.calls.clear();
+            let dropped: Vec<u64> = comp.calls.drain().map(|(_, request)| request).collect();
+            engine.forget_requests(&dropped);
+            let Some(comp) = engine.comp(memo) else { return };
             if comp.state == MemoState::Failed {
                 comp.state = MemoState::Pending;
                 comp.error.clear();
@@ -1574,7 +1602,7 @@ fn go(id: u64) {
     with(|engine| engine.current = previous);
     match result {
         Ok(_) => {
-            let (writes, release) = with(|engine| engine.handlers.remove(&id).map(|handler| (handler.writes, handler.release)).unwrap_or_default());
+            let (writes, release) = with(|engine| engine.end_handler(id).map(|handler| (handler.writes, handler.release)).unwrap_or_default());
             apply(writes);
             if let Some(kept) = release {
                 with(|engine| engine.release_kept(kept));
@@ -1598,7 +1626,7 @@ fn go(id: u64) {
                 Abort::Wait(wait) => with(|engine| engine.waiters.entry(wait).or_default().push(Waiter::Handler(id))),
                 Abort::Failed(why, _) | Abort::Crash(why) => {
                     log(Level::Error, &format!("rocx: a handler failed: {why}"));
-                    let release = with(|engine| engine.handlers.remove(&id).and_then(|handler| handler.release));
+                    let release = with(|engine| engine.end_handler(id).and_then(|handler| handler.release));
                     if let Some(kept) = release {
                         with(|engine| engine.release_kept(kept));
                     }
@@ -2773,11 +2801,13 @@ pub(crate) fn reads_of(id: u64) -> Option<Vec<(String, Option<String>)>> {
 /// A computation runs again, reading `keys` afresh (from the document's answers, if it has them).
 pub(crate) fn read_again(id: u64, keys: Vec<String>) {
     with(|engine| {
+        let mut dropped = Vec::new();
         if let Some(comp) = engine.comp(id) {
             for key in &keys {
-                comp.calls.remove(key);
+                dropped.extend(comp.calls.remove(key));
             }
         }
+        engine.forget_requests(&dropped);
         engine.schedule(id);
     });
 }
@@ -3129,6 +3159,10 @@ pub fn answered(id: u64, result: Result<crate::http::Answered, String>) {
                     }
                     Err(why) => Answer::Failed(why),
                 };
+                // What asked for it went meanwhile (a page left, a run that asks no more): let go of.
+                if !engine.requests.contains_key(&id) {
+                    return engine.waiters.remove(&Wait::Request(id)).map(|_| Vec::new()).unwrap_or_default();
+                }
                 engine.requests.insert(id, answer);
                 engine.waiters.remove(&Wait::Request(id)).unwrap_or_default()
             });

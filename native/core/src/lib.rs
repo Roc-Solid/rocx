@@ -11,6 +11,7 @@
 #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
 #[path = "roc_platform_abi.rs"]
 pub mod abi;
+mod calls;
 pub mod cookies;
 pub mod css;
 mod dom;
@@ -77,6 +78,15 @@ pub trait Platform: Send + Sync {
     /// (`layout::rough_measure`); a phone's is its text engine's.
     fn measure(&self, _id: u64, content: &layout::Content, width: layout::Width) -> (f32, f32) {
         layout::rough_measure(content, width)
+    }
+    /// On the main thread: the first of these views there is takes the focus (`Browser.call!`'s
+    /// `focus`, `calls.rs`): an element's view, then those above it.
+    fn focus(&self, _views: &[u64]) -> bool {
+        false
+    }
+    /// On the main thread: the first of these views there is scrolled into view (`reveal`).
+    fn reveal(&self, _views: &[u64]) -> bool {
+        false
     }
 }
 
@@ -196,6 +206,16 @@ pub(crate) fn scrolled() -> (f32, f32) {
     PLATFORM.get().map(|platform| platform.scroll()).unwrap_or((0.0, 0.0))
 }
 
+/// A view focused (`Platform::focus`).
+pub(crate) fn focus(views: &[u64]) -> bool {
+    PLATFORM.get().is_some_and(|platform| platform.focus(views))
+}
+
+/// A view scrolled into view (`Platform::reveal`).
+pub(crate) fn reveal(views: &[u64]) -> bool {
+    PLATFORM.get().is_some_and(|platform| platform.reveal(views))
+}
+
 /// `url` opened by the system (`Platform::open`).
 pub(crate) fn open(url: &str) -> bool {
     let shown = url.split(['?', '#']).next().unwrap_or(url);
@@ -306,11 +326,16 @@ pub(crate) fn timer(id: u64, ms: u64, repeat: bool, stop: Arc<AtomicBool>) {
 }
 
 /// `Browser.call!(name, arg)`, once the handler is done: the platform's native handler by that
-/// name (Android's: `audio.play`, `vibrate.pattern`; native/android/app's `Calls`). One it hasn't
-/// is logged, as the browser logs an effect no script registered.
+/// name (Android's: `audio.play`, `vibrate.pattern`; native/android/app's `Calls`), else one of the
+/// page functions apps commonly register (`calls.rs`: focus, click, reveal, go, replace_query).
+/// Any other is logged, as the browser logs an effect no script registered.
 pub(crate) fn call_native(name: &str, arg: &str) {
     let origin = engine::with(|engine| engine.origin.clone());
     if PLATFORM.get().is_some_and(|platform| platform.call(name, arg, &origin)) {
+        return;
+    }
+    // The page functions apps commonly register, done on the engine's document (D-138).
+    if calls::call(name, arg) {
         return;
     }
     let plugin = name.split_once('.').map(|(plugin, _)| plugin);

@@ -116,7 +116,8 @@ What doesn't exist yet:
   libraries (`linker.zig`'s `OutputKind`); iOS most likely needs an object or static library for
   Xcode to link (unverified).
 - A reactive engine outside JS: `signals.rs` renders once, tracks nothing and never re-runs.
-- Client-side navigation: D-040 is Proposed, not built (§8 needs only part of it).
+- Client-side navigation: D-040 is Proposed, not built (§8 needs only part of it). *(Since built in
+  the browser; on phones since D-138: §8.)*
 - Anything that turns markup into native views, lays it out, or resolves CSS outside a browser.
 
 ## 4. The shape
@@ -274,6 +275,13 @@ the phone build instead.
 
 ## 8. Pages and navigation
 
+> **Status (2026-11-28, D-138):** built as below, with Question 4 answered otherwise than proposed:
+> no light route check, but D-040's own way. A navigation fetches the page's document, as the
+> browser's does, so the server runs the page's middleware and its redirect is followed; the phone
+> reads only what the document seeds (its answers and flash), so the new page's first frame asks
+> the server for nothing. The page doesn't slide: the layouts stay and the levels below them are
+> made anew, as in the browser (README.md, Pages, sessions and the server).
+
 There is no server rendering and no hydration on a phone: every page is in the binary (as it is
 in the wasm today) and is mounted from nothing.
 
@@ -289,6 +297,11 @@ in the wasm today) and is mounted from nothing.
   which D-040's navigation can use too. Question 4.
 
 ## 9. Talking to the server
+
+> **Status (2026-11-28, D-138, D-140):** one Rust client in `native/core` (question 5's), plain
+> `http://` with keep-alive, `fetch`'s redirects, timeouts and a cookie jar in the app's files;
+> server-sent events for `listen!` and the channels' `/rocx/live`. Not yet: rustls, the build's
+> header.
 
 - The server's origin is set at build (`rocx build --ios --server https://…`); `rocx dev --ios`
   points the simulator at the dev server.
@@ -346,6 +359,11 @@ name fails as the web's does, saying which plugin's native half it needs.
   browser's.
 
 ## 13. Phases
+
+**Since (2026-11-28):** the Android host navigates (D-138: links, `navigate!`, back, guards and
+redirects through the page's document, a cookie jar, forms' redirects, keep-alive) and updates live
+(D-140: `listen!`, channels), checked against a large app's dev server on the emulator; Taffy's
+layout is D-137's.
 
 **Built (2026-11-23): the Android spike**, ahead of phase 0, at the user's request (Android first,
 one simple screen, typed calls to the server). It took from phase 0 the engine (`native/core`, all
