@@ -36,20 +36,23 @@ When an item lands, delete its line here in the same commit.
     our small script or posthog-js.
 - **packages/ai's next users (D-085).** examples/notes' assistant on its MCP tools (`Ai.run!` over
   `Agents.server.tools`, one tool for both), and Plate's meal from words (`Ai.extract!`).
-- **iOS and Android apps (D-063, Proposed).** Background work; the web stays primary. The Android
-  spike is in master, as an experiment: one screen as native views, typed calls to the server, and
-  a dev mode (`rocx dev --android [--lan]`, about a second from a save to the phone, each reload a
-  fresh start) (`spike/native-apps/README.md`). Next (§13): phase 0's conformance suite (the engine
-  on `web/test/app` against Chromium), Taffy, CSS at build time, HTTPS and cookies, navigation,
-  `rocx build --android` (what a waiting run leaves behind is freed since D-091); then Plate on Android, then iOS (a
-  fork target for Xcode's link). The fork's dev backend puts some `arm64mac` string literals where
-  Roc's refcounting misreads them (README.md's gaps, 12). Open questions: 3 and 9 in DESIGN.md §15.
-  Since examples/pomodoro (2026-11-24) the phone draws SVG, takes percentage sizes and `:where()`
-  selectors, and has native halves for `audio.play` and `vibrate.pattern`. Its next gap, left for
-  later by the user: **an alert while the app is in the background** (a session that ends with
-  the screen off says nothing until the app is opened again): a time the system keeps
-  (AlarmManager, or a notification scheduled for the deadline), a native half the page asks for
-  when the timer starts and cancels when it stops.
+- **iOS and Android apps (D-063, Proposed).** Background work; the web stays primary. On Android
+  a large app's pages run as native views (`spike/native-apps/README.md`): CSS laid out by Taffy
+  with text measured by the platform (D-137), navigation, guards, redirects, sessions in a cookie
+  jar and form posts as the browser's (D-138), images, video, form controls, file uploads and an
+  app's own Kotlin halves of its custom elements (D-139), live updates and channels (D-140); a dev
+  mode (`rocx dev --android [--lan]`). Next: phase 0's conformance suite (the engine on
+  `web/test/app` against Chromium), CSS at build time (it's parsed on the phone: about 15 ms for
+  1,500 rules on the emulator), HTTPS (plain http only) and gzip, `rocx build --android` (signing,
+  other ABIs, an icon), an app link for providers' sign-in to come back, `popover` with light
+  dismiss, inline boxes in a line of text (an approximation now), `@font-face`, dark mode,
+  `@keyframes`; then iOS (a fork target for Xcode's link). The fork's dev backend puts some
+  `arm64mac` string literals where Roc's refcounting misreads them (README.md's gaps). Open
+  questions: 3 and 9 in DESIGN.md §15. examples/pomodoro's next gap, left for later by the user:
+  **an alert while the app is in the background** (a session that ends with the screen off says
+  nothing until the app is opened again): a time the system keeps (AlarmManager, or a
+  notification scheduled for the deadline), a native half the page asks for when the timer starts
+  and cancels when it stops.
 - **packages/markdown:** open questions 1, 2, 4 and 5 in its `PROPOSALS.md`:
   - trusted HTML;
   - `<Markdown>` server-only by default;
