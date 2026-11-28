@@ -160,6 +160,12 @@ pub fn node_of(id: u64) -> Option<NodeId> {
     Some((low - 1) as NodeId)
 }
 
+/// Something the projection reads besides the document changed (an image's file is in, a video's
+/// size known, files picked): the next render projects again what shows such things.
+pub fn external_changed() {
+    EXTERNAL.with(|external| external.set(external.get() + 1));
+}
+
 /// The next render projects the document again even if nothing changed (the Mac runner's bench).
 pub fn invalidate() {
     LAST_KEY.with(|last| last.set(0));
@@ -328,6 +334,7 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
             kept: crate::fx::HashMap::default(),
             made: Vec::new(),
             may_reuse,
+            external_moved: EXTERNAL.with(|external| external.get()) != LAST_EXTERNAL.with(|last| last.get()),
         };
         let ctx = Ctx { em: 16.0, rem: 16.0, vw: screen.width, vh: screen.height };
         let top = Computed::root(ctx);
@@ -349,6 +356,7 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
     }
     let version = engine.dom.version;
     KEPT.with(|kept| *kept.borrow_mut() = (kept_now, version, Some(sheet.clone()), values.clone(), focus));
+    LAST_EXTERNAL.with(|last| last.set(EXTERNAL.with(|external| external.get())));
     for warning in warnings {
         engine.warn_once(&warning, &format!("rocx native: {warning}"));
     }
@@ -439,6 +447,8 @@ struct Projection<'a> {
     kept: crate::fx::HashMap<NodeId, Kept>,
     made: Vec<u64>,
     may_reuse: bool,
+    /// Whether what isn't the document's changed since the last projection.
+    external_moved: bool,
 }
 
 /// What an element's projection made (D-137): its item, the views of it and everything in it, their
@@ -450,6 +460,9 @@ struct Kept {
     ids: Vec<u64>,
     parents: Vec<(u64, u64)>,
     computed: Rc<Computed>,
+    /// It shows what isn't the document's (an image, a video, a file input's files): not taken
+    /// again once that changed (`external_changed`).
+    external: bool,
 }
 
 thread_local! {
@@ -732,7 +745,7 @@ impl<'a> Projection<'a> {
                 && self.dom.nodes[child].inside <= self.last
                 && let Some(kept) = self.old_kept.remove(&child)
             {
-                if kept.items == items && self.take_again(&kept) {
+                if kept.items == items && !(kept.external && self.external_moved) && self.take_again(&kept) {
                     if !pieces.is_empty() {
                         out.push(Item::Pieces(std::mem::take(pieces)));
                     }
@@ -796,7 +809,8 @@ impl<'a> Projection<'a> {
     fn keep(&mut self, node: NodeId, items: bool, item: (u64, bool, bool), start: usize, computed: Rc<Computed>) {
         let ids = self.made[start..].to_vec();
         let parents = ids.iter().filter_map(|id| self.parents.get(id).map(|parent| (*id, *parent))).collect();
-        self.kept.insert(node, Kept { items, item, ids, parents, computed });
+        let external = ids.iter().any(|id| self.views.get(id).is_some_and(|view| matches!(view.kind, "image" | "video") || (view.tag == "input" && view.kind == "text")));
+        self.kept.insert(node, Kept { items, item, ids, parents, computed, external });
     }
 
     /// An inline element's content as pieces, when it is all inline (text, inline elements); none
@@ -1657,6 +1671,7 @@ pub fn render() -> Vec<u8> {
         });
         css.len().hash(&mut hasher);
         loading.hash(&mut hasher);
+        EXTERNAL.with(|external| external.get().hash(&mut hasher));
         let key = hasher.finish();
         let shown = SHOWN.with(|shown| shown.borrow().is_some());
         LAST_KEY.with(|last| {
@@ -1862,6 +1877,11 @@ thread_local! {
     static RENDERS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// What the last render came from (`render`'s fingerprint).
     static LAST_KEY: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// One more each time something the projection reads besides the document changes
+    /// (`external_changed`).
+    static EXTERNAL: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// `EXTERNAL` when the last projection ran.
+    static LAST_EXTERNAL: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// `on:viewport`'s: what each element was last told (`top,left,width,height`), and what it is
     /// to be told after this render.
     static VIEWPORTS: RefCell<(HashMap<NodeId, String>, Vec<(NodeId, String)>)> = RefCell::new((HashMap::new(), Vec::new()));
