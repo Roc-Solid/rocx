@@ -547,8 +547,11 @@ and viewport units follow.
 **Scrolling**: the page scrolls (the activity's `ScrollView`, the root view as tall as the page); an
 element with `overflow: auto` or `scroll` on an axis is a native `ScrollView` or
 `HorizontalScrollView` (both, nested) around a box of its content's size (`EXTENT`), nested
-scrolling on; its scroll is sent (`scroll` events) when something listens. `position: fixed` views
-sit on a layer over the page that doesn't scroll; `position: sticky` keeps its `top` from its scroll
+scrolling on; its scroll is sent (`scroll` events) when something listens. An absolutely positioned
+view is laid out in its containing block and drawn in the stacking context that is in (the nearest
+view above it positioned with a `z-index`, fixed, sticky, translucent or transformed, or the page; not
+past one that scrolls or clips), so a header's menu is drawn over the row beneath it. `position:
+fixed` views sit on a layer over the page that doesn't scroll; `position: sticky` keeps its `top` from its scroll
 view's edge within its parent, moved by the applier as the scroll goes. `on:viewport` handlers are
 told their element's scroll and size after each layout that changed them (a header that packs what
 doesn't fit into "More" does).

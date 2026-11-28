@@ -7788,8 +7788,9 @@ in 7.5 ms on the Mac and about twice that on the emulator, once, and again on a 
 - **Boxes** (`native.rs`): projected by `display`, as CSS makes boxes: a block of inline content is
   one text view of styled runs (a link's run tappable on its own); an inline box among text makes
   its block a line, a flex row that wraps (CSS's line boxes approximated); `display: contents`,
-  pseudo-elements, list markers; absolute views drawn in their containing block's view, fixed ones on
-  a layer over the scrolling page, siblings by `z-index`; `overflow: auto`/`scroll` a native scroll
+  pseudo-elements, list markers; absolute views laid out in their containing block and drawn in the
+  stacking context it is in (a header's menu over the header's row beneath it), fixed ones on a layer
+  over the scrolling page, siblings by `z-index`; `overflow: auto`/`scroll` a native scroll
   view.
 - **Layout** (`layout.rs`): Taffy 0.16 on a tree of the engine's own kept between flushes (its
   `calc()` resolved, aspect-ratio for flex and grid boxes given a width, a flex box's fit-content,

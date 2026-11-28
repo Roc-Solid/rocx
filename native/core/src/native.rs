@@ -11,9 +11,9 @@
 //! a flex row that wraps, standing in for CSS's line boxes. `display: contents` gives its
 //! children to its parent; `::before` and `::after` with a `content` are runs or views of their
 //! own. Fields and checkboxes are the platform's own; an `<svg>` is one view, drawn from the shapes
-//! svg.rs makes of it. Absolutely positioned views are put in their containing block's view and
-//! fixed ones on the screen's layer, above the scrolling page, as a browser paints them; siblings
-//! are ordered by `z-index`.
+//! svg.rs makes of it. Absolutely positioned views are drawn in the stacking context their containing
+//! block is in (laid out in the containing block) and fixed ones on the screen's layer, above the
+//! scrolling page, as a browser paints them; siblings are ordered by `z-index`.
 //!
 //! The projection is compared with the last one sent (`render`): what changed is sent (one batch),
 //! then the views are laid out (layout.rs: Taffy, text measured by the platform), and their frames
@@ -1456,8 +1456,9 @@ impl<'a> Projection<'a> {
     }
 
     /// The drawing tree: each view's children as they are drawn. A positioned (absolute) view goes
-    /// to its containing block's view (the nearest positioned one above it, or the page), a fixed
-    /// one to the screen's layer; siblings are ordered by `z-index`, positioned ones over the rest.
+    /// to the view of the stacking context its containing block (the nearest positioned view above
+    /// it, or the page) is in, a fixed one to the screen's layer; siblings are ordered by `z-index`,
+    /// positioned ones over the rest.
     fn paint_tree(&mut self, root: u64) {
         let mut hoisted: HashMap<u64, Vec<u64>> = HashMap::new();
         let mut layer: Vec<u64> = Vec::new();
