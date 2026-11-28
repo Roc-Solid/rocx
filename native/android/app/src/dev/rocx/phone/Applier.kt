@@ -206,6 +206,8 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 }
             }
             "checkbox", "radio" -> (if (kind == "radio") RadioButton(context) else CheckBox(context)).apply {
+                // A browser's look, as big as its box (D-141).
+                ControlDrawable.on(this, kind == "radio")
                 setOnCheckedChangeListener { _, checked ->
                     if (!applying) {
                         Rocx.event(id, "click", checked.toString())
@@ -282,6 +284,10 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             "placeholder" -> if (view is EditText) view.hint = value
             "disabled" -> view.isEnabled = value != "true"
             "checked" -> if (view is CompoundButton) view.isChecked = value == "true"
+            "accent" -> if (view is CompoundButton) (view.buttonDrawable as? ControlDrawable)?.let { drawable ->
+                drawable.accent = if (value.isEmpty()) null else Color.parseColor(value)
+                drawable.invalidateSelf()
+            }
             "alt" -> view.contentDescription = value
             "src", "fit", "position", "natural", "poster", "controls", "muted", "loop", "autoplay" -> when (view) {
                 is ImageBox -> view.set(key, value)

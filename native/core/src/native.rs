@@ -574,6 +574,10 @@ impl<'a> Projection<'a> {
                     let checked = self.engine.values.get(&node).map(|now| now == "true").unwrap_or_else(|| attr("checked").is_some());
                     view.props.insert("checked".into(), flag(checked));
                     view.props.insert("type".into(), kind);
+                    // Its checked face's colour (D-141).
+                    if let Some(accent) = computed.get("accent-color").filter(|value| *value != "auto").and_then(css::colour) {
+                        view.props.insert("accent".into(), accent);
+                    }
                     view.content = Content::Field { width: 13.0, height: 13.0 };
                 } else if kind == "hidden" {
                     return None;
