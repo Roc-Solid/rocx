@@ -22,6 +22,7 @@ import android.widget.ImageView
 import android.widget.ScrollView
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.max
 
 /**
  * Applies a batch of the native host's ops (native/core/src/native.rs) to Android views: one call
@@ -54,6 +55,8 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             val h = (bottom - top - view.paddingTop - view.paddingBottom) / density
             if (w > 0f && h > 0f) view.post { viewport(w, h) }
         }
+        // Sticky views keep to their edge as the page (or their scroll view) scrolls.
+        screen.viewTreeObserver.addOnScrollChangedListener { stick() }
         // A new applier (the dev client's next build): the last one's layer goes.
         (screen.parent as? ViewGroup)?.let { parent ->
             for (at in parent.childCount - 1 downTo 0) if (parent.getChildAt(at).tag == "rocx:layer") parent.removeViewAt(at)
@@ -74,6 +77,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         } finally {
             applying = false
         }
+        if (stickies.isNotEmpty()) screen.post { stick() }
         batches++
         if (batches <= 2) {
             Rocx.say(Log.INFO, "batch $batches: ${ops.size} bytes, ${views.size} views, applied in ${SystemClock.uptimeMillis() - started} ms, ${SystemClock.uptimeMillis() - Process.getStartUptimeMillis()} ms after the process started")
@@ -277,12 +281,14 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 if (parts.size == 7) {
                     view.translationX = parts[0] * density
                     view.translationY = parts[1] * density
+                    cssTranslationY[id] = view.translationY
                     view.scaleX = parts[2]
                     view.scaleY = parts[3]
                     view.rotation = parts[4]
                     view.pivotX = parts[5] * density
                     view.pivotY = parts[6] * density
                 } else {
+                    cssTranslationY.remove(id)
                     view.translationX = 0f
                     view.translationY = 0f
                     view.scaleX = 1f
@@ -295,6 +301,13 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 if (parts.size == 4) view.setPadding(px(parts[3]), px(parts[0]), px(parts[1]), px(parts[2])) else view.setPadding(0, 0, 0, 0)
             }
             "untouchable" -> if (value == "true") view.setOnTouchListener { _, _ -> false }
+            "sticky" -> {
+                val parts = value.split(" ")
+                if (parts.size == 2) stickies[id] = Pair(parts[0] == "top", parts[1].toFloatOrNull() ?: 0f) else {
+                    stickies.remove(id)
+                    view.translationY = cssTranslationY[id] ?: 0f
+                }
+            }
         }
         if (view is EditText) field(view, name, value)
     }
@@ -321,6 +334,44 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 "right", "end" -> Gravity.END
                 else -> Gravity.START
             }
+        }
+    }
+
+    /** `position: sticky` views: their edge (top or not) and its offset in dp. */
+    private val stickies = HashMap<Long, Pair<Boolean, Float>>()
+    /** A view's CSS translation, which a sticky one's shift adds to. */
+    private val cssTranslationY = HashMap<Long, Float>()
+
+    /**
+     * Each sticky view moved to keep `top` (or `bottom`) from its scroll view's edge, within its
+     * parent: CSS's sticky positioning, done as the scroll goes.
+     */
+    private fun stick() {
+        for ((id, edge) in stickies) {
+            val view = views[id] ?: continue
+            // Its place in the content of the nearest scroll view, and its parent's bottom there.
+            var y = view.top.toFloat()
+            var at: View = view
+            var scroller: View? = null
+            val parentBottom = ((view.parent as? View)?.height ?: 0).toFloat()
+            while (true) {
+                val parent = at.parent as? View ?: break
+                if (parent is ScrollView) {
+                    scroller = parent
+                    break
+                }
+                y += parent.top
+                at = parent
+            }
+            val scrolled = scroller ?: continue
+            val top = view.top.toFloat()
+            val parentTop = y - top
+            val base = cssTranslationY[id] ?: 0f
+            val shift = if (edge.first) {
+                val want = scrolled.scrollY + edge.second * density - y
+                want.coerceIn(0f, max(0f, parentTop + parentBottom - y - view.height))
+            } else 0f
+            view.translationY = base + shift
         }
     }
 

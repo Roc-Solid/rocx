@@ -50,7 +50,7 @@ class RocxActivity : Activity() {
         }
         setContentView(screen)
         val origin = intent.getStringExtra("origin") ?: meta?.getString("rocx.origin") ?: "http://10.0.2.2:8080"
-        Rocx.start(origin, "/")
+        Rocx.start(origin, intent.getStringExtra("path") ?: "/")
         val started = SystemClock.uptimeMillis()
         screen.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
