@@ -2,8 +2,8 @@ import Ip
 
 ## Small checks on a request, each deciding whether it may go on or what to refuse it with: its
 ## method, its `Host`, its body's size, the address it came from, a site down for maintenance.
-## The server's middleware (`server/Guard.roc`) runs them; here they are plain functions of what
-## they look at.
+## The server's middleware (`Guard`) runs them; here they are plain functions of what they look
+## at.
 ##
 ##     Checks.methods(["GET", "POST"], request.method)            # Err: 405, with `Allow`
 ##     Checks.hosts(["example.com", "*.example.com"], request.headers)

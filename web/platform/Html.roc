@@ -514,10 +514,10 @@ Html :: [
 	component : (() => Html) -> Html
 	component = |run!| Component(run!)
 
-	## Reads, saying where (`Ui/Chart.rocx:44:39`): a dev build (`rocx dev`, `rocx build --dev`) writes
-	## each accessor a component's body calls (`goal!()`) as `Html.read_at!("…", goal!)`, so the
-	## browser's runtime can say where a read made once, as the component runs, is (Solid 2.0's dev
-	## warning: what shows won't follow it). rocx writes this; any other build has none.
+	## Reads, saying where (`Ui/Chart.rocx:44:39`): a dev build (`rocx dev`, `rocx generate --dev`)
+	## writes each accessor a component's body calls (`goal!()`) as `Html.read_at!("…", goal!)`, so
+	## the browser's runtime can say where a read made once, as the component runs, is (Solid 2.0's
+	## dev warning: what shows won't follow it). rocx writes this; any other build has none.
 	read_at! : Str, (() => a) => a
 	read_at! = |place, read!| {
 		outer = Host.read_at!(place)

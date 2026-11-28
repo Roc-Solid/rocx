@@ -54,7 +54,8 @@ view! = |_|
 				</li>
 				<li>
 					Start the server with <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> set to your collector, such as
-					<code>http://localhost:4318</code>.
+					<code>http://localhost:4318</code>. In development, put it in the app's <code>.env</code>, which
+					<code>rocx dev</code> reads.
 				</li>
 			</ol>
 
@@ -159,7 +160,6 @@ view! = |_|
 				<li>
 					<strong>Traces.</strong> They need to know which request a query or fetch runs for without the app
 					passing it by hand; Roc has no such context yet.
-
 				</li>
 				<li>Up-down counters, exemplars, and Prometheus's <code>/metrics</code> for pulling.</li>
 				<li>A job's duration and outcome.</li>

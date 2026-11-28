@@ -139,7 +139,8 @@ Roles := [].{
 		Ok($held)
 	}
 
-	## Forgets every grant `user` has had, as the app deletes them: how many.
+	## Forgets every grant `user` has had: how many. `Auth.forget!` does this, with the rest the
+	## package keeps for them.
 	forget! : Str => Try(U64, [DbErr(Str), ..others])
 	forget! = |user| AuthStore.forget_roles!(user)
 

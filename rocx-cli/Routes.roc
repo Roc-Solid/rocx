@@ -2254,8 +2254,8 @@ Routes := [].{
 				},
 		)
 		[
-			"\t## The OpenAPI document of these endpoints, which the server answers `GET /openapi.json` with if",
-			"\t## the app says (`App.program`'s `openapi`):",
+			"\t## The OpenAPI document of these endpoints, which an app's route file answers `GET /openapi.json`",
+			"\t## with (`OpenApi.document_route(request, Api.openapi)`, D-116):",
 			"\t## each path and its methods, with what their comments say, and the JSON Schemas of what each is",
 			"\t## sent and answers, from their types (`OpenApi`). `tags` is every name in the app's code that",
 			"\t## could be a tag: a tag union's schema has the ones that are its.",

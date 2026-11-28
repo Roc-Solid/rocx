@@ -18,7 +18,7 @@ get! = |{ params, context, .. }| {
 	Ok({ id: list.id, name: list.name, tasks, people, me: context.me, today })
 }
 
-## What POST /lists/:id is sent: a new task, read and checked by `TaskForm.adding` (D-093), from
+## What POST /api/lists/:id is sent: a new task, read and checked by `TaskForm.adding` (D-093), from
 ## the form or as JSON. The page reads what the form sent with it too, to show the task in the
 ## list while it is on its way (`use_submissions!`).
 post_body = TaskForm.adding

@@ -5,9 +5,10 @@
 // `pushstate` event on every [data-push-state] element, its `value` the state: unsupported,
 // blocked, off, working, on, or failed:<why> (the package's PushState reads it).
 //
-// The plugin serves the service worker at the site's root (/push-sw.js), so its scope is the whole
-// site, and answers `GET {api}/key` (the VAPID public key, as JSON), `POST {api}/subscribe` (the
-// subscription, as `toJSON()` gives it) and `POST {api}/unsubscribe` (`{ endpoint }`). On a site
+// The app's route files answer `GET {api}/key` (the VAPID public key, as JSON), `POST {api}/subscribe`
+// (the subscription, as `toJSON()` gives it) and `POST {api}/unsubscribe` (`{ endpoint }`), each
+// calling the package's handler (D-116); the plugin serves the service worker at the site's root
+// (/push-sw.js), so its scope is the whole site. On a site
 // served under a base (`/rocx/`), each of these is under it (`under`, which the runtime gives every
 // effect).
 

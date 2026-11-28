@@ -14,7 +14,7 @@ import ../../Ui/PageHero
 ## and the packages there are, as cards in the sidebar's groups.
 meta = {
 	title: "The ecosystem",
-	description: "Packages for Roc Solid apps: Roc modules and components you add with one line in the app's header, and plugins that add tables, jobs and scripts to the server. Twenty-four so far, among them sign-in, Stripe payments, Claude from the server, charts, forms, intl, Markdown, jobs and cron, email, an admin, guards, storage, Web Push and OpenTelemetry.",
+	description: "Packages for Roc Solid apps: Roc modules and components you add with one line in the app's header, and plugins that add tables, jobs and scripts to the server. Twenty-six so far, among them sign-in, Stripe payments, Claude from the server, charts, forms, intl, Markdown, video, jobs and cron, email, an admin, guards, storage, Web Push and OpenTelemetry.",
 	toc: [
 		{ id: "packages", label: "The packages" },
 		{ id: "halves", label: "What is in a package" },
@@ -36,7 +36,7 @@ view! = |_|
 				A package is a directory of Roc modules, often with components, added to an app with one line in
 				its header. Use one for what the platforms leave out: charts, form checks, translations, a job
 				queue, email, an admin for your tables. Some packages are also plugins, which add tables,
-				background work or scripts to the server. Twenty-four so far, each with a page here.
+				background work or scripts to the server. Twenty-six so far, each with a page here.
 			</PageHero>
 
 			<Heading id="packages">The packages</Heading>
@@ -61,15 +61,17 @@ view! = |_|
 						computes (charts, forms, intl, Markdown, QR codes) names no platform. It can't render or fetch,
 						so the server, the browser and an <code>expect</code> all call the same functions. A package
 						that needs the server (to send email, run jobs, read the database) names the server platform;
-						more than half do.
+						more than half do. One, <a href={Paths.ecosystem_headless}>headless</a>, names the CLI
+						platform: rocx uses it, apps don't.
 					</p>
 				</Feature>
 				<Feature title="Components">
 					<p>
 						<code>components/*.rocx</code> are components, such as <code>{"<BarChart>"}</code>. They import
 						the platform's <code>Html</code> and <code>Solid</code>, and an app is two programs on two
-						platforms (server and browser). So <code>rocx build</code> copies them into the app, and each
-						half compiles them on its own platform.
+						platforms (server and browser). So <code>rocx generate</code> (which <code>rocx dev</code> and
+						<code>rocx build</code> run first) copies them into the app, and each half compiles them on its
+						own platform.
 					</p>
 				</Feature>
 			</FeatureGrid>
@@ -77,8 +79,7 @@ view! = |_|
 				A server-platform package can still offer modules to the browser (audio's <code>Audio.play!</code>
 				runs in a click handler). It lists them in a second header, <code>browser.roc</code>, which names
 				the browser platform only if they need it. The browser's half of the app sees that header instead
-				of <code>main.roc</code>. If a page imports any other module, <code>rocx build</code> stops and names
-				the import.
+				of <code>main.roc</code>. If a page imports any other module, rocx stops and names the import.
 			</p>
 
 			<Heading id="use">Adding one to an app</Heading>
@@ -88,7 +89,7 @@ view! = |_|
 			</p>
 			<Code title="main.roc" source={"app [program] { charts: \"../packages/charts/main.roc\", pf: platform \"../server/platform/main.roc\" }"} numbers={Bool.False} />
 			<p>
-				That line covers both halves: <code>rocx build</code> writes the browser copy's header from it, on
+				That line covers both halves: <code>rocx generate</code> writes the browser copy's header from it, on
 				the browser platform, through each package's <code>browser.roc</code> if it has one. A
 				server-platform package with no <code>browser.roc</code> (Stripe, storage, PostHog) is left out of
 				that copy.
@@ -133,8 +134,8 @@ view! = |_|
 			</p>
 			<p>The packages that are plugins, and what each adds:</p>
 			<ul>
-				<li><a href={Paths.ecosystem_auth}>Auth</a>: <code>{"Auth.plugin({ providers })"}</code> adds the session tables. Its handlers answer your sign-in routes (a mailed link, a provider and back, the second factor, signing out, the dev sign-in) with your <code>admit!</code>, and its middleware passes on the signed-in user.</li>
-				<li><a href={Paths.ecosystem_stripe}>Stripe</a>: <code>{"Stripe.plugin({})"}</code> adds tables of customers, checkouts and subscriptions, kept in step by <code>{"Stripe.webhook_route!"}</code> on your webhook route, with your <code>on_event!</code>. Its functions send people to Checkout and the Customer Portal, and say who has paid.</li>
+				<li><a href={Paths.ecosystem_auth}>Auth</a>: <code>{"Auth.plugin({ providers })"}</code> adds its tables: sessions, users, roles and two-factor sign-in. Its handlers answer your sign-in routes (a mailed link, a provider and back, the second factor, signing out, the dev sign-in) with your <code>admit!</code>, and its middleware passes on the signed-in user.</li>
+				<li><a href={Paths.ecosystem_stripe}>Stripe</a>: <code>{"Stripe.plugin({})"}</code> adds tables of customers, checkouts, subscriptions and events, kept in step by <code>{"Stripe.webhook_route!"}</code> on your webhook route, with your <code>on_event!</code>. Its functions send people to Checkout and the Customer Portal, say who has paid, and give your own billing page the card, the invoices and cancelling.</li>
 				<li><a href={Paths.ecosystem_ai}>AI</a>: <code>{"Ai.plugin({})"}</code> reads the API key and model at start (outside <code>--dev</code>, no key, no start) and logs the model. Its functions ask Claude for an answer (whole, streamed to a page, or read into a Roc type), with the app's functions as tools. Its agents are models with a role and their own tools, and can be each other's tools.</li>
 				<li><a href={Paths.ecosystem_jobs}>Jobs and cron</a>: <code>{"Job.plugin({ jobs: App.jobs, crons })"}</code> adds the queue's table, its workers, the schedules' loop, and a sweep of old finished jobs.</li>
 				<li><a href={Paths.ecosystem_email}>Email</a>: <code>{"Email.plugin({})"}</code> adds the dev mailbox under <code>--dev</code>, and logs at start whether the SMTP server answers. Outside <code>--dev</code>, no <code>SMTP_URL</code>, no start.</li>

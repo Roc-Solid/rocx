@@ -9,7 +9,7 @@ import ../../components/Avatar
 
 ## "Who are you?": pick yourself from the team, and a session remembers it (packages/auth), so
 ## "Mine" on a list shows your tasks and new tasks are yours unless you say otherwise. A plain form,
-## posted to this page's own URL (`POST /me`). It is not a sign-in, and doesn't pretend to be one:
+## posted to its endpoint (`POST /api/me`). It is not a sign-in, and doesn't pretend to be one:
 ## anyone may pick anyone.
 meta = { title: "Who are you?" }
 

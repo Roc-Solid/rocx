@@ -52,8 +52,9 @@ view! = |_|
 			/>
 			<p>
 				Then <code>import virtual.VirtualList</code> in a <code>.rocx</code> file. It isn't a plugin and adds
-				nothing to the server; <code>rocx build</code> copies the component into the app
-				(<code>Generated/virtual/</code>), as for the <a href={Paths.ecosystem_charts}>charts</a>.
+				nothing to the server. <code>rocx generate</code> (which <code>rocx dev</code> and <code>rocx build</code>
+				run first) copies the component into the app (<code>Generated/virtual/</code>), as for the
+				<a href={Paths.ecosystem_charts}>charts</a>.
 			</p>
 			<p>
 				It is built from two platform features any component can use: <code>{"<Repeat>"}</code> renders a
@@ -117,7 +118,7 @@ view! = |_|
 			<Heading id="signals">Writing signals from on_view!</Heading>
 			<p>
 				<code>on_view!</code> runs on every scroll, at most once per animation frame. A signal's setter
-				doesn't compare values: every write re-runs whatever reads the signal, changed or not. So write a
+				doesn't compare values (a memo does): every write re-runs whatever reads the signal, changed or not. So write a
 				signal from <code>on_view!</code> only when the part of the view you use has changed. The
 				<a href={Paths.examples_checkboxes}>checkboxes example</a> fits as many boxes in a row as the list's
 				width allows, and writes the column count only when it changes:
@@ -150,7 +151,6 @@ view! = |_|
 					One column. For a grid, lay out each row yourself: the
 					<a href={Paths.examples_checkboxes}>checkboxes example</a> puts a <code>{"<Repeat>"}</code> of boxes
 					in each row, as many as fit the width <code>on_view!</code> reports.
-
 				</li>
 				<li>
 					In a scaled list, the scrollbar reaches to within a few rows of any row, not to one exact pixel.

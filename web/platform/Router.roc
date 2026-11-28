@@ -135,7 +135,7 @@ Router := [].{
 	## forms' (sent with `fetch`, as `use_submission!` says) and its actions' (`use_action!`). See
 	## `Submissions`.
 	##
-	##     moves = use_submissions!(Api.post_planner_move({}))
+	##     moves = use_submissions!(Api.post_api_planner_move({}))
 	##     <p class:saving={moves.pending!()}>…</p>
 	use_submissions! : Endpoint(context, arg, result) => Submissions(arg, result)
 	use_submissions! = |endpoint| {
@@ -151,7 +151,7 @@ Router := [].{
 	## (200) has the page's reads read again before the submission is done; a refusal is its error
 	## (the `error` of its record in `Submissions.all!`, or `Submission.error!` of the latest).
 	##
-	##     move! = use_action!(Api.post_planner_move({}))
+	##     move! = use_action!(Api.post_api_planner_move({}))
 	##     <li on:drop={|| move!({ card: dragged!(), day })}>…</li>
 	##
 	## Called from anywhere but a handler, its function fails; on the server, no handler runs.

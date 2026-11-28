@@ -20,9 +20,10 @@ is the reference.
 
    A pair made for a run is gone when the server restarts (`rocx dev` restarts it at each change to
    the server's code), and a browser subscribed with it then has to subscribe again (its button
-   shows off). Put the two settings in the app's `.env`, a line each, to keep it. Without
-   `VAPID_SUBJECT` such a server tells push services `mailto:dev@example.com`, and says so on its
-   log.
+   shows off). To keep it, put the two settings in the app's `.env`, a line each. `rocx dev` reads
+   `.env` as it starts (D-098), so start it again after making the file. Without `VAPID_SUBJECT`
+   such a server tells push services `mailto:dev@example.com`, and says so on its log. One key
+   without the other stops the server, `--dev` or not.
 
    A deployed server needs all three in its environment: `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
    (secret) and `VAPID_SUBJECT` (`mailto:` and an address, or an `https:` URL). Give it a pair of
@@ -36,7 +37,7 @@ is the reference.
 
    (`npx web-push generate-vapid-keys` makes a pair too.) A browser that subscribed with one public
    key can only be sent to with that pair. Outside `--dev`, if a key or the subject is missing, or
-   the keys don't belong together, the server doesn't start, and says why and how to make a pair.
+   the keys aren't a pair, the server doesn't start, and says why and how to make a pair.
 
 2. **The plugin.** Name the package in the app's header and list its plugin, with the jobs plugin
    (`packages/jobs`), whose workers run the `push.deliver` job:
@@ -55,7 +56,8 @@ is the reference.
    ```
 
    The plugin brings the table, the job, the service worker and the page's script, and under
-   `--dev` `GET /__rocx/push/keys`. It needs a database.
+   `--dev` `GET /__rocx/push/keys`. It needs a database: an app that names none has SQLite's
+   `data/app.db` (D-105).
 
 3. **The endpoints**, the app's own route files (D-116), each calling its handler
    ([below](#the-endpoints)), in `routes/push/` where `<PushButton api="/push">` looks:
@@ -116,7 +118,8 @@ Each answers 405 for a method it doesn't take.
   for a visitor. An app with accounts puts the files in a folder whose middleware knows who is
   signed in, and passes what it handed on:
   `respond! = |{ request, context, .. }| Push.subscribe_route!(request, context.member)`; then
-  `notify!(member, …)` sends to that user's browsers.
+  `notify!(member, …)` sends to that user's browsers. packages/auth's user ids are text
+  (`Auth.User`'s `id`), so they are owners as they are.
 
 ## Sending
 
@@ -248,23 +251,25 @@ What works today:
   ciphertexts, `P256.ecdh!` agrees with Node's ECDH, Node verifies `P256.sign!`'s signatures, and
   `P256.generate!`'s pairs are pairs Node takes (its public key the private key's).
 - The plugin, in `example/test/push.test.mjs`, which builds the example on SQLite (always) and on
-  Postgres (when `DATABASE_URL` is set) and asks it over HTTP: the key, subscribing (and a
-  subscription at an unknown service, or with a key off the curve, refused), each of `PushStore`'s
-  statements, and unsubscribing. Sending: a broadcast is delivered to a push service the test runs
-  (`--dev` lets a subscription's endpoint be on this machine), which plays the browsers too: it
-  makes each subscription's keys with Node's crypto, checks each request's VAPID token (its claims,
-  and its ES256 signature against `VAPID_PUBLIC_KEY`), decrypts each message as RFC 8291 says, and
-  checks the notification inside. It answers 201, 410 (the subscription is deleted) or 403 (noted
-  on its row). The server's HTTPS proxy is that push service, which refuses every connection, so
-  nothing reaches a real one. VAPID keys that aren't a pair stop the server as it starts, and so do
-  none (or one alone, or no subject) without `--dev`, saying how to make a pair. Under `--dev` with
-  none, the server makes a pair, logs it (Node checks it is one), sends with it (the push service
-  checks the token against the logged key) and tells push services `mailto:dev@example.com`;
-  `/__rocx/push/keys` answers a new pair each time. In
-  Chromium (when there is one), behind a guard that refuses every script the app would serve, the
-  plugin's script and service worker come through, the worker registers at the root with the whole
-  site as its scope, and the button subscribes (the browser's push service stood in for, as headless
-  Chromium has none). Run it with `node --test 'packages/push/example/test/*.test.mjs'`.
+  Postgres (when `DATABASE_URL` is set) and asks it over HTTP:
+  - the key; subscribing, and a subscription at an unknown service, or with a key off the curve,
+    refused; each of `PushStore`'s statements; unsubscribing;
+  - sending: a broadcast goes to a push service the test runs (`--dev` lets an endpoint be on this
+    machine), which plays the browsers too. It makes each subscription's keys with Node's crypto,
+    checks each request's VAPID token (its claims and its ES256 signature), decrypts each message as
+    RFC 8291 says, and checks the notification inside. It answers 201, 410 (the subscription is
+    deleted) or 403 (noted on its row). The server's HTTPS proxy is that push service, which
+    refuses every connection, so nothing reaches a real one;
+  - the keys: a pair that isn't one stops the server at start, and so do none (or one alone, or no
+    subject) without `--dev`, saying how to make a pair. Under `--dev` with none, the server makes a
+    pair, logs it (Node checks it is one), sends with it and tells push services
+    `mailto:dev@example.com`; `/__rocx/push/keys` answers a new pair each time;
+  - in Chromium (when there is one), behind a guard that refuses every script the app would serve:
+    the plugin's script and service worker come through, the worker registers at the root with the
+    whole site as its scope, and the button subscribes (the browser's push service stood in for, as
+    headless Chromium has none).
+
+  Run it with `node --test 'packages/push/example/test/*.test.mjs'`.
 
 No test sends to a real push service (Google's, Mozilla's, Apple's or Microsoft's).
 

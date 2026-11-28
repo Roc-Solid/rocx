@@ -6,7 +6,7 @@
 ##
 ##     percent = Timeline.tween(frame, 40, 120, 0.0, 100.0, Out)       # 0 until 40, 100 from 120
 ##     opacity = Timeline.keys(frame, [(0, 0.0), (10, 1.0), (110, 1.0), (120, 0.0)])
-##     pop = Timeline.spring(frame - 30, 30)                           # past 1 and back, settling
+##     pop = Timeline.spring(Timeline.since(frame, 30), 30)            # past 1 and back, settling
 Timeline := [].{
 
 	## How a motion goes along its span: steadily (`Linear`), starting slowly (`In`), ending slowly
@@ -108,8 +108,8 @@ Timeline := [].{
 
 	## A spring let go at frame 0, from 0 toward 1, `fps` frames a second: it overshoots a little
 	## and settles in about a second (stiffness 100, damping 10, mass 1, as Remotion's spring
-	## starts). Give it the frames since it was let go (`frame - 30`, with frames before 30 kept
-	## at 0 by `since`). For another feel, `spring_with`.
+	## starts). Give it the frames since it was let go: `since(frame, 30)` for one let go at frame 30,
+	## 0 before it. For another feel, `spring_with`.
 	spring : U64, U64 -> F64
 	spring = |frame, fps| Timeline.spring_with(frame, fps, { stiffness: 100.0, damping: 10.0, mass: 1.0 })
 

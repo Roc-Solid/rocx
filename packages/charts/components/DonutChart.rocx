@@ -9,11 +9,10 @@ import charts.Path
 ## A ring cut into a slice for each of `data!`'s values, each as big a share of the ring as its
 ## value is of them all (a value too small to see still a sliver), and a legend beside it: each
 ## slice's colour, label, value and share, in whole percents that add up to 100 ("<1%" for one too
-## small to make one). The
-## middle says the total, or, while a slice or its line in the legend is pointed at or focused,
-## that slice's share. When the data changes, the slices glide to their new sizes, a frame at a
-## time: a new one grows from nothing, one whose label is gone shrinks to nothing where it was,
-## and once they are there, nothing runs.
+## small to make one). The middle says the total, or, while a slice or its line in the legend is
+## pointed at or focused, that slice's share. When the data changes, the slices glide to their new
+## sizes, a frame at a time: a new one grows from nothing, one whose label is gone shrinks to
+## nothing where it was, and once they are there, nothing runs.
 ##
 ## A slice is its label's, in the colour the data gives it (`color`: any CSS colour,
 ## `"#c0392b"` or `"var(--brand)"`), or, given none, in one of the chart's five (`--chart-1` to

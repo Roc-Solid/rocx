@@ -19,11 +19,16 @@ packages/mcp's `McpHttp.tool` and `McpHttp.endpoint` write it from the arguments
 platform writes `/openapi.json`'s. It depends on packages/crypto (Base64, for an image's bytes),
 which it names itself. `roc test packages/tools/main.roc` runs its expects.
 
+A `Tool(ctx)` is given its caller's context when it runs: `Ai.run!` passes the one it is handed, and
+an MCP server behind `McpHttp.respond!` a `McpHttp.Caller(c)` (the request, who is asking,
+`progress!`). A function that reads no context (`add! : { text : Str }, ctx => …`) can be made a
+tool for both.
+
 | Module | What it has |
 |---|---|
 | `Tool` | `Tool.typed(name, description, schema, run!)`: arguments read into a Roc type, the answer written as JSON. `Tool.typed_with_params(name, description, params_schema, body_schema, run!)`: arguments read into two types from one object (an endpoint's path params and its body), their schemas merged. `Tool.new(name, description, schema, run!)`: any JSON in, an `Outcome` out. Hints: `read_only`, `additive`, `idempotent`, `closed_world`. Also `titled`, `answers(schema)`, `reporting`. Outcomes: `Tool.text`, `Tool.structured`, `Tool.answer`. |
 | `Content` | What a tool answers with: `Text`, `Image` and `Audio` (bytes, sent as Base64), `Link` (to a resource), `Embedded` (a resource's contents). Helpers: `Content.text`, `Content.image`, `Content.link`. |
-| `JsonValue` | Any JSON, read a field at a time (`parse`, `get`, `to_text`, `is_object`, `to_str`). `decode` into a Roc type and `encode` from one, through `Json`. A number keeps the text it came as, so an id or an `I64` goes back exactly. |
+| `JsonValue` | Any JSON, read a field at a time (`parse`, `get`, `to_text`, `is_object`, `to_str`). `decode` into a Roc type and `encode` from one, through `Json`. Written by hand: `int`, `uint`, `object_of` (an object of the fields given), `text_unless_empty`. A number keeps the text it came as, so an id or an `I64` goes back exactly. |
 
 What a page can show while a model works is a `Tool.Update` (D-089): `Progress({ agent, says })`, a
 note the model wrote between its tool calls, or `Using({ agent, tool, says })`, a tool as it starts

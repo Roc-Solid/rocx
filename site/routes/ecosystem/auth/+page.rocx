@@ -8,12 +8,12 @@ import ../../../Generated/Sources
 import ../../../Generated/Paths
 
 ## The auth package, a plugin: the package's example app file by file, how signing in goes (a mailed
-## link, a provider, the dev sign-in), who gets in, sessions and the middleware, roles, what a user
-## may do, two-factor sign-in, the providers, what a failed sign-in says, the tables, safety, and
-## what comes next. Static: signing in needs a server.
+## link, a provider, the dev sign-in), who gets in, users, sessions and the middleware,
+## impersonation, roles, what a user may do, two-factor sign-in, the providers, what a failed
+## sign-in says, the tables, safety, and what comes next. Static: signing in needs a server.
 meta = {
 	title: "Auth",
-	description: "Sign-in for Roc Solid apps, as a plugin: by a mailed link or at Google, GitHub and any OpenID Connect provider; two-factor sign-in with an authenticator app; sessions kept as hashed tokens in the app's database; middleware that hands the signed-in user on. No pages: the app's own.",
+	description: "Sign-in for Roc Solid apps, as a plugin: by a mailed link or at Google, GitHub and any OpenID Connect provider; two-factor sign-in with an authenticator app; the app's users, and sessions kept as hashed tokens, in its database; middleware that hands the signed-in user on; roles. No pages: the app's own.",
 	toc: [
 		{ id: "example", label: "A first app" },
 		{ id: "how", label: "How signing in goes" },
@@ -45,9 +45,9 @@ view! = |_|
 			</PageHero>
 			<p>
 				The package is a plugin that does the parts easy to get wrong: tokens kept in plain text, links
-				that work twice, redirects to another site, OAuth without its state or PKCE. Your app keeps three:
-				the pages, the email the link goes out in, and <code>admit!</code>, which says who gets in and which
-				of your users they are.
+				that work twice, redirects to another site, OAuth without its state or PKCE. It keeps your users too.
+				Your app keeps three things: the pages, the email the link goes out in, and <code>admit!</code>, which
+				says who gets in.
 			</p>
 
 			<Heading id="example">A first app</Heading>
@@ -76,7 +76,8 @@ view! = |_|
 			<p>
 				<strong>3. The middleware.</strong> <code>Auth.required</code> guards routes for signed-in people,
 				<code>Auth.optional</code> routes for anyone. Each takes a function that puts the session into the
-				context your routes read:
+				context your routes read. The example's <code>Auth.required_with</code> also reads the user
+				(<code>Auth.user!</code>) and the roles they hold (<code>Roles.current!</code>), once a request:
 			</p>
 			<Code title={Sources.auth_example_middlewares.file} source={Sources.auth_example_middlewares.rocx} />
 			<p>
@@ -148,11 +149,11 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<p>
-				It answers <code>Ok(user)</code>, your id for their user, or <code>Err(why)</code>, which the sign-in
-				page shows. It runs inside the transaction that starts the session, so its writes commit with the
-				session (a new user's row, a welcome email queued as a job) or with its refusal (a request to join a
-				waiting list). A database error rolls it all back. Keep slow work, such as a request to another
-				server, out of it.
+				It answers <code>Ok(user)</code>, their user's id (<a href="#users"><code>Auth.user_for!</code></a>
+				gives it), or <code>Err(why)</code>, which the sign-in page shows. It runs inside the transaction that
+				starts the session, so its writes commit with the session (a new user's row, a welcome email queued
+				as a job) or with its refusal (a request to join a waiting list). A database error rolls it all
+				back. Keep slow work, such as a request to another server, out of it.
 			</p>
 
 			<Heading id="users">Users</Heading>
@@ -167,6 +168,8 @@ view! = |_|
 				of <code>auth_users</code>: the id, the address as it is now, and when they were made. Someone
 				you name before they sign in (an invitation to their address, an admin letting them in ahead) is
 				<code>{"Auth.user_with_address!(email)"}</code>, made if there is none; their first sign-in finds them.
+				An app with ids of its own from before keeps them: a returning identity whose user has no row gets
+				one, with that id.
 			</p>
 			<Code
 				title="the package's users"
@@ -195,8 +198,9 @@ view! = |_|
 					<code>refusal</code>.
 				</li>
 				<li>
-					<code>Auth.required_with</code> also reads your user's row: a session whose user is gone ends and
-					answers as signed out. The example's <code>Middlewares.roc</code> uses it.
+					<code>Auth.required_with</code> also reads what your routes need first (the example: the user and
+					their roles). A session whose user is gone ends and answers as signed out; an answer of its own
+					(the example's 503 when roles can't be read) keeps the session.
 				</li>
 				<li><code>Auth.optional</code> hands on <code>SignedIn(session)</code> or <code>SignedOut</code>.</li>
 				<li>
@@ -221,7 +225,7 @@ view! = |_|
 					The session stays the admin's (<code>session.real_user</code>). It goes back when its time runs
 					out or on <code>Auth.stop_impersonating!</code>, and each start and stop is logged with both users.
 				</li>
-				<li>You decide who may impersonate before calling it; the example allows the addresses in <code>ADMIN_EMAILS</code>.</li>
+				<li>You decide who may impersonate before calling it; the example's <a href="#permissions">policy</a> allows the addresses in <code>ADMIN_EMAILS</code>.</li>
 				<li>Use <code>real_user</code> to record who did what, and to guard what only a person may change themselves.</li>
 				<li>No two-factor code is asked of an admin acting as someone: nobody signs in.</li>
 			</ul>

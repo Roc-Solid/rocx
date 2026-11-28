@@ -17,7 +17,7 @@ import presence.TypingIndicator
 import presence.Presence
 import presence.Wire
 
-here = Presence.join!(Api.channel_rooms_room({ room: room }))
+here = Presence.join!(Api.channel_api_rooms_room({ room: room }))
 
 <AvatarStack faces!={(here.others!)().map(Wire.face)} max={4} />
 <TypingIndicator names!={Wire.names((here.members!)(), (here.typing!)())} />
@@ -37,18 +37,20 @@ The package has three parts:
 - **The logic is plain Roc**, on no platform, so the server's hooks and the browser's stores run
   the same code (the modules below). `browser.roc` lists them for the browser's half.
 - **The components and the browser's stores are `.rocx` files** in `components/`. They import the
-  platform's `Html` and `Solid`, so `rocx build` copies them into each app that names the package
-  (`Generated/presence/`), where `pf` is whichever platform each half is on.
+  platform's `Html` and `Solid`, so rocx copies them into each app that names the package
+  (`Generated/presence/`, on `rocx dev`, `rocx build` or `rocx generate`), where `pf` is whichever
+  platform each half is on.
 - **The server's side is `PresenceServer`**: a room channel's hooks, with the room kept in `Kv`.
   For it the package names the server platform (`main.roc`); the browser's half never sees it.
 
 ## Wiring a room
 
-A room is a route's channel. Its URL names the room, its check lets a member in, and its hooks are
-`PresenceServer`'s:
+A room is a route's channel, under `api/` (D-100). Its URL names the room, its check lets a member
+in, and its hooks are `PresenceServer`'s. The `context` is what a `+middleware.roc` above it says
+(D-103):
 
 ```roc
-# routes/rooms/[room]/+server.roc: who is in the room, as a channel
+# routes/api/rooms/[room]/+server.roc: who is in the room, as a channel
 import pf.Server
 import pf.Endpoint
 import pf.Channel
@@ -76,7 +78,7 @@ import presence.Wire
 import ../../../Generated/Api
 
 view! = |{ params }| {
-    here = Presence.join!(Api.channel_rooms_room({ room: params.room }))
+    here = Presence.join!(Api.channel_api_rooms_room({ room: params.room }))
     <section>
         <Document on:visibilitychange.visible={here.visible!} />
         <AvatarStack faces!={(here.members!)().map(Wire.face)} />
@@ -88,7 +90,8 @@ view! = |{ params }| {
 }
 ```
 
-examples/board does this for real: `routes/b/[board]/presence/+server.roc` and its page.
+examples/board does this for real: `routes/(members)/api/b/[board]/presence/+server.roc` and
+`routes/(members)/b/[board]/+page.rocx`.
 
 **Who a member is** (their key, their name) is always the server's say: the channel's check gives
 it, from the middleware's context, never from the page. The page's tab id is its live stream's
@@ -101,10 +104,8 @@ closed, it is checked where it is written, and the avatar stack shows each its o
 
 **A hidden tab** is `Away` once the page says whether it shows, in one line:
 `<Document on:visibilitychange.visible={here.visible!} />`. While it is hidden its beats say `Away`
-and its cursor goes; the status it had comes back as it shows again. That line is the app's to
-write, not the store's doing: what a hidden tab means is the app's choice (`away`, `idle`, or
-nothing, for a page on a wall screen). This follows Solid's way of composing small primitives
-(solid-primitives' `createPageVisibility` beside the store, not inside it).
+and its cursor goes; the status it had comes back as it shows again. The line is the app's to
+write: a page on a wall screen leaves it out.
 
 **The app's own metadata** goes in `data` (`Wire.Meta(d)`): the card a person has open, a seat, a
 cursor's label, typed, carried through the room and its channel as it is. `d` is any type JSON can
@@ -144,9 +145,14 @@ receive! = |heard|
   subscription's end before a new one's start.
 - **Heartbeats.** A page says it is here every 15 s (`Here`, with its status), and its `data` again
   if the room has other data for its member (the room swept it out, or another of the member's tabs
-  said its own: the latest tab's is the member's). A tab whose page vanished without a word is swept
-  out 75 s after its last word, however long its connection lingers. A browser may hold a hidden tab's timers back to once a minute; 75 s is that minute and a
-  beat to spare.
+  said its own: the latest tab's is the member's). A tab unheard for 75 s is swept out, however long
+  its connection lingers. A browser may hold a hidden tab's timers back to once a minute; 75 s is
+  that minute and a beat to spare.
+- **A vanished tab.** The live stream usually notices first. The host writes a beat on it every
+  15 s (`--live-beat-ms`) and drops a connection that leaves what it sent unacknowledged for 20 s.
+  That ends the tab's subscriptions (`Gone`), and the grace runs from there.
+- **Sweeping.** Each change sweeps the room before it changes it. So a tab past its grace or its
+  timeout goes at the room's next change: another tab's beat, within 15 s.
 - **Changes.** Each change reads the room from `Kv` (under `presence:<the channel's URL>`), sweeps
   it, changes it and swaps it back (`Kv.swap!`), reading it again if another change got there first,
   so two tabs joining at once both count. Then it publishes what changed on the channel, numbered.
@@ -232,11 +238,11 @@ for one. `roc test packages/presence/main.roc` runs their `expect`s.
 
 | Module | What it does |
 |---|---|
-| `Room` | The room, as the server keeps it. `empty(settings)`; `join`, `update` (new metadata), `heartbeat`, `leave` (gone after `grace`, unless back by then), `quit` (gone at once: the page dropped the room), `sweep` (tabs unheard for `timeout` go). Each returns the changes others should hear (`Joined`, `Left`, `Changed`) and numbers the room's state (`version`). `signal` does what a `Signal` says; `members`, `count`, `is_here`; `deadline`, when the next sweep could find someone; `save`/`load` for JSON. `Room.defaults`: a 75 s timeout and a 5 s grace; `beat_every(settings)`: a fifth of the timeout, 15 s |
+| `Room` | The room, as the server keeps it. `empty(settings)`; `join`, `update` (new metadata), `heartbeat`, `leave` (gone after `grace`, unless back by then), `quit` (gone at once: the page dropped the room), `sweep` (tabs unheard for `timeout` go). Each returns the changes others should hear (`Joined`, `Left`, `Changed`) and numbers the room's state (`version`). `signal` does what a `Signal` says; `members`, `count`, `is_here`, `version`; `deadline`, when the next sweep could find someone; `save`/`load` for JSON. `Room.defaults`: a 75 s timeout and a 5 s grace; `beat_every(settings)`: a fifth of the timeout, 15 s |
 | `Mirror` | A page's copy: `empty`, then `receive` a `Snapshot` and the numbered `Delta`s after it. It drops what is older than its snapshot, and returns `Err(Gap)` when a number is skipped. A snapshot after a reconnect returns what changed meanwhile. `members`, `count`, `is_synced`, `unsynced`; on the server, `snapshot(room)` and `deltas(room, changes)` |
 | `Diff` | `between(before, after)`: who left, joined and changed; `apply` one change to a list; `key` of a change |
 | `Throttle` | At most one send every `every` ms: the first at once, the latest held and sent when due (`new`, `push`, `flush`, `drop`, `is_holding`, `due`). A cursor at 20 a second ends where the pointer stopped |
-| `Cursors` | Others' cursors: `place` (a pointer's pixels as fractions of the area, 0 to 1, to thousandths), `moved`, `gone`, `shown` (idle after a while), `sweep` (forgotten after longer), `next_idle`, `count`, `coalesce` (a burst, one move per member), `percent` |
+| `Cursors` | Others' cursors: `none`; `place` (a pointer's pixels as fractions of the area, 0 to 1, to thousandths) and `share` (one fraction, to thousandths); `moved`, `gone`, `shown` (idle after a while), `sweep` (forgotten after longer), `next_idle`, `count`, `coalesce` (a burst, one move per member), `percent` |
 | `Typing` | Who is typing: `new(ttl)`, `started` (a ping, which lasts `ttl`), `stopped`, `who`, `sweep`, `deadline`; `sentence`: `"Ann and Bo are typing…"` |
 | `Typist` | A page's own side: `new(every)`, `typed(now)` says when to ping (at once, then at most every `every`), `done` when to say it stopped, `rest` after a quiet spell, `is_pinging` |
 | `Stack` | An avatar stack's arithmetic: `split` (who fits, and `+N`), `initials` (`"Ada Lovelace"` is `"AL"`), `color` (the same key, the same colour, from a palette white text reads on), `color_of` (a face's own colour, or its key's), `names`, `label`. A face's `Status` (`Online`, `Away`, `Busy`, `Offline`), `status_word` (its class's word, `away`), `said` (`"Bo (away)"`) |
@@ -245,26 +251,20 @@ for one. `roc test packages/presence/main.roc` runs their `expect`s.
 
 ## Styling
 
-`--avatar-size` (2rem), `--avatar-overlap`, `--avatar-ring` (the ring between faces: set it to the
-page's background), `--avatar-font`, `--avatar-more`, `--avatar-away`, `--avatar-busy`,
-`--avatar-offline` (an offline face's opacity, 0.5); `--typing-color`, `--typing-size`; `--cursor-glide` (0.12s), `--cursor-font`.
-Under `prefers-reduced-motion` the dots stop bobbing and the cursors jump instead of gliding.
+`--avatar-size` (2rem), `--avatar-overlap` (0.375rem), `--avatar-ring` (the ring between faces:
+set it to the page's background), `--avatar-font`, `--avatar-more`, `--avatar-away`,
+`--avatar-busy`, `--avatar-offline` (an offline face's opacity, 0.5); `--typing-color`,
+`--typing-size`; `--cursor-glide` (0.12s), `--cursor-font`. Under `prefers-reduced-motion` the dots
+stop bobbing and the cursors jump instead of gliding.
 
 ## Status
 
-Works today:
+Works today, in examples/board: two people in their own browsers each see the other (on the tab's
+one stream, beside the board's own channel), see which card each has open (`update!`), see one away
+while their tab is hidden, and see a third who closes their browser leave once the grace is up.
+examples/quiz shows a player who dropped as `Offline`. The modules' `expect`s run with
+`roc test packages/presence/main.roc`; the docs' demo sends your pointer as a room does.
 
-- the modules and their `expect`s (`roc test packages/presence/main.roc`);
-- the three components and the stores, built by `rocx build` into an app, both halves
-  type-checked;
-- the room on a channel (`PresenceServer`): in examples/board, two people in their own browsers
-  each see the other (on the tab's one stream, beside the board's own channel), see which card each
-  has open (the page's `data`, `update!`), see one away while their tab is hidden, and see a third
-  who closes their browser leave once the grace is up;
-- your own cursor (`on_move!`), `Away` while a tab is hidden (`visible!`), a status of four
-  (`Stack.Status`), and the app's own metadata (`Wire.Meta(d)`'s `data`), which the page changes
-  (`update!`). The docs' demo sends your pointer as a room does.
-
-Not yet (PROPOSALS.md has the options): the live stream itself as the heartbeat, instead of a beat
-every 15 s (C8), and a room named by the page's path, for a "who's viewing this page" stack without
-a route of its own (question 1).
+Not yet (PROPOSALS.md has the options): a room without page beats, trusting the live stream's end
+(C8), and a room named by the page's path, for a "who's viewing this page" stack without a route of
+its own (question 1).

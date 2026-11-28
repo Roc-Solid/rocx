@@ -781,7 +781,7 @@ Build := [].{
 	}
 
 	## Generated/Styles.roc: the stylesheet (`stylesheet`), which the root layout puts in its <head>
-	## (`{=Styles.style}`): a <link> to its file when the build writes one (`sheet`: a browser's
+	## (`<NoHydration>{Styles.style}</NoHydration>`): a <link> to its file when the build writes one (`sheet`: a browser's
 	## copy, for an app of component pages), or else the stylesheet inline, in a <style>.
 	styles_module : Str, [Some({ name : Str, css : Str }), None] -> Str
 	styles_module = |css, sheet| {
@@ -809,7 +809,7 @@ Build := [].{
 			[
 				"## Every <style> in the app's .rocx files, scoped to the markup it styles (a component's, or at a",
 				"## file's top level the file's), as one stylesheet, which the root layout puts in its <head>:",
-				"## `{=Styles.style}`. Written by rocx build: edit the <style>s.",
+				"## `<NoHydration>{Styles.style}</NoHydration>`. Written by rocx: edit the <style>s.",
 				"import pf.Html",
 				"",
 				"Styles := [].{",

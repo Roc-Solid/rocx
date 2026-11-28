@@ -1,55 +1,24 @@
 # Proposals: what packages/mcp needs outside its folder
 
 Proposals 1 and 2 are done. The others are written up, not built: the package works today without
-them, with the workaround each one names. Tried in scratch apps under `/tmp/rocx-pkg-mcp/` (`app`:
-the glue copied in; `app2`: the glue named as a package), both built with `rocx build` and
-`roc build` on the server platform, and talked to by the MCP Inspector's CLI and the TypeScript
-SDK's v2 client.
+them, with the workaround each one names. Tried in scratch apps built with `rocx build` on the server
+platform, and talked to by the MCP Inspector's CLI and the TypeScript SDK's v2 client.
 
 ## 1. Server-only modules in packages
 
-**Done (D-033), as option B was sketched here.** The package names the server platform (`main.roc`
-lists `McpHttp` with the protocol's modules), and `browser.roc` lists the protocol's alone, which
-`rocx build --client` names in the browser's copy of the app instead (as packages/push, guard and
-auth do). Apps write `import mcp.McpHttp`; nothing is copied, and `server/` is gone. The caveat
-this section raised holds for every package that names the server platform: Roc wants the app's
-platform and the package's at one path, which `rocx new`'s vendored `.rocx` gives.
+**Done (D-033).** The package names the server platform: `main.roc` lists `McpHttp` with the
+protocol's modules, and `browser.roc` lists the protocol's alone, which the browser's copy of the
+app names instead. Apps write `import mcp.McpHttp`, and nothing is copied into the app.
+Roc wants the app's platform and the package's at one path, as for every package that names a
+platform.
 
-## 2. `Api` imports only route files with endpoints
+## 2. A route file may serve tools made from the app's endpoints
 
-**Done, differently (D-037).** `Generated/Api` is the app's contract and imports no route file at
-all; each endpoint with its handler is `Generated/Handlers`', which imports only the route files
-with endpoints or a channel. So a route of `respond!` alone (`routes/mcp/+server.roc`) may import a
-module that imports Handlers, and serve an MCP server whose tools are the app's endpoints
-(`test/e2e.test.mjs` runs a handler from such a route). What follows is the proposal as it was.
-
-**Problem.** `Generated/Api.roc` imports every `+server` module (`apiModule` in `src/routes.mjs`),
-including one with only `respond!` (D-013), which has no endpoints in `Api`. So a route file can't
-import `Api`, or any module that does: `routes/mcp/+server.roc` → `Agents` → `Api` →
-`McpServer` is an import cycle, and the compiler refuses it. An MCP server whose tools are the app's
-endpoints can't be served from a route file.
-
-**Options considered.** (a) `Api` imports only the modules it uses (those with a method). (b) Serve
-MCP from `main.roc` as a middleware: works today (`McpHttp.middleware("/mcp", server)`), and is what
-the README shows; but a route's own `middleware = …` (a guard for `/mcp` only) and `rocx routes`'s
-listing don't apply to it. (c) Put the tools' endpoints in the MCP route file itself: the endpoints
-are elsewhere.
-
-**Recommended: (a)**, a line in `apiModule`:
-
-```diff
--		...(client ? [] : ["import pf.OpenApi", ...[...new Set(table.servers.map((server) => server.module))].sort().map((module) => `import ${module}`)]),
-+		...(client ? [] : ["import pf.OpenApi", ...[...new Set(table.servers.filter((server) => sources.get(server.file).methods.length).map((server) => server.module))].sort().map((module) => `import ${module}`)]),
-```
-
-A `respond!`-only file is still in `Routes`, which imports it and `Api` both, and no cycle remains.
-(A route file with methods that imports `Api` is still a cycle, as it should be.)
-
-**Depends on it.** `routes/mcp/+server.roc` with `middleware = Middlewares.bearer` and
-`respond! = |{ request, context, .. }| McpHttp.respond!(Agents.server, request, context)` for any
-server. Tried in `app2`'s `/lite` route with a server that doesn't import `Api`: it works.
-
-**Undo.** Revert the line.
+**Done, differently (D-037, D-103).** `Generated/Api` is the app's contract and imports no route
+file; `Generated/Handlers` imports the route files with endpoints. So a route of `respond!` alone
+(`routes/mcp/+server.roc`) may import a module that makes tools from `Api`'s endpoints.
+`McpHttp.middleware` is gone: the MCP server is a route, and its folder's `+middleware.roc` decides
+who may ask.
 
 ## 3. `Api.tags`, and an endpoint's doc comment
 
@@ -57,11 +26,11 @@ server. Tried in `app2`'s `/lite` route with a server that doesn't import `Api`:
 each name rocx found in the app's code. rocx writes that list only inside `Api.openapi`, as a local
 (`tags = [...]`), so `McpHttp.endpoint` passes `About.tags`, `[]` by default, and a union in a tool's
 arguments is "any value" (`{"description": "A tag union none of whose tags rocx found…"}`). Likewise
-rocx has each endpoint's doc comment (it is the operation's `description` in `/openapi.json`), and an
-app repeats it as the tool's description.
+rocx has each endpoint's doc comment (its operation's summary and description in the OpenAPI
+document), and an app repeats it as the tool's description.
 
-**Recommended.** `openApiDocument` writes the list as a member, which `openapi` uses, and each
-endpoint's comment as a record:
+**Recommended.** `open_api_document` (rocx-cli/Routes.roc) writes the list as a member, which
+`openapi` uses, and each endpoint's comment as a record:
 
 ```roc
 Api := [].{
@@ -74,11 +43,11 @@ Api := [].{
 	docs = { post_api_convert: "Celsius to Fahrenheit. Below absolute zero is refused.", … }
 
 	openapi : Str
-	openapi = OpenApi.document("app", [ … OpenApi.body(post_api_convert({}), tags) … ])
+	openapi = OpenApi.document("app", [ … OpenApi.sent(Api.post_api_convert({}), Api.tags) … ])
 }
 ```
 
-Then: `McpHttp.endpoint(Api.post_api_convert({}), { name: "convert", description: Api.docs.post_api_convert, tags: Api.tags }, McpHttp.openapi({}))`.
+Then: `McpHttp.endpoint(Api.post_api_convert, { name: "convert", description: Api.docs.post_api_convert, tags: Api.tags }, McpHttp.openapi({}))`.
 
 **Depends on it.** Complete schemas for tag unions in tools; descriptions written once.
 
@@ -117,12 +86,12 @@ checks each token: issued for it (audience), not expired, the scopes the call ne
 - **a. An external authorization server** (an identity provider the app already uses). The app's
   middleware checks tokens by introspection (RFC 7662: `Http.fetch!` to the provider, cached for the
   token's life), or as JWTs against the provider's keys, which needs RS256 or ES256 verification: a
-  host primitive the platform doesn't have (it has `Hmac`, `Sha256`, `AesGcm`).
+  host primitive the platform doesn't have (`P256` signs ES256, for Web Push, but doesn't verify).
 - **b. The app as its own authorization server**, a package (`packages/oauth`) on the platform's
-  pieces: `Db` (clients, grants, codes, token hashes), `Hmac` and `Random.bytes!` (opaque tokens,
-  stored hashed), a consent page (a route behind the app's sign-in), and routes for
-  `/.well-known/oauth-authorization-server` (RFC 8414), `/oauth/authorize`, `/oauth/token`,
-  revocation. Clients identified by their metadata document's URL (fetched with `Http`), PKCE S256
+  pieces: `Db` (clients, grants, codes, token hashes), crypto's `Hmac` and `Random.bytes!` (opaque
+  tokens, stored hashed), a consent page (a route behind the app's sign-in), and `*_route!` handlers that the app's
+  route files call (D-116) for `/.well-known/oauth-authorization-server` (RFC 8414),
+  `/oauth/authorize`, `/oauth/token` and revocation. Clients identified by their metadata document's URL (fetched with `Http`), PKCE S256
   required, refresh tokens rotated.
 - **c. Both**: the package checks tokens through one interface, `Tokens.check! : Str => Try({ subject : Str, scopes : List(Str) }, [Invalid])`, backed by (a) or (b).
 
@@ -142,17 +111,14 @@ guarded : (Str => Try({ subject : Str, scopes : List(Str) }, [Invalid])), { reso
 
 ## Open questions (for the user)
 
-1. **Mounting.** Decided by D-103: a route file (`routes/mcp/+server.roc`), guarded by its
-   directory's `+middleware.roc`; `McpHttp.middleware` is gone, and a tool sends `Api`'s endpoint
-   in-process, through the endpoint's own middleware.
-2. **Caching.** Current MCP asks every list how long a client may keep it. The package says 5
+1. **Caching.** Current MCP asks every list how long a client may keep it. The package says 5
    minutes, `public` (a server's lists are fixed when it is built; who is asking doesn't change
    them), and 0, `private` for a resource read. Right defaults, or should a list be `private` when
    the route is behind a guard?
-3. **Errors' statuses.** For an unknown tool, a bad cursor or no such resource, the spec (2026-07-28)
+2. **Errors' statuses.** For an unknown tool, a bad cursor or no such resource, the spec (2026-07-28)
    names no HTTP status; the package answers the JSON-RPC error with 200, and 400/404 only where the
    spec says so. Keep 200, or 400 for every invalid-params error?
-4. **Earlier MCP.** The current Inspector CLI (2.16.0) and SDK v1 still speak 2025-11-25 by
+3. **Earlier MCP.** The current Inspector CLI (2.16.0) and SDK v1 still speak 2025-11-25 by
    default, so both eras are served. Drop the earlier one once clients default to 2026-07-28?
-5. **Name.** `mcp` for the package, `McpHttp` for the HTTP side. Fine, or `Mcp.Http`-style names
-   once server modules are part of the package (proposal 1)?
+4. **Name.** `mcp` for the package, `McpHttp` for the HTTP side. Fine, or `Mcp.Http`-style names,
+   now that the HTTP side is part of the package (proposal 1)?

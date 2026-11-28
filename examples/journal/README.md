@@ -2,8 +2,8 @@
 
 A small publication in two languages, English and Polish. Its posts are Markdown files in
 `content/`, compiled into the server. The server renders the pages, and two small islands run in
-the browser: search as you type, and reactions under each post. It needs no database: the reactions
-are kept in the server's memory (`Kv`).
+the browser: search as you type, and reactions under each post. It keeps nothing in a database: the
+reactions are kept in the server's memory (`Kv`).
 
 Read it to see a Markdown collection with typed frontmatter, two languages with packages/intl,
 feeds and a sitemap, a typed JSON API with its OpenAPI page, and pages that are mostly
@@ -24,7 +24,11 @@ post is a new Markdown file in `content/en/` or `content/pl/`, and nothing else.
 a content rule fails the build, which names the file and each problem.
 
 The feeds and the sitemap need whole URLs. They take them from the request's `Host`, or from
-`ORIGIN` when it is set (`ORIGIN=https://journal.example.com ../../bin/rocx dev`).
+`ORIGIN` when it is set (`ORIGIN=https://journal.example.com ../../bin/rocx dev`, or a line in a
+`.env` here, which `rocx dev` gives the server).
+
+Its program names no database, so the server opens SQLite's `data/app.db` where it starts (D-105),
+for the platform's own tables; the journal keeps nothing there. `*.db` files are gitignored.
 
 ### Build it by hand
 
@@ -36,10 +40,22 @@ just web-host     # the browser platform's host, once (rocx dev builds it too)
 bin/rocx generate examples/journal --client examples/journal/build/client
 .tools/roc-active build --target=wasm32 --opt=size --output=examples/journal/build/client/static/rocx/app.wasm examples/journal/build/client/main.roc
 node server/build.mjs examples/journal/main.roc examples/journal/build/journal
-examples/journal/build/journal --port 18140 --static examples/journal/build/client/static --static examples/journal/static
+cd examples/journal && build/journal --port 18140 --static build/client/static --static static
 ```
 
 Then open http://localhost:18140.
+
+### Deploy it
+
+```sh
+cd examples/journal
+../../bin/rocx build              # dist/server and dist/static (the journal's static/ with the browser's files)
+dist/server --static dist/static
+../../bin/rocx build --image      # or a container image, journal.tar (docker load -i journal.tar)
+```
+
+`rocx build` builds the server for speed and the browser's wasm for size. Set `ORIGIN` where it
+runs, so the feeds and the sitemap name the public address.
 
 ## A tour
 
@@ -86,7 +102,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/j
 | Feature | Where |
 |---|---|
 | A collection with typed frontmatter (packages/markdown's `Collection`): title, date, writer, tags, summary, and an optional cover with its description. A translation is the file of the same name in the other language's folder | [`Post.roc`](Post.roc), [`Posts.roc`](Posts.roc), [`content/`](content) |
-| `rocx build` finds the files and writes a module for each folder (`Generated/Content/En`, `Generated/Content/Pl`), so a new post is a new file | [`Posts.roc`](Posts.roc) |
+| rocx (`rocx dev`, `rocx build`, `rocx generate`) finds the files and writes a module for each folder (`Generated/Content/En`, `Generated/Content/Pl`), so a new post is a new file | [`Posts.roc`](Posts.roc) |
 | Content rules a type can't say: a real day, a known writer, one to five slug tags, a described cover, no `#` headings in the body, every footnote with its note and every note used (`Md.footnote_problems`), a translation by the same writer. `Posts.all` checks them as the app compiles and crashes on a problem, so a wrong post fails the build with every problem named | [`Rules.roc`](Rules.roc) (with expects), [`Posts.roc`](Posts.roc) (`all`), [`test/content.test.mjs`](test/content.test.mjs) |
 | `<Markdown>` with hooks: heading anchors, labelled code blocks that scroll on their own, images as captioned figures, footnotes as superscripts and notes under a heading in the post's language. The typography reaches the elements `<Markdown>` makes through `:global(…)` under a scoped `.prose` | [`Ui/Prose.rocx`](Ui/Prose.rocx) |
 | Reading time, a table of contents, and the newer and older posts | [`Posts.roc`](Posts.roc) (an entry's `minutes`, `newer`, `older`), [`Ui/Toc.rocx`](Ui/Toc.rocx), [`Ui/Article.rocx`](Ui/Article.rocx) |
@@ -108,7 +124,8 @@ Each row names a feature and the file to read for it. Paths are from `examples/j
 |---|---|
 | Pages rendered by the server alone: everything but the islands is inside `<NoHydration>`, so the posts and the Markdown parser stay out of the browser's wasm. A post's `<Title>` is set from inside it | every page in [`routes/`](routes), [`routes/+layout.rocx`](routes/+layout.rocx) |
 | Island 1, search as you type: a signal (what is typed) and a memo (the results) over the JSON API's answer. The page reads the API once as the server renders it and carries the answer in the page, so typing asks the server nothing. The results reuse the server's pure `PostCard` | [`Ui/SearchBox.rocx`](Ui/SearchBox.rocx), [`Search.roc`](Search.roc), [`Ui/PostCard.rocx`](Ui/PostCard.rocx) |
-| Island 2, reactions. A click sends an action (`use_action!`) and shows at once: the counts shown are the server's, with the toggles still on their way applied (`use_submissions!`, `Reaction.apply`). Refusals show, and can be dismissed. Each button is also a plain form, for no JavaScript; with it, `on:click.prevent` takes the click over | [`Ui/ReactionBar.rocx`](Ui/ReactionBar.rocx), [`Reaction.roc`](Reaction.roc) |
+| Island 2, reactions. A click sends an action (`use_action!`) and shows at once: the counts shown are the server's (`counts.send!({})`, its refusal a value: a post without counts shows nothing), with the toggles still on their way applied (`use_submissions!`, `Reaction.apply`). Refusals show, and can be dismissed. Each button is also a plain form, for no JavaScript; with it, `on:click.prevent` takes the click over | [`Ui/ReactionBar.rocx`](Ui/ReactionBar.rocx), [`Reaction.roc`](Reaction.roc) |
+| Images as `<img enhanced:src>` (D-125): for a photo the server makes smaller WebP copies and writes their `srcset`; the journal's pictures are SVGs, which keep their `src`. The mark and a post's cover load first (`loading="eager"`, `fetchpriority="high"`); the cards' and the posts' own images load lazily | [`Ui/Masthead.rocx`](Ui/Masthead.rocx), [`Ui/Article.rocx`](Ui/Article.rocx), [`Ui/PostCard.rocx`](Ui/PostCard.rocx), [`Ui/Prose.rocx`](Ui/Prose.rocx) |
 | Pure `view` components (cards, lists, the article) and effectful `view!` ones (the islands, and `NotFound`, which sets the status) | [`Ui/`](Ui) |
 | Stories for the components, at `/__rocx/stories` in a dev build | `<story>` in [`Ui/*.rocx`](Ui) |
 | Scoped styles for each component; the tokens and base styles in `static/journal.css` (light and dark); a print stylesheet (`static/print.css`, and `@media print` in the components) | [`Ui/*.rocx`](Ui), [`static/`](static) |
@@ -126,10 +143,11 @@ Each row names a feature and the file to read for it. Paths are from `examples/j
 ## Test it
 
 ```sh
-just examples journal                                               # build, type-check, lint, check the SQL, run the expects and the tests
-bin/rocx check examples/journal                                     # build, then type-check both programs
-bin/rocx check -- .tools/roc-active test examples/journal/main.roc  # the expects (after a build)
-node --test 'examples/journal/test/*.test.mjs'                      # HTTP, browser, content
+just examples journal                            # build, type-check, lint, check the SQL, run the expects and the tests
+just examples-release journal                    # as deployed: rocx build, then the node tests against a server built for speed
+bin/rocx check examples/journal                  # type-check both programs
+bin/rocx test examples/journal                   # the expects
+node --test 'examples/journal/test/*.test.mjs'   # HTTP, browser, content
 ```
 
 - **The expects** cover the content rules (`Rules.roc`: frontmatter, footnotes, reading time,
@@ -164,9 +182,9 @@ The test files build the app themselves, taking turns through a lock in `build/`
   once and can take it back, as with GitHub's reactions, rather than clapping without end. Counts
   start at a small seed, the same for the same post each time, so the first run looks read. They
   are kept in memory only: a restart starts them again, which is acceptable for a friendly gesture.
-- **A reader is a cookie** (`reader`: random, HttpOnly, kept a year), given by the first page.
-  Reactions are remembered and rate limited by it. A request without one is rate limited by the
-  connection's address, and a reaction sent without one is refused (403).
+- **A reader is a cookie** (`reader`: random, HttpOnly, kept a year, `Secure` behind HTTPS),
+  given by the first page. Reactions are remembered and rate limited by it. A request without one
+  is rate limited by the connection's address, and a reaction sent without one is refused (403).
 - **Search lives on its own page.** The masthead's search is a plain form that goes there, so the
   posts' index is carried only in the page that needs it.
 - **No code highlighting.** Code blocks are labelled with their language and scroll on their own.

@@ -52,8 +52,8 @@ view! = |_|
 
 			<Heading id="install">Installing it</Heading>
 			<p>
-				Name the package in your app's header, <code>main.roc</code>; <code>rocx build</code> gives the
-				browser's half the same packages, so you name it only here. Forms isn't a
+				Name the package in your app's header, <code>main.roc</code>. rocx gives the browser's half the
+				same packages, so you name it only here. Forms isn't a
 				<a href={"${Paths.platform_server}#plugins"}>plugin</a>,
 				so <code>App.program</code> needs nothing.
 			</p>
@@ -98,17 +98,18 @@ view! = |_|
 
 			<Heading id="endpoint">At the endpoint</Heading>
 			<p>
-				An <a href={"${Paths.routing}#endpoints"}>endpoint</a> reads its body with the same schema: its route
-				file names the form beside the handler, whose <code>body</code> is the form's record (D-093):
+				An <a href={"${Paths.routing}#endpoints"}>endpoint</a> reads its body with the same schema. The page's
+				endpoint is under <code>api/</code> at its path, and its route file names the form beside the
+				handler, whose <code>body</code> is the form's record (D-093):
 			</p>
-			<Code title="routes/signup/+server.roc" source={signup_route} numbers={Bool.False} />
+			<Code title="routes/api/signup/+server.roc" source={signup_route} numbers={Bool.False} />
 			<p>
 				The platform reads the fields (URL-encoded, multipart, or a JSON object) with the form and gives
 				<code>post!</code> the account. What doesn't pass never reaches it: the endpoint answers
 				<code>422</code> with the issues as JSON (<code>application/json</code>). An unticked box, which a
 				browser doesn't send at all, is the form's to judge. <code>Generated/Api</code> makes the endpoint so
 				in both copies
-				(<code>{"Endpoint.checked(Endpoint.remote(\"POST\", \"/signup\"), Signup.form)"}</code>), so a
+				(<code>{"Endpoint.checked(Endpoint.remote(\"POST\", \"/api/signup\"), Signup.form)"}</code>), so a
 				page's submission is read with the form too, and <code>/openapi.json</code> documents the body with
 				the form's schema. A handler refuses what only it can check (a name already taken) with
 				<code>Issues.refusal</code>. This site's handler:
@@ -147,7 +148,7 @@ view! = |_|
 			<Code title={Sources.forms_demo.file} source={Sources.forms_demo.rocx} />
 			<p>
 				An app's page posts to its endpoint instead: make the live form with
-				<code>LiveForm.of!(Signup.form, Api.post_signup({"{}"}))</code> and write
+				<code>LiveForm.of!(Signup.form, Api.post_api_signup({"{}"}))</code> and write
 				<code>{"<form method=\"post\" action={live.url()} novalidate>"}</code>, with no
 				<code>on:submit</code>. With the runtime, the form is sent in the background; the page stays and shows
 				the endpoint's issues at their fields. Without it, the browser posts the form, and the page comes
@@ -158,10 +159,15 @@ view! = |_|
 				An edit form starts filled in:
 				<code>{"LiveForm.filled!(TaskForm.editing, save, [(\"title\", task.title), (\"notes\", task.notes)])"}</code>.
 				From a handler, <code>live.reset!()</code> puts back what the form started with and forgets every
-				issue, keeping the inputs and focus (Start again, in the demo). An add form resets once the endpoint
-				accepts it:
+				issue, keeping the inputs and focus (Start again, in the demo).
+			</p>
+			<p>
+				The runtime empties a form whose send succeeded: its inputs go back to what the page wrote in them.
+				<code>LiveForm</code> keeps what was typed until <code>reset!</code>, so an add form resets then:
 				<code>{"create_effect!(|| live.accepted!(), |accepted| if (accepted) live.reset!() else {})"}</code>.
-				<a href={Paths.examples_tasks}>examples/tasks</a> does both.
+				An edit form that stays on its page after a save says <code>data-rocx-keep</code> on its
+				<code>{"<form>"}</code> instead, to keep what was saved.
+				<a href={Paths.examples_tasks}>examples/tasks</a> has an add form and an edit form.
 			</p>
 
 			<Heading id="values">Values and their checks</Heading>
@@ -247,8 +253,8 @@ view! = |_|
 			<p>
 				<code>Issues.at(issues, field)</code> picks out a field's issues, and <code>Issues.under</code> a
 				list's, its items' too. <code>Issues.refusal</code> is an endpoint's <code>422</code>, and
-				<code>Issues.from_problem</code> reads one back from a submission's <code>error!()</code> or
-				<code>Endpoint.send!</code>.
+				<code>Issues.from_problem</code> reads one back from a submission's <code>error!()</code> or an
+				endpoint's <code>send!</code>.
 			</p>
 
 			<Heading id="regex">Patterns</Heading>
@@ -279,8 +285,8 @@ view! = |_|
 
 			<Heading id="components">The components</Heading>
 			<p>
-				<code>rocx build</code> copies the components into your app, as it does the
-				<a href={Paths.ecosystem_charts}>charts</a>; <code>import forms.TextField</code> imports the copy.
+				rocx copies the components into your app (<code>Generated/forms/</code>), as it does the
+				<a href={Paths.ecosystem_charts}>charts</a>. <code>import forms.TextField</code> imports the copy.
 			</p>
 			<TableWrap>
 				<table>
@@ -333,7 +339,9 @@ view! = |_|
 			<p>
 				And for now: decimals use a <code>.</code>; patterns have no flags or captures;
 				<code>form.parse_body(text)</code> (for a page holding a form's text) reads URL-encoded only (the
-				platform reads an endpoint's body for the form, JSON too).
+				platform reads an endpoint's body for the form, JSON too). <code>LiveForm</code> shows a
+				<code>422</code>'s issues; another refusal (a <code>403</code>, a <code>500</code>) is the
+				submission's <code>error!()</code> to show.
 			</p>
 			<details>
 				<summary>The demo: <code>{Sources.forms_demo_file.file}</code></summary>
@@ -365,7 +373,7 @@ good_json = "{\"name\":\"Ada\",\"email\":\"ada@example.com\",\"age\":36,\"passwo
 
 ## What an app's route file says for the endpoint.
 signup_route : Str
-signup_route = "import pf.Server\nimport pf.Endpoint\nimport ../../Signup\n\n## What POST /signup is sent: an account, read and checked by the form.\npost_body = Signup.form\n\npost! : { request : Server.Request, params : {}, context : c, body : Signup.Account } => Try({ welcome : Str }, Endpoint.Refusal)\npost! = |{ body, .. }| Ok({ welcome: \"Welcome, \${body.name}\" })"
+signup_route = "import pf.Server\nimport pf.Endpoint\nimport ../../../Signup\n\n## What POST /api/signup is sent: an account, read and checked by the form.\npost_body = Signup.form\n\npost! : { request : Server.Request, params : {}, context : c, body : Signup.Account } => Try({ welcome : Str }, Endpoint.Refusal)\npost! = |{ body, .. }| Ok({ welcome: \"Welcome, \${body.name}\" })"
 
 ## The endpoint's answer to a body (a form's, or JSON's when it starts with `{`), as the server
 ## answers it (`Endpoint.respond!`): its status, its type when it is JSON, and what it sends.

@@ -26,6 +26,9 @@ web/test/app/Generated/
 site/Generated/
 site/build/
 site/dist/
+# An example's deploy build (`rocx build`: dist/, and `--image`'s .tar)
+examples/*/dist/
+examples/*/*.tar
 web/platform/targets/
 web/test/build/
 

@@ -89,11 +89,24 @@ When an item lands, delete its line here in the same commit.
   specialized; since D-064 it ships boxy, so `just example-apps --bench` (a run on the user's go, on
   a quiet machine) would measure what ships.
 
+- **Who signs in when `Auth.user_for!` can't make a row (D-134):** a returning user known by an
+  app's own id from before, with no address or one another user has, gets no row, so
+  `Auth.user!` answers `NotFound` and the example's middleware signs them out right after they sign
+  in (packages/auth's README says so). Sign them in anyway, or refuse at sign-in?
+- **A form with `use_action!` alone (D-118):** the decision counts such a form as read, but
+  web/runtime.js registers an endpoint only through `use_submission!`/`use_submissions!`, so the
+  form goes as a plain form. The docs describe the code; change the code or the decision's wording?
+- **packages/testing's JS half in a release:** `release/pack.sh` ships no `.mjs`, so an installed
+  Roc Solid has no `buildForTests`/`startServer` (open question 3 in its PROPOSALS.md).
+- **Two small example choices:** examples/journal could use the platform's `PUBLIC_URL`
+  (`Env.public_url!`) in place of its own `ORIGIN`; examples/quiz's reveal could colour each bar as
+  its choice (`color`, D-130).
+
 ## Framework work, decided but not built
 
 - **packages/video's next steps (D-126):** a player that rests on its poster under
   `prefers-reduced-motion` (one host function reading the runtime's `reducedMotion()`; a gap for
-  any app today); one that starts as it scrolls into view (an `on:visible` primitive); real input
+  any app today); one that starts as it scrolls into view (an event for an element coming into view); real input
   scripted at frames (a demo's clicks dispatched, replayed when scrubbed back); `rocx render`
   feeding ffmpeg as it films, not after (D-128: the CLI platform can't write to a child's stdin
   yet); an audio track mixed in by ffmpeg; rendering on the server
@@ -163,7 +176,7 @@ When an item lands, delete its line here in the same commit.
   log and still show the boundary.
 - **The server's other limits** are in `server/README.md`, "Not yet":
   - actors' timers are all set again at start, a task each in memory;
-  - D-057's job interrupt has x86_64 paths (macOS and Linux) written but never built or run here;
+  - x64 hosts, D-057's x86_64 interrupt paths among them, are built for a release but have never run here;
   - D-057's interrupt tells Roc's code by a flag every function Roc calls clears: Roc's code in a
     section of its own from the fork's LLVM backend, with start and end symbols the host reads, would
     tell it by address, the cleaner answer, but a compiler change and a PR the user opens.
@@ -177,6 +190,23 @@ When an item lands, delete its line here in the same commit.
   - Postgres parameter types; packages' SQL checked per backend (packages/jobs, packages/push,
     packages/admin: their SQL is in no app's sources); the checks in the app's own compile; a check
     at run time (blocked by `test/compiler-bugs/two-formats-one-where`).
+
+- **Apps still keeping their own users (D-134):** `rocx new`'s template (templates/app: its users
+  table and `made!`), examples/notes (`Store.person_for!`) and packages/stripe's example
+  (`Accounts.made!`) onto `Auth.user_for!`; drop `crypto` from packages/auth/example's header if it
+  builds without it.
+- **LiveForm after a successful send (probable bug, D-122):** `Runtime.emptied` resets a form's
+  inputs to the page's first values, but `LiveForm` keeps its typed values until `reset!`, so the
+  inputs and `live.value!`/`fields!` disagree on a form that stays on its page with neither
+  `reset!` nor `data-rocx-keep` (examples/plate's goals page, `recipes/[id]`, the trends weigh
+  form). Check in a browser; fix by LiveForm resetting itself on success, or `data-rocx-keep` there.
+- **Signals don't compare:** a memo computed again to the same value tells no one (D-109), but a
+  signal's setter runs its readers whatever it is given (Solid's `createSignal` compares by
+  default); examples/checkboxes writes only on a change by hand.
+- **`Kv.swap!` can starve a writer under contention:** examples/checkboxes waits 1 ms after three
+  lost tries and gives up after a thousand (`Store.written!`).
+- **packages/headless `Tab.press!("a")`** sends `code: "a"` (not `KeyA`) and no text, so a letter
+  types nothing (Tab.roc's `key_of`); documented, not fixed.
 
 ## The Roc compiler (the fork in `~/roc-fork`)
 
@@ -220,8 +250,8 @@ When an item lands, delete its line here in the same commit.
 - **A lint for a page and an endpoint at one path (D-100)**, configurable: `rocx lint` warns of a
   folder with both `+page.rocx` and `+server.roc`, pointing at `routes/api/<the page's path>/`,
   off or an error as an app's settings say. D-100 is docs only for now.
-- **The first release (D-078), waiting on the user:** (the `LICENSE` is MIT, 2026-11-27) the x86_64 Linux fork compiler published and pinned (`just roc-fork-linux
-  x86_64`, then `just publish-roc-fork`, from the Mac with the fork); then a `v<date>` tag, which
+- **The first release (D-078), waiting on the user:** (the `LICENSE` is MIT, 2026-11-27; every
+  platform's fork compiler, x86_64 Linux too, published and pinned with D-115) a `v<date>` tag, which
   runs `.github/workflows/release.yml` (hosts, packs, smoke on macOS and Alpine arm64/x86_64,
   publish). Once it is out: drop "the first release isn't out yet" from README.md's Getting
   started and the front page, and redeploy the docs site.
@@ -230,8 +260,8 @@ When an item lands, delete its line here in the same commit.
 - **The examples' READMEs build with `node server/build.mjs`**: `rocx build <dir> --release <out>`
   does it now (D-078).
 - **rocx on Linux** (D-062, D-069, D-078): on arm64 it runs (CI's), its watching polls (inotify is
-  the next step). x86_64: the release builds its host and rocx (cross-built by Zig on the Mac); its
-  fork compiler is built (`just roc-fork-linux x86_64`) but not yet published (above).
+  the next step). x86_64: the release builds its host and rocx (cross-built by Zig on the Mac), and its
+  fork compiler is published (D-115); neither has run on x86_64 here.
 - **What is still Node** (D-062): the tests, `just site`'s full build (it measures the wasm with
   `web/runtime.js`; its static copy is `rocx build --static` since D-073), and the measuring
   scripts. All of `just site` in Roc would need a way to run the wasm, or to drop the measured
@@ -351,3 +381,8 @@ When an item lands, delete its line here in the same commit.
 
 - **Old branches kept on purpose until about 2026-11-28:** `native-server`, `solid-signals` and
   `refs/scrub-backup/native-server`. Delete them then, with the user's OK.
+- packages/video's Player.rocx and Sequence.rocx still write the older `{=if …}` hole (D-070);
+  packages/presence's `Wire.topic` is unused but for its own expect; packages/mcp's McpHttp calls
+  `Endpoint.send!(api(params), arg)` rather than the method form (D-102).
+- examples/echo's `bench.sh` (and its README's by-hand steps) start the server from the
+  repository's root, so it writes `data/app.db` there (D-105).

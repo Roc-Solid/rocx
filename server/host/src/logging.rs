@@ -2,7 +2,7 @@
 //! forwarding) and Roc's (`Log.info!` and the others, through `Host.log!`) alike, each a level, a
 //! message and fields, written by one formatter in one of two formats:
 //!
-//! - pretty, for a person at a terminal: `14:03:12 info  gate failed  error="no session" path=/admin`
+//! - pretty, for a person at a terminal: `14:03:12 info  gate failed  path=/admin error="no session"`
 //!   (the local time, the level, the message, then after two spaces the fields, a value quoted when
 //!   it has a space, a quote, an `=` or a control character in it, or is empty). When stderr is a
 //!   terminal the time and the fields' names are dimmed and the level is coloured, so the message

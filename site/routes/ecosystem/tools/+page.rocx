@@ -61,6 +61,12 @@ view! = |_|
 				that don't fit go back to the model as a tool error it can act on, as does the tool's own
 				<code>Err</code>.
 			</p>
+			<p>
+				A tool is given its caller's context. Here both give <code>{"{}"}</code>. An MCP server behind
+				<code>McpHttp.respond!</code> gives its tools a <code>McpHttp.Caller(c)</code> (the request, who is
+				asking, <code>progress!</code>), so a tool for both is made from a function that reads no context
+				(<code>{"add! : { text : Str }, ctx => …"}</code>).
+			</p>
 
 			<Heading id="modules">The modules</Heading>
 			<TableWrap>

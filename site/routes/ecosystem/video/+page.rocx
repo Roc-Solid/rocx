@@ -54,10 +54,10 @@ view! = |_|
 			/>
 			<p>
 				Then import <code>video.Player</code>, <code>video.Sequence</code> and <code>video.Timeline</code> in a
-				<code>.rocx</code> file. <code>rocx build</code> copies the two components into the app
-				(<code>Generated/video/</code>), as it does for the <a href={Paths.ecosystem_charts}>charts</a>.
-				The package isn't a plugin: it adds nothing to the server. Rendering a file needs Node, Chromium's
-				headless shell and ffmpeg on the machine that renders.
+				<code>.rocx</code> file. <code>rocx generate</code> (which <code>rocx dev</code> and <code>rocx build</code>
+				run first) copies the two components into the app (<code>Generated/video/</code>), as it does for the
+				<a href={Paths.ecosystem_charts}>charts</a>. The package isn't a plugin: it adds nothing to the server.
+				Rendering a file needs Chromium's headless shell and ffmpeg on the machine that renders.
 			</p>
 
 			<Heading id="demo">A walk in eight seconds</Heading>
@@ -123,7 +123,7 @@ view! = |_|
 						<tr><td><code>autoplay</code>, <code>loop</code></td><td>Plays from the start once the page is live, and again when it ends. Both on unless you turn them off; without <code>loop</code>, it stops on its last frame.</td></tr>
 						<tr><td><code>poster</code></td><td>The frame shown before it plays, and where nothing plays it: <code>Start</code>, <code>End</code> (the default) or <code>{"Frame(n)"}</code>.</td></tr>
 						<tr><td><code>controls</code></td><td><code>Corner</code> (the default): a play and pause button in its corner. <code>Bar</code>: the button, a scrubber and the time. <code>Hidden</code>: nothing to see. Anything that moves by itself for more than five seconds needs a way to pause it, so keep one on a page.</td></tr>
-						<tr><td><code>label</code></td><td>Its <code>aria-label</code>.</td></tr>
+						<tr><td><code>label</code>, <code>class</code></td><td>Its <code>aria-label</code>, and classes added to <code>video</code>.</td></tr>
 						<tr><td>its children</td><td>The composition.</td></tr>
 					</tbody>
 				</table>
@@ -168,7 +168,8 @@ view! = |_|
 				numbers={Bool.False}
 			/>
 			<p>
-				<code>rocx render</code> opens the page in Chromium's headless shell and lets it load and hydrate. Then it
+				<code>rocx render</code> opens the page in Chromium's headless shell, driven from Roc by
+				<code>packages/headless</code>, and lets it load and hydrate. Then it
 				takes the page's clock over: <code>performance.now()</code>, <code>Date</code>, timers and animation
 				frames move only when it says. For each frame, it moves the clock on a frame, seeks the player there,
 				waits for the page to settle, and puts every running animation where the clock says. That includes the
@@ -179,7 +180,8 @@ view! = |_|
 				frame for frame. ffmpeg writes H.264 into <code>.mp4</code> and VP9 into <code>.webm</code>. A path ending
 				in <code>/</code> gets one PNG for each frame. <code>--scale 2</code> (the default) films at twice the CSS
 				size. <code>--player</code> picks a player by index or label, and <code>--from</code> and <code>--to</code>
-				film part of it. ffmpeg is <code>$FFMPEG</code>, the one on PATH, or Nix's.
+				film part of it. Chromium is <code>$CHROME</code> or Playwright's headless shell. ffmpeg is
+				<code>$FFMPEG</code>, the one on PATH, or Nix's.
 			</p>
 
 			<Heading id="stories">In the stories</Heading>
@@ -201,7 +203,7 @@ view! = |_|
 				<li>A player plays whatever the reader's <code>prefers-reduced-motion</code> says, since Roc can't read a media query yet. Its button pauses it.</li>
 				<li>A player starts when the page goes live, not when it scrolls into view.</li>
 				<li>A demo is driven by its props from the frame, not by real clicks sent at given frames.</li>
-				<li>Rendering is a Node script, not a <code>rocx</code> command. It renders on your machine, not on the server with an app's data, and videos are silent.</li>
+				<li>Rendering runs on your machine, not on the server with an app's data, and videos are silent.</li>
 			</ul>
 		</NoHydration>
 	</>

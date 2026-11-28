@@ -4,8 +4,9 @@ import pf.Time
 import stripe.Stripe
 import Plans
 
-## The app's own part of Stripe's events (`Stripe.plugin({ on_event! })`), after the package has
-## kept what each says, in the same transaction.
+## The app's own part of Stripe's events (`Stripe.webhook_route!`'s `on_event!`, given in
+## routes/stripe/webhook/+server.roc), after the package has kept what each says, in the same
+## transaction.
 Billing := [].{
 
 	## An e-book bought (a Checkout Session in payment mode, paid; or paid later, for a payment

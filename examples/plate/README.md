@@ -35,25 +35,25 @@ time zone above all), then log your first meal. Two settings come from the envir
 - `OFF_URL=…`: where Open Food Facts is asked (the tests point it at a stand-in). The real one
   otherwise.
 
-For example, `PLATE_PASSWORD=apple ../../bin/rocx dev`. To keep the file elsewhere (on a volume,
-say), pass the server an option after `--`: `../../bin/rocx dev -- --database-url sqlite:/tmp/plate.db`.
+For example, `PLATE_PASSWORD=apple ../../bin/rocx dev`. `rocx dev` also gives its server the `.env`
+in `examples/plate`, if there is one, so the settings can go there; a server you start yourself
+reads a file only when `--env-file` names it. To keep the file elsewhere (on a volume, say), pass
+the server an option after `--`: `../../bin/rocx dev -- --database-url sqlite:/tmp/plate.db`.
 To back the diary up, copy `data/plate.db` with the server stopped, or run
 `sqlite3 data/plate.db ".backup copy.db"`.
 
-### Build it by hand
+### Build it to deploy
 
-To build each piece yourself, run these from the repository's root. The browser's wasm is
-optimized for size here, as the docs' examples page measures it:
+`rocx build` builds the server optimized for speed and the browser's wasm for size:
 
 ```sh
-just web-host     # the browser platform's host, once (rocx dev builds it too)
-bin/rocx generate examples/plate --client examples/plate/build/client
-.tools/roc-active build --target=wasm32 --opt=size --output=examples/plate/build/client/static/rocx/app.wasm examples/plate/build/client/main.roc
-node server/build.mjs examples/plate/main.roc examples/plate/build/plate
-cd examples/plate && build/plate --port 18190 --static build/client/static
+cd examples/plate
+../../bin/rocx build                                                   # dist/server and dist/static
+PLATE_PASSWORD=apple dist/server --port 18190 --static dist/static
 ```
 
-Then open http://localhost:18190.
+Then open http://localhost:18190. `rocx build --image` makes a container image instead,
+`plate.tar`, whose `/app/data` is where `data/plate.db` goes: give it a volume.
 
 ## A tour
 
@@ -116,7 +116,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/p
 | A form whose result is worked out as you type, by the same function the server uses | [`routes/(diary)/foods/[id]/+page.rocx`](routes/(diary)/foods/[id]/+page.rocx) (the preview), [`routes/(diary)/goals/+page.rocx`](routes/(diary)/goals/+page.rocx) (the targets) |
 | A form's starting values read once, on purpose (`untrack!`), and a row per position (`.map_with_index(\|portion, index\| <option key={index} …>)`) | [`routes/(diary)/foods/[id]/+page.rocx`](routes/(diary)/foods/[id]/+page.rocx) |
 | Optimistic removal (`use_submissions!`): an entry or an ingredient goes at once. Entries are keyed rows that fade in and out (`transition:in`, `transition:out`) | [`components/Diary.rocx`](components/Diary.rocx), [`components/MealPart.rocx`](components/MealPart.rocx), [`routes/(diary)/recipes/[id]/+page.rocx`](routes/(diary)/recipes/[id]/+page.rocx) |
-| Charts from packages/charts: energy each day (`BarChart`), weight on the days it was logged, each to scale (`LineChart`, a day a number: `Plate.weight_points`, `Plate.day_at`), in the app's colours | [`routes/(diary)/trends/+page.rocx`](routes/(diary)/trends/+page.rocx) |
+| Charts from packages/charts: energy each day (`BarChart`), weight on the days it was logged, each to scale (`LineChart`, a day a number: `Plate.weight_points`, `Plate.day_at`), in the app's colours (`--chart-color` on the chart's box). `Plate.bars` is plain Roc on no platform, so the page makes the chart's own `BarChart.Bar` records of it as it passes them (D-130) | [`routes/(diary)/trends/+page.rocx`](routes/(diary)/trends/+page.rocx) |
 | An SVG ring drawn from data (`stroke-dasharray`), and bars sized by a CSS variable (`style:--share`) | [`components/Summary.rocx`](components/Summary.rocx) |
 | Pure components (`view`): `Summary` and `HitRow` have stories and expects, `Facts` has expects | [`components/Summary.rocx`](components/Summary.rocx), [`components/HitRow.rocx`](components/HitRow.rocx), [`components/Facts.rocx`](components/Facts.rocx) |
 
@@ -130,6 +130,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/p
 | Rules written once and run on both sides: amounts, totals, recipes, targets (Mifflin–St Jeor), the words for days and numbers | [`Plate.roc`](Plate.roc), with its expects |
 | Forms with packages/forms: decimals, choices, days, optional fields, checks across fields (`check_at`), a pattern (`Matches`) | [`PlateForm.roc`](PlateForm.roc) |
 | An endpoint's body read and checked by its form (`post_body = PlateForm.amount`, D-093): a form or JSON alike becomes a typed record, or is refused with each field's issues before the handler runs | [`routes/(diary)/api/foods/[id]/+server.roc`](routes/(diary)/api/foods/[id]/+server.roc), and each `+server.roc` with a `post_body` |
+| A handler whose answer is a redirect of its own: its `Ok` is a `Server.Response` (`Try(Server.Response, Endpoint.Refusal)`, D-106), sent as it is | [`routes/(diary)/api/foods/[id]/+server.roc`](routes/(diary)/api/foods/[id]/+server.roc), [`routes/(diary)/api/barcode/+server.roc`](routes/(diary)/api/barcode/+server.roc), [`routes/api/sign-in/+server.roc`](routes/api/sign-in/+server.roc) |
 | An entry that keeps what it had when it was logged, so a food changed later doesn't change a past day | [`Store.roc`](Store.roc) (`log!`), [`migrations/0001_tables.sql`](migrations/0001_tables.sql) |
 | A recipe kept as a food: what 100 g of the mix has, and a serving's weight, worked out in one transaction with each change | [`Store.roc`](Store.roc) (`mix!`) |
 | A time zone the day starts in: its offset from the platform (`Time.offset!`), the day from SQLite's `date(…, 'unixepoch')` | [`Store.roc`](Store.roc) (`local_now!`, `today!`, `hour!`) |
@@ -147,11 +148,12 @@ Each row names a feature and the file to read for it. Paths are from `examples/p
 ## Test it
 
 ```sh
-just examples plate                                                # build, type-check, lint, check the SQL, run the expects and the tests
-bin/rocx fmt --check examples/plate                                # the formatting
-bin/rocx check examples/plate                                      # build, then type-check both programs
-bin/rocx check -- .tools/roc-active test examples/plate/main.roc   # the expects (after a build)
-node --test 'examples/plate/test/*.test.mjs'                       # HTTP and browser tests
+just examples plate                            # build, type-check, lint, check the SQL, run the expects and the tests
+just examples-release plate                    # rocx build, then the tests against a server built --opt=speed
+bin/rocx fmt --check examples/plate            # the formatting
+bin/rocx check examples/plate                  # build, then type-check both programs
+bin/rocx test examples/plate                   # the expects
+node --test 'examples/plate/test/*.test.mjs'   # HTTP and browser tests
 ```
 
 The node tests in [`test/plate.test.mjs`](test/plate.test.mjs) build the app, start it on a SQLite

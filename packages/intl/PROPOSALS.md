@@ -3,49 +3,30 @@
 What the package would like from outside `packages/intl/`, one section each: the problem, the
 options, the change recommended (sketched), what in the package depends on it, and how to undo it.
 Nothing here is built for intl; the package compiles and its tests pass without any of it. What
-proposal 1 asked of the platform has landed, in another form (D-033): see there.
+proposal 1 asked of the platform has landed in another form (D-033, D-103, D-116), and proposal 2
+isn't needed: see each.
 
-## 1. Server-only modules in packages
+## 1. The server's side, shipped by the package
 
-**The platform's side landed (D-033), not as option 1 below.** A package may name the server
-platform in its header, as an app does, with a `browser.roc` beside `main.roc` listing the modules
-the browser's half can compile; packages/guard and packages/auth do, and their middleware is
-imported as it is, with nothing copied. intl doesn't yet: its `main.roc` names no platform, so the
-middleware and the endpoint below are still the app's own. What is left is intl's side: an
-`IntlServer` module as sketched, under a header that names the server platform, and a `browser.roc`
-for the pure modules. The rest of this section is the proposal as it was written.
+**The platform's side landed.** A package may name the server platform in its header, with a
+`browser.roc` beside `main.roc` listing the modules the browser's half can compile (D-033). An
+app's middleware is a `+middleware.roc` per folder (D-103), and a package offers handlers that the
+app's route files call (D-116, as packages/auth's `*_route!`). What is left is intl's side.
 
-**Problem.** Two pieces of intl's integration run only on the server and use platform modules: a
-middleware that picks the request's locale and says on the answer which it was
-(`Content-Language`, and `Vary: Accept-Language, Cookie` so a cache keeps one copy per language),
-and the endpoint that keeps a reader's choice in a cookie (`POST /locale`). A Roc package can name
-a platform only if it is the app's exact one, and a Roc Solid app is two apps, so a package can't
-`import pf.Middleware`. Today `rocx build` copies only `components/*.rocx`, into both halves. So
-the README has the app write both itself (about a dozen lines each), and intl's pure side takes the
-platform's `Server.Request` structurally (`Locale.wanted(request, cookie)` asks only for a record
-with `headers`), which needs no platform.
+**Problem.** Two pieces of intl's integration run only on the server, and the app writes them
+(about a dozen lines each): a middleware that picks the request's locale and says on the answer
+which it was (`Content-Language`, and `Vary: Accept-Language, Cookie` so a cache keeps one copy per
+language), and the endpoint that answers the locale and keeps a reader's choice in a cookie
+(`/locale`). intl's `main.roc` names no platform, so it can't hand back a `Middleware` or a
+`Server.Response`.
 
-**Options.**
-1. `rocx build` also copies a package's `server/` directory (`.roc` and `.rocx`) into the server
-   half only, as `Generated/<alias>/server/…`, where `pf` is the server platform. App code that
-   only the server half has (route `+server.roc` files, middleware modules, `main.roc`) imports it.
-2. Leave it to the app: copy the glue by hand from the README (today's state).
-3. Structural types only: the package exposes functions over plain records (`{ headers }` in,
-   `{ name, value }` headers out) and the app wraps them in `Middleware.make`. It works for reading
-   a request, but the package can't hand back a `Middleware` or an `Endpoint` value, whose types
-   belong to the platform.
-4. Packages that take the platform as a parameter (`package [..] { pf: platform }`): a compiler
-   change, and the right one in the long run, but not ours to make.
-
-**Recommended: 1.** A sketch:
-
-```
-packages/intl/server/IntlServer.roc     # copied to Generated/intl/server/IntlServer.roc, server half only
-```
+**Recommended.** An `IntlServer` module, with `main.roc` naming the server platform and a
+`browser.roc` listing the pure modules (as packages/guard does):
 
 ```roc
 import pf.Middleware
 import pf.Server
+import pf.Endpoint
 import intl.Intl
 import intl.Locale
 import intl.Locales
@@ -54,58 +35,34 @@ IntlServer := [].{
 	## Picks the request's locale (its `cookie`, then Accept-Language, then the first supported),
 	## hands its tag on through `with`, and says on the answer which language it is in.
 	negotiate : List(Locales.Data), Str, (given, Str -> handed) -> Middleware(given, handed)
-	negotiate = |supported, cookie, with|
-		Middleware.make(|request, context, next!| {
-			tag = Intl.choose(supported, Locale.wanted(request, cookie)).tag()
-			answer = next!(request, with(context, tag))
-			{ ..answer, headers: answer.headers.concat([{ name: "content-language", value: tag }, { name: "vary", value: "accept-language, cookie" }]) }
-		})
 
-	## An endpoint's `post!` that keeps `{ tag }` in `cookie` for a year: 204 for the picker, a 303
-	## back for a plain form.
-	remember! : Str, Server.Request, Str => Server.Response
+	## A `post!`'s body that keeps `{ tag }` in `cookie` for a year: 204 for the picker, a 303 back
+	## for a plain form.
+	remember_route! : Server.Request, Str, Str => Try({}, Endpoint.Refusal)
 }
 ```
 
 ```roc
-# the app's Middlewares.roc
-default = Middleware.same_origin({}).then(IntlServer.negotiate(I18n.supported, "locale", |context, tag| { facts: context.facts, locale: tag }))
+# routes/+middleware.roc
+middleware = IntlServer.negotiate(I18n.supported, "locale", |context, tag| { ..context, locale: tag })
+
+# routes/locale/+server.roc
+post! = |{ request, body, .. }| IntlServer.remember_route!(request, "locale", body.tag)
 ```
 
-rocx's side: in `componentPackages`, look for `server/` beside `components/`; in `build`, write
-those files under `Generated/<alias>/server/` for the server half and leave them out of the
-`--client` copy (as it leaves out a route file's middleware). An import of
-`intl.server.IntlServer` (or `import intl.IntlServer` when the module is under `server/`) becomes
-the relative import of the copy, as `linkComponents` does for components. A file the browser's
-copy keeps that imports a server module fails the client build, at its line.
-
-**Depends on it.** The README's middleware and endpoint, which the app now writes itself.
-`Content-Language` and `Vary` aren't sent unless the app adds them.
-**Undo.** Delete the copy step. The app keeps its own copies, as today.
+**Cost.** intl's `main.roc` stops being on no platform: an app on another platform (the CLI's)
+would name `browser.roc`, which is. **Depends on it.** The README's middleware and endpoint, which
+the app now writes. `Content-Language` and `Vary` aren't sent unless the app adds them.
+**Undo.** Delete the module and the header's platform.
 
 ## 2. Components that import their package's other components
 
-**Problem.** In a copied component, `rocx build` renames the package's own imports
-(`import intl.X` when the directory is `intl`) but doesn't point an import of another component of
-the same package at its copy. `components/LocaleSelect.rocx` can't `import intl.Language`: in the
-app's copy, `intl.Language` names a module the package doesn't have ("package module is private").
-So the context, the store and the picker share one module, and the picker is `<Language />`.
+**Not needed.** A package's components are copied side by side into `Generated/<alias>/`, so one
+imports another by its bare name: packages/forms' `TextField.rocx` has `import LiveForm`. intl
+could split `Language.rocx` into a context and a picker that way. It keeps one file because the
+store, the context and the picker are small together.
 
-**Options.** 1. Run the same rewrite on the copies that app files get: `linkComponents` with the
-copy's own path. 2. Keep a package's components in one file (today).
-
-**Recommended: 1.** In `build`'s loop over `pkg.paths`, after the rename:
-
-```js
-source = linkComponents(source, out, dir, packages);   // out: Generated/<alias>/<Name>.roc
-```
-
-so `import intl.Language` in `Generated/intl/LocaleSelect.roc` becomes `import Language`.
-
-**Depends on it.** With it, intl would split into `IntlContext.rocx` (the context and store) and
-`LocaleSelect.rocx` (the picker). **Undo.** One line.
-
-## 3. Message keys the compiler checks (generated by `rocx build`)
+## 3. Message keys the compiler checks (generated by `rocx generate`)
 
 **Problem.** `intl.t("cart.itmes", [("count", Int(3))])` compiles. At run time it shows the key,
 and `Catalog.problems()` finds translations that differ from the default, but neither finds a key
@@ -114,15 +71,16 @@ misspelt in the code, or an argument left out or misnamed at the call.
 **Options.**
 1. Messages as Roc functions, written by hand (`cart_items : Intl, { count : I64 } -> Str` in each
    locale's record). Checked, but translators then edit Roc, and plurals become code.
-2. Message files, read by `rocx build`: `messages/en.json`, `messages/pl.json` (key to ICU
-   message), from which it writes `Generated/Messages.roc`: the catalog, and a function for each
-   key whose arguments come from the default's message (`plural` and `number` give a number,
-   `select` and plain ones text, `date` and `time` a moment).
+2. Message files, read by rocx's code generation (`rocx generate`, which `rocx dev` and
+   `rocx build` run): `messages/en.json`, `messages/pl.json` (key to ICU message), from which it
+   writes `Generated/Messages.roc`: the catalog, and a function for each key whose arguments come
+   from the default's message (`plural` and `number` give a number, `select` and plain ones text,
+   `date` and `time` a moment).
 3. Keep keys as strings (today), and check them in tests: `expect Catalog.problems(…) == []`.
 
 **Recommended: 2**, once apps have enough messages to need it. Catalogs stay Roc lists for now:
 they need no tooling, and the same `Catalog` takes a generated list later. A sketch of what
-`rocx build` would write:
+rocx would write:
 
 ```roc
 ## Generated from messages/*.json: don't edit.
@@ -142,7 +100,7 @@ Messages := [].{
 <p>{Messages.cart_items(intl!(), { count: count!() })}</p>
 ```
 
-The build would fail on a message the default can't parse, and report `Catalog.problems` for the
+Generating would fail on a message the default can't parse, and report `Catalog.problems` for the
 other locales, at the file and key. JSON (key to message) is what translators' tools exchange most
 often; ICU messages need no other format.
 
@@ -152,13 +110,13 @@ often; ICU messages need no other format.
 
 **Problem.** The ten starter locales are written into `Locales.roc` by `tools/locales.mjs`, from
 what Node's `Intl` writes (CLDR 48). More locales and more data (parent locales, other numbering
-systems, long compact forms, quarters) shouldn't cost apps that don't use them. The site's budget is
-about 150 KB brotli.
+systems, long compact forms, quarters) shouldn't cost apps that don't use them.
 
-What was measured, on a small app (`--opt=size`, brotli): unused locales aren't compiled in (one
-locale 58.9 KB, three 61.1 KB, all ten 65.5 KB; about 1 KB a locale). intl's own code is the larger
-part: +12.6 KB for numbers alone, +22.1 KB with dates and relative times, +34.5 KB with messages,
-+4.6 KB more for `Validation.catalog` (nine languages).
+What was measured on 2026-11-21, before the browser's host moved to Rust (D-090), on a small app
+(`--opt=size`, brotli): unused locales aren't compiled in (one locale 58.9 KB, three 61.1 KB, all
+ten 65.5 KB; about 1 KB a locale). intl's own code is the larger part: +12.6 KB for numbers alone,
++22.1 KB with dates and relative times, +34.5 KB with messages, +4.6 KB more for
+`Validation.catalog` (nine languages).
 
 **Options.**
 1. Generate every CLDR locale into `Locales.roc`: unused ones cost nothing in the wasm, as
@@ -201,19 +159,18 @@ keep `in_offset` for fixed ones. The first visit, before the cookie, renders UTC
 **Depends on it.** `Intl.date`, `time`, `date_time` stay correct for UTC and fixed offsets.
 **Undo.** The primitive is additive.
 
-## 6. One copy of the date arithmetic
+## 6. One day type for forms and intl
 
-**Problem.** `server/platform/Calendar.roc` and intl's `Date.roc` both turn days since 1970 into
-dates (Howard Hinnant's algorithm), about thirty lines each. The platform can't import a package,
-and a package can't import the platform.
+**Problem.** packages/forms has a `Date` of its own (a day, as `<input type="date">` sends it,
+with day arithmetic). intl's `Date` has the same fields and much the same functions. Two types for
+one thing, and forms' `TooEarly(min)` carries the day as text.
 
-**Options.** 1. Keep both, each tested the same way (today: intl's expects include the platform's
-own cases). 2. A pure `time` package that both use, if platforms can come to name packages.
-3. Copy intl's `Date` into both platforms.
+**Options.** 1. Keep both (today). 2. forms reads into intl's `Date`, if forms is willing to depend
+on intl. 3. A small pure `time` package that both use.
 
-**Recommended: 1** for now; revisit if the platform gains a date type. forms also has a small
-`Date` (a day, as `<input type="date">` sends it): forms could read into intl's `Date`, which has
-the same fields, `parse_iso`, `to_iso` and day arithmetic, if forms is willing to depend on intl.
+**Recommended: 1** for now; 2 or 3 when an app needs a day to cross between them. (The server
+platform's `Server.http_date` counts days the same way, for HTTP's dates; it can't import a
+package.)
 
 ## 7. packages/forms
 
@@ -229,20 +186,19 @@ for today's issues. Three things would make the words better:
 - **`NotOneOf`'s options and `NoMatch`'s pattern** come as one joined text (`"a, b, c"`) and a
   regular expression. Neither is shown in the words: a list should be joined the locale's way
   (`a, b i c`), which needs list formatting (not in intl yet), and a pattern isn't for readers.
-- **Its `Date`.** See 6: one day type for both packages would let forms' `TooEarly(min)` carry a
-  day rather than text.
+- **Its `Date`.** See 6.
 
 ## Open questions
 
 1. **Catalogs as Roc, or as files?** v1 writes catalogs as Roc lists of `(key, message)`.
-   Translators' tools want files (JSON, XLIFF, PO). Is proposal 3 (files read by `rocx build`) the
+   Translators' tools want files (JSON, XLIFF, PO). Is proposal 3 (files read by `rocx generate`) the
    way to go, and which format?
 2. **A missing key shows the key** (`cart.items`), so it is seen. Some apps would rather show
    nothing, or log it. Is the key right?
 3. **`-0`.** A negative number that rounds to zero is written `"0"` (JavaScript's `Intl` writes
    `"-0"`). Keep it?
-4. **The code's size** (proposal 4): about 35 KB brotli with messages. Worth it for the site, or
-   should the site use only `NumberFormat` and `DateFormat` (12–22 KB)?
+4. **The code's size** (proposal 4): about 35 KB brotli with messages, measured before D-090. The
+   site's demo uses no messages to save it. Worth it for the site?
 5. **forms' voice in other languages.** `Validation`'s words follow forms' English: short, second
    person. German, French, Czech and Russian use the polite form ("Geben Sie", "Saisissez",
    "Zadejte", "Введите"); Polish and Spanish the familiar one ("Wpisz", "Introduce"), as their apps

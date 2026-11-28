@@ -13,9 +13,8 @@ import ../../../Generated/Api
 ## forms' posts at /api/account/two-factor.
 meta = { title: "Your account" }
 
-## Only signed-in people get here, as only they get the page's data: anyone else goes to sign in,
-## and back here after.
-## The account, as `GET /api/account` says.
+## The account, as `GET /api/account` says. Only signed-in people get here, as only they get the
+## page's data: anyone else goes to sign in, and back here after.
 account! : {} => { email : Str, sessions : List({ id : Str, current : Bool, started : Str }), two_factor : { state : Str, secret : Str, uri : Str, recovery_codes : U64 } }
 account! = |{}| Api.get_api_account({}).read!()
 

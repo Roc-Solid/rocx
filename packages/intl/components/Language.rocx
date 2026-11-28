@@ -21,7 +21,8 @@ import intl.Locales
 ##     <p>{intl!().t("cart.items", [("count", Int(count!()))])}</p>
 ##
 ## `tag` is the locale the server chose for the request (a GET endpoint's answer, read as the page
-## renders, so the browser hydrates in the same one); `remember!` is called with a newly chosen tag, to keep it (a cookie).
+## renders, so the browser hydrates in the same one). `remember!` is called with each tag the
+## reader picks, to keep it (in a cookie).
 Language := [].{
 
 	## What the context holds: the reader's `Intl`, a way to choose another, and the choices.

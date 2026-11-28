@@ -1,10 +1,10 @@
 # The installed Roc Solid this app builds with: a link rocx makes (.rocx-version says which)
 /.rocx
-# Written by rocx build: Generated/ (the routes, Api, Paths, App, Styles), and the .roc beside each
-# component's .rocx
+# Written by rocx (rocx generate, which rocx dev and rocx build run first): Generated/ (the routes,
+# Api, Paths, App, Styles), and the .roc beside each component's .rocx
 Generated/
 components/*.roc
-# Secrets the server reads as it starts (ANTHROPIC_API_KEY=…, SMTP_URL=…): never committed
+# Secrets rocx dev gives the server (--env-file .env: SMTP_URL=…, APP_SECRET=…): never committed
 .env
 # Builds (rocx build's dist/ and image), and the database's files
 build/

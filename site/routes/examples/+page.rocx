@@ -35,7 +35,7 @@ view! = |_|
 			<Heading id="start">Where to start</Heading>
 			<p>
 				Start with <a href={Paths.examples_hello}>hello</a>: one page with a counting button, and one
-				endpoint. It's the app <a href={"${Paths.root}#start"}>Getting started</a> makes. Then read
+				endpoint, the two files <a href={"${Paths.root}#start"}>Getting started</a> shows. Then read
 				<a href={Paths.examples_tasks}>Tasks</a>, written to be read first: file routing, middleware, a
 				database, pages that read endpoints, forms that work without JavaScript, and optimistic updates,
 				done the plain way, with comments on why each piece is where it is. Then pick the app that shows
@@ -45,9 +45,10 @@ view! = |_|
 				To run one, set up the repository (<code>just setup</code>), then start the app from its own
 				directory, so its database file lands beside it. <code>rocx dev</code> builds it, serves it at
 				http://localhost:8080 and rebuilds on save. <code>just examples</code> builds, checks and tests an
-				app as the repository's checks do.
+				app as the repository's checks do. <code>just examples-release</code> builds it to deploy
+				(<code>rocx build</code>), then runs its tests against a server optimized for speed.
 			</p>
-			<Code source={"cd examples/tasks && ../../bin/rocx dev   # http://localhost:8080\njust examples tasks                      # build, check and test it"} numbers={Bool.False} plain />
+			<Code source={"cd examples/tasks && ../../bin/rocx dev   # http://localhost:8080\njust examples tasks                      # build, check and test it\njust examples-release tasks              # its tests, as deployed"} numbers={Bool.False} plain />
 
 			<Heading id="glance">At a glance</Heading>
 			<p>
@@ -81,10 +82,10 @@ view! = |_|
 			<Heading id="measured">How they're measured</Heading>
 			<p>
 				{"Measured on ${ExampleApps.measured.date}, at commit "}<code>{ExampleApps.measured.commit}</code>{", with the compiler "}<code>{ExampleApps.measured.roc}</code>{", on an ${ExampleApps.measured.machine}. "}
-				<code>just example-apps</code> rebuilds each app's browser half (<code>rocx build --client</code>,
-				then the wasm with <code>--opt=size</code>, as <code>just examples</code> does) and compresses it as
+				<code>just example-apps</code> rebuilds each app's browser half (<code>rocx generate --client</code>,
+				then the wasm with <code>--opt=size</code>, as <code>rocx build</code> does) and compresses it as
 				this site measures its own (gzip level 9, brotli quality 11). Then it counts pages, endpoints, the
-				app's own lines of Roc (no blank lines, nothing <code>rocx build</code> writes, no tests), expects
+				app's own lines of Roc (no blank lines, nothing rocx writes, no tests), expects
 				and node tests.
 			</p>
 			<p>

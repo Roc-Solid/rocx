@@ -11,8 +11,8 @@ import crypto.Hmac
 ## database (`auth_sessions`), so a phone stays signed in across restarts and the table alone
 ## signs nobody in.
 ##
-## The server doesn't pass each client's tries apart, so ten wrong passwords a minute are allowed
-## in all, then the form says to wait.
+## Wrong passwords are counted for all clients together, not each client's address (which the
+## server does give: `request.peer`): ten tries a minute in all, then the form says to wait.
 Session := [].{
 
 	## The diary's one user, as the sessions' table names them: there are no accounts.

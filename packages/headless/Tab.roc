@@ -108,7 +108,8 @@ Tab := { socket : WebSocket }.{
 
 	## A key pressed and released, by its `key` as the browser names it (`Enter`, `Escape`, `Tab`,
 	## `Backspace`, `ArrowUp`…, `" "` for the space bar, or a letter). Enter and Space carry their
-	## text, as a keyboard's do, so Enter submits a form.
+	## text, as a keyboard's do, so Enter submits a form. A letter reaches the page's key handlers but
+	## types nothing (`type!` types).
 	press! : Tab, Str => Try({}, [Failed(Str)])
 	press! = |tab, key| {
 		{ code, virtual, text } = key_of(key)

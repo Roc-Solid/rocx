@@ -42,8 +42,7 @@ Room := [].{
 		create_effect!(
 			|| {},
 			|{}|
-				Endpoint.subscribe!(
-					lobby,
+				lobby.subscribe!(
 					|event|
 						match event {
 							Resync => set_state!("In the lobby. Open this page in another tab, join there too, and wave.")
@@ -57,7 +56,7 @@ Room := [].{
 			<p class="state" aria-live="polite">{state!()}</p>
 			<p class="hands">
 				{...["👋", "🎉", "🙌"].map(|hand|
-					<button key={hand} type="button" class="wave" on:click={|| Endpoint.say!(lobby, Wave(hand))}>{hand}</button>
+					<button key={hand} type="button" class="wave" on:click={|| lobby.say!(Wave(hand))}>{hand}</button>
 				)}
 				<button type="button" class="leave" on:click={leave!}>Leave</button>
 			</p>

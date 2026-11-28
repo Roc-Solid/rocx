@@ -74,7 +74,8 @@ Wire := [].{
 			},
 		)
 
-	## The `Live` topic a room's events are published on.
+	## A `Live` topic named for a room. Unused since rooms are channels: their events go on the
+	## channel's own topic (`Endpoint.publish!`).
 	topic : Str -> Str
 	topic = |room| "presence:${room}"
 }

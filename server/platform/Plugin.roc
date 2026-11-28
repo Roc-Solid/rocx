@@ -41,8 +41,8 @@ import Server
 ## other flavor, a plugin not in the list); needs that go round in a circle. It orders the plugins
 ## by what they need (the list's order breaking ties), applies their migrations after the
 ## platform's and before the app's, each recorded as `<plugin>/<name>`, makes the app's context
-## (its `init!`), runs their `starts` with it (an `Err` stops the server), and logs a line a plugin
-## saying what it added.
+## (its `init!`), runs their `starts` with it (an `Err` stops the server), and names them on one
+## line of the log (what each added at debug, under `--debug`: D-111).
 Plugin := [].{
 
 	## A plugin. `context` is the app's context (its `init!`'s), which its calls, loops, starts and

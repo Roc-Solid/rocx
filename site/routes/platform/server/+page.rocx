@@ -19,6 +19,7 @@ meta = {
 		{ id: "memory", label: "Memory" },
 		{ id: "streams", label: "Streams of events" },
 		{ id: "pages", label: "Pages, rendered on the server" },
+		{ id: "photos", label: "Photos' copies" },
 		{ id: "background", label: "Background loops and isolated calls" },
 		{ id: "plugins", label: "Plugins" },
 		{ id: "tcp", label: "Sockets and randomness" },
@@ -46,7 +47,7 @@ view! = |_|
 			</p>
 			<Code
 				title="The app's executable"
-				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what the app's init! is given, once, as it starts\n      --env-file FILE                     settings for the environment, read as it starts (none without it: a .env here isn't read unless named); the environment wins\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB; 413 beyond\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)\n      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
+				source={"<app> --port 8080 --host 127.0.0.1        where to listen (PORT)\n      --static DIR, --file /PATH=FILE     files served as they are\n      --context-file FILE                 what the app's init! is given, once, as it starts\n      --env-file FILE                     settings for the environment, read as it starts (none without it: a .env here isn't read unless named); the environment wins\n      --database-url URL                  the database (DATABASE_URL): postgres://…, or sqlite:<path> (turso:<path>) for a SQLite (Turso) app's file elsewhere\n      --actor-idle-ms 900000              an actor idle this long is let go (0: never; kept in the database)\n      --kv-max-mb 64                      Kv's limit (KV_MAX_MB): the least recently used goes past it\n      --images-dir data/images            where enhanced:src's copies of photos are kept\n      --images-max-mb 1024                the most they take: the least recently used go past it\n      --images-wait                       a page waits for its photos' copies (a static build's server)\n      --max-body 16MiB                    the most a request's body may be (MAX_BODY): bytes, or KiB, MiB, GiB; 413 beyond\n      --public-url https://app.example    where the app is, for links it sends (PUBLIC_URL; else where it listens)\n      --dev                               reload pages on restart, show crashes, plugins' dev pages (/__rocx/mail)\n      --debug                             GET /__rocx/allocations and /__rocx/plugin-files, and plugins' debug paths\n      --live-beat-ms 15000                how often a channel stream beats, and its checks run again\n      --roc-threads N                     the threads Roc runs on (ROCX_ROC_THREADS; one a core)"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
@@ -69,10 +70,10 @@ view! = |_|
 					(<a href={"${Paths.platform_http}#connections"}>HTTP</a>).
 				</li>
 				<li>
-					<strong>Starting.</strong> The server reads <code>.env</code> into its environment
-					(<a href={Paths.platform_settings}>settings</a>) and takes its port, stopping if the port is in
-					use. Then it opens the database, checks the plugins, applies migrations, runs the app's
-					<code>init!</code>, starts the background loops, and answers requests.
+					<strong>Starting.</strong> The server reads the file <code>--env-file</code> names, if any, into
+					its environment (<a href={Paths.platform_settings}>settings</a>), and takes its port, stopping if
+					the port is in use. Then it opens the database, checks the plugins, applies migrations, runs the
+					app's <code>init!</code>, starts the background loops, and answers requests.
 				</li>
 				<li>
 					<strong>Stopping.</strong> On SIGTERM or Ctrl-C, it stops listening and taking jobs, then waits
@@ -97,19 +98,38 @@ view! = |_|
 			</p>
 			<Code
 				title="An event, and the log's format"
-				source={"Log.info!(\"gate failed\", { path: request.path, error: why })\n\nprogram = {\n\t..App.program({ init!, middleware }),\n\tlogs: { format: Auto }, # or Pretty, or Json\n}"}
+				source={"Log.info!(\"gate failed\", { path: request.path, error: why })\n\nprogram = {\n\t..App.program({ init! }),\n\tlogs: { format: Auto }, # or Pretty, or Json\n}"}
 			/>
 			<Code
 				title="The line, pretty and as JSON"
-				source={"14:03:12 info  gate failed  error=\"no session\" path=/admin\n{\"time\":\"2026-11-21T13:03:12.345Z\",\"level\":\"info\",\"msg\":\"gate failed\",\"error\":\"no session\",\"path\":\"/admin\"}"}
+				source={"14:03:12 info  gate failed  path=/admin error=\"no session\"\n{\"time\":\"2026-11-21T13:03:12.345Z\",\"level\":\"info\",\"msg\":\"gate failed\",\"error\":\"no session\",\"path\":\"/admin\"}"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
 			<p>
 				<code>Auto</code>, the default, follows <code>ROCX_LOG</code> (<code>pretty</code> or
-				<code>json</code>) if set; otherwise pretty lines, the level in colour, to a terminal, and JSON
-				elsewhere. A field named <code>time</code>, <code>level</code> or <code>msg</code> is written as
-				<code>fields.msg</code> and so on, so it can't replace the line's own.
+				<code>json</code>) if set; otherwise pretty lines to a terminal, and JSON elsewhere. A field named
+				<code>time</code>, <code>level</code> or <code>msg</code> is written as <code>fields.msg</code> and
+				so on, so it can't replace the line's own.
+			</p>
+			<p>
+				A pretty line is the time, the level, the message, then the fields. At a terminal the time and the
+				fields' names are dimmed and the level coloured, so the message and the values stand out. A
+				request's <code>path</code>, <code>method</code> and <code>status</code> come first, then
+				durations: a number named <code>{"<x>_ns"}</code>, <code>{"<x>_us"}</code> or
+				<code>{"<x>_ms"}</code> is shown in the unit that reads best (<code>duration_ns=12345</code> is
+				<code>duration=12µs</code>). JSON keeps the fields as they are.
+			</p>
+			<Code
+				title="Under --dev, as the server starts"
+				source={"10:36:32 info  rocx plugins: jobs, email, auth\n10:36:32 info  rocx server: http://127.0.0.1:8080 (Roc, native)\n               ➜ Stories   http://127.0.0.1:8080/__rocx/stories\n               ➜ OpenAPI   http://127.0.0.1:8080/openapi.html\n               ➜ Mailbox   http://127.0.0.1:8080/__rocx/mail\n               ➜ Sign in   http://127.0.0.1:8080/sign-in"}
+				numbers={Bool.False}
+				plain={Bool.True}
+			/>
+			<p>
+				Under <code>--dev</code>, the server lists the places to open under its address: the app's stories,
+				its OpenAPI page if a route serves one, what plugins add (the dev mailbox, the sign-in page) and the
+				app's own (<code>{"App.program({ links: [{ label: \"Jobs\", path: \"/admin/jobs\" }] })"}</code>).
 			</p>
 			<p>
 				Logging never waits for stderr: a thread of its own writes queued events in order, flushing when
@@ -129,11 +149,12 @@ view! = |_|
 				<li>Give a Postgres app a <code>DATABASE_URL</code>, a SQLite app a file on a volume (<code>--database-url sqlite:/data/app.db</code>).</li>
 				<li>Pass settings (<code>APP_SECRET</code>, <code>SMTP_URL</code>, an API's key) as environment variables, or in a file read at start (<code>--env-file</code>; the environment wins). A plugin missing a setting stops the start, naming it.</li>
 				<li>Put a TLS proxy in front, and set <code>PUBLIC_URL</code> to the public address for the links the app sends (<a href={Paths.platform_settings}>settings</a>).</li>
+				<li>Run one instance. Live state, <code>Kv</code> and actors' mailboxes live in its memory, so an app runs as one server, not as copies behind a load balancer.</li>
 			</ul>
-			<p>The platform's test app runs all its tests this way, in a container against a Postgres.</p>
+			<p>CI builds and tests every example app on Linux (arm64).</p>
 			<p>
 				An app whose pages need no server once rendered (docs, a blog, a landing page) can be deployed as
-				files: <code>rocx build app --static dist</code> writes every page, its data and what it loads, for
+				files: <code>rocx build app --static</code> writes every page, its data and what it loads, for
 				GitHub Pages or a CDN (<a href={"${Paths.tooling}#static"}>a static copy</a>).
 			</p>
 
@@ -148,8 +169,8 @@ view! = |_|
 					Postgres connections plus one listening for notifications, or SQLite's file in the process, its
 					calls on threads of their own); time zones; TCP and TLS sockets; live topics and rooms;
 					channels' streams; background loops and isolated calls; actors' mailboxes and timers; values in
-					memory (<code>Kv</code>); secure random numbers, AES-GCM and P-256; reading <code>.env</code>;
-					rendering pages of components.
+					memory (<code>Kv</code>); secure random numbers, AES-GCM and P-256; reading a settings file
+					(<code>--env-file</code>); rendering pages of components; photos' copies.
 				</li>
 				<li>
 					<strong>Roc</strong> (<code>server/platform/*.roc</code>): migrations, plugins (checking and
@@ -253,7 +274,7 @@ view! = |_|
 				the same, byte for byte.
 			</p>
 			<p>
-				A component's endpoint read (<code>Endpoint.read!</code>, a GET of the app's own path) is made
+				A component's endpoint read (<code>.read!()</code>, a GET of the app's own path) is made
 				in-process: through the app's <code>respond!</code> and the route directories' middleware, with
 				<code>accept: application/json</code>, the page's headers (cookies included) and the app's context,
 				so it gets the answer the browser would. Each URL is asked once per render. The answers go, by URL,
@@ -343,7 +364,8 @@ view! = |_|
 			<p>
 				At start, the server checks every plugin and stops on any problem, listing them all: two
 				development pages at one method and path, a file at the root where the app has a route, two files
-				at one place, a name used twice, a need not met. Then it logs what each plugin added.
+				at one place, a name used twice, a need not met. Then it names the plugins on one line of the log
+				(what each added too, under <code>--debug</code>).
 			</p>
 			<p>
 				A plugin package names the server platform in its header, as an app does; a second header,
@@ -386,7 +408,6 @@ view! = |_|
 				<li><strong>HTTP/1.1 only, and no TLS:</strong> put the server behind a proxy that terminates TLS.</li>
 				<li><strong>A stack overflow in Roc</strong> still ends the process (it says so first).</li>
 				<li><strong>Photos' copies</strong> take a photo's colours as sRGB: one in a phone's wider colour space comes out slightly paler. No AVIF, no HEIC, no photos of other sites yet.</li>
-				<li><strong>One instance:</strong> live state, <code>Kv</code> and actors' mailboxes are in one process's memory, so an app isn't meant to run as several copies.</li>
 			</ul>
 			<Callout kind="note" title="Built on">
 				<p>

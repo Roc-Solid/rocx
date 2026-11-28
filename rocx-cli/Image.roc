@@ -28,7 +28,7 @@ import Value
 Image := [].{
 
 	usage : Str
-	usage = "usage: rocx build <dir> --image <file.tar> [--tag name:tag] [--target arm64musl|x64musl]"
+	usage = "usage: rocx build [dir] --image [--out <name>.tar] [--tag name:tag] [--target arm64musl|x64musl] [--opt speed|size|dev]"
 
 	## What `rocx build … --image` was asked: the app's directory, the file, the image's name and
 	## tag, and the target (`""`: this machine's Linux). Paths are absolute.

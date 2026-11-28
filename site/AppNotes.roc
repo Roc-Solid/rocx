@@ -27,7 +27,7 @@ AppNotes := [].{
 			kind: Start,
 			path: Paths.examples_hello,
 			blurb: "A page, a counter and an endpoint",
-			summary: "The app Getting started makes: a page with a button that counts its clicks, and an endpoint. Its main.roc is the one rocx dev writes for an app without one.",
+			summary: "The two files Getting started shows: a page with a button that counts its clicks, and an endpoint. Its main.roc is the one rocx dev writes for an app without one.",
 			shows: ["A page and a signal", "An endpoint, GET /hello", "The smallest browser half: where every app starts"],
 			shots: [],
 		},
@@ -49,7 +49,7 @@ AppNotes := [].{
 			kind: App,
 			path: Paths.examples_journal,
 			blurb: "Markdown posts in two languages",
-			summary: "A small publication in English and Polish: Markdown posts with typed frontmatter, compiled into the server. The server renders the pages; two small parts run in the browser: a search that follows the typing, and reactions kept in memory. No database.",
+			summary: "A small publication in English and Polish: Markdown posts with typed frontmatter, compiled into the server. The server renders the pages; two small parts run in the browser: a search that follows the typing, and reactions kept in memory. Nothing kept in a database.",
 			shows: ["A typed Markdown collection from content/, checked at build", "Two languages with packages/intl, Atom feeds and a sitemap", "Server-only pages (<NoHydration>) with two parts that hydrate", "Kv and packages/guard: reactions, a rate limit, security headers", "A typed JSON API with its OpenAPI page"],
 			shots: [
 				{ file: "home", alt: "The journal's front page: the latest posts with their dates and tags", caption: "The front page", phone: Bool.False },

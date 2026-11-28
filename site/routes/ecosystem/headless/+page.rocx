@@ -1,0 +1,142 @@
+import pf.Html
+import ../../../Ui/Code
+import ../../../Ui/Heading
+import ../../../Ui/PageHero
+import ../../../Ui/TableWrap
+import ../../../Generated/Paths
+
+## The headless package: Chromium's headless shell driven from a Roc program on the CLI platform;
+## installing it, a first program, the browser (`Chrome`), a tab (`Tab`), who uses it (`rocx
+## render`), its tests, and what isn't there yet. Static: nothing on it hydrates.
+meta = {
+	title: "Headless",
+	description: "The headless package: Chromium's headless shell driven from a Roc program, over the DevTools protocol on the CLI platform's WebSocket. Pages opened, clicked, typed into, waited on and photographed, with no Node and no Playwright running.",
+	toc: [
+		{ id: "install", label: "Installing it" },
+		{ id: "first", label: "A first program" },
+		{ id: "chrome", label: "The browser" },
+		{ id: "tab", label: "A tab" },
+		{ id: "users", label: "Who uses it" },
+		{ id: "tests", label: "Its tests" },
+		{ id: "limits", label: "Not yet" },
+	],
+}
+
+view! = |_|
+	<NoHydration>
+		<PageHero
+			kicker={[<>{"The ecosystem · "}</>, <code>packages/headless</code>]}
+			title="Chromium, driven from Roc"
+		>
+			A program in Roc starts Chromium's headless shell, opens tabs, and uses a page as a test or a renderer
+			does: it goes to a URL, runs JavaScript, waits for something to be true, clicks, types, presses keys
+			and takes photographs.
+		</PageHero>
+		<p>
+			It speaks Chromium's DevTools protocol over the CLI platform's <code>WebSocket</code>. Nothing of
+			Playwright's runs, and no Node. <code>rocx render</code> films videos with it.
+		</p>
+
+		<Heading id="install">Installing it</Heading>
+		<p>
+			The package names the CLI platform (<code>cli/</code>), the one rocx itself runs on, so a program on that
+			platform uses it. An app's server doesn't: an app's tests drive a browser from Node, with the
+			<a href={"${Paths.ecosystem_testing}#browser"}>testing package</a>.
+		</p>
+		<Code
+			title="main.roc's header"
+			source={"app [main!] { pf: platform \"../cli/platform/main.roc\", headless: \"../packages/headless/main.roc\" }"}
+			numbers={Bool.False}
+		/>
+		<p>
+			It needs Chromium's headless shell: <code>$CHROME</code>, or the newest one Playwright keeps in its cache.
+			<code>npx playwright install --only-shell chromium</code> downloads one.
+		</p>
+
+		<Heading id="first">A first program</Heading>
+		<p>Count once on a running app, and photograph the page:</p>
+		<Code
+			title="main.roc"
+			source={"import pf.File\nimport headless.Chrome\nimport headless.Tab\n\nmain! = |_| {\n\tchrome = Chrome.launch!(Chrome.find!({})?)?\n\ttab = Chrome.open!(chrome)?\n\tphotographed = counted!(tab)\n\tChrome.close!(chrome)\n\tFile.write_bytes!(\"counter.png\", photographed?)?\n\tOk({})\n}\n\ncounted! : Tab => Try(List(U8), [Failed(Str)])\ncounted! = |tab| {\n\tTab.goto!(tab, \"http://localhost:8091/\", 10_000)?\n\tTab.click!(tab, \"button.add\")?\n\tTab.wait!(tab, \"document.querySelector('output').textContent === '1'\", 2_000)?\n\tTab.viewport!(tab, { width: 1280, height: 720, scale: 2 })?\n\tTab.screenshot!(tab, Viewport)\n}"}
+			numbers={Bool.False}
+		/>
+		<p>
+			Close the browser on every path. One the program leaves running is stopped when the program ends, but
+			its profile stays in the temporary directory. An error <code>main!</code> doesn't handle is printed, and
+			the program exits 1.
+		</p>
+
+		<Heading id="chrome">The browser</Heading>
+		<TableWrap>
+			<table>
+				<thead><tr><th>Function</th><th>What it does</th></tr></thead>
+				<tbody>
+					<tr><td><code>Chrome.find!({"{}"})</code></td><td>The headless shell's path: <code>$CHROME</code>, else Playwright's newest. <code>NoChrome(how)</code> says how to get one.</td></tr>
+					<tr><td><code>Chrome.launch!(binary)</code></td><td>Starts it in a new profile in the system's temporary directory. It picks its own DevTools port, read from the profile. <code>CantLaunch(why)</code> with what it said.</td></tr>
+					<tr><td><code>Chrome.open!(chrome)</code></td><td>A new tab at <code>about:blank</code>, on a socket of its own. Tabs share the profile's cookies.</td></tr>
+					<tr><td><code>Chrome.close!(chrome)</code></td><td>Asks it to close, then makes it, and deletes its profile.</td></tr>
+				</tbody>
+			</table>
+		</TableWrap>
+		<p>
+			It runs as a laptop's browser would, whatever the machine's settings: motion as a page gets it when it
+			asks for none, scrollbars that take no room, and no sandbox (as Playwright runs it, since a container's
+			root may lack the namespaces it needs).
+		</p>
+
+		<Heading id="tab">A tab</Heading>
+		<p>
+			A function that can fail fails with <code>Failed(why)</code>: the protocol method and the browser's
+			message, what the page threw, or what timed out. Clicks and keys go through the browser's input
+			pipeline, as a person's would.
+		</p>
+		<TableWrap>
+			<table>
+				<thead><tr><th>Function</th><th>What it does</th></tr></thead>
+				<tbody>
+					<tr><td><code>Tab.goto!(tab, url, ms)</code></td><td>Goes to <code>url</code> and waits up to <code>ms</code> for its document to load. Fails with the browser's error when nothing serves it (<code>net::ERR_CONNECTION_REFUSED</code>).</td></tr>
+					<tr><td><code>Tab.eval!(tab, expression)</code></td><td>The JavaScript's value as JSON (packages/tools' <code>JsonValue</code>). A promise is awaited; <code>undefined</code> is <code>Null</code>. Fails with what it threw.</td></tr>
+					<tr><td><code>Tab.wait!(tab, expression, ms)</code></td><td>Waits until the expression is true, looking every 25 ms.</td></tr>
+					<tr><td><code>Tab.before_each_document!(tab, source)</code></td><td>Runs <code>source</code> in every document the tab loads from then on, before the page's own scripts: a clock to freeze, a listener.</td></tr>
+					<tr><td><code>Tab.click!(tab, selector)</code>, <code>Tab.click_at!(tab, x, y)</code></td><td>A real click in the middle of what the CSS selector finds (scrolled into view first), or at a point.</td></tr>
+					<tr><td><code>Tab.type!(tab, selector, text)</code></td><td>Focuses the element and inserts <code>text</code> at the caret, with an <code>input</code> event.</td></tr>
+					<tr><td><code>Tab.press!(tab, key)</code></td><td>A key pressed and released: <code>Enter</code> (which submits a form), <code>Escape</code>, <code>Tab</code>, <code>Backspace</code>, the arrows, <code>" "</code>. A letter reaches the page's key handlers but types nothing; <code>type!</code> types.</td></tr>
+					<tr><td><code>{"Tab.viewport!(tab, { width, height, scale })"}</code></td><td>Lays the page out at that size in CSS pixels, <code>scale</code> device pixels each.</td></tr>
+					<tr><td><code>Tab.screenshot!(tab, Viewport)</code>, <code>{"Tab.screenshot!(tab, Clip({ x, y, width, height }))"}</code></td><td>A PNG of the viewport, or of a box of the page (from the document's top left, past the viewport too), at the device's scale.</td></tr>
+					<tr><td><code>Tab.errors!(tab)</code></td><td>What the page threw since this was last asked, oldest first.</td></tr>
+					<tr><td><code>Tab.call!(tab, method, params)</code></td><td>Any method of the DevTools protocol, its params a <code>JsonValue</code>: its result.</td></tr>
+					<tr><td><code>Tab.close!(tab)</code></td><td>Closes the tab.</td></tr>
+				</tbody>
+			</table>
+		</TableWrap>
+		<p>
+			The CLI platform's <code>WebSocket</code> keeps each message until the program takes it. A tab's events
+			wait there between calls, so <code>errors!</code> reads the page's exceptions whenever it is asked, and
+			no loop is needed.
+		</p>
+
+		<Heading id="users">Who uses it</Heading>
+		<p>
+			<code>rocx render</code> films a <a href={"${Paths.ecosystem_video}#render"}>video package player</a>
+			into MP4, WebM or PNGs: it takes over the page's clock with <code>before_each_document!</code>, then
+			moves it a frame at a time and photographs the player's stage. The package's own checks are a
+			second user: a Roc program on a page made for them.
+		</p>
+
+		<Heading id="tests">Its tests</Heading>
+		<Code source={"node --test 'packages/headless/test/*.test.mjs'"} numbers={Bool.False} />
+		<p>
+			This runs the <code>WebSocket</code>'s unit tests (<code>cli/host/src/websocket.rs</code>), then builds
+			<code>test/main.roc</code> and runs it in the headless shell. Without a headless shell the browser checks
+			skip. In CI, or with <code>ROCX_BROWSERS=required</code>, a missing one is an error.
+		</p>
+
+		<Heading id="limits">Not yet</Heading>
+		<ul>
+			<li>Gecko (Firefox, Zen) over WebDriver BiDi. Chromium is the only browser.</li>
+			<li>Drags and touch, as the Node driver's <code>drag</code> and <code>touchDrag</code> do them.</li>
+			<li>The testing package's queries (by role, name and label) in a tab. A tab finds elements by CSS selector alone.</li>
+			<li>An app's own tests written in Roc. They are JavaScript, with the testing package.</li>
+		</ul>
+		<p>Each is sketched in the package's <code>PROPOSALS.md</code>.</p>
+	</NoHydration>

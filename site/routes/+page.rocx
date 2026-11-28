@@ -136,7 +136,8 @@ view! = |_| {
 			<ul>
 				<li>
 					<strong>Pages from files.</strong> <code>routes/blog/[slug]/+page.rocx</code> is the page at
-					<code>/blog/…</code>, inside its folders' layouts. Every route has a typed link.
+					<code>/blog/…</code>, inside its folders' layouts. A <code>+middleware.roc</code> guards
+					everything in its folder. Every page has a typed link.
 				</li>
 				<li>
 					<strong>Signals, as in SolidJS.</strong> A component runs once. When a signal changes, only
@@ -151,11 +152,13 @@ view! = |_| {
 					server-sent events.
 				</li>
 				<li>
-					<strong>One native server executable</strong>, with Postgres or SQLite, migrations, a key-value
-					store and actors.
+					<strong>One native server executable</strong>, with SQLite, Postgres or Turso, migrations, a
+					key-value store and actors. <code>rocx build</code> makes it, or a container image
+					(<code>--image</code>), or a static copy for a host with no server (<code>--static</code>).
 				</li>
 				<li>
-					<strong>Packages</strong> for jobs and cron, email, charts, forms, Markdown, an admin and more.
+					<strong>Packages</strong> for sign-in, Stripe billing, Claude, jobs and cron, email, charts, forms,
+					Markdown, an admin and more.
 				</li>
 				<li>
 					<strong>Errors at your lines.</strong> The compiler checks every value you put in a page, and
@@ -192,7 +195,7 @@ view! = |_| {
 							<code>rocx new</code> makes an app in its own folder and asks which database: SQLite (the
 							default, a file beside the server), Postgres or Turso. It comes with sign-in by a mailed link
 							(or Google and GitHub, once their keys are set), optional two-factor codes, a users table,
-							refusal of other sites' posts, and rate-limited sign-in mail.
+							refusal of other sites' posts, security headers, and rate-limited sign-in mail.
 						</p>
 						<Code source={"rocx new my-app\ncd my-app\nrocx dev"} numbers={Bool.False} plain />
 						<p>
@@ -238,15 +241,15 @@ view! = |_| {
 				page, layout and component into plain Roc with the same line numbers, for the compiler to check.
 			</Way>
 			<Way kind="Platform" href={Paths.platform_} more="The platform →" code={[<Code source={Sources.platform_query.rocx} numbers={Bool.False} />]}>
-				What an app runs on. On the server: native Roc in a Rust host, with Postgres or SQLite, a key-value
-				store, live channels, actors, and plugins that let packages add routes and jobs. In the browser:
-				the same components in WebAssembly, and a small JavaScript runtime.
+				What an app runs on. On the server: native Roc in a Rust host, with SQLite, Postgres or Turso, a
+				key-value store, live channels, actors, and plugins that let packages add tables, jobs and scripts.
+				In the browser: the same components in WebAssembly, and a small JavaScript runtime.
 			</Way>
 			<Way kind="Ecosystem" href={Paths.ecosystem} more="The ecosystem →" code={[<Code source={Sources.charts_use.rocx} numbers={Bool.False} />]}>
-				Packages of plain Roc and components, for both halves of an app. Twenty-four so far: sign-in,
+				Packages of plain Roc and components, for both halves of an app. Twenty-six so far: sign-in,
 				Stripe payments, Claude, charts, crypto, file storage (S3, disk or memory), email, forms, Markdown,
 				intl, an admin, audio, guards, jobs and cron, MCP, tools for models, OpenTelemetry, PostHog,
-				presence, Web Push, QR codes, vibration, testing and virtual lists.
+				presence, Web Push, QR codes, vibration, testing, headless Chromium, videos and virtual lists.
 			</Way>
 
 			<Heading id="numbers">Measured on this build</Heading>

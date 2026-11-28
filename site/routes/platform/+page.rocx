@@ -129,8 +129,8 @@ view! = |_|
 				</Feature>
 				<Feature title="Crypto" href={Paths.platform_crypto}>
 					<p>
-						Secure random bytes, AES-GCM and P-256 (ES256, ECDH) from the host; SHA-256, HMAC and HKDF
-						from the crypto package.
+						Secure random bytes, AES-GCM and P-256 (ES256, ECDH) from the host; SHA-256, HMAC, HKDF and
+						UUIDs from the crypto package.
 					</p>
 				</Feature>
 				<Feature title="Plugins" href={"${Paths.platform_server}#plugins"}>
@@ -151,14 +151,15 @@ view! = |_|
 
 			<Heading id="app">What an app gives the server</Heading>
 			<p>
-				You write pages, layouts and endpoints in <code>routes/</code>, and <code>rocx build</code> writes
-				the server's program from them (<code>Generated/App</code>). Your <code>main.roc</code> adds what
-				routes can't say: how to make the app's context at start (<code>init!</code>), the middleware around
-				every request, and, if needed, the database, the OpenAPI document and plugins. This site's:
+				You write pages, layouts, endpoints and middleware in <code>routes/</code>, and rocx writes the
+				server's program from them (<code>Generated/App</code>). Your <code>main.roc</code> adds what
+				routes can't say: how to make the app's context at start (<code>init!</code>), and, if needed, the
+				database, plugins, whether other sites may post to it (<code>cross_site</code>) and the places
+				<code>--dev</code> lists (<code>links</code>). This site's:
 			</p>
 			<Code title={"${Sources.platform_site_program.file}, in part"} source={Sources.platform_site_program.rocx} numbers={Bool.False} />
 			<p>
-				A SQLite app adds <code>{"database: Sqlite(\"data/app.db\")"}</code>. SQL files in
+				An app that names no database has SQLite's <code>data/app.db</code>. SQL files in
 				<code>migrations/</code> are built into the executable
 				(<a href={"${Paths.platform_database}#migrations"}>migrations</a>), and actors are found in the app's
 				modules. <code>App.program</code> returns the record the server platform takes:
@@ -178,7 +179,7 @@ view! = |_|
 				A response may be text, bytes, a page of components, a stream of
 				<a href={"${Paths.calls}#events"}>server-sent events</a> (a loop run as its own call), or a body
 				fetched from another server. The browser's program is the root of components the server rendered;
-				<code>rocx build --client</code> writes it:
+				rocx writes it into the browser's copy of the app (<code>build/client</code>):
 			</p>
 			<Code title={Sources.client_app.file} source={Sources.client_app.rocx} />
 
@@ -230,16 +231,18 @@ view! = |_|
 			</p>
 			<Code
 				title="A release build"
-				source={"rocx build my-app [--target arm64musl]\n\nmy-app/dist/server --port 8080 --static my-app/dist/static"}
+				source={"rocx build my-app [--target arm64musl]\n\nmy-app/dist/server --port 8080 --static my-app/dist/static\n\nrocx build my-app --image                         # my-app/my-app.tar, for docker load -i"}
 				numbers={Bool.False}
 				plain={Bool.True}
 			/>
 			<p>
 				<code>rocx build</code> turns the <code>.rocx</code> files into Roc and compiles the browser's copy
 				to wasm, optimized for size. It compiles the server's program, optimized for speed, and links it
-				with the Rust host into <code>dist/server</code>, migrations and plugins' files inside;
-				<code>dist/static</code> holds the files it serves. <code>--target arm64musl</code> (or
-				<code>x64musl</code>) cross-compiles a static Linux executable for a container. The executable takes
+				with the Rust host into <code>dist/server</code>, migrations and plugins' files inside, and only the
+				database engine the program names; <code>dist/static</code> holds the files it serves.
+				<code>--image</code> writes a container image of it, without a Dockerfile.
+				<code>--target arm64musl</code> (or <code>x64musl</code>) cross-compiles a static Linux executable
+				for a container. The executable takes
 				its port, database and the rest as flags or environment variables
 				(<a href={"${Paths.platform_server}#running"}>running it</a>). Each example's README shows the steps
 				one at a time.

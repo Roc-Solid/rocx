@@ -27,7 +27,7 @@ import Wire
 ##
 ## The room is kept in the server's memory (`Kv`, under `presence:<the channel's URL>`), as a
 ## `Room`: each change reads it, sweeps it, changes it and swaps it back (`Kv.swap!`), so two tabs
-## joining at once both count, and nothing is written to Postgres. What changed is published on the
+## joining at once both count, and nothing is written to the database. What changed is published on the
 ## channel, numbered; a page that misses a number asks for a snapshot again (`Endpoint.resync!`).
 ## A room nobody beats in for a quarter of an hour is forgotten; one made again numbers on from the
 ## time, so a page's copy sees the gap and asks again. The members' metadata is `Wire.Meta(d)`, the

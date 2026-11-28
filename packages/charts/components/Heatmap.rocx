@@ -9,8 +9,8 @@ import charts.Format
 ## fades each cell to its new colour (a CSS transition), so Roc runs no frames at all.
 ##
 ## `label` names the chart for screen readers, and `format` writes a value (`Format.short` unless
-## said). Every column's label is in the readout; along the bottom, with more columns than room,
-## only every second or third is.
+## said). Every column's label is in the readout; along the bottom, at most eight are, evenly
+## spaced.
 Heatmap := [].{
 	Props := { data! : () => List(List(Dec)), rows : List(Str), columns : List(Str), label : Str, format : (Dec -> Str) ?? Format.short }
 

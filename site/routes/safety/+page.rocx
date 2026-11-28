@@ -15,7 +15,7 @@ import ../../Ui/Refusals
 
 meta = {
 	title: "Safety",
-	description: "How rocx keeps data out of markup: an opaque Html type, escaping, names checked in hand-written markup, safe URLs, refused attributes, handlers that are never script, a same-origin check for requests, and rocx lint.",
+	description: "How rocx keeps data out of markup: an opaque Html type, escaping, names checked in hand-written markup, safe URLs, refused attributes, handlers that are never script, a same-origin check for requests, cookies that are Secure behind HTTPS, and rocx lint.",
 	toc: [
 		{ id: "opaque", label: "Html is opaque" },
 		{ id: "names", label: "Names in hand-written Roc" },
@@ -164,10 +164,10 @@ view! = |_|
 			<Heading id="origin">Requests from other sites</Heading>
 			<p>
 				Another site's page can make a visitor's browser send your app a request with its cookies (a form
-				that posts, a script that fetches). So the platform answers 403 to a POST, PUT, PATCH or DELETE to
-				an <a href={"${Paths.calls}#endpoints"}>endpoint</a> whose <code>Origin</code> isn't your server.
-				Clients that aren't pages (<code>curl</code>, another server) send no <code>Origin</code> and are
-				answered; a GET changes nothing and is answered whoever asks.
+				that posts, a script that fetches). So the platform answers 403 to a POST, PUT, PATCH or DELETE
+				(to an <a href={"${Paths.calls}#endpoints"}>endpoint</a>, say) whose <code>Origin</code> isn't your
+				server. Clients that aren't pages (<code>curl</code>, another server) send no <code>Origin</code>
+				and are answered; a GET changes nothing and is answered whoever asks.
 			</p>
 			<p>
 				The check runs on every request, before the app's
@@ -175,7 +175,17 @@ view! = |_|
 				<code>cross_site: Allowed</code> (an API other sites' pages call, with CORS); then
 				<code>{"Middleware.same_origin({})"}</code> in a directory's <code>+middleware.roc</code> puts it
 				back where needed. Cookies from <code>Server.with_cookie</code> are <code>HttpOnly</code> (no script
-				reads them) and <code>SameSite=Lax</code> (another site's form doesn't send them).
+				reads them) and <code>SameSite=Lax</code> (another site's form doesn't send them). When the app's
+				public URL is HTTPS (<code>--public-url</code>, <code>PUBLIC_URL</code>), the server makes every
+				cookie it sets <code>Secure</code> too, so it never goes over plain HTTP; on
+				<code>http://localhost</code> they work as they are.
+			</p>
+			<p>
+				Headers that tell the browser to be careful are middleware too.
+				<code>{"Guard.security_headers(Security.defaults)"}</code>, from
+				<a href={Paths.ecosystem_guard}>packages/guard</a>, adds a Content-Security-Policy that runs the
+				site's own scripts and nothing else, HSTS, <code>nosniff</code> and the rest. The app
+				<code>rocx new</code> makes has it in <code>routes/+middleware.roc</code>.
 			</p>
 
 			<Heading id="lint">rocx lint</Heading>

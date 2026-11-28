@@ -1,88 +1,30 @@
-# Proposals: what the admin would like from outside its folder
+# Proposals: what the admin would like next
 
-The admin works today without any of these: every page, form and check in the README runs in a
-scratch app on the server platform as it is. Each proposal below makes it simpler to use, or
-removes a copy.
+The admin works today without any of these: every page, form and check in the README runs on the
+server platform as it is. Each proposal below makes it simpler to use.
 
-## Server-only modules in packages
+## `AdminPage` taking `Db` itself
 
-**Status (2026-11-22).** Done another way (D-033): a package whose modules use the server platform
-names it in its header, and lists the modules the browser can compile in `browser.roc`. This package
-does, for the jobs page (D-034). `AdminPage` stays on no platform, effects handed in, so a page in the
-browser can still show the tables admin; it could take `Db` itself in a server-only module now.
+**Status (2026-11-28).** Open, and small now. A package may name the server platform since D-033,
+and list the modules the browser can compile in `browser.roc`. This one does, for the jobs page
+(D-034). `AdminPage` stays on no platform, its effects handed in, so a page in the browser can still
+show the tables admin (the docs site does).
 
-**Problem.** `AdminPage.respond!` runs Postgres statements and draws random bytes, which are the
-server platform's (`Db.all!`, `Db.run!`, `Random.bytes!`). A Roc package can name a platform only
-if it is the app's own, and a Roc Solid app is two apps (the browser's on `web/platform`, the
-server's on `server/platform`), so a package can't `import pf.Db`. Today the app hands the effects
-in:
+**Problem.** Every route hands the same record in:
 
 ```roc
 respond! = |{ request, context, .. }| AdminPage.respond!(request, context, admin, { all!: Db.all!, run!: Db.run!, random!: Random.bytes!, backend!: Db.backend! })
 ```
 
-That works, and is checked by the compiler, but every app writes the same record, the package can't
-use what only the platform has (`AdminHtml`, below; `Log`, to note who changed what), and
-`AdminPage` must keep every row the same shape so that one `Db.all!` reads them all.
+It is checked by the compiler, but every app writes it, and `AdminPage` can't use what only the
+server has (`Log`, to note who changed what).
 
-**Options.**
+**Proposal.** A server-only module beside `JobsPage` (in `main.roc`, not in `browser.roc`), say
+`AdminRoute.respond!(request, context, config)`, which calls `AdminPage.respond!` with the server's
+effects. `AdminPage` keeps its four arguments for a page that shows the admin without a server.
+Nothing outside this package changes.
 
-1. Keep handing effects in (today's). Nothing to build; the seam shows in every app.
-2. `rocx build` copies a package's `server/` folder (`.roc` and `.rocx` files) into the server's
-   half only, as it copies `components/` into both: `packages/admin/server/AdminPage.roc` becomes
-   `Generated/admin/AdminPage.roc` in the app, where `pf` is the server's platform and
-   `import admin.X` is rewritten to the app's name for the package, line for line, with the marker.
-   The browser's copy (`--client`) leaves them out.
-3. A second package for the server's half (`packages/admin-server`, naming the server platform):
-   the compiler refuses it unless its platform path is exactly the app's, which differs from app to
-   app.
-4. Move the admin into the platform (the next proposal but one).
-
-**Recommended: 2.** A sketch, in `bin/rocx.mjs`, next to the copy of `components/`:
-
-```js
-// The package's server modules: the server's half only.
-const serverDir = join(packageDir, "server");
-if (!client && existsSync(serverDir)) {
-	for (const file of files(serverDir, ".roc")) copyModule(file, join(dir, GENERATED, alias, basename(file)), { alias, packageName });
-	for (const file of files(serverDir, ".rocx")) transpileInto(file, join(dir, GENERATED, alias, basename(file, ".rocx") + ".roc"), { alias, packageName });
-}
-```
-
-and the import rewrite that `.rocx` files get for a package's components (`import charts.BarChart`
-→ `import ../Generated/plots/Bars`) applied to the plain `.roc` route files too (`+server.roc`),
-since that is where a server module is used. Then the package has:
-
-```roc
-# packages/admin/server/AdminPage.roc
-import pf.AdminHtml
-import pf.Db
-import pf.Random
-import pf.Server
-import admin.Admin
-…
-respond! : Server.Request, context, Admin.Config(context) => Server.Response
-```
-
-and an app's route is `AdminPage.respond!(request, context, admin)`.
-
-**What depends on it.** `AdminPage`'s `effects` argument (it would go), the README's route file,
-and `Catalog.Row` (every statement answering with text cells could become ordinary typed records
-where the shape is known: the catalog's, the count's).
-
-**Undoing it.** Remove the copy step: packages go back to handing effects in, and `AdminPage` can
-keep a `respond_with!(request, context, config, effects)` for that until then.
-
-## The admin look in one place (done)
-
-Was: the jobs page and the dev mailbox were drawn with the platform's `AdminHtml`, which packages
-couldn't import, so `Look` held a copy of it and `test/packages.test.mjs` kept the two from
-drifting. **Done with the plugins (D-033, D-034):** the jobs page and its look moved into this
-package, and there is one look. `Look` holds it: the rules every admin page shares, part by part
-(`Look.shared`), and the helpers (`side`, `nav_link`, `header`, `panel`, `empty`, `icon`,
-`button_with`, `escape`). It stays on no platform, so a page in the browser can still show the
-tables admin. `AdminHtml` (the server's pages: the jobs page, the dev mailbox) builds its stylesheet
-from `Look.shared` and its own rules, and uses the same helpers. The copy and the guard are gone.
+**What depends on it.** The README's route file, and the docs site's admin page.
 
 ## Rows of any shape from `Db`
 
@@ -102,8 +44,9 @@ be written that way.
    type first.
 
 **Recommended: 2**, in `server/platform/Db.roc` beside `all!`, and in the host
-(`server/host/src/db.rs`): a `query_texts` that answers a JSON array of arrays of strings and
-nulls, as `query` answers objects. `tokio_postgres` asks Postgres for binary results, so the host
+(`server/host/src/db/`: Postgres, SQLite and Turso): a `query_texts` that answers a JSON array of
+arrays of strings and nulls, as `query` answers objects. On Postgres, `tokio_postgres` asks for
+binary results, so the host
 either asks for text results at the protocol level, or does what the admin does now, in one place:
 wraps the statement (`select array_to_json(array[…::text]) from (<statement>) as row`) once it
 knows its columns from `prepare`. Any package that runs SQL it builds (a CSV export, an MCP tool
@@ -114,29 +57,14 @@ themselves, and `Sql.text_of` would keep only its formatting of moments.
 
 **Undoing it.** Remove `texts!`; the wrapping still works.
 
-## The admin as a platform feature, next to the jobs page?
+## Settled
 
-**Status (2026-11-22).** Settled the other way: the jobs page moved here (D-034).
-
-The task asked whether the admin is better as a platform module (`TablesPage.respond!(request,
-context, config)`, as `JobsPage.respond!` is) than as a package.
-
-**For the platform:** it would be one product by construction (the look, the docs, mounting it
-like the jobs page); it could use what the platform keeps to itself (`AdminHtml`, the host's store
-to cache the catalog between requests, a stream of changes from `LISTEN` to refresh a list); and
-the app's route would need no effects.
-
-**For a package:** nothing in it needs the host: its only effects are two `Db` calls and random
-bytes; most of it (the catalog, the SQL, the widgets, the paging, the pages) is pure Roc with
-`expect`s, which other packages can reuse (an export, an API generator); it is opinionated UI that
-will change more often than the platform should; and an app that doesn't use it doesn't build it.
-A platform can't share a package with the app either (its `Admin.Config` would be another type than
-the app's), so a platform version would have to hold all of it.
-
-**Recommended: a package**, with the two platform changes above (server-only modules, and
-`AdminHtml` shared: the plugins design brings both). If server-only modules are turned down, the
-next best is to move `AdminPage` and the modules it needs into `server/platform` as `TablesPage`,
-keeping the package for the pure parts only where the platform doesn't need them.
+- **One admin look** (D-033, D-034): the jobs page and its look moved into this package. `Look`
+  holds the rules every admin page shares and the helpers; `AdminHtml` (the jobs page, the dev
+  mailbox) builds on it. The copy and the guard that kept two looks in step are gone.
+- **A package, not a platform feature** (D-034): nothing in the admin needs the host, most of it is
+  pure Roc with `expect`s, and an app that doesn't use it doesn't build it. The jobs page moved here,
+  not the admin into the platform.
 
 ## Open questions
 
@@ -149,7 +77,7 @@ keeping the package for the pure parts only where the platform doesn't need them
 - **A foreign key in a list.** It shows the value (`author_id` 1, a link to the author), not the
   author's name; showing names costs a join for each foreign key. Worth it by default?
 - **History.** Django's admin keeps a log of who changed what. The admin could write one through
-  `Log.info!` (with server-only modules), or to a table of its own (a migration of the package's,
+  `Log.info!` (with `AdminPage` taking `Db` itself, above), or to a table of its own (a migration of the package's,
   which a plugin can bring now, as packages/jobs does; the admin would have to become one). Which,
   if any?
 - **URLs.** Its pages are one path and a query (`/admin/db?table=books&k.id=7`), so an app needs one

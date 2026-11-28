@@ -4,7 +4,7 @@
 ## no platform, so a page in the browser, the server (an email's image) and rocx itself (`rocx dev
 ## --android --lan`'s code for a phone on Wi-Fi) use the same code.
 ##
-## The component (`<QrCode>`) is in `components/`: `rocx build` copies it into each app that names
-## this package, since a package can't import a platform's `Html` for both apps at once. See
-## README.md.
+## The component (`<QrCode>`) is in `components/`: `rocx generate` (and so `rocx dev` and `rocx
+## build`) copies it into each app that names this package, since a package can't import a
+## platform's `Html` for both apps at once. See README.md.
 package [Qr] {}

@@ -126,7 +126,7 @@ view! = |_| {
 			<p>What an app gives the platform, and what the platform gives the host:</p>
 			<Code title={"${Sources.platform_requires.file}, in part"} source={Sources.platform_requires.rocx} numbers={Bool.False} />
 			<p>
-				<code>main!</code> is the app's root, written by <code>rocx build --client</code>
+				<code>main!</code> is the app's root, which rocx writes into the browser's copy
 				(<code>Generated/Root</code>): a whole document, the page at the browser's path inside its layouts.
 				The platform gives the host two functions: mount the root, and run a kept box. The browser answers
 				no requests: every endpoint a component reads is the server's (in the tests, Node answers reads
@@ -215,9 +215,10 @@ view! = |_| {
 				renders: prose, listings, anything that never changes in the browser. The server runs it once and
 				writes it between <code>{"<!--nohydration-->"}</code> and <code>{"<!--/nohydration-->"}</code>, with
 				no markers inside, leaving its reads out of the page's answers. In the browser's copy of a
-				<code>.rocx</code> file (<code>rocx build --client</code>) the region has no children, and imports
-				only they used are gone, so none of it is in the wasm. Hydration skips the nodes between the markers,
-				never building, adopting or patching them; a <code>{"<body>"}</code> rendered again keeps them.
+				<code>.rocx</code> file (in <code>build/client</code>, which rocx writes) the region has no
+				children, and imports only they used are gone, so none of it is in the wasm. Hydration skips the
+				nodes between the markers, never building, adopting or patching them; a <code>{"<body>"}</code>
+				rendered again keeps them.
 			</p>
 			<p>
 				Nothing inside runs in the browser, so rocx refuses a handler, a <code>key</code> or a transition
@@ -268,9 +269,9 @@ view! = |_| {
 			<p>
 				Specializing Roc's lambda sets makes this site's wasm the smallest download;
 				<code>--opt=speed</code> renders a little faster and is the biggest raw. Compiling this site's wasm
-				took {Facts.fact!("client_compile_ms")} ms in Node. The whole runtime, minified as
-				<code>rocx build --client</code> writes it, is {Facts.fact!("runtime_gzip")} of JavaScript gzipped.
-				A static copy or a release (<code>rocx build --static</code>, <code>--release</code>) ships only the
+				took {Facts.fact!("client_compile_ms")} ms in Node. The whole runtime, minified as rocx writes it
+				into the browser's copy, is {Facts.fact!("runtime_gzip")} of JavaScript gzipped. A release or a
+				static copy (<code>rocx build</code>, <code>--static</code>) ships only the
 				runtime code the app's wasm reaches, without in-place navigation, drags or glides where the app has
 				none, as this site's static copy does. The <a href={Paths.showcase}>showcase</a> measures itself as
 				it runs (frames a second, and what each costs, Roc and patches together);

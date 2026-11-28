@@ -17,7 +17,7 @@ measurement is no database write. Guard and presence may still want it for their
 
 ## Traces
 
-**Problem.** A span needs to know which request it belongs to, deep in `Db.all!` and `Http.send!`,
+**Problem.** A span needs to know which request it belongs to, deep in `Db.all!` and `Http.fetch!`,
 with nothing passed by hand. The host knows each call's context (`CALL` in hosted.rs). Roc has no
 ambient value a module can read, and passing a trace through every function is what tracing
 should spare the app.

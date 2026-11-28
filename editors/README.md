@@ -3,7 +3,7 @@
 | Directory | What |
 |---|---|
 | `grammars/` | the TextMate grammars every editor here uses, the only copy: `rocx.tmLanguage.json` (markup over Roc) with its language configuration, and copies of the Roc and CSS grammars (with their licences) for editors that don't have them |
-| `vscode/` | the VS Code extension: highlighting, and `rocx dev`'s problems at their `.rocx` lines (its README) |
+| `vscode/` | the VS Code extension: highlighting, and `rocx dev`'s and `rocx check`'s problems at their `.rocx` lines (its README) |
 | `orca/` | the Orca plugin: highlighting of `.rocx` and `.roc` files (its README) |
 | `check-grammar.cjs` | `just grammar-check`'s: every `.rocx` file tokenized, its markup closed by its end |
 

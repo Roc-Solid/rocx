@@ -3,8 +3,8 @@ import Message
 
 ## One turn of the model's, put together from the events of its stream (`step`, an event's data at
 ## a time): its content blocks, why it stopped, and what it cost. While it comes, `step` says what
-## there is to pass on: text as it is written (`Text`), and a tool the model is about to use
-## (`Calling`).
+## there is to pass on: text as it is written (`Text`), a tool the model is about to use
+## (`Calling`), and a progress note it wrote between tool calls (`Progress`).
 ##
 ## Each block is kept as the API wrote it, its deltas joined: a text block's text, a thinking block's
 ## thinking and signature (the API checks the signature when the conversation goes on), a tool use's

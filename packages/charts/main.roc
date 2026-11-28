@@ -6,7 +6,7 @@
 ## tick is 0.3 and not 0.30000000000000004.
 ##
 ## The components (`<BarChart>`, `<StackedBarChart>`, `<LineChart>`, `<StackedAreaChart>`,
-## `<Sparkline>`, `<DonutChart>`, `<ScatterChart>`, `<Heatmap>`) are in `components/`: `rocx build`
+## `<Sparkline>`, `<DonutChart>`, `<ScatterChart>`, `<Heatmap>`) are in `components/`: `rocx generate`
 ## copies them into each app that names this package, since a package can't import a platform's
 ## `Html` for both apps at once. See README.md.
 package [Band, Ease, Format, Keys, Path, Scale, Ticks] {}

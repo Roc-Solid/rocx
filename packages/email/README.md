@@ -30,7 +30,7 @@ program = App.program({
 ```
 
 ```roc
-# Jobs.roc: rocx build finds the kind and lists it in App.jobs
+# Jobs.roc: rocx generate (and every build) finds the kind and lists it in App.jobs
 import email.Email
 import jobs.Job
 
@@ -124,7 +124,8 @@ server never gets that far, as its start refuses it (below).
   all) and says goodbye, and logs whether the server answered. A wrong URL shows then, not at the
   first email. A server that doesn't answer doesn't stop the app.
 - **The dev mailbox's paths**, answered before the app, under `--dev` (its JSON under `--debug`
-  too). See below.
+  too). See below. Under `--dev` the server lists the mailbox (`Mailbox`, `/__rocx/mail`) among the
+  places to open as it starts (D-111).
 
 Without the plugin, `send!` still works, reading `SMTP_URL` and `MAIL_FROM` itself on each send; the
 mailbox's pages, the check and the refusal at start are missing (each send fails instead).

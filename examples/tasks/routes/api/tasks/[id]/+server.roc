@@ -15,7 +15,7 @@ get! = |{ params, .. }| {
 	Ok({ task: found.task, list: found.list, people })
 }
 
-## What POST /tasks/:id is sent: the task as its page's form says, read and checked by
+## What POST /api/tasks/:id is sent: the task as its page's form says, read and checked by
 ## `TaskForm.editing` (D-093). A box left unticked ("done", which a browser doesn't send at all) is
 ## the form's to judge.
 post_body = TaskForm.editing

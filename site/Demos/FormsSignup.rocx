@@ -5,7 +5,7 @@ import forms.Form
 ## The forms page's example (site/routes/ecosystem/forms): one schema, which the demo checks in the
 ## browser as it is typed, and an endpoint's body is read and checked by. In an app, the schema is
 ## a module of its own, which a page and a route file both import, and `post!` is the route file's
-## (`routes/signup/+server.roc`, beside `post_body = Signup.form`, D-093). The page renders what the
+## (`routes/api/signup/+server.roc`, beside `post_body = Signup.form`, D-093, D-100). The page renders what the
 ## endpoint answers, as the site is built.
 FormsSignup := [].{
 	Passwords : { password : Str, confirm : Str }

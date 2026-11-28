@@ -28,8 +28,7 @@ import Turn
 ## is left out has its default. Every call streams, so a long answer never times out; each turn is
 ## logged (`ai.turn`: the model, why it stopped, the tokens read, cached and written, how long it
 ## took). A rate limit, an overloaded API or a passing server error, before anything was heard, is
-## tried again, twice, after the time the API
-## asks for.
+## tried again, twice, after the time the API asks for.
 ##
 ## ```roc
 ## plugins: [Ai.plugin({})]   # ANTHROPIC_API_KEY, and ANTHROPIC_MODEL if it isn't the default
@@ -74,15 +73,16 @@ Ai := [].{
 	## - `max_tokens`: how much the model may write, its thinking too, at most (64,000);
 	## - `effort`: `Medium`;
 	## - `cache`: whether what is sent is kept in the API's prompt cache for the next call to read
-	##   (yes: a conversation's next turn, or the same system prompt again, costs a tenth for what
-	##   was kept);
+	##   (yes: a conversation's next turn, or the same system prompt again, costs a tenth or less for
+	##   what was kept);
 	## - `max_turns`: how many turns `run!` takes at most (10);
 	## - `label`: what the call is, on the log (`ai.turn`'s `label`: `"summary"`, an agent's name), so
 	##   what each part of the app spends can be told apart;
 	## - `updates`: whether `run!` tells its listener what to show while the model works (`Update`):
 	##   the progress notes the model writes between tool calls (asked of the models that write them:
-	##   Opus 5.5, Sonnet 5.5, Fable), each of the app's tools as it starts to run, with what it says
-	##   it is doing, and the same from every agent it calls as a tool (no: only text and `Calling`).
+	##   Opus 5.5, Sonnet 5.5, Fable and Mythos), each of the app's tools as it starts to run, with what
+	##   it says it is doing, and the same from every agent it calls as a tool (no, the default: only
+	##   text and `Calling`).
 	Request := {
 		prompt : Str ?? "",
 		messages : List(Message) ?? [],

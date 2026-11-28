@@ -16,9 +16,10 @@ body read into a typed record and written back.
   400 before the endpoint runs. [`order.json`](order.json) is the order the benchmark sends.
 
 A request goes through everything an app's request goes through, and nothing more: the native
-host, the request read into a `Server.Request`, a middleware that only passes it on
-([`main.roc`](main.roc)), the routes `rocx build` generates, and the JSON body read and the answer
-written. There is no database, no page and no log line.
+host, the request read into a `Server.Request`, the platform's check that a post isn't from another
+site's page, the routes rocx generates, and the JSON body read and the answer written. There is no
+`routes/+middleware.roc`, no page and no log line. The server opens a SQLite file, `data/app.db`, as
+every app that names no database does (D-105), and never touches it.
 
 ## Run it
 
@@ -68,6 +69,7 @@ server for its cores. `just example-apps --bench` runs the benchmark for the doc
 
 ```sh
 just examples echo                          # build, type-check, lint, run the expects and the tests
+just examples-release echo                  # rocx build, then the tests against a server built --opt=speed
 node --test 'examples/echo/test/*.test.mjs'
 ```
 

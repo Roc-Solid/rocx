@@ -86,6 +86,7 @@ view! = |_|
 						<tr><td>an error the app dealt with</td><td><code>PostHog.capture!(message, fields)</code></td><td><code>Error</code></td><td>yes</td></tr>
 						<tr><td>a job that failed for good</td><td><code>on_failed!: PostHog.job_failed!</code></td><td><code>JobFailed</code></td><td>no</td></tr>
 						<tr><td>an error or a rejected promise nothing caught in a browser</td><td><code>/rocx-errors.js</code></td><td>the error's own (<code>TypeError</code>)</td><td>no</td></tr>
+						<tr><td>a page that wasn't what the app renders, so the runtime rendered <code>{"<body>"}</code> again (<a href={"${Paths.platform_browser}#hydration"}>a hydration mismatch</a>)</td><td><code>/rocx-errors.js</code></td><td><code>HydrationMismatch</code></td><td>no</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -125,7 +126,7 @@ view! = |_|
 						<tr><td><code>key</code></td><td><code>POSTHOG_KEY</code></td><td>none: reporting is off</td></tr>
 						<tr><td><code>host</code></td><td><code>POSTHOG_HOST</code></td><td><code>https://us.i.posthog.com</code> (use <code>https://eu.i.posthog.com</code> for EU Cloud)</td></tr>
 						<tr><td><code>release</code></td><td><code>POSTHOG_RELEASE</code></td><td>none; set it to the commit a build is from</td></tr>
-						<tr><td><code>interval_ms</code></td><td></td><td><code>10000</code></td></tr>
+						<tr><td><code>interval_ms</code></td><td></td><td><code>10000</code> (at least 100)</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -151,10 +152,10 @@ view! = |_|
 				in double quotes or backticks.
 			</p>
 			<p>
-				So a loop of errors can't flood the project, one issue is sent at most 20 times a minute, and all
-				browsers together send at most 120 errors a minute. A batch PostHog doesn't take (a 5xx, or no
-				answer) is sent again next time; one it refuses (a 4xx, such as a wrong key) is dropped, and the log
-				says so.
+				So a loop of errors can't flood the project, one issue is sent at most 20 times a minute, all
+				browsers together send at most 120 errors a minute, and each page load at most 10. A batch PostHog
+				doesn't take (a 5xx, or no answer) is sent again next time; one it refuses (a 4xx, such as a wrong
+				key) is dropped, and the log says so.
 			</p>
 
 			<Heading id="digest">A daily digest</Heading>
@@ -173,7 +174,6 @@ view! = |_|
 					<strong>A crash in Roc while answering a request.</strong> It ends the call before the middleware sees
 					an answer; the host answers 500 and logs <code>rocx server: Roc crashed</code>. (A job that crashes is
 					reported: to the jobs plugin, a crash is a failure.)
-
 				</li>
 				<li>
 					<strong>Some failures in the browser.</strong> A computation that fails with no

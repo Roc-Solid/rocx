@@ -6,8 +6,8 @@ checked, how many pages are open, and a dot that says whether the page is live.
 
 A million checkboxes would be a million elements, more than a browser wants to hold. So the page
 renders only the rows that show (about a thousand boxes on a laptop's screen) and makes the next
-rows as you scroll to them. The server keeps the boxes in its memory, with no database, so a restart
-clears them.
+rows as you scroll to them. The server keeps the boxes in its memory, not in a database, so a
+restart clears them.
 
 Read it to learn how to render a huge list with packages/virtual (`<VirtualList>`, built on the
 platform's `<Repeat>` and `on:viewport`), how to keep shared state in the server's memory (`Kv`)
@@ -23,23 +23,23 @@ cd examples/checkboxes && ../../bin/rocx dev
 
 Open http://localhost:8080 in two windows side by side. `rocx dev` builds the app (the server and
 the browser's half), serves it under `--dev` along with the app's `static/` (its stylesheet), and
-builds it again each time you save a file. The app has no database, so it doesn't matter where you
-start it from; `bin/rocx dev examples/checkboxes` from the root works too.
+builds it again each time you save a file. The app keeps nothing in a database, but the server
+still opens a SQLite file where it starts, `data/app.db`, as every app that names no database does
+(D-105).
 
 ### Build it as it would ship
 
-`rocx dev` builds for development. To build the browser's wasm at its smallest and run the server on
-its own, from the repository's root (`just web-host` first, if the browser's host isn't built yet):
+`rocx dev` builds for development. `rocx build` builds to deploy: the server optimized for speed,
+the browser's wasm for size, and the app's `static/` with the browser's files in `dist/static`:
 
 ```sh
-bin/rocx generate examples/checkboxes --client examples/checkboxes/build/client
-.tools/roc-active build --target=wasm32 --opt=size \
-  --output=examples/checkboxes/build/client/static/rocx/app.wasm examples/checkboxes/build/client/main.roc
-node server/build.mjs examples/checkboxes/main.roc examples/checkboxes/build/million
-cd examples/checkboxes && build/million --port 18160 --static build/client/static --static static
+cd examples/checkboxes
+../../bin/rocx build                          # dist/server and dist/static
+dist/server --port 18160 --static dist/static
 ```
 
-Then open http://localhost:18160.
+Then open http://localhost:18160. `rocx build --image` makes a container image instead,
+`checkboxes.tar`.
 
 ## A tour
 
@@ -94,17 +94,17 @@ Then open http://localhost:18160.
 From the repository's root:
 
 ```sh
-just examples checkboxes
+just examples checkboxes           # build, type-check both programs, lint, the expects and the node tests
+just examples-release checkboxes   # rocx build, then the node tests against a server built --opt=speed
 ```
 
-That builds the app, type-checks both programs, lints it, runs the `expect`s and the node tests. To
-run the parts yourself:
+To run the parts yourself:
 
 ```sh
 bin/rocx fmt --check examples/checkboxes
 bin/rocx check examples/checkboxes   # build it, type-check both programs; problems at their .rocx lines
-bin/rocx check -- .tools/roc-active test examples/checkboxes/main.roc   # the expects: the grid's bits, versions, layout
-node --test 'examples/checkboxes/test/*.test.mjs'                        # over HTTP and the channel, and in Chromium
+bin/rocx test examples/checkboxes    # the expects: the grid's bits, versions, layout
+node --test 'examples/checkboxes/test/*.test.mjs'   # over HTTP and the channel, and in Chromium
 ```
 
 - **`expect`s** in `Grid.roc`: a chunk's hex both ways, a bit set and cleared, a chunk taken only
@@ -146,11 +146,11 @@ Built in the platform for this app:
 
 Still open:
 
-5. **Writing a signal runs its readers even when nothing changed**, because a setter can't compare
-   Roc values. The page once wrote the column count on every scroll, which re-ran every box's holes.
-   It now writes it only when it changes, and `<VirtualList>` writes its own view only when the rows
-   change. Wanted: a signal that compares values that can be compared (`Str`, numbers, records of
-   them).
+5. **Writing a signal runs its readers even when nothing changed.** A memo computed again to the
+   same value tells no one (D-109), but a signal's setter doesn't compare. The page once wrote the
+   column count on every scroll, which re-ran every box's holes. It now writes it only when it
+   changes, and `<VirtualList>` writes its own view only when the rows change. Wanted: a signal
+   that compares, as a memo does.
 6. **Kv's compare-and-swap can starve a writer under contention.** Four tabs writing one chunk lost
    a box now and then after fifty tries. The app works around it: after three lost tries a write
    waits a millisecond before each next try, and it gives up (and logs a warning) after a thousand.

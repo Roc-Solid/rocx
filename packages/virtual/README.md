@@ -25,10 +25,10 @@ Then import the component in a `.rocx` file:
 import virtual.VirtualList
 ```
 
-`rocx build` copies `components/VirtualList.rocx` into each app that names the package
-(`Generated/virtual/`). A package's header names one platform, and the component needs the
-server's `Html` on the server and the browser's in the browser, so it is compiled as part of the
-app rather than of the package.
+`rocx generate` (which `rocx dev` and `rocx build` run first) copies `components/VirtualList.rocx`
+into each app that names the package (`Generated/virtual/`). A package's header names one platform,
+and the component needs the server's `Html` on the server and the browser's in the browser, so it is
+compiled as part of the app rather than of the package.
 
 ## Using it
 
@@ -75,9 +75,9 @@ rows that really show replace them.
 
 ### Writing signals from `on_view!`
 
-`on_view!` is called on every scroll, and a signal's setter doesn't compare: every write re-runs
-whatever reads the signal, whether the value changed or not. So write a signal from it only when
-the part of the view you use changes. From `examples/checkboxes`:
+`on_view!` is called on every scroll. A signal's setter doesn't compare (a memo does, D-109): every
+write re-runs whatever reads the signal, whether the value changed or not. So write a signal from it
+only when the part of the view you use changes. From `examples/checkboxes`:
 
 ```roc
 on_view!={|view| if (Grid.columns(view.width) != columns!()) set_columns!(Grid.columns(view.width)) else {}}

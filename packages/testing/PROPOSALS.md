@@ -1,7 +1,7 @@
 # packages/testing: proposals
 
 What this package needs from outside `packages/testing/`, written up instead of built (sections 1
-and 11 are done since): each is a change to the platform, the host, the runtime or the `rocx` CLI.
+and 11 are done): each is a change to the platform, the host, the runtime or the `rocx` CLI.
 Everything in the package compiles and passes its tests without them. Each section: the problem,
 the options weighed, the recommended change, what in the package waits on it, and how to undo it.
 
@@ -17,82 +17,31 @@ it stubs, jobs it runs, requests answered without a socket.
 
 **Done (D-033), differently.** A package that needs the server names the server platform in its
 `main.roc`, and lists what the browser's half may import in a `browser.roc` beside it (as
-packages/push does); no `server/` folder is copied, and `just check` keeps it so
-(`test/no-copies.test.mjs`). So `TestHooks` could be this package's own module; it waits on
-section 2. What follows is the proposal as it was.
-
-**Problem.** A package can't hold a Roc module that imports the platform (`Middleware`, `Db`, `Job`,
-`Http`, `Endpoint`, …). A Roc package may name a platform only if it is the app's exact platform,
-and a Roc Solid app is two apps (the browser's half on `web/platform`, the server's on
-`server/platform`). `rocx build` copies a package's `components/` into both halves; nothing copies
-server-only code. This package would ship a `TestHooks` middleware (section 2's Roc side: a cron run
-by name, the mailbox cleared, written in Roc on `Cron.run_now!` and `Job`), and it can't.
-
-**Options.**
-1. `rocx build` copies a package's `server/` directory (`.roc` and `.rocx`) into the server half
-   only, as it copies `components/` into both: `Generated/<alias>/<Module>.roc`, `pf` the server's
-   platform. The browser's copy (`--client`) never gets them.
-2. A second package per package that names the server platform (`packages/testing/server/main.roc`:
-   `package [...] { pf: platform "../../../server/platform/main.roc" }`), named only in the server
-   half's header. `rocx build --client` copies every package of the server's header into the
-   browser's `main.roc` today, so it would have to leave out the ones that name a platform, and the
-   package's platform path must be the app's, character for character: a published package can't
-   know it.
-3. Wait for Roc to let a package be generic over its platform (module params, or effects given as
-   arguments). Not on Roc's roadmap in a form we can use.
-
-**Recommended: 1.** It is the components mechanism with one directory more and one half fewer.
-
-```
-packages/testing/
-  main.roc              package [Dom] {}            plain Roc: both halves, roc test
-  components/           copied into both halves      (today)
-  server/TestHooks.roc  copied into the server half: Generated/testing/TestHooks.roc
-```
-
-In a `.rocx` or `.roc` file of the server's, `import testing.TestHooks` is rewritten as a
-component's import is (`import ../Generated/testing/TestHooks`). In the browser's copy the import is
-dropped with the server-only code that used it (rocx already drops a route file's middleware and a
-server function's body, and the imports only they used); an import of a server-only module from
-code that runs in the browser is a build error at its line: "`testing.TestHooks` is server-only: use
-it in a server function, a route file's middleware or an endpoint". In `src/routes.mjs`, beside the
-copy of `components/`:
-
-```js
-// packagesOf(app) already finds each package the app's header names, and its directory.
-for (const { alias, dir } of packagesOf(app)) {
-	copyModules(join(dir, "components"), join(app, "Generated", alias), { halves: ["server", "client"] });
-	copyModules(join(dir, "server"), join(app, "Generated", alias), { halves: ["server"] });   // new
-}
-```
-
-**What depends on it.** `TestHooks` (section 2) would be its first user here; nothing built today.
-The other eight package workers each need the same thing; this is this package's version of it.
-
-**Undo.** Delete the second copy; packages keep `main.roc` and `components/`.
+packages/push does); nothing is copied into an app, and `just check` keeps it so
+(`test/no-copies.test.mjs`). So a `TestHooks` module could be this package's own; it waits on
+section 2.
 
 ---
 
 ## 2. A test mode for the server: `--test`, and its control paths
 
-**Status (2026-11-22).** The mailbox is packages/email's now, answered as a plugin's early paths
-(`Plugin.Early`, under `--dev` or `--debug`: D-033, D-035), not by the platform's `Outbox`. A test
-mode would be the same mechanism with a `Test` flag: a plugin (this package's) giving early paths
-under `--test`.
-
 **Problem.** A test can reach a server only as a browser does. It can't set the time, seed the
 randomness, stub what the server asks of other servers, run a cron now or empty the mailbox,
-because nothing in the platform listens for that. The dev mailbox shows the way: under `--dev` or
-`--debug` the platform answers `/__rocx/mail` itself, before the app (`Outbox.serves!`).
+because nothing in the platform listens for that.
+
+**How it would fit.** A plugin may answer paths under `/__rocx/` before the app, under a flag
+(`Plugin.Early`'s `under`: `[Dev, Debug]` today). The dev mailbox is packages/email's, answered that
+way (D-033, D-035), and the jobs plugin's `POST /__rocx/jobs/wake` too. A test mode is the same with
+one flag more.
 
 **Options.**
-1. One flag, `--test`, under which the platform answers `/__rocx/test/*` before the app, as it
-   answers the mailbox. Off unless given: a deploy never passes it, and the server logs a warning
-   at start when it is on.
+1. One flag, `--test` (`Test` in `under`), under which this package's plugin answers
+   `/__rocx/test/*`. Off unless given: a deploy never passes it, and the server logs a warning at
+   start when it is on.
 2. Each hook its own flag (`--fake-clock`, `--seed`, `--stub-http`): more to remember, and each
    test turns them all on anyway.
-3. Hooks in the app (a middleware it mounts, section 1): the clock and randomness are the host's,
-   below any middleware, so the app can't fake them.
+3. Hooks in the app (a route file it adds): the clock and randomness are the host's, below any
+   route, so the app can't fake them.
 
 **Recommended: 1**, with the paths below (sections 3 to 7), all JSON, all under `--test` only:
 
@@ -106,19 +55,9 @@ POST /__rocx/test/cron/<name>          a schedule's job, queued and run now
 POST /__rocx/mail/clear                (under --debug and --test too)                   (section 7)
 ```
 
-In `server/platform/main.roc`, beside the mailbox:
-
 ```roc
-respond_for_host! = |given, context| {
-	request = { ..Server.from_http(given.method, given.target, given.headers, given.body), peer: given.peer }
-	if Outbox.serves!(given.target) {
-		Outbox.respond!(request)
-	} else if TestMode.serves!(given.target) {    # new: Setting.text!("test") is "1"
-		TestMode.respond!(request)
-	} else {
-		program.respond!(request, context)
-	}
-}
+# packages/testing: its plugin, for an app's tests
+plugin = |{}| { name: "testing", early: [{ method: "POST", path: "/__rocx/test/clock", under: [Test], answer!: clock! }, …] }
 ```
 
 In the package, `startServer(executable, { test: true })` passes `--test`, and the server it
@@ -126,7 +65,7 @@ returns gets `clock`, `stubHttp`, `httpCalls`, `runJobs`, `runCron` (sketched in
 
 **What depends on it.** Sections 3 to 7.
 
-**Undo.** Remove the flag and `TestMode`; nothing else answers those paths.
+**Undo.** Remove the flag and the plugin; nothing else answers those paths.
 
 ---
 
@@ -138,9 +77,10 @@ of a page that says "2 minutes ago", has to wait, or can't be written.
 
 **Options.**
 1. Under `--test`, the host's `roc_host_now_millis` reads a clock the test sets: frozen at a moment,
-   moved on by hand. Postgres's `now()` stays real: jobs are due by the database's clock
+   moved on by hand. On SQLite the jobs' times come from Roc (packages/jobs's `Queue.now!`), so they
+   move with it. Postgres's `now()` stays real: jobs there are due by the database's clock
    (`run_at <= now()`), so a job queued "in a day" is made due with `settleJobs({ later: true })`
-   (postgres.mjs, today) or `runJobs({ later: true })`.
+   (today) or `runJobs({ later: true })`.
 2. Also move Postgres: `set timezone`-style tricks don't move `now()`; every query of the platform's
    would have to take the time as a parameter. Too wide for what it buys.
 
@@ -212,22 +152,21 @@ seeded by the caller needs nothing (the docs site's `Demos/Random.roc` is one).
 ## 5. Outbound requests stubbed: `Http`, and `Storage` through it
 
 **Problem.** An app that asks another server (`Http.fetch!`: a payment provider, an OAuth token
-endpoint) or keeps files in S3 (`Storage`, an S3 client written on `Http`) can't be tested without
-that server: a test makes real network calls, or doesn't test that path. Email needs nothing: with
-no `--smtp-url` it is kept in the mailbox already.
+endpoint) can't be tested without that server: a test makes real network calls, or doesn't test
+that path. Email needs nothing: with no `SMTP_URL` it is kept in the mailbox already. Files need
+nothing either: packages/storage takes `memory:` and `file:` URLs as well as `s3://` (D-047), so a
+test gives its server a bucket of its own. packages/stripe's tests point `STRIPE_API_URL` at a
+stand-in, which works for any service whose URL is a setting.
 
 **Options.**
 1. Under `--test`, `roc_host_http_send` answers from stubs the test registers, and never opens a
    socket: a request no stub answers fails with `HttpErr("no stub for GET https://…: the test server
-   makes no requests")`. Every request is recorded for the test to read. `Storage` goes through it,
-   so an S3 stub is a stub of its URLs.
-2. A fake server per service, run by the test (as server/test runs an SMTP server): works today
-   for a service whose URL is a setting, but each test writes its fake, and HTTPS needs a
-   certificate the server trusts.
-3. An in-memory bucket for `Storage` (`STORAGE_URL=memory://bucket`), in the host's store
-   (`Host.store_get!`/`store_set!`): simpler for files than stubbing S3's XML. Worth doing beside 1.
+   makes no requests")`. Every request is recorded for the test to read.
+2. A fake server per service, run by the test (as server/test runs an SMTP server, and
+   packages/stripe's tests a stand-in for Stripe): works today for a service whose URL is a
+   setting, but each test writes its fake, and HTTPS needs a certificate the server trusts.
 
-**Recommended: 1, and 3 for `Storage`.**
+**Recommended: 1.**
 
 ```
 POST /__rocx/test/http   { "method": "POST", "url": "https://pay.example/charges", "match": "prefix",
@@ -251,11 +190,11 @@ assert.deepEqual((await app.httpCalls()).map((call) => call.url), ["https://pay.
 
 ## 6. Jobs and crons run on demand
 
-**Problem.** A test that queues a job has to wait for a worker to take it. postgres.mjs's
-`settleJobs` does that today over SQL: it makes due what should run, wakes the workers
-(`pg_notify('rocx_jobs')`) and polls until nothing is due or running. It works (app.test.mjs), but
-it needs the database's URL, polls, and can't run a cron by its name: a cron's input is in the
-program, not the database, so `enqueue(kind, input)` restates it.
+**Problem.** A test that queues a job has to wait for a worker to take it. `settleJobs` does that
+today over SQL: it makes due what should run, wakes the workers (`pg_notify('rocx_jobs')` on
+Postgres, the jobs plugin's `POST /__rocx/jobs/wake` on SQLite) and polls until nothing is due or
+running. It works (app.test.mjs), but it needs the database, polls, and can't run a cron by its
+name: a cron's input is in the program, not the database, so `enqueue(kind, input)` restates it.
 
 **Options.**
 1. `POST /__rocx/test/jobs/run` (under `--test`) takes and runs every due job in the request's own
@@ -280,20 +219,17 @@ are the way today.
 
 ---
 
-## 7. The dev mailbox, for tests: ids, and clearing it
+## 7. Clearing the dev mailbox in a test
 
-**Status (2026-11-22).** Messages have ids (`Kv`'s counter, D-028); the mailbox is packages/email's
-`Mailbox.roc` (D-035), where clearing under `--debug` would go.
+**Status (2026-11-28).** Half done: kept messages have ids (`Kv`'s counter, D-028), and the mailbox
+is packages/email's `Mailbox.roc` (D-035).
 
-**Problem.** Messages kept in memory (no database) have no `id`, where Postgres's do, so a test
-can't say "the mail after this one" except by counting (`waitForMail(match, { after: n })`). And
-`POST /__rocx/mail/clear` is answered only under `--dev`, from the mailbox's own page (same origin),
-so a test under `--debug` can't empty it between tests.
+**Problem.** `POST /__rocx/mail/clear` is answered only under `--dev`, from the mailbox's own page
+(same origin), so a test under `--debug` can't empty it between tests. A test says "the mail after
+this one" by counting (`waitForMail(match, { after: n })`).
 
-**Recommended.** The host gives each kept message an id (a counter), as Postgres does; under
-`--debug` (or `--test`), `POST /__rocx/mail/clear` is answered without the same-origin check (it is
-a test's server). `Outbox.serves!` already decides by flag; a few lines in `Outbox.roc` and
-`server/host/src/outbox.rs`.
+**Recommended.** In `Mailbox.early`, answer the clear under `--debug` (or `--test`) too, without the
+same-origin check (it is a test's server). A few lines in packages/email.
 
 ```js
 await app.clearMail();
@@ -302,7 +238,7 @@ const mail = await app.waitForMail({ to: "ada@example.com" });
 
 **What depends on it.** `app.clearMail`: not built; `waitForMail`'s `after` is the way today.
 
-**Undo.** Drop the counter and the flag check.
+**Undo.** Drop `Debug` from the clear's `under`.
 
 ---
 
@@ -319,11 +255,11 @@ effect (`Routes.respond!`, `Db`, `Job`).
 2. A test program: `program` gets `tests : List({ name : Str, run! : {} => Try({}, Str) })`
    (default `[]`; `App.program` lists each `test!` the app's modules define, as it lists jobs), and
    the built server runs them with `--run-tests` instead of listening, under section 2's test mode.
-   A test answers requests in-process with a new host primitive, `Host.respond_local!`, which
-   `Host.call!` already is for one case (a server function called while a page renders:
-   `call_route` in `server/host/src/signals.rs` answers it through the app's `respond!`). Each test
-   runs in a transaction rolled back after it, its in-process requests on the same connection, so
-   tests share a database and leave nothing in it.
+   A test answers requests in-process, as the host already does for an app's own requests
+   (`Host.fetch!`, behind `Call.fetch!`: a page's endpoint reads while it renders, and a handler's
+   `Endpoint.send!`, behind the endpoint's middleware, D-103). Each test runs in a transaction
+   rolled back after it, its in-process requests on the same connection, so tests share a database
+   and leave nothing in it.
 3. Node only (today): it works, but the test is in another language, away from the code.
 
 **Recommended: 2**, behind a `rocx test <dir>` that builds the server half with `--dev`, runs its
@@ -353,7 +289,7 @@ with, in `server/platform/Test.roc`:
 ```roc
 Test := [].{
 	define! : Str, ({} => Try({}, Str)) -> { name : Str, run! : {} => Try({}, Str) }
-	request! : Server.Request => Try(Server.Response, Str)   # Host.respond_local!, through program.respond!
+	request! : Server.Request => Try(Server.Response, Str)   # in-process, as Host.fetch! answers one
 	get : Str -> Server.Request
 	form : Str, Str, List((Str, Str)) -> Server.Request
 	json : Str, Str, Str -> Server.Request
@@ -364,7 +300,8 @@ Test := [].{
 ```
 
 **What depends on it.** Nothing built; Dom.roc is ready for it (`Dom.parse` of an answer's text).
-It needs section 1 for a package's test helpers, section 2 for the clock and stubs.
+It needs section 2 for the clock and stubs. For pages, packages/headless's PROPOSALS.md (4) adds a
+test program on the CLI platform that starts the built server and drives Chromium from Roc (D-128).
 
 **Undo.** Remove the field and the flag; `tests` is `[]` in every app.
 
@@ -373,11 +310,12 @@ It needs section 1 for a package's test helpers, section 2 for the clock and stu
 ## 9. Rendering a `view!` component in a test
 
 **Problem.** `Html.to_str` renders markup with nothing to run in it, so an `expect` can render a
-pure component (`view`) and query it (Dom.roc, today). A component with signals, an `if`'s part, a
-`<For>` or a server function (`view!`) needs the runtime: `Html.to_str` crashes on it, by design.
+pure component (`view`) and query it (Dom.roc, today). A component with signals, a hole's `if` or
+`match`, a `.map` of rows or an endpoint read (`view!`) needs the runtime: `Html.to_str` crashes on
+it, by design.
 
 **Options.**
-1. Through its story, today: `rocx build --dev` serves each `<story>` as a page in the app's layout
+1. Through its story, today: `rocx generate --dev` serves each `<story>` as a page in the app's layout
    (`storyPath(module, name)` in server.mjs); a test fetches it (`client.get`) and queries it, or
    opens it in Chromium (`browser.open`) and uses it. app.test.mjs does both.
 2. In section 8's test program: `Test.render! : ({} => Html) => Str`, the host's own renderer (the
@@ -406,7 +344,12 @@ web/test, site/test and test/e2e import it from here; give `launch()` a browser-
 `createTarget({ browserContextId })`), so each person in a test has their own cookies. browser.mjs
 then opens each tab isolated by default.
 
-**What depends on it.** browser.mjs's `open` (works today, with the shared profile).
+Since D-128 there is a second way: packages/headless drives Chromium from Roc, over the CLI
+platform's `WebSocket`, and its PROPOSALS.md has what this package's browser would need there
+(Gecko, drags and touch, these queries in a tab). Whether the browser moves to Roc is open.
+
+**What depends on it.** browser.mjs's `open` (works today, with the shared profile: tests launch a
+browser for each person).
 
 **Undo.** Move the file back.
 
@@ -415,21 +358,7 @@ then opens each tab isolated by default.
 ## 11. This package's tests in `just test`
 
 **Done.** `just test` runs every package's `roc test` (`packages/*/main.roc`, this one's included)
-and `node --test 'packages/testing/test/*.test.mjs'`. What follows is the proposal as it was.
-
-**Problem.** `just test` runs `roc test packages/charts/main.roc` and nothing of this package's.
-
-**Recommended.** In the Justfile's `test` recipe:
-
-```
-    {{ roc }} test packages/testing/main.roc
-    ROC={{ roc }} node --test 'packages/testing/test/*.test.mjs'
-```
-
-(app.test.mjs builds a small app and needs the hosts built, which the recipe's earlier steps do;
-it uses `DATABASE_URL` and Chromium when they are there, and skips those parts when they aren't.)
-
-**Undo.** Remove the two lines.
+and `node --test 'packages/testing/test/*.test.mjs'`.
 
 ---
 
@@ -443,6 +372,7 @@ it uses `DATABASE_URL` and Chromium when they are there, and skips those parts w
    browser only? That is the larger design question: in-process Roc tests are fast and typed, and
    need the platform work above; the Node helpers here work today.
 3. **Where should an app's JS tests import this package from** once Roc Solid is installed rather
-   than checked out (`rocx new`)? Today it is a path into the repository
-   (`../packages/testing/index.mjs`); an npm package `@roc-solid/testing`, or a copy that
-   `rocx new` writes, are the choices.
+   than checked out? Today it is a path into the repository (`../packages/testing/index.mjs`), and
+   an installed release has no `.mjs` of any package (`release/pack.sh` leaves them out), so the JS
+   half is only in a clone. An npm package `@roc-solid/testing`, the `.mjs` files in the release, or
+   a copy that `rocx new` writes, are the choices.

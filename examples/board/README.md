@@ -31,21 +31,23 @@ To be two people at once, open the board in a second browser, or in a private wi
 one browser share their cookies, and so their session, so they are the same person.
 
 `BOARD_LEASE_TTL_MS` sets how long an edit lease lasts without being renewed (30000 ms by default;
-the tests make it short): `BOARD_LEASE_TTL_MS=5000 ../../bin/rocx dev`.
+the tests make it short): `BOARD_LEASE_TTL_MS=5000 ../../bin/rocx dev`. A line in a `.env` beside
+`main.roc` works too: `rocx dev` gives that file to the server.
 
 ### Build it as it would ship
 
-`rocx dev` builds for development. To build the browser's wasm at its smallest and run the server on
-its own, from the repository's root (`just web-host` first, if the browser's host isn't built yet):
+`rocx dev` builds for development. `rocx build` builds what you deploy: the server optimized for
+speed, with SQLite alone, and the browser's wasm optimized for size. From the repository's root:
 
 ```sh
-bin/rocx generate examples/board --client examples/board/build/client
-.tools/roc-active build --target=wasm32 --opt=size --output=examples/board/build/client/static/rocx/app.wasm examples/board/build/client/main.roc
-node server/build.mjs examples/board/main.roc examples/board/build/server
-cd examples/board && build/server --port 18120 --static build/client/static
+bin/rocx build examples/board     # examples/board/dist: server and static/
+cd examples/board && dist/server --port 18120 --static dist/static
 ```
 
-Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds an optimized server.
+Then open http://localhost:18120. A server started this way reads no `.env`: pass `--env-file .env`,
+or set the variables. Behind a proxy that speaks TLS, set `PUBLIC_URL=https://…`, and every cookie is
+`Secure` (D-123). `bin/rocx build examples/board --image` makes a container image instead
+(`examples/board/board.tar`, for `docker load -i`; the database goes in `/app/data`).
 
 ## A tour
 
@@ -73,7 +75,7 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 
 | Feature | Where to look |
 |---|---|
-| A page that reads an endpoint as it renders, and a 404 page for a board that isn't there. A page's endpoints are under `api/`, at the page's path (`GET /b/launch` is the page, `GET /api/b/launch` the board as JSON): a path is a page or an endpoint, never both | `routes/(members)/b/[board]/+page.rocx` (`board!`, `Missing`), `routes/(members)/api/b/[board]/+server.roc` (`get!`) |
+| A page that reads an endpoint as it renders (`Api.get_api_b_board({ board: board })`, then `.read!()`), and a 404 page for a board that isn't there. A page's endpoints are under `api/`, at the page's path (`GET /b/launch` is the page, `GET /api/b/launch` the board as JSON): a path is a page or an endpoint, never both | `routes/(members)/b/[board]/+page.rocx` (`board!`, `Missing`), `routes/(members)/api/b/[board]/+server.roc` (`get!`) |
 | Drag and drop: tiles are dragged, a whole column is a drop target, and the card lands where the drag last was. Touch works too, with the same markup | `Ui/CardTile.rocx` (`on:dragstart`, `on:dragenter`), `Ui/ColumnView.rocx` (`on:drop`) |
 | A move shown before the server has it: the server's board with the moves still on their way applied (`use_action!`, `use_submissions!`), then the board read again | `routes/(members)/b/[board]/+page.rocx` (`board!`), `Board.moved`, `routes/(members)/api/b/[board]/(writes)/move/+server.roc` |
 | The board dimmed while it is read again (`is_pending!`) | `routes/(members)/b/[board]/+page.rocx` (`class:stale`) |
@@ -89,7 +91,7 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 | Fractional ranks: a move writes one row, and two cards dropped into one gap at once each get a rank of their own (below) | `Rank.roc`, `Board.rank_for`, `Store.move!` |
 | The rules both halves share: the order cards show in, where a move puts a card, a move applied to the page's copy, validation | `Board.roc` |
 | Middleware by folder: security headers on every request (`routes/+middleware.roc`), a member check around the boards (the `(members)` group, which adds nothing to the paths: the join page and its endpoint sit outside it), and a rate limit on a board's changes (the `(writes)` group inside `api/b/[board]/`: its cards, columns and moves, but not a card's edit lease, which a page renews while it is open; packages/guard); a change sent by another site's page the platform refuses | `Middlewares.roc` (`default`, `member`, `writes`); `routes/+middleware.roc`, `routes/(members)/+middleware.roc` |
-| Who you are: a name and a colour, kept as a session by packages/auth's plugin, with none of its sign-in routes (D-116: nobody signs in by a link or a provider). Joining starts it and ends the one the browser had (`Auth.switch!`), `Auth.required_with` reads it and sends a page asked for without one to join, and a channel's check reads it from the stream's cookies | `main.roc` (`Auth.plugin`), `routes/api/join/+server.roc`, `Middlewares.member` |
+| Who you are: a name and a colour, kept as a session by packages/auth's plugin, with none of its sign-in routes (D-116: nobody signs in by a link or a provider). Joining starts it and ends the one the browser had (`Auth.switch!`), `Auth.required_with` reads it and sends a page asked for without one to join, and a channel's check reads it from the stream's cookies. The people are the app's own table (`people`: a name and a colour, no address), not packages/auth's users, which are kept by address (D-134) | `main.roc` (`Auth.plugin`), `routes/api/join/+server.roc`, `Middlewares.member`, `Store.join!` |
 | SQLite in the server's process: migrations, transactions that take turns, a `json` column, every query in one module | `main.roc`, `migrations/`, `Store.roc` |
 | A seed that can run twice: three people and a board that looks lived in | `migrations/0002_seed.sql` |
 | Forms that work without JavaScript: each has `method="post"` and an `action`. With JavaScript, each is sent with `fetch` and the page stays: most through an action (`on:submit`), the rest by the runtime, which sends any form to one of the app's endpoints itself (D-095), their answers read with `use_submission!` | every `<form>` |
@@ -101,13 +103,15 @@ Then open http://localhost:18120. `node server/build.mjs … --opt=speed` builds
 The board's page makes the state its parts share once, in `routes/(members)/b/[board]/+page.rocx`, and hands
 it to each component as `shared` (`Ui/Shared.roc` says what is in it). Each entry is an accessor or
 a setter: `board!` (the board as it shows), `dragging!` and `over!` (the card being dragged and where
-it would land), `open!` (the card that is open), `others!` (who else is on the board). A part that
-reads one of them is patched when it changes, and only that part.
+it would land), `open!` (the card that is open), `others!` (who else is on the board), `adding!`
+(new cards on their way, shown dimmed at their column's end). A part that reads one of them is
+patched when it changes, and only that part.
 
 ### Moves before the server has them
 
-`board!` is a memo: the board as the server last sent it (`Endpoint.read!`), with every move still on
-its way applied to it (`moves.pending_inputs!().fold(server, Board.moved)`). A drop calls `move!`,
+`board!` is a memo: the board as the server last sent it (`read.read!()`, where `read` is
+`Api.get_api_b_board({ board: board })`), with every move still on its way applied to it
+(`moves.pending_inputs!().fold(server, Board.moved)`). A drop calls `move!`,
 an action that posts the move without the page waiting. The card shows in its new place at once,
 stays there while the post is on its way, and the board is read again once the server has it. The
 server (`Store.move!`) and the page (`Board.moved`) both work out the card's rank with
@@ -133,7 +137,7 @@ The old panel's cleanup lets its lease go. The new one takes its own lease, has 
 and shows the new card's values, not what you typed into the other.
 
 Inside, the editor reads its card's id once, with `untrack!(|| found!().id)`. Each panel is for one
-card, so one read is what is meant, and `untrack!` says so. Without it, `rocx build` would warn:
+card, so one read is what is meant, and `untrack!` says so. Without it, rocx would warn as it builds:
 a component that reads a row's item, or a match arm's value, only once in its body keeps the first
 value while the row or arm stays and the value changes. Each column and each archived card reads its
 id once in the same way.
@@ -183,7 +187,9 @@ just examples board
 ```
 
 That builds the app, type-checks both programs, lints it, checks its SQL against SQLite
-(`rocx check --sql`), runs the `expect`s and the node tests. To run the parts yourself:
+(`rocx check --sql`), runs the `expect`s and the node tests. `just examples-release board` builds it
+as it is deployed (`rocx build`) and runs the node tests against a server built with `--opt=speed`.
+To run the parts yourself:
 
 ```sh
 bin/rocx check examples/board                      # build it, type-check both programs; problems at their .rocx lines

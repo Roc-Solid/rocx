@@ -17,7 +17,7 @@ import Generated/Content/Pl
 ## Only the server reads them: pages show them inside `<NoHydration>`, so none of this (nor the
 ## Markdown parser) is in the browser's wasm.
 ##
-## `rocx build` finds each folder's files (D-042) and writes a module for each,
+## rocx finds each folder's files (D-042) and writes a module for each,
 ## `Generated/Content/En` and `Generated/Content/Pl`, every file imported as text: a new post is a
 ## new file, and nothing else. The frontmatter's type is the journal's own `Post`, shared by both
 ## folders, so the modules give the files (`En.files`) and this module reads them.

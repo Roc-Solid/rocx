@@ -22,10 +22,11 @@ import "migrations/0005_roles.sql" as roles_table : Str
 import "migrations/0006_users.sql" as users_table : Str
 
 ## Sign-in for Roc Solid apps (D-072): by a link mailed to an address, or at a provider (Google,
-## GitHub, any OpenID Connect one); sessions kept as their token's hash in the app's database;
-## middleware that hands the signed-in user on. It has no pages: the app's sign-in page posts to its
-## steps and links to them, and the app's `admit!` says who gets in. With `two_factor`, a user who
-## turned it on gives a code from an authenticator app (or a recovery code) after that.
+## GitHub, any OpenID Connect one); the app's users (`user_for!`, D-134); sessions kept as their
+## token's hash in the app's database; middleware that hands the signed-in user on. It has no pages:
+## the app's sign-in page posts to its steps and links to them, and the app's `admit!` says who gets
+## in. With `two_factor`, a user who turned it on gives a code from an authenticator app (or a
+## recovery code) after that.
 ##
 ## ```roc
 ## plugins: [Auth.plugin({ providers: Accounts.providers })]   # its tables and settings
@@ -65,15 +66,15 @@ Auth := [].{
 
 	## A signed-in session: the app's id for the user it acts as, the session's own id (for
 	## `revoke!`), when it ends (milliseconds since 1970), and who really signed in (`real_user`: the
-	## same as `user`, but while an admin impersonates someone, `impersonate!`). Check permissions
-	## with `user`; record who did what, and guard what only the person themselves may change (their
-	## password, their sessions), with `real_user`.
+	## same as `user`, but while an admin impersonates someone, `impersonate!`). What the routes show
+	## is `user`'s; record who did what, and guard what only an admin or the person themselves may
+	## do (their sessions, their two-factor sign-in), with `real_user`.
 	Session : { user : Str, id : Str, expires_ms : I64, real_user : Str }
 
 	## Whether a request is signed in, as `optional` hands it on.
 	Signed : [SignedOut, SignedIn(Auth.Session)]
 
-	## A provider to sign in at: its name (its endpoints are `<at>/<name>` and
+	## A provider to sign in at: its name (its routes are `<at>/<name>` and
 	## `<at>/<name>/callback`, the redirect URI to register with it), the label for the app's
 	## button, how it says who signed in (`Oidc`: an ID token from one of these issuers; `GitHub`:
 	## its API at this URL), its endpoints, the scopes asked for, more parameters for its
@@ -307,8 +308,8 @@ Auth := [].{
 	}
 
 	## A sign-in link for `email` that goes on to `then` (a path of this site, else `home`): the URL
-	## to mail them (to `link_page`, or to `<at>/link`), good once, for `link_ms`. The app sends it, as it likes (packages/email,
-	## from a job). `NotAnAddress` when `email` isn't one.
+	## to mail them (to `link_page`, or to `<at>/link`), good once, for `link_ms`. The app sends it,
+	## as it likes (packages/email, from a job). `NotAnAddress` when `email` isn't one.
 	link! : Str, Str => Try(Str, [NotAnAddress, DbErr(Str), ..others])
 	link! = |given, then| {
 		settings = settings!({})
@@ -509,8 +510,9 @@ Auth := [].{
 	}
 
 	## Ends every session of `user` (signing out everywhere, or after their password or address
-	## changed), and every sign-in of theirs waiting for a code: how many sessions ended. The request's own cookie stays on the browser, holding a session
-	## that is gone: answer with `sign_out!` too, to clear it.
+	## changed), and every sign-in of theirs waiting for a code: how many sessions ended. The
+	## request's own cookie stays on the browser, holding a session that is gone: answer with
+	## `sign_out!` too, to clear it.
 	sign_out_everywhere! : Str => Try(U64, [DbErr(Str), ..others])
 	sign_out_everywhere! = |user| AuthStore.end_all!(user)
 

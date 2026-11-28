@@ -7,9 +7,9 @@ import ../../../../Accounts
 import ../../../../Middlewares
 import ../../../../Policy
 
-## POST /roles/grant: an admin (`Policy`'s `Grant`: on `ADMIN_EMAILS`, as who really signed in) gives the user with address
-## `email` Pro as a gift, for `days` days (0: for good), with a note. A gift of theirs that lasts
-## now ends then instead. Anyone else is refused (403).
+## POST /roles/grant: an admin (`Policy`'s `Grant`: on `ADMIN_EMAILS`, as who really signed in)
+## gives the user with address `email` Pro as a gift, for `days` days (0: for good), with a note.
+## A gift of theirs that lasts now ends then instead. Anyone else is refused (403).
 post! : { request : Server.Request, params : {}, context : Middlewares.Me, body : { email : Str, days : U64, note : Str } } => Try({ granted : Str }, Endpoint.Refusal)
 post! = |{ context, body, .. }| {
 	Policy.need(context, Grant)?

@@ -16,7 +16,8 @@ import Fingerprint
 ## - every answer with a 5xx status (`middleware`): its route's pattern, its method, its text;
 ## - an error the app dealt with but wants seen (`capture!`, `capture_for!`), with fields;
 ## - a job that failed for good (`job_failed!`, the jobs plugin's `on_failed!`);
-## - an error nothing caught in a browser (the page's script, `<at>.js`, sends it to `<at>`).
+## - an error nothing caught in a browser, and a hydration mismatch (the page's script,
+##   `script_route`, sends it to its own path without `.js`, where the app calls `errors_route!`).
 ##
 ## Each is kept in the server's memory (`Kv`, the newest 1,000) and a background loop sends what
 ## there is every `interval_ms` (10 s) and as the server stops, as `$exception` events (`Event`)

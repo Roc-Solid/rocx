@@ -3,13 +3,15 @@
 Sign-in for Roc Solid apps, as a plugin (D-072): by a link mailed to an address, or at a provider
 (Google, GitHub, any OpenID Connect one), and for those who turn it on, a code from an authenticator
 app after that (two-factor sign-in, D-081). What a user holds, and why, is `Roles` (D-127): the
-app's own tags, granted, revoked and kept as a history. Sessions are kept in the app's database (Postgres,
-SQLite or Turso), as their token's hash. Middleware hands the signed-in user on to the routes.
+app's own tags, granted, revoked and kept as a history. The package keeps the app's users (D-134):
+an id and an address each. Sessions are kept in the app's database (Postgres, SQLite or Turso), as
+their token's hash. Middleware hands the signed-in user on to the routes. What a user may do is the
+app's own function (D-132).
 
 The package has no pages and no routes of its own. Its steps (a mailed link, a provider and back,
 the code, signing out, the dev sign-in) are handlers the app's route files call (D-116); the app's
 sign-in page posts to them and links to them, the app mails the links (packages/email), and the
-app's `admit!`, given to those routes, says who gets in and which of its users they are.
+app's `admit!`, given to those routes, says who gets in (and `Auth.user_for!` which user they are).
 What the package does is the part that is easy to get wrong: tokens, their hashes, their expiry and
 single use, cookies, OAuth's state, PKCE and nonce, the ID token's checks, where a sign-in may
 send the browser after, and authenticator codes (sealed secrets, a code good once, recovery codes,
@@ -111,12 +113,12 @@ link, a provider or the dev sign-in, so nobody signs in that way: it starts sess
 
 `admit!` is given to the routes that sign someone in (`callback_route!`, `link_route!`,
 `dev_route!`). It runs inside the transaction that starts the session, with the identity's row.
-What it writes commits with the session, or with its refusal: a new user's row and a welcome job it
-queues when it lets someone in, a waiting list's row when it turns them away for now. A database
-error rolls all of it back. Keep anything slow (a fetch) out of it. A helper of the app's that
-opens its own `Db.transaction!` is fine inside `admit!`: it becomes a level of the sign-in's
-transaction (a savepoint, D-076), whose `Err` undoes only what the helper wrote. On Turso, a
-transaction that loses to another's write runs again, and `admit!` with it.
+What it writes commits with the session, or with its refusal: a new user's row (`user_for!`'s) and
+a welcome job it queues when it lets someone in, a waiting list's row when it turns them away for
+now. A database error rolls all of it back. Keep anything slow (a fetch) out of it. A helper of
+the app's that opens its own `Db.transaction!` is fine inside `admit!`: it becomes a level of the
+sign-in's transaction (a savepoint, D-076), whose `Err` undoes only what the helper wrote. On
+Turso, a transaction that loses to another's write runs again, and `admit!` with it.
 
 ## Signing in
 
@@ -197,9 +199,12 @@ ahead, a test account the app's own link signs in as with `sign_in!`) is `user_w
 the user with that address, made if there is none. Their first sign-in with it finds them.
 
 It is part of the sign-in's transaction, so the user it made stays whether `admit!` then lets them
-in or refuses them (call it after a refusal of the app's own, if a refused person should leave no
-user); a database error undoes it. An app whose ids came before the package kept users (its own table, its own ids) keeps them:
-a `Known` identity whose user has no row gets one, with that id.
+in or refuses them (call it after the app's own refusals, if a refused person should leave no user);
+a database error undoes it.
+
+**An app with ids from before** (its own users table) keeps them: a `Known` identity whose user has
+no row gets one, with that id and the identity's address. With no address, or one another user has
+(said on the log), no row is made, and `user!` answers `NotFound` for them.
 
 **What else the app knows of a person** (a profile, their organizations, what they made) is the
 app's, in its own tables, by the id. Its queries may join `auth_users` for an address; only the
@@ -231,9 +236,9 @@ Auth.renew! : Server.Request, Auth.Session, Server.Response => Server.Response
   the context). A signed-out request is answered as `signed_out!` says: a page's GET goes to the
   sign-in page, `?then=` the page; anything else is a 401 with the plugin's `refusal`.
 - `required_with` does the same with a step that may read the database: it turns the session into
-  what the routes are handed (the app's user's row). `SignedOut` from it (the user is gone) ends the
-  session and answers as a signed-out request; `Answer(response)` answers that and keeps the
-  session (the database couldn't be read just then).
+  what the routes are handed (the user, `Auth.user!`, and the roles they hold, `Roles.current!`).
+  `SignedOut` from it (the user is gone) ends the session and answers as a signed-out request;
+  `Answer(response)` answers that and keeps the session (the database couldn't be read just then).
 - `optional` hands on whether the request is signed in.
 - All three keep a session used in its second half for as long again: its row and its cookie, at
   most once a half, so a request doesn't write. An app's own middleware that reads `session!` keeps
@@ -266,10 +271,10 @@ Auth.impersonating : Auth.Session -> Bool
 its `user` is theirs, and every route sees them. The session stays the admin's: `real_user` is the
 admin, signing out ends it, `sessions!` lists it under the admin with `acting_as`, and it goes back
 to the admin when its time runs out or on `stop_impersonating!`. Each start and stop is on the log
-with both users. Who may impersonate is the app's to decide before it calls (an admin's route, as
-the example's `/impersonate`, which checks `real_user` against `ADMIN_EMAILS`). Use `real_user` to
-record who did what, and to guard what only the person themselves may change (their sessions, their
-address, their two-factor sign-in). An admin acting as someone isn't asked for their code: no one
+with both users. Who may impersonate is the app's to decide before it calls: the example's
+`/impersonate` asks its `Policy` (`Impersonate`: who really signed in is on `ADMIN_EMAILS`). Use
+`real_user` to record who did what, and to guard what only the person themselves may change (their
+sessions, their two-factor sign-in). An admin acting as someone isn't asked for their code: no one
 signs in.
 
 ## Roles
@@ -354,10 +359,10 @@ Action : [UsePro, Impersonate]
 
 can : { roles : List(Role), admin : Bool, .. }, Action -> Bool
 can = |me, action|
-	match action {
-		UsePro => me.admin or me.roles.contains(Pro)
-		Impersonate => me.admin
-	}
+    match action {
+        UsePro => me.roles.contains(Pro)
+        Impersonate => me.admin
+    }
 
 need : { roles : List(Role), admin : Bool, .. }, Action -> Try({}, Endpoint.Refusal)
 need = |me, action| if (can(me, action)) Ok({}) else Err(Forbidden)
@@ -612,8 +617,8 @@ Expired sessions, links and waiting sign-ins are swept as sessions start.
 
 ## Status
 
-Built and tested (D-072, D-077, D-081, D-127): links, the link page, Google, GitHub, OpenID Connect, the
-dev sign-in, sessions, the middleware, impersonation, two-factor sign-in with an authenticator app
-and recovery codes, roles. Not yet: passwords (they need a slow hash, Argon2, from the host), passkeys (a
-P-256 signature verified, by the host), discovery of a provider's endpoints from its issuer.
-PROPOSALS.md has them.
+Built and tested (D-072, D-077, D-081, D-127, D-132, D-134): links, the link page, Google, GitHub,
+OpenID Connect, the dev sign-in, sessions, the middleware, impersonation, two-factor sign-in with an
+authenticator app and recovery codes, roles, users. Not yet: passwords (they need a slow hash,
+Argon2, from the host), passkeys (a P-256 signature verified, by the host), discovery of a
+provider's endpoints from its issuer. PROPOSALS.md has them.

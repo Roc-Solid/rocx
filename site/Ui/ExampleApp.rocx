@@ -80,7 +80,7 @@ ExampleApp := [].{
 			</p>
 			<Code source={"cd examples/${facts.name} && ../../bin/rocx dev"} numbers={Bool.False} plain />
 			<p>To build it, check it and run its tests, from the repository's root:</p>
-			<Code source={"just examples ${facts.name}"} numbers={Bool.False} plain />
+			<Code source={"just examples ${facts.name}\njust examples-release ${facts.name}   # as deployed: rocx build, then the tests against a server built --opt=speed"} numbers={Bool.False} plain />
 		</>
 	}
 
@@ -145,7 +145,7 @@ ExampleApp := [].{
 					<Heading id="bench">The benchmark</Heading>
 					<p>
 						{"Its server, built with "}<code>{"--opt=${it.opt}"}</code>{" as it would ship, under "}
-						<a href="https://github.com/codesenberg/bombardier" rel="external">bombardier</a>{", which sends a request on each of its connections, the next as soon as the answer is in, for ${ExampleApp.plural(it.seconds, "second")} at each number of connections, after a warm-up: first to "}<code>POST /echo</code>{", then to "}<code>POST /echo/json</code>{" ("}<code>examples/echo/bench.sh</code>{" runs the same). Every request goes through the host, the generated routes, a middleware that only passes it on, reading the JSON body and writing the JSON answer. What differs is the body: a string, then an order that nests."}
+						<a href="https://github.com/codesenberg/bombardier" rel="external">bombardier</a>{", which sends a request on each of its connections, the next as soon as the answer is in, for ${ExampleApp.plural(it.seconds, "second")} at each number of connections, after a warm-up: first to "}<code>POST /echo</code>{", then to "}<code>POST /echo/json</code>{" ("}<code>examples/echo/bench.sh</code>{" runs the same). Every request goes through the host, the platform's check that a post isn't from another site's page, the generated routes, reading the JSON body and writing the JSON answer. What differs is the body: a string, then an order that nests."}
 					</p>
 					{...it.variants.map(|variant| ExampleApp.part(variant, it.variants))}
 					{if (it.variants.any(|variant| variant.name == "json")) <></> else <><h3 id="bench-json">echo (json)</h3><p class="missing">Not measured yet: run <code>just example-apps --bench</code>.</p></>}

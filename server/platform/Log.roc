@@ -8,10 +8,10 @@ import Host
 ## Log.info!("gate failed", { path: request.path, error: why })
 ## ```
 ##
-## is, pretty (a person at a terminal):
+## is, pretty (a person at a terminal; the time and the fields' names dimmed, the level coloured):
 ##
 ## ```
-## 14:03:12 INFO  gate failed error="no session" path=/admin
+## 14:03:12 info  gate failed  path=/admin error="no session"
 ## ```
 ##
 ## and as JSON (a server whose log is collected):
@@ -19,6 +19,11 @@ import Host
 ## ```
 ## {"time":"2026-11-21T13:03:12.345Z","level":"info","msg":"gate failed","error":"no session","path":"/admin"}
 ## ```
+##
+## A pretty line puts a request's `path`, `method` and `status` first, then the durations, then the
+## rest (D-113). A duration is a number named `<x>_ns`, `<x>_us` or `<x>_ms`, shown without the
+## suffix in the unit that reads best (`duration_ns=12345` is `duration=12µs`). JSON keeps the
+## fields as they are. An event with no message is its fields alone: a request's line, say.
 ##
 ## The fields go beside `time`, `level` and `msg`; one named `time`, `level` or `msg` is written as
 ## `fields.time` (and so on), so it can't take their place. `{}` is no fields. Logging doesn't wait

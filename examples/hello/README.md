@@ -1,8 +1,8 @@
 # hello
 
 The smallest Roc Solid app with a page: a button at `/` that counts its clicks, and an endpoint at
-`/hello`. It is the app the docs' [Getting started](https://roc-solid.github.io/#start) makes, and
-what every app starts from.
+`/hello`. Its two route files are the ones the docs' [Getting started](https://roc-solid.github.io/#start)
+shows, and its `main.roc` is the one `rocx dev` writes for an app that has none.
 
 ## Run it
 
@@ -26,15 +26,29 @@ and click the button. `curl http://localhost:8080/hello` answers `"Hello from th
 - **[`routes/hello/+server.roc`](routes/hello/+server.roc)** is the endpoint `GET /hello`. A route's
   folder is its URL, and `get!` answers a GET there. What it returns is sent as JSON.
 - **[`main.roc`](main.roc)** is the app's program. `rocx dev` wrote it, because the app had none:
-  `App.program` with an `init!` and a middleware that passes every request on. It is yours to change
-  when the app needs a database, a middleware of its own or plugins.
+  `App.program` with an `init!` and nothing else. It is yours to change when the app needs a
+  database other than the default, plugins, or posts from other sites' pages (`database`,
+  `plugins`, `cross_site`). A middleware is a `routes/+middleware.roc`, not a line here.
 
-`rocx dev` also writes `Generated/` (modules made from your routes) and `build/`. Both are
-gitignored.
+The server opens a SQLite file, `data/app.db`, as every app that names no database does, though
+hello keeps nothing in it. `rocx dev` also writes `Generated/` (modules made from your routes) and
+`build/`. All three are gitignored.
 
-Your own app can live anywhere, in a folder of its own with `routes/` in it. Run `rocx dev` there
-(`bin/rocx` on your `PATH`), and it writes a `main.roc` like this one, its platform's path pointing
-into your clone.
+Your own app can live anywhere. `rocx new my-app` makes one with sign-in, a users table and its
+tests. A folder with only a `routes/` works too: run `rocx dev` there (`bin/rocx` on your `PATH`),
+and it writes a `main.roc` like this one.
+
+## Check it and build it
+
+```sh
+../../bin/rocx check    # build, then type-check the server's program and the browser's
+../../bin/rocx build    # the build to deploy: dist/server and dist/static
+dist/server --static dist/static   # on PORT, 8080 unless set
+```
+
+`rocx build --image` makes a container image instead, `hello.tar`. hello has no tests of its own;
+`just examples hello`, from the repository's root, builds, checks and lints it as the repository's
+checks do.
 
 ## Change something first
 

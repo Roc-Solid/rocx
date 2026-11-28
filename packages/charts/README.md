@@ -15,10 +15,11 @@ Name the package in the app's header (`main.roc`), by its directory's name:
 app [program] { charts: "../packages/charts/main.roc", pf: platform "…/server/platform/main.roc" }
 ```
 
-`rocx build` writes each component to the app's `Generated/charts/` (`Generated/charts/BarChart.roc`),
-and in a `.rocx` file `import charts.BarChart` imports that copy. Its `<style>` joins the app's
-stylesheet with the others, and the compiler's reports point at the file here. The browser's half
-of the app (which `rocx build --client` writes) names the same packages.
+`rocx generate` (which `rocx dev` and `rocx build` run first) copies each component into the app's
+`Generated/charts/` (`Generated/charts/BarChart.roc`), and in a `.rocx` file `import charts.BarChart`
+imports that copy. Its `<style>` joins the app's stylesheet, and the compiler's reports point at the
+file here. The browser's half of the app (`build/client`, which `rocx generate` also writes) names
+the same packages.
 
 Why copy them? A component imports the platform's `Html` and `Solid`. A Roc package may name a
 platform only if it is the very one its app names, and a Roc Solid app is two programs on two
@@ -69,7 +70,7 @@ value.
 
 | Prop | |
 |---|---|
-| `data! : () => List({ label : Str, values : List(Dec) })` | A column for each item, with one value per series stacked from the axis up. Each part glides to its new size. A new column grows from the axis while the others make room; one whose label is gone shrinks into the axis and fades. A value below zero counts as zero. |
+| `data! : () => List(StackedBarChart.Column)`, `Column : { label : Str, values : List(Dec) }` | A column for each item, with one value per series stacked from the axis up. Each part glides to its new size. A new column grows from the axis while the others make room; one whose label is gone shrinks into the axis and fades. A value below zero counts as zero. |
 | `series : List(Str)` | The series' names, bottom one first, each in its colour in the legend over the chart. |
 | `label : Str` | What the chart shows, for screen readers. |
 | `format : (Dec -> Str) ?? Format.short` | A value as text: on the ticks, and a column's total when it is pointed at or focused. |
@@ -82,7 +83,7 @@ reached with Tab, and a screen reader reads its label and each series' value.
 
 | Prop | |
 |---|---|
-| `data! : () => List({ x : Dec, y : Dec })` | The points, left to right: each across by its `x` (a number: a day, an hour, a time in milliseconds), to scale, and up by its `y`. New points glide the line to them. With more points or fewer than before, the line jumps to the new data. `LineChart.evenly(values)` puts values one apart (`x` 0, 1, 2…). |
+| `data! : () => List(LineChart.Point)`, `Point : { x : Dec, y : Dec }` | The points, left to right: each across by its `x` (a number: a day, an hour, a time in milliseconds), to scale, and up by its `y`. New points glide the line to them. With more points or fewer than before, the line jumps to the new data. `LineChart.evenly(values)` puts values one apart (`x` 0, 1, 2…). |
 | `label : Str` | What the chart shows, for screen readers. |
 | `format : (Dec -> Str) ?? Format.short` | A value (`y`) as text: on the ticks up the side, and over the point under the pointer. |
 | `format_x : (Dec -> Str) ?? Format.short` | An `x` as text: on the ticks along the bottom, and the point's under the pointer. |
@@ -96,8 +97,8 @@ pointer finds a point by are worked out from where the data puts the points (`Sc
 where the line is drawn, so a line that glides to new values doesn't move them. The chart is one
 image to a screen reader; its points can't be reached with Tab.
 
-examples/plate draws weight on the days it was logged, a day to scale (`Date.days`, and
-`Date.from_days` for its labels); examples/uptime draws response times each half hour, its `x`
+examples/plate draws weight on the days it was logged, a day to scale (packages/forms' `Date.days`,
+and `Date.from_days` for its labels); examples/uptime draws response times each half hour, its `x`
 the hours before now; the docs' demo is a day's visits, hour by hour, `LineChart.evenly`.
 
 ### `<StackedAreaChart>`
@@ -132,7 +133,7 @@ fortnight's (`Sum`):
 
 | Prop | |
 |---|---|
-| `data! : () => List(Dec)` | The values, left to right. New values glide the line to them. |
+| `data! : () => List(Dec)` | The values, left to right. New values glide the line to them; with more values or fewer, it jumps. |
 | `label! : () => Str` | What it shows, for screen readers. With no axis to read, say the trend. An accessor, since it changes with the data. |
 
 A small line with no axis, the area under it shaded and a dot on the last value, to sit beside a
@@ -150,10 +151,10 @@ number. It spans its values' range, so it shows their shape, not their size.
 
 The middle shows the total, or, while a slice is pointed at or focused (each can be reached with
 Tab) or its line in the legend is pointed at, that slice's share. Shares are whole percents that add
-up to 100 (the points left over go to the largest remainders), and "<1%" for a value too small to
-make one, whose slice is still drawn, as a sliver (a hundredth of the ring). A slice keeps its colour while
-others come and go, and a new slice takes a colour no other slice has, unless the data gives each
-its own.
+up to 100 (each rounded down, the points left over to the largest remainders), and "<1%" for a value
+too small to make one. Such a slice is still drawn, as a sliver (a hundredth of the ring); the legend
+and the total keep the true values. A slice keeps its colour while others come and go, and a new
+slice takes a colour no other slice has, unless the data gives each its own.
 
 **Colours from the data.** A bar, a slice or a stacked area chart's band may carry its colour, as
 a slice for each party in its party's colour:
@@ -172,7 +173,7 @@ records (`List({ label : Str, value : Dec })`) isn't, so name the chart's type i
 
 | Prop | |
 |---|---|
-| `data! : () => List({ label : Str, x : Dec, y : Dec })` | A dot for each item, across by its `x` and up by its `y`. New values glide it to its place. A new dot swells from nothing where it goes, and one whose label is gone shrinks away (a `transition` both ways). |
+| `data! : () => List(ScatterChart.Dot)`, `Dot : { label : Str, x : Dec, y : Dec }` | A dot for each item, across by its `x` and up by its `y`. New values glide it to its place. A new dot swells from nothing where it goes, and one whose label is gone shrinks away (a `transition` both ways). |
 | `label : Str` | What the chart shows, for screen readers. |
 | `format_x : (Dec -> Str) ?? Format.short` | A value across: on the ticks along the bottom, and on a dot when it is pointed at or focused. |
 | `format_y : (Dec -> Str) ?? Format.short` | A value up: on the ticks up the side, and on a dot. |
@@ -186,7 +187,7 @@ reached with Tab, and a screen reader reads its label and values.
 |---|---|
 | `data! : () => List(List(Dec))` | A list of values for each row, one value per column. A cell's colour goes from `--chart-heat-low` at zero to `--chart-heat-high` at the greatest value. |
 | `rows : List(Str)` | The rows' labels, down the side. |
-| `columns : List(Str)` | The columns' labels. Each appears in the readout; along the bottom there is room for about eight, so with more columns only every second or third is shown. |
+| `columns : List(Str)` | The columns' labels. Each appears in the readout; along the bottom, at most eight are shown, evenly spaced (every third of 24 hours). |
 | `label : Str` | What the chart shows, for screen readers. |
 | `format : (Dec -> Str) ?? Format.short` | A value as text: the scale's ends, and the cell pointed at. |
 
@@ -213,8 +214,8 @@ Its numbers are `Dec`, so the ticks from 0 to 1 are exactly 0.2, 0.4, 0.6 and 0.
 
 | Module | Functions |
 |---|---|
-| `Scale` | `Scale.linear(domain, range)`, a value in a domain at a place in a range; `scale.at(value)`, the place; `scale.invert(place)`, the value; `scale.nice(count)`, the domain widened to round numbers; `scale.ticks(count)`, about `count` round values across it; `Scale.extent(values)`, the least and the greatest (`(0, 0)` for none); `Scale.strips(places, (from, to))`, the stretch of `(from, to)` nearer each place than the places beside it (halfway to each neighbour; the first from `from`, the last to `to`), which a line chart's pointer finds its points by |
-| `Band` | `Band.band(count, range, padding)`, `count` equal slots across `range`, a `padding` share of each left empty; `.at(slot)`, where a bar starts; `.width()`, a bar's width; `.slot()`, a slot's width; `.center(slot)`, where its label goes. A count and a slot may be fractions: a chart gliding from seven bars to six has six and a half slots on the way |
+| `Scale` | `Scale.linear(domain, range)`, a value in a domain at a place in a range (two scales are equal when their domains and ranges are, so a memo of one computed again the same tells no one); `scale.at(value)`, the place; `scale.invert(place)`, the value; `scale.nice(count)`, the domain widened to round numbers; `scale.ticks(count)`, about `count` round values across it; `Scale.extent(values)`, the least and the greatest (`(0, 0)` for none); `Scale.strips(places, (from, to))`, the stretch of `(from, to)` nearer each place than the places beside it (halfway to each neighbour; the first from `from`, the last to `to`), which a line chart's pointer finds its points by |
+| `Band` | `Band.band(count, range, padding)`, `count` equal slots across `range`, a `padding` share of each left empty (equal as `Scale`s are); `.at(slot)`, where a bar starts; `.width()`, a bar's width; `.slot()`, a slot's width; `.center(slot)`, where its label goes. A count and a slot may be fractions: a chart gliding from seven bars to six has six and a half slots on the way |
 | `Ticks` | `Ticks.step(from, to, count)`, the step between about `count` ticks, 1, 2 or 5 times a power of ten; `Ticks.between(from, to, count)`, the ticks; `Ticks.nice(from, to, count)`, the ends widened to ticks |
 | `Path` | SVG path data for `<path d={…}>`: `line(points)`, `smooth(points)` (monotone curves, as D3's `curveMonotoneX`), `area(points, base)`, `smooth_area(points, base)`, `arc({ x, y, inner, outer, from, to })` (a donut's slice, or with `inner` 0 a pie's; `from` and `to` in turns, 0 at twelve o'clock) |
 | `Format` | `num(x, places)`, at most `places` decimals without trailing zeros (`"2.5"`, not `"2.50"` or `"2.5000000000000000"`); `short(x)`, `"1.3k"`, `"2.5M"`, `"3B"`; `percent(share, places)`, `"25.6%"`; `shares(values)`, each value's share of them all in whole percents that add up to 100 (`"<1%"` for one too small to make one), as a donut's legend and a stacked area chart's say them; `coord(x)`, to hundredths, for SVG |
@@ -231,8 +232,8 @@ charts page has three (Neon, Blueprint and Paper), each one rule plus a prop or 
 
 | Property | Sets |
 |---|---|
-| `--chart-color`, `--chart-active` | bars, lines and dots; a bar or dot pointed at, and the line chart's point (a bar's own `color` comes first) |
-| `--chart-1` to `--chart-5` | a donut's slices, a stacked bar chart's series and a stacked area chart's bands: a colour that stays with its slice or series, and a band's for its place (a slice's or a band's own `color` comes first) |
+| `--chart-color`, `--chart-active` | bars, lines and dots; a mark pointed at or focused, the line chart's point and the sparkline's last dot (a bar's own `color` comes first) |
+| `--chart-1` to `--chart-5` | a donut's slices, a stacked chart's series and a stacked area chart's bands: a colour that stays with its slice or series, and a band's for its place (a slice's or a band's own `color` comes first) |
 | `--chart-heat-low`, `--chart-heat-high` | a heatmap's colours at zero and at the greatest value |
 | `--chart-fill`, `--chart-stroke`, `--chart-stroke-width`, `--chart-outline` | the marks' fill opacity (a stacked area chart's bands 0.3 unless set, under their edges) and outline; with `--chart-outline: 1`, a slice or a part is outlined in its own colour instead of the surface's |
 | `--chart-radius`, `--chart-dot`, `--chart-line-width`, `--chart-area` | bars' corners, dots' radius, lines' width, the shading under a line (0 for none) |

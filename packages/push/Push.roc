@@ -231,7 +231,6 @@ Push := [].{
 	}
 }
 
-## Whose a subscription is, by default: a visitor's ("").
 ## `answer!` for a request whose method is one of `methods` (GET takes HEAD too), else 405.
 taking! : Server.Request, List(Str), ({} => Server.Response) => Server.Response
 taking! = |request, methods, answer!| {

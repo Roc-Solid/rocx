@@ -8,8 +8,8 @@ import ../../../Ui/PageHero
 import ../../../Ui/TableWrap
 
 ## The email package: installing the plugin, sending a message from a job, several recipients and
-## the rest of a message, the SMTP server's URL, the dev mailbox, and what it can't do yet. Static: the samples are server/test/app's, which the
-## server's tests run.
+## the rest of a message, the SMTP server's URL, the dev mailbox, and what it can't do yet. Static:
+## the samples are server/test/app's, which the server's tests run.
 meta = {
 	title: "Email",
 	description: "packages/email, a plugin for Roc Solid's server: email over SMTP, as text or text and HTML, to several recipients with Cc, Bcc, Reply-To and headers of your own, sent from a job so a failed send is tried again; with no SMTP server, kept in memory and shown in the dev mailbox.",
@@ -168,7 +168,7 @@ view! = |_|
 				(when, from, to, subject), with a Clear button, updating as mail arrives. Each message has a page at
 				<code>{"/__rocx/mail/<id>"}</code>: its headers (Cc, Bcc, Reply-To and your own), its text, its HTML in
 				a sandboxed frame (no script runs; links open in a new tab), and the whole message as SMTP would have
-				carried it, where no header names the Bcc.
+				carried it, where no header names the Bcc. The dev server lists the mailbox's address as it starts.
 			</p>
 			<p>
 				The last 100 messages are kept in the server's memory (<a href={Paths.platform_kv}><code>Kv</code></a>),

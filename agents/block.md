@@ -17,9 +17,10 @@ The rules that matter most:
 - A path is a page or an endpoint, not both. A page's data and its forms' actions are an endpoint
   at the same path under `routes/api/`: `routes/lists/[id]/+page.rocx` reads
   `routes/api/lists/[id]/+server.roc`.
-- Every handler is annotated, `=> Try(Answer, Endpoint.Refusal)`, and rocx copies its types into
-  `Generated/Api`. `Ok` is sent as JSON. A handler whose every answer is a response of its own (a
-  file, a redirect that sets a cookie) is annotated `Try(Server.Response, Endpoint.Refusal)`.
+- Every handler is annotated, `=> Try(T, Endpoint.Refusal)` with `T` what it answers, and rocx
+  copies its types into `Generated/Api`. `Ok` is sent as JSON. A handler whose every answer is a
+  response of its own (a file, a redirect that sets a cookie) is annotated
+  `Try(Server.Response, Endpoint.Refusal)`.
 - Pages read with `Api.get_…(params).read!()` (answered while the page renders, and carried with
   it) and send with `.send!(arg)`. Forms post to an endpoint (`Endpoint.url_of(…)`) and work
   without JavaScript; `use_submission!` reads what came back.

@@ -11,7 +11,7 @@ import Store
 ##
 ##     (count!, set_count!) = create_signal!(0.U64)
 ##     doubled! = create_memo!(|| count!() * 2)
-##     create_effect!(|| room!(), |room| Endpoint.listen!(Api.events_room({ room }), heard!))
+##     create_effect!(|| room!(), |room| Api.events_room({ room }).listen!(heard!))
 Solid := [].{
 
 	## A value that changes: its accessor and its setter (a tuple: Roc's list patterns may not
@@ -206,8 +206,9 @@ Solid := [].{
 	##     create_effect!(|| room!(), |room| log!(room, untrack!(|| user!().name)))
 	##
 	## In a component's body, a read is made once, as the component runs, so what shows doesn't
-	## follow it; a dev build (`rocx dev`, `rocx build --dev`) says so in the browser's console, once
-	## for each place (Solid 2.0's dev warning). `untrack!` says the one read is meant, a start value:
+	## follow it; a dev build (`rocx dev`, `rocx generate --dev`) says so in the browser's console,
+	## once for each place (Solid 2.0's dev warning). `untrack!` says the one read is meant, a start
+	## value:
 	##
 	##     (drawn!, set_drawn!) = create_signal!(untrack!(|| goal))
 	untrack! : (() => a) => a
@@ -230,7 +231,7 @@ Solid := [].{
 	## (`on_cleanup!`), then `apply`; values aren't compared. It belongs to the component or
 	## computation that made it, and goes with it, its cleanups run. On the server neither half runs.
 	##
-	##     create_effect!(|| room!(), |room| Endpoint.listen!(Api.events_room({ room }), heard!))
+	##     create_effect!(|| room!(), |room| Api.events_room({ room }).listen!(heard!))
 	##
 	## Solid's `apply` returns its cleanup: here it calls `on_cleanup!`, since Roc has no "nothing" a
 	## function may return. Neither half is given the previous value. A listen or a timer started in

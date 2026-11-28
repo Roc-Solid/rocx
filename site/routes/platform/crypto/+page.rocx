@@ -7,9 +7,10 @@ import ../../../Ui/PageHero
 
 meta = {
 	title: "Crypto",
-	description: "Crypto on the Roc Solid server platform: secure random bytes, AES-GCM and P-256 from the host; SHA-256, HMAC, HKDF, Base64, Base32, Hex and SHA-1 (for TOTP) from the crypto package. For tokens, signed links, sealed secrets and Web Push.",
+	description: "Crypto on the Roc Solid server platform: secure random bytes, AES-GCM and P-256 from the host; SHA-256, HMAC, HKDF, Base64, Base32, Hex, SHA-1 (for TOTP) and UUIDs from the crypto package. For tokens, ids, signed links, sealed secrets and Web Push.",
 	toc: [
 		{ id: "tokens", label: "Tokens, and their digests" },
+		{ id: "ids", label: "Ids: UUIDs" },
 		{ id: "links", label: "Signed links" },
 		{ id: "sealed", label: "Sealed secrets" },
 		{ id: "p256", label: "P-256: ES256 and ECDH" },
@@ -43,6 +44,18 @@ view! = |_|
 				<code>ring</code>). If the system has none, the call crashes rather than make a key from anything
 				weaker. A sign-in link's token is 32 random bytes; the database keeps only its SHA-256 digest, so a
 				copy of the table signs no one in.
+			</p>
+
+			<Heading id="ids">Ids: UUIDs</Heading>
+			<Code
+				source={"id = Uuid.v7(Time.now_millis!({}), Random.bytes!(10))   # \"019ad2c4-6b1e-7f3a-9c2d-…\"\nkey = Uuid.v4(Random.bytes!(16))                           # random throughout\nUuid.is_uuid(id)                                           # Bool.True"}
+				numbers={Bool.False}
+			/>
+			<p>
+				<code>crypto.Uuid</code> writes RFC 9562's UUIDs as text, in lowercase. A version 7 id leads with
+				the time it was made, so ids made later sort after earlier ones, and rows inserted by id go to the
+				end of an index. A version 4 id is random throughout. The module is given its random bytes and the
+				time, so it is plain Roc, and an <code>expect</code> given the same bytes gets the same id.
 			</p>
 
 			<Heading id="links">Signed links</Heading>
@@ -116,13 +129,14 @@ view! = |_|
 					<tr><td><code>crypto.Base64</code></td><td><code>encode</code>, <code>decode</code>; <code>url_encode</code> (unpadded), <code>url_decode</code>; <code>encode_unpadded</code>, <code>url_encode_padded</code>, <code>lines</code> (MIME's)</td></tr>
 					<tr><td><code>crypto.Base32</code></td><td><code>encode</code>, <code>encode_unpadded</code> (an <code>otpauth://</code> secret), <code>decode</code> (either case)</td></tr>
 					<tr><td><code>crypto.Hex</code></td><td><code>encode</code>, <code>decode</code></td></tr>
+					<tr><td><code>crypto.Uuid</code></td><td><code>{"v7(millis, random)"}</code>, <code>v4(random)</code>: an id as text; <code>is_uuid</code></td></tr>
 				</tbody>
 			</table>
 			<p>
 				<code>AesGcm</code>, <code>P256</code> and <code>Random</code> are the platform's, done by the host
 				(<code>ring</code>). The rest are <a href={Paths.ecosystem_crypto}>the crypto package</a>'s: pure Roc
 				without effects, so they run anywhere, a browser page and <code>expect</code> tests included. They
-				are checked against the test vectors of NIST, RFC 2202, RFC 4231, RFC 4648 and RFC 5869;
+				are checked against the test vectors of NIST, RFC 2202, RFC 4231, RFC 4648, RFC 5869 and RFC 9562;
 				<code>Sha256</code> wraps Roc's builtin <code>Crypto.SHA256</code>. Decoding is strict: only the
 				alphabet, no spaces, padding absent or exact, and the last character's unused bits zero (Hex and
 				Base32 take either case, as people type secrets).

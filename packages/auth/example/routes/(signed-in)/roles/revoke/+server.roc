@@ -6,8 +6,9 @@ import ../../../../Accounts
 import ../../../../Middlewares
 import ../../../../Policy
 
-## POST /roles/revoke: an admin ends the gift of Pro the user with address `email` holds, if one
-## lasts: whether one did. A trial of theirs stays. Anyone else is refused (403).
+## POST /roles/revoke: an admin (`Policy`'s `Grant`) ends the gift of Pro the user with address
+## `email` holds, if one lasts: whether one did. A trial of theirs stays. Anyone else is refused
+## (403).
 post! : { request : Server.Request, params : {}, context : Middlewares.Me, body : { email : Str } } => Try({ revoked : Bool }, Endpoint.Refusal)
 post! = |{ context, body, .. }| {
 	Policy.need(context, Grant)?

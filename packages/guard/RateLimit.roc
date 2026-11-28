@@ -1,7 +1,7 @@
 ## A rate limit, as arithmetic: what one client's limit says about one more request, given what
 ## it kept from the ones before and the time. No clock and no memory here: the time comes in, the
 ## next state goes out, so a test runs it with a fake clock. `Tally` keeps the states of many
-## clients; the server's middleware (`server/Guard.roc`) keeps the tallies between requests.
+## clients; the server's middleware (`Guard`, with `Kept`) keeps the tallies between requests.
 ##
 ##     login = RateLimit.per_minute(5)                # 5 at once, then one every 12 s
 ##     api = RateLimit.per_minute(100).sliding()      # at most 100 in any minute

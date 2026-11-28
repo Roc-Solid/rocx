@@ -170,8 +170,8 @@ Issues := [].{
 	refusal : List(Issues.Issue) -> [Json(U16, Str)]
 	refusal = |issues| Json(Issues.status, Issues.to_json(issues))
 
-	## The issues an endpoint refused with, from what a submission's `error!()` or `Endpoint.send!`
-	## says went wrong (`Server.Problem`): a 422's issues. Any other problem has none.
+	## The issues an endpoint refused with, from what a submission's `error!()` or an endpoint's
+	## `send!` says went wrong (`Server.Problem`): a 422's issues. Any other problem has none.
 	from_problem : [HttpErr(Str), Refused(U16, Str), BadAnswer(Str)] -> List(Issues.Issue)
 	from_problem = |problem|
 		match problem {

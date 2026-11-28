@@ -45,6 +45,18 @@ cd examples/tasks && build/tasks --port 18110 --static build/client/static
 Then open http://localhost:18110. Add `--dev` to the last command to see crashes in the page, and to
 have open pages reload when the server restarts.
 
+### Deploy it
+
+```sh
+cd examples/tasks
+../../bin/rocx build              # dist/server and dist/static
+dist/server --static dist/static
+../../bin/rocx build --image      # or a container image, tasks.tar (docker load -i tasks.tar)
+```
+
+`rocx build` builds the server for speed, with SQLite alone in it, and the browser's wasm for size.
+The server makes `data/tasks.db` where it starts; in the image that is `/app/data`, for a volume.
+
 ## A tour
 
 1. **`/`**, the front page. Each list is a card, with how many of its tasks are open and done, and a
@@ -81,7 +93,7 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 | The error page: for a path no page has (404), and a page that failed (500) | [`routes/+error.rocx`](routes/+error.rocx) |
 | A page's endpoints under `api/`, at the page's path: a path is a page or an endpoint, never both. `GET /lists/:id` is the page; `GET /api/lists/:id` the list as JSON, which is what the page reads; `POST /api/lists/:id` adds a task | [`routes/api/lists/[id]/+server.roc`](routes/api/lists/[id]/+server.roc), [`routes/api/tasks/[id]/+server.roc`](routes/api/tasks/[id]/+server.roc), [`routes/api/+server.roc`](routes/api/+server.roc) (`POST /api`, a new list) |
 | Endpoints of their own, which scripts can call too | [`routes/api/team`](routes/api/team/+server.roc), [`routes/api/tasks/toggle`](routes/api/tasks/toggle/+server.roc), [`move`](routes/api/tasks/move/+server.roc), [`delete`](routes/api/tasks/delete/+server.roc) |
-| A page that reads an endpoint with `Endpoint.read!`. When the endpoint refuses with `NotFound`, the page becomes the error page, answered 404 | [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
+| A page that reads its endpoint by the endpoint's own method, `Api.get_api_lists_id({ id: params.id }).read!()` (D-102). When the endpoint refuses with `NotFound`, the page becomes the error page, answered 404 | [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 | `<Errored>`: a part of the layout that shows a fallback if its read fails | [`routes/+layout.rocx`](routes/+layout.rocx) |
 | `<Title>`: a page's title from its data | [`routes/lists/[id]/+page.rocx`](routes/lists/[id]/+page.rocx), [`routes/tasks/[id]/+page.rocx`](routes/tasks/[id]/+page.rocx) |
 
@@ -90,8 +102,9 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 | Feature | Where |
 |---|---|
 | A middleware around every request, `routes/+middleware.roc`: `identify` puts who you are, from your session (`Auth.optional`), into every handler's `context`; `logged` logs each answer (`Log.info!`, or `Log.error!` for a 5xx). A change sent from another site's page the platform refuses before it | [`Middlewares.roc`](Middlewares.roc), named in [`routes/+middleware.roc`](routes/+middleware.roc) |
-| A plugin: packages/auth keeps sessions in the app's database, its cookie `tasks_session`. With none of its sign-in routes (D-116), nobody signs in by a link or a provider; the app starts sessions itself | [`main.roc`](main.roc) (`Auth.plugin`) |
-| A session started and ended by an endpoint (`Auth.sign_in!` for the person picked, `Auth.sign_out!`), then a redirect | [`routes/api/me/+server.roc`](routes/api/me/+server.roc) |
+| A plugin: packages/auth keeps sessions in the app's database, its cookie `tasks_session`. With none of its sign-in routes (D-116), nobody signs in by a link or a provider; the app starts sessions itself. The team is the app's own `people` table: a session's user is a person's id, and the package's `auth_users` (D-134) stays empty | [`main.roc`](main.roc) (`Auth.plugin`), [`migrations/0001_tables.sql`](migrations/0001_tables.sql) |
+| A session started and ended by an endpoint: `Auth.switch!` ends the one you had and starts one for the person picked, `Auth.sign_out!` forgets you | [`routes/api/me/+server.roc`](routes/api/me/+server.roc) |
+| A handler's own answer as its `Ok` (`Try(Server.Response, Endpoint.Refusal)`, D-106): a redirect, which the runtime follows too | [`routes/api/me/+server.roc`](routes/api/me/+server.roc), [`routes/api/+server.roc`](routes/api/+server.roc), [`routes/api/tasks/[id]/+server.roc`](routes/api/tasks/[id]/+server.roc) |
 | SQLite in the server's process, with migrations and a seed that is safe to run twice | [`main.roc`](main.roc), [`migrations/0001_tables.sql`](migrations/0001_tables.sql), [`migrations/0002_seed.sql`](migrations/0002_seed.sql) |
 | Queries: `Db.all!` into typed rows, `Db.one!` for the one row a query reads, `Db.run!`, a transaction, and `Db.Nullable` for optional columns | [`Store.roc`](Store.roc) (`Row`, `task_of`, `task!`, `move!`) |
 | A database that failed: why goes on the log (`Log.error!`), and the client gets a plain 500, since the database's text can name the app's tables and values | [`Store.roc`](Store.roc) (`refusal!`) |
@@ -125,16 +138,17 @@ Each row names a feature and the file to read for it. Paths are from `examples/t
 ## Test it
 
 ```sh
-just examples tasks                                                # build, type-check, lint, check the SQL, run the expects and the tests
-bin/rocx fmt --check examples/tasks                                # the formatting
-bin/rocx check examples/tasks                                      # build, then type-check the server's and the browser's programs
-bin/rocx check -- .tools/roc-active test examples/tasks/main.roc   # the expects: rules, forms, pure components
-node --test 'examples/tasks/test/*.test.mjs'                       # HTTP and browser tests
+just examples tasks                            # build, type-check, lint, check the SQL, run the expects and the tests
+just examples-release tasks                    # as deployed: rocx build, then the node tests against a server built for speed
+bin/rocx fmt --check examples/tasks            # the formatting
+bin/rocx check examples/tasks                  # type-check the server's and the browser's programs
+bin/rocx check --sql examples/tasks            # every query, against the migrations' tables
+bin/rocx test examples/tasks                   # the expects: rules, forms, pure components
+node --test 'examples/tasks/test/*.test.mjs'   # HTTP and browser tests
 ```
 
-Run `roc test` after a build (`rocx check` or `rocx dev`), since it reads `Generated/`. The node
-tests in [`test/tasks.test.mjs`](test/tasks.test.mjs) build the app, make a SQLite file of their own
-in a temporary directory (and remove it after), and start the server on a free port.
+The node tests in [`test/tasks.test.mjs`](test/tasks.test.mjs) build the app, make a SQLite file of
+their own in a temporary directory (and remove it after), and start the server on a free port.
 
 Over HTTP, they cover:
 

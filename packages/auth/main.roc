@@ -1,5 +1,6 @@
-## Auth: sign-in for Roc Solid apps, as a plugin (D-072). `Auth` is the plugin, its endpoints, its
-## middleware and the functions an app calls; `Roles` what a user holds, and why (D-127: the app's
+## Auth: sign-in for Roc Solid apps, as a plugin (D-072). `Auth` is the plugin, the handlers the
+## app's route files call, its middleware, the app's users (D-134) and the functions an app calls;
+## `Roles` what a user holds, and why (D-127: the app's
 ## own tags, granted, revoked, kept as a history); `AuthStore` its statements, the same on SQLite and on
 ## Postgres (`migrations/`); `Rules` what is plain Roc, with its `expect`s (where a sign-in may go
 ## after, tokens and their hashes, the cookies, the OAuth state, PKCE, an ID token's claims,

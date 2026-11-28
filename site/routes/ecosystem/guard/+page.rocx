@@ -209,9 +209,8 @@ view! = |_|
 			</TableWrap>
 			<p>
 				ada is listed and bea is in staff, so they have it whatever their bucket. A signed-out visitor has
-				no id to hash, so a rollout reaches them only at 100.
- The environment is <code>APP_ENV</code> if set, else <code>dev</code> under
-				<code>--dev</code>, else <code>production</code>.
+				no id to hash, so a rollout reaches them only at 100. The environment is <code>APP_ENV</code> if
+				set, else <code>dev</code> under <code>--dev</code>, else <code>production</code>.
 			</p>
 
 			<h3>Changed while the server runs</h3>
@@ -337,7 +336,6 @@ view! = |_|
 				address (they share one count). Its admin endpoint answers <code>403</code> to anyone but an admin.
 				Flag overrides turn its feature route and maintenance mode on and off while it runs, and outlive a
 				restart in its SQLite file.
-
 			</p>
 			<Note>
 				The server reads a request's body, up to 16 MiB (or its <code>--max-body</code>), before any

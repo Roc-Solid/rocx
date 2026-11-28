@@ -5,7 +5,7 @@ import ../../Store
 import ../../TaskForm
 import ../../Generated/Paths
 
-## What POST / is sent: a new list's name, read and checked by `TaskForm.new_list` (D-093). One
+## What POST /api is sent: a new list's name, read and checked by `TaskForm.new_list` (D-093). One
 ## that doesn't pass is refused with its issues (422) before `post!` runs.
 post_body = TaskForm.new_list
 

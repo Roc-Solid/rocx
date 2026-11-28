@@ -61,8 +61,9 @@ view! = |_|
 			<Code source={"import intl.Intl\nimport intl.Locales\n\nintl = Intl.new(Locales.pl)\n\nintl.number(12345.5)            # \"12 345,5\"\nintl.currency(1234.5, \"PLN\")    # \"1234,50 zł\"\nintl.date(moment, Long)         # \"21 listopada 2026\"\nintl.relative(-2, Hour)         # \"2 godziny temu\""} numbers={Bool.False} />
 			<p>
 				The one component, <code>{"<Language>"}</code>, holds the reader's locale as a context and is a
-				picker. <code>rocx build</code> copies it into your app (<a href={"${Paths.ecosystem}#use"}>using a
-				package</a>); <code>import intl.Language</code> imports the copy.
+				picker. rocx copies it into your app when it writes the app's code
+				(<a href={"${Paths.ecosystem}#use"}>using a package</a>); <code>import intl.Language</code> imports
+				the copy.
 			</p>
 
 			<Heading id="demo">A first look</Heading>
@@ -186,7 +187,8 @@ view! = |_|
 			<Code title={Sources.intl_basket.file} source={Sources.intl_basket.rocx} />
 			<p>
 				Picking a language switches the page at once, then calls <code>remember!</code>. Here it sends the
-				tag to an app endpoint that sets the <code>locale</code> cookie, so the next page is in it too:
+				tag to an app endpoint that sets the <code>locale</code> cookie, so the next page is in it too. Its
+				<code>post!</code> sets the cookie on an answer of its own, <code>Answer(…)</code>:
 			</p>
 			<Code title={Sources.intl_endpoint.file} source={Sources.intl_endpoint.rocx} />
 			<TableWrap>
@@ -201,9 +203,9 @@ view! = |_|
 				</table>
 			</TableWrap>
 			<Note>
-				These four files are <code>packages/intl/example</code>, a small app that builds on both platforms.
-				It renders in Polish for <code>Accept-Language: pl</code>, and in Arabic, right to left, for a
-				<code>locale=ar</code> cookie.
+				These four files are from <code>packages/intl/example</code>, a small app that builds on both
+				platforms (<code>rocx dev packages/intl/example</code>). It renders in Polish for
+				<code>Accept-Language: pl</code>, and in Arabic, right to left, for a <code>locale=ar</code> cookie.
 			</Note>
 			<details>
 				<summary>The component: <code>{Sources.intl_language.file}</code></summary>
@@ -418,7 +420,8 @@ view! = |_|
 			<Heading id="status">Status</Heading>
 			<p>
 				<strong>Works today</strong>, tested for the ten starter locales: everything above. The example app
-				renders on the server, hydrates, switches language in place and keeps the choice in a cookie.
+				renders on the server, hydrates, switches language in place and keeps the choice in a cookie
+				(checked by hand; it has no tests of its own).
 			</p>
 			<p><strong>Not yet</strong> (each has a proposal in <code>packages/intl/PROPOSALS.md</code>):</p>
 			<ul>

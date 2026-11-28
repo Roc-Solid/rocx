@@ -71,7 +71,7 @@ Hmac.verify_sha256(key, message, Base64.url_decode(given) ?? [])    # compared i
 first difference, so the time it takes doesn't tell a forger how much of a signature was right.
 Lists of different lengths are unequal at once: a signature's length is no secret.
 
-**UUIDs.** Row ids an app makes: `Uuid.v7(Time.now_millis!({}).to_u64_wrap(), Random.bytes!(10))`.
+**UUIDs.** Row ids an app makes: `Uuid.v7(Time.now_millis!({}), Random.bytes!(10))`.
 The module is given the time and the random bytes rather than reading them, as the rest of the
 package is plain Roc. A version 7 id leads with its time, so rows added by id go to the end of an
 index rather than anywhere in it, and sorting by id sorts by when they were made (to the
@@ -89,8 +89,8 @@ Base32 and hex take either case, as people type them.
 Each module's `expect`s check it against published test vectors: NIST's SHA-256 and SHA-1 examples
 (FIPS 180-4), every test case of RFC 4231 (HMAC-SHA256) and RFC 2202 (HMAC-SHA1), RFC 5869's
 SHA-256 cases (HKDF), RFC 4648's (Base64, Base32, hex), and RFC 9562's version 7 and version 4
-examples (UUIDs). `roc test packages/crypto/main.roc`
-runs them (`just test-rocx` runs every package's). The server platform's tests
+examples (UUIDs). `roc test packages/crypto/main.roc` runs them (`just test-rocx` runs every
+package's). The server platform's tests
 (`server/test/server.test.mjs`) also compare SHA-256, HMAC-SHA256, HKDF, Base64 and hex with Node's
 `crypto`, through a running server, and packages/auth's example compares the authenticator codes
 made of `Sha1`, `Hmac.sha1` and `Base32` with codes Node makes. `Sha256` wraps Roc's builtin
@@ -98,13 +98,14 @@ made of `Sha1`, `Hmac.sha1` and `Base32` with codes Node makes. `Sha256` wraps R
 
 ## Used by
 
-`packages/storage` (S3's signatures, and the app's signed URLs), `packages/push` (Web Push's HKDF and
-base64url keys), `packages/auth` (tokens' SHA-256, PKCE, two-factor sign-in's TOTP on
-HMAC-SHA1, Base32 secrets and HKDF's sealing key, and its users' version 7 ids), `packages/stripe` (webhook signatures checked
-with HMAC-SHA256, idempotency keys), `packages/email` (Base64 for SMTP sign-in and MIME bodies),
-and `packages/mcp`, `packages/tools` and `packages/ai` (images, audio and blobs as Base64). Each
-names this package in its own header, so an app that uses one of them doesn't have to name this one
-too.
+`packages/storage` (S3's signatures, and the app's signed URLs), `packages/push` (Web Push's HKDF
+and base64url keys), `packages/auth` (tokens' SHA-256, PKCE, two-factor sign-in's TOTP on
+HMAC-SHA1, Base32 secrets and HKDF's sealing key, and its users' version 7 ids),
+`packages/stripe` (webhook signatures checked with HMAC-SHA256, idempotency keys), `packages/email`
+(Base64 for SMTP sign-in and MIME bodies), `packages/headless` (Chromium's screenshots, sent as
+Base64), and `packages/mcp`, `packages/tools` and `packages/ai` (images, audio and blobs as
+Base64). Each names this package in its own header, so an app that uses one of them doesn't have to
+name this one too.
 
 ## What isn't here
 

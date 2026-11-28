@@ -1,5 +1,5 @@
 // The app, tested as people use it: over HTTP (pages, plain forms, the runtime's posts, the
-// endpoints as JSON, the database), then in a real browser. The app is built once (rocx build, the
+// endpoints as JSON, the database), then in a real browser. The app is built once (rocx generate, the
 // browser's wasm, the server), and started against a SQLite file of the tests' own, which its
 // migrations make and seed. Each test that changes things makes a list of its own first, so the
 // tests don't lean on each other. No database server is needed.

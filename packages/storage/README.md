@@ -100,7 +100,7 @@ Everything is in the `Storage` module. A key is a file's name in the bucket, `/`
 | `serve!(bucket, key, request, { content_type, cache_control })` | a `Server.Response` (below) | none: a 404 for a missing file |
 | `check!(bucket)` | `{}` if the bucket answers | `S3Err`, `StorageErr` |
 | `said(refusal)` | an `S3Err`'s refusal as a line: `403 SignatureDoesNotMatch: …` | |
-| `signed_route!(request, env)` | the answer to a signed URL of the directory or memory bucket whose URL is the environment variable `env` (`"STORAGE_URL"`), for `routes/_storage/+server.roc` | none: a 403 or a 405 (below) |
+| `signed_route!(request, env)` | the answer to a signed URL of the directory or memory bucket whose URL is the environment variable `env` (`"STORAGE_URL"`), for `routes/_storage/+server.roc` | none: a 403, 405 or 503 (below) |
 
 Types: `Bucket` (`[S3(S3.Bucket), Kept({ root, secret })]`), `Refusal` (`{ status, code, message }`),
 `Info`.
@@ -148,9 +148,10 @@ must be let through. Its path is fixed: `signed_url!` makes its links to `/_stor
 before D-116). It reads the bucket from the environment variable it is given (`"STORAGE_URL"`, or
 another for another bucket). It checks the link's method (a HEAD may use a GET's link), the
 signature, and that the link hasn't expired. Then it serves the file (as `serve!` does, ranges
-included) or keeps the one the PUT sent, with the request's content type. A link it didn't make, or one that was
-changed, gets a 403, and so does one that has expired; a method other than GET, HEAD or PUT gets a
-405. A PUT is an ordinary request body, 16 MiB at most unless the server's `--max-body` says more:
+included) or keeps the one the PUT sent, with the request's content type. A link it didn't make,
+one that was changed or used with another method, and one that has expired get a 403. A link
+signed for a method other than GET or PUT gets a 405, and a variable that names no bucket a 503.
+A PUT is an ordinary request body, 16 MiB at most unless the server's `--max-body` says more:
 send a larger file in parts, from the server. For an S3 bucket the route has nothing to answer
 (404), since S3 answers its own links.
 

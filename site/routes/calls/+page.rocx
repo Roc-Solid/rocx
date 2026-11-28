@@ -110,10 +110,10 @@ view! = |_|
 			</Trace>
 			<Callout kind="tip" title="Put a page's data under api/, at the page's path">
 				<p>
-					<code>routes/api/members/+server.roc</code> answers <code>GET /api/members</code>, which the page
-					at <code>/members</code> reads; each is behind its own <code>Middlewares.member</code> (both files
-					below). To pass the page's query on,
-					<code>{"Endpoint.with_query(Api.get_api({}), Router.location!({}).query)"}</code> reads
+					<code>routes/(members)/api/members/+server.roc</code> answers <code>GET /api/members</code>, which
+					the page at <code>/members</code> reads. Both are in the group <code>(members)</code>, behind its
+					<code>Middlewares.member</code> (both files below). To pass the page's query on,
+					<code>{"Api.get_api({}).with_query(Router.location!({}).query)"}</code> reads
 					<code>/api?weeks=1</code> for the page at <code>/?weeks=1</code>, and the handler reads
 					<code>request.query</code>. A layout, or a component many pages show, reads an endpoint at a path
 					of its own: this site's footer reads <code>GET /api/facts</code>.
@@ -254,7 +254,7 @@ view! = |_|
 		<NoHydration>
 			<p>
 				On the server, a handler sends the app's own endpoints the same way,
-				<code>{"Endpoint.send!(endpoint, arg)"}</code>, answered in-process: no HTTP, but through the
+				<code>{"Api.….send!(arg)"}</code>, answered in-process: no HTTP, but through the
 				endpoint's route and middleware, with the request's headers (cookies, <code>authorization</code>).
 				What guards an endpoint guards every way to it, an MCP tool's call too. This page's endpoint asked
 				the shout endpoint this way: <strong>{asked!({}).shouted}</strong>.
@@ -321,10 +321,26 @@ view! = |_|
 					sent, as the endpoint reads it. After a refusal, <code>field!(name)</code> gives back what was typed
 					in a field; after a result it is <code>""</code>, and the form is emptied (unless it, or what is
 					around it, says <code>data-rocx-keep</code>), so an add form isn't filled again. Only the latest
-					submission counts; <code>clear!()</code>, in an event handler, forgets it. An endpoint's redirect
-					(<code>{"Ok(Server.redirect(…))"}</code>, setting a cookie, say) sends the browser there. A form
-					nothing on the page reads is answered as a plain form, followed in place: back to its page with
-					the flash, or to the endpoint's redirect (D-118).
+					submission counts; in an event handler, <code>clear!()</code> forgets it and <code>retry!()</code>
+					sends it again. An endpoint's redirect (<code>{"Ok(Server.redirect(…))"}</code>, setting a cookie,
+					say) sends the browser there in place, and the layouts it keeps read their data again.
+				</li>
+				<li>
+					<strong>A form nothing on the page reads</strong> (no component reads its endpoint's
+					submissions) is answered as a plain form, still without a load: back to its page with the flash, or
+					to the endpoint's redirect. Coming back to the page it is on keeps the page, its signals and its
+					scroll. If the answer is a failure (a 500, a middleware's refusal), the nearest
+					<code>{"<Errored>"}</code> around the form shows it.
+				</li>
+				<li>
+					<strong>What the server rendered follows too.</strong> After a result, a
+					<code>{"<NoHydration>"}</code> part that read an endpoint as the server rendered it is taken again
+					from the page's new document. One that read nothing costs nothing.
+				</li>
+				<li>
+					<strong>Leave one to the browser</strong> with <code>data-rocx-reload</code> on the form, its
+					button or an element around it: a plain post and a load, as for a sign-out that must drop every
+					state.
 				</li>
 				<li>
 					<strong>Without JavaScript</strong> (before the runtime loads, or with it off), the form posts as
@@ -488,7 +504,7 @@ view! = |_|
 				<li>
 					<p>
 						<strong>It leaves the handlers out of the browser's copy.</strong> The browser's app is built from
-						a copy of the app rocx writes (<code>--client site/build/client</code>), with the same
+						a copy of the app rocx writes (<code>{"rocx generate --client <dir>"}</code>), with the same
 						<code>Api</code> but no <code>Handlers</code> and no middleware: only the server runs those, and
 						they may read the environment or the database.
 					</p>

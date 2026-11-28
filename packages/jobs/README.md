@@ -24,9 +24,9 @@ program = App.program({
 ```
 
 ```roc
-# Jobs.roc: rocx build finds each kind at the top of a module's block, and lists it in App.jobs.
-# Each is given the app's context (what its init! made) and its input. A kind annotated
-# `Job.Kind(_, input)`, or not annotated, takes the context as the app has it.
+# Jobs.roc: rocx generate (and every build) finds each kind at the top of a module's block, and
+# lists it in App.jobs. Each is given the app's context (what its init! made) and its input. A kind
+# annotated `Job.Kind(_, input)`, or not annotated, takes the context as the app has it.
 import jobs.Job
 
 Jobs := [].{
@@ -71,8 +71,8 @@ Job.Failure : { kind : Str, id : I64, attempts : U64, error : Str }
 Job.plugin : Job.Options(context) -> Plugin.Value(context)
 ```
 
-`App.jobs` is every kind the app's modules define: `rocx build` finds each `Job.define` and
-`Job.define_with` at the top of a module's block. A program written by hand lists
+`App.jobs` is every kind the app's modules define: `rocx generate` (and every build) finds each
+`Job.define` and `Job.define_with` at the top of a module's block. A program written by hand lists
 `Job.handler(kind)` for each kind instead. `on_failed!` is called after the failure is logged; by
 default it does nothing more. An error tracker's report goes there (packages/posthog's
 `PostHog.job_failed!`).

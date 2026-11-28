@@ -11,5 +11,5 @@
 ## It names the server platform, for `PresenceServer`; the browser's half sees the modules both
 ## halves can compile (`browser.roc`). The components (`<AvatarStack>`, `<TypingIndicator>`,
 ## `<LiveCursors>`) and the browser's stores (`Presence.join!`, and the stores under it) are in
-## `components/`: `rocx build` copies them into each app that names this package. See README.md.
+## `components/`: `rocx generate` copies them into each app that names this package. See README.md.
 package [Cursors, Diff, Mirror, PresenceServer, Room, Stack, Throttle, Typing, Typist, Wire] { pf: platform "../../server/platform/main.roc" }

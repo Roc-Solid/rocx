@@ -1,17 +1,17 @@
 # Proposals: what packages/markdown would like from outside it
 
-Proposals 1 and 4 are done; the others are proposals, and nothing outside `packages/markdown/` was
-changed for them. The package compiles and its tests pass without any of them. Each section: the
+Proposals 1 and 4 are done. The others are open, and nothing outside `packages/markdown/` was
+changed for them: the package compiles and its tests pass without any of them. Each section: the
 problem, the options, the recommended change (sketched), what in the package depends on it, and how
 to undo it.
 
-## 1. Content collections found by `rocx build`
+## 1. Content collections found by rocx
 
-**Done (D-042).** `rocx build` finds each folder under an app's `content/` and writes
-`Generated/Content/<Name>.roc`: its Markdown files (at any depth) imported as text, `files`, and,
-with one `.roc` type beside them, `all` (read as the app is built, a wrong file failing the build)
-and `get(id)`, as sketched here. A folder that goes takes its module with it, and the browser's copy
-has the files. The README's "Frontmatter and collections" says how to use it.
+**Done (D-042).** rocx (`rocx generate`, which `rocx dev` and `rocx build` run) writes
+`Generated/Content/<Name>.roc` for each folder under an app's `content/`: its Markdown files (at any
+depth) imported as text, `files`, and, with one `.roc` type beside them, `all` (read as the app is
+built, a wrong file failing the build) and `get(id)`. The README's "Collections" says how to use
+it.
 
 ## 2. Trusted raw HTML in `<Markdown>`
 
@@ -108,22 +108,7 @@ browser's wasm renders the coloured code. **Undo:** move the file back.
 
 **Done (D-033), differently.** A package that needs the server names the server platform in its
 `main.roc`, and lists what the browser's half may import in a `browser.roc` beside it (as
-packages/push does), so a feed module could live in this package as it is; none is written yet.
-What follows is the proposal as it was.
-
-**Problem (shared with the other packages).** A package can't import a platform module, since an
-app is two apps on two platforms; `rocx build` copies only `components/*.rocx` into the app.
-
-**For markdown:** the parser and the component need nothing more. What a `server/` folder would
-add: an RSS or Atom feed endpoint for a collection (`Feed.respond!`, on `Endpoint` and `Server`),
-and reading Markdown from disk while the server runs (with a host primitive to read files; but
-proposal 1 makes that unnecessary for files that ship with the app).
-
-**Recommended (markdown's version, for merging with the others):** `rocx build` copies a package's
-`server/` folder (`.roc` and `.rocx`) into the server's half only, as `Generated/<alias>/server/…`,
-never into `--client`'s copy; in the app, `import markdown.server.Feed` imports it, and the browser's
-copy of a file drops such an import as it drops server functions. **Depends on it:** nothing yet.
-**Undo:** stop copying the folder.
+packages/push does). A feed module could live in this package as it is; none is written yet.
 
 ## 5. A component that never hydrates
 
@@ -137,7 +122,7 @@ the server renders once, and writing `<NoHydration>` around each one is easy to 
 1. Document `<NoHydration>` (done: README, "In the browser").
 2. Let a component say it renders on the server only: rocx writes each `<Markdown …/>` tag as if it
    were inside `<NoHydration>`, its call gone from the browser's copy. A live preview still has the
-   function, `{=Markdown.view({ source: draft!() })}`, which isn't a tag and hydrates.
+   function, `{Markdown.view({ source: draft!() })}`, which isn't a tag and hydrates.
 3. rocx strips any pure component with nothing reactive in its props from the browser's copy. Too
    clever: a pure component in a hole must render again in the browser.
 
@@ -152,7 +137,7 @@ Markdown := [].{
 }
 ```
 
-In `src/transpile.mjs`, a tag whose module says so is written as
+In `rocx-cli/Transpile.roc`, a tag whose module says so is written as
 `Html.no_hydration([Markdown.view({ … })])`, and in the browser's copy `Html.no_hydration([])`; a
 handler in its props is refused, as inside `<NoHydration>`.
 
@@ -166,10 +151,11 @@ handler in its props is refused, as inside `<NoHydration>`.
 2. **Server-only by default.** Should `<Markdown>` render on the server only unless used as a
    function in a hole (proposal 5)? It saves about 225 KB of wasm on every page that forgets
    `<NoHydration>`, and costs nothing for live previews, which call `Markdown.view` anyway.
-3. **Where a collection's type lives.** A `.roc` file beside its Markdown (`content/posts/Post.roc`,
-   proposal 1), or one file declaring every collection, as Astro's `content.config.ts` does?
+3. **Where a collection's type lives.** Built as a `.roc` file beside its Markdown
+   (`content/posts/Post.roc`, D-042). Keep that, or one file declaring every collection, as Astro's
+   `content.config.ts` does?
 4. **Heading ids.** GitHub's slugs (`"Hello, World!"` is `hello-world`, non-ASCII letters kept as
    they are, duplicates numbered `-1`, `-2`): the convention you want?
 5. **The specs' examples.** `Spec.roc` holds 202 examples from the CommonMark and GFM specs (both
-   CC BY-SA 4.0), credited in its header, as markdown-it and others ship them. Fine for a repo that
-   is going public, or should it keep only examples written here?
+   CC BY-SA 4.0), credited in its header, as markdown-it and others ship them. The repo is public
+   now: keep them, or keep only examples written here?

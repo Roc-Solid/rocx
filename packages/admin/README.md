@@ -321,5 +321,5 @@ a guard too.
 - A foreign key or a check over several columns gives no widget; each column is edited alone.
 - No actions on several rows at once, and no history of changes.
 - The catalog is read on each request (four small statements on Postgres).
-- Every route passes the effects. `AdminPage` could take `Db` itself in a server-only module, and a
-  route would be `AdminPage.respond!(request, context, admin)`; PROPOSALS.md weighs it.
+- Every route passes the effects. A server-only module could pass them itself, so a route would be
+  `respond!(request, context, admin)`; PROPOSALS.md has it.

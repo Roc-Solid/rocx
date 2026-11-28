@@ -1,4 +1,4 @@
-# Written by rocx build: the routes' modules and the program, the packages' components, and the
+# Written by rocx: the routes' modules and the program, the packages' components, and the
 # .roc beside each .rocx file
 Generated/
 Ui/*.roc

@@ -10,7 +10,7 @@ import forms.Issues
 ## with: what is typed in each field, which fields were left, whether it was sent, and what the
 ## endpoint refused, and from those, the issues to show at each field.
 ##
-##     live = LiveForm.of!(Signup.form, Api.post_signup({}))
+##     live = LiveForm.of!(Signup.form, Api.post_api_signup({}))
 ##     <form method="post" action={live.url()} novalidate>
 ##         <TextField live={live} name="email" label="Email" />
 ##     </form>
@@ -113,8 +113,8 @@ LiveForm := {
 
 	## A live form that posts nowhere: checked as it is typed, as `of!`'s is, with no endpoint. For
 	## a form whose `on:submit` handler shows every issue (`show_all!`) and reads what is typed
-	## (`form.parse(live.fields!())`): one it sends itself (`Endpoint.send!`), or one only the
-	## browser reads. Its `url()` is `""`.
+	## (`form.parse(live.fields!())`): one it sends itself (its endpoint's `send!(arg)`), or one only
+	## the browser reads. Its `url()` is `""`.
 	local! : Form(a) => LiveForm
 	local! = |form| LiveForm.local_filled!(form, [])
 
@@ -176,9 +176,10 @@ LiveForm := {
 	}
 
 	## Whether the endpoint accepted what the runtime last sent (answered with its result, not a
-	## refusal), until the form starts afresh: an add form resets once it has.
+	## refusal), until the form starts afresh. The runtime empties the form's inputs then (D-122), so
+	## an add form resets too; an edit form that stays on its page says `data-rocx-keep` instead.
 	##
-	##     create_effect!(|| live.accepted!(), |accepted| if accepted live.reset!() else {})
+	##     create_effect!(|| live.accepted!(), |accepted| if (accepted) live.reset!() else {})
 	accepted! : LiveForm => Bool
 	accepted! = |live| {
 		was_accepted! = live.accepted

@@ -1,10 +1,10 @@
 # forms
 
-Write a form's rules once, in Roc, and run them on both sides, as zod does for TypeScript. The
-browser checks what is typed as it is typed. The endpoint the form posts to reads the posted body
-with the same rules, into a typed record, or refuses it with the same issues, field by field. The
-rules go past what a type can say: lengths, patterns, email addresses, ranges and steps, choices,
-days, lists, and checks across fields. Parse, don't just validate: what comes out is a Roc record.
+Write a form's rules once, in Roc, and run them on both sides (zod's idea, for Roc). The browser
+checks what is typed as it is typed. The endpoint the form posts to reads the posted body with the
+same rules, into a typed record, or refuses it with the same issues, field by field. The rules go
+past what a type can say: lengths, patterns, email addresses, ranges and steps, choices, days,
+lists, and checks across fields. What comes out is a Roc record.
 
 ```roc
 import forms.Form
@@ -33,9 +33,9 @@ is the reference.
 
 ## Installing it
 
-Name the package in the app's header (`main.roc`). `rocx build` gives the browser's half of the app
-the same packages, so the header is the only place you name it. It is not a plugin: there is
-nothing to add to `App.program`.
+Name the package in the app's header (`main.roc`). rocx gives the browser's half of the app the
+same packages, so the header is the only place you name it. It is not a plugin: there is nothing to
+add to `App.program`.
 
 ```roc
 app [program] { forms: "../packages/forms/main.roc", pf: platform "../server/platform/main.roc" }
@@ -78,34 +78,33 @@ Signup := [].{
 }
 ```
 
-**The endpoint** names the form its body is read with, beside its handler (`post_body`, D-093),
-and the handler's `body` is the form's record. The platform reads the body, a form's fields
-(URL-encoded or multipart) or a JSON object alike, with the form: what passes is the handler's
-`body`; what doesn't is refused before the handler runs, with a 422 and the issues as JSON
-(`application/json`). A checkbox left unticked, which a browser doesn't send at all, is the form's
-to judge (`Unchecked`). `Generated/Api` makes the endpoint `Endpoint.checked(…, Signup.form)` in
-both copies, so a page's submission is read with the form too, and `/openapi.json` documents the
-body with `form.json_schema()`.
+**The endpoint** is the page's, under `api/` at the page's path (D-100). Its route file names the
+form its body is read with, beside the handler (`post_body`, D-093), and the handler's `body` is
+the form's record. The platform reads the body with the form: a form's fields (URL-encoded or
+multipart) or a JSON object alike. What passes is the handler's `body`. What doesn't is refused
+before the handler runs, with a 422 and the issues as JSON (`application/json`). A checkbox left
+unticked, which a browser doesn't send at all, is the form's to judge (`Unchecked`). `Generated/Api`
+makes the endpoint `Endpoint.checked(…, Signup.form)` in both copies, so a page's submission is read
+with the form too. `/openapi.json` documents the body with `form.json_schema()`.
 
 ```roc
-# routes/signup/+server.roc
+# routes/api/signup/+server.roc
 import pf.Server
 import pf.Endpoint
-import ../../Signup
+import ../../../Signup
 
-## What POST /signup is sent: an account, read and checked by the form.
+## What POST /api/signup is sent: an account, read and checked by the form.
 post_body = Signup.form
 
-## POST /signup, from the sign-up form: the account, which passed every check.
+## POST /api/signup, from the sign-up form: the account, which passed every check.
 post! : { request : Server.Request, params : {}, context : c, body : Signup.Account } => Try({ welcome : Str }, Endpoint.Refusal)
 post! = |{ body, .. }| Ok({ welcome: "Welcome, ${body.name}" })
 ```
 
-The rules are named as a value of a module (`Signup.form`), which `Generated/Api` imports, as it
-imports the types the handler names. A handler refuses what only it can check, after the form (a
-name already taken), with the same shape: `Err(Issues.refusal([Issues.at_field("name", Custom("taken", "That name is taken"))]))`.
-The form's record is the endpoint's arg, which JSON reads and writes like any other's: `Date` is
-read and written as its text.
+The rules are a value of a module (`Signup.form`), which `Generated/Api` imports with the types the
+handler names. A handler refuses what only it can check (a name already taken) with the same shape:
+`Err(Issues.refusal([Issues.at_field("name", Custom("taken", "That name is taken"))]))`. The form's
+record is the endpoint's arg, read and written as JSON like any other. A `Date` is its text.
 
 **The page** checks the same form as it is typed (`LiveForm`), and shows the endpoint's issues
 when it refuses. This works with the runtime (the form is sent with `fetch`, and the page stays)
@@ -122,9 +121,9 @@ import forms.IssueSummary
 import ../../Generated/Api
 import ../../Signup
 
-## The sign-up page: the form, checked as it is typed, sent to `POST /signup`.
+## The sign-up page: the form, checked as it is typed, sent to `POST /api/signup`.
 view! = |_| {
-	live = LiveForm.of!(Signup.form, Api.post_signup({}))
+	live = LiveForm.of!(Signup.form, Api.post_api_signup({}))
 	<main>
 		<h1>Sign up</h1>
 		<IssueSummary live={live} title="Fix these, then send it again" />
@@ -154,7 +153,7 @@ the package's messages show. Leave it out, and the browser also holds a submit b
 attributes say, in its own words. Either way, the endpoint has the last word.
 
 examples/tasks uses the package the same way: `TaskForm.roc` is the schema, `components/AddTask.rocx`
-the form, and the list's `+server.roc` the endpoint.
+the form, and `routes/api/lists/[id]/+server.roc` the endpoint.
 
 ## How it is built
 
@@ -171,9 +170,9 @@ the server's run the same code, and a test runs it with nothing else.
 
 `roc test packages/forms/main.roc` runs their `expect`s.
 
-**The components are `.rocx` files** in `components/`. `rocx build` copies them into each app that
-names the package (into `Generated/forms/`), so each half of the app compiles them on its own
-platform. `LiveForm` is a form's state in a component. `<TextField>`, `<CheckboxField>` and
+**The components are `.rocx` files** in `components/`. rocx copies them into each app that names
+the package (into `Generated/forms/`, as it generates the app's code), so each half of the app
+compiles them on its own platform. `LiveForm` is a form's state in a component. `<TextField>`, `<CheckboxField>` and
 `<IssueSummary>` show it.
 
 ## Values and their checks
@@ -240,12 +239,13 @@ field reads an `I64` or a `Dec`.
 | Function | What it does |
 |---|---|
 | `Issues.at_field(field, code)` | an issue at `field`, with the code's English: what a handler refuses with, after the form |
+| `Issues.status` | `422`, the status a refusal of invalid input has |
 | `Issues.english(code)` | the default English, a short sentence with no full stop: `"Use at least 3 characters"` |
 | `Issues.key(code)`, `Issues.params(code)` | what a table of translations is keyed by: `"too_short"`, `[{ name: "min", value: "3" }]`; a custom code's own key |
 | `Issues.at(issues, field)`, `under`, `messages` | a field's issues (`under`: its list items' too, `tags[0]`, `tags[1]`…), and their messages |
 | `Issues.to_json`, `Issues.from_json` | the issues as JSON, and back |
 | `Issues.refusal(issues)` | an endpoint's refusal: `Json(422, json)`, which is an `Endpoint.Refusal` sent as `application/json` |
-| `Issues.from_problem(problem)` | the issues of a 422, from the `Server.Problem` that a submission's `error!()` or `Endpoint.send!` gives; `[]` for any other problem |
+| `Issues.from_problem(problem)` | the issues of a 422, from the `Server.Problem` that a submission's `error!()` or an endpoint's `send!` gives; `[]` for any other problem |
 
 To show issues in another language, match on the code, or look its key and params up in a
 catalog. packages/intl does the latter.
@@ -293,9 +293,9 @@ Call it once, where the component makes its signals.
 |---|---|
 | `LiveForm.of!(form, endpoint)` | a live form that posts to `endpoint`, empty |
 | `LiveForm.filled!(form, endpoint, values)` | the same, starting with `values` typed in, field by field: an edit form's record as it is now, `[("title", task.title), ("notes", task.notes)]`. A ticked box is `("done", "on")`; leave out one that isn't |
-| `LiveForm.local!(form)`, `local_filled!(form, values)` | a live form that posts nowhere, for an `on:submit` handler that shows every issue (`show_all!`) and reads the form (`form.parse(live.fields!())`), then sends it itself (`Endpoint.send!`) or keeps it in the browser |
+| `LiveForm.local!(form)`, `local_filled!(form, values)` | a live form that posts nowhere, for an `on:submit` handler that shows every issue (`show_all!`) and reads the form (`form.parse(live.fields!())`), then sends it itself (`Api.x(params).send!(arg)`) or keeps it in the browser |
 | `live.reset!()` | from a handler: starts afresh where it is. What it started with is typed in again, no field is left, nothing is sent, and the endpoint's answer is forgotten, so no issue shows. The inputs stay, and so does focus |
-| `live.accepted!()` | whether the endpoint accepted what the runtime last sent (answered with its result, not a refusal), until the form starts afresh. An add form resets once a task is in: `create_effect!(\|\| live.accepted!(), \|accepted\| if (accepted) live.reset!() else {})` |
+| `live.accepted!()` | whether the endpoint accepted what the runtime last sent (answered with its result, not a refusal), until the form starts afresh. An add form resets then (below) |
 | `live.url()` | the endpoint's URL, for the form's `action` (`""` for a local form) |
 | `live.value!(name)`, `values!(name)`, `checked!(name, value)` | what is typed in a field; all of a list's values; whether a box is ticked |
 | `live.input!(name, value)` | from `on:input.value`: what a field holds now |
@@ -314,7 +314,17 @@ When an issue shows:
 - After a plain post (no runtime) that the endpoint refused, the page comes back with what was
   typed and the endpoint's issues, from the flash (see "Passwords" below). After one it accepted,
   the form starts afresh, with its `values` if it was `filled!`.
-- With the runtime the page stays as it was, and so does the form, until `reset!`.
+
+With the runtime, a `LiveForm`'s form is sent with `fetch`, since the live form reads its
+endpoint's submission (D-118 posts only a form nothing reads as the browser would). The page stays,
+unless the endpoint redirects. A send that succeeded empties the form (D-122): its inputs go back to
+what the page wrote in them. `LiveForm` keeps what was typed until `reset!`. So:
+
+- An add form resets once the endpoint accepts it: `create_effect!(|| live.accepted!(), |accepted| if (accepted) live.reset!() else {})`.
+- An edit form that stays on its page after a save says `data-rocx-keep` on its `<form>`, so its
+  inputs keep what was saved.
+- An edit form whose endpoint redirects (examples/tasks' task page goes back to its list) needs
+  neither.
 
 | Component | Props |
 |---|---|
@@ -362,6 +372,9 @@ Not yet (each is a proposal in PROPOSALS.md):
 - A regex has no flags (write `[A-Za-z]` for any case), no captures (`find` gives the whole match),
   and no backreferences or lookaround.
 - `Url` takes `http` and `https` only, and checks no more of a host than that it has no spaces.
+- `LiveForm` shows a 422's issues. Any other refusal (a guard's 403 or 429, a crash's 500) shows
+  nothing at the fields. Read it from the same submission, `use_submission!(endpoint).error!()`, and
+  show it with `Server.explain`.
 - A `check_at` across fields runs when the whole form can be read, so a number left empty elsewhere
   keeps it from running. Put the fields it compares in a form of their own (as `passwords` above),
   and it runs whenever those two can be read.

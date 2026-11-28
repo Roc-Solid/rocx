@@ -54,9 +54,9 @@ view! = |_|
 						<tr><td><code>routes/blog/[slug]/+page.rocx</code></td><td>the page at <code>/blog/anything</code>, given <code>{"params.slug"}</code></td></tr>
 						<tr><td><code>+layout.rocx</code></td><td>wraps every page in its directory and below it</td></tr>
 						<tr><td><code>routes/+error.rocx</code></td><td>what a browser sees at a path nothing answers (404), and when a page fails</td></tr>
-						<tr><td><code>routes/blog/+server.roc</code></td><td>the endpoints at <code>/blog</code>: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code> and <code>delete!</code>; <code>events!</code>, a stream of events; <code>channel!</code>, a channel pages subscribe to; <code>respond!</code>, every other method</td></tr>
+						<tr><td><code>routes/api/blog/+server.roc</code></td><td>the endpoints at <code>/api/blog</code>, which the page at <code>/blog</code> reads: <code>get!</code>, <code>post!</code>, <code>put!</code>, <code>patch!</code> and <code>delete!</code>; <code>events!</code>, a stream of events; <code>channel!</code>, a channel pages subscribe to; <code>respond!</code>, every other method</td></tr>
 						<tr><td><code>routes/admin/+middleware.roc</code></td><td>the middleware around every page, endpoint and channel in <code>admin/</code> and below it (<a href="#middleware">below</a>); <code>routes/+middleware.roc</code> runs around every request</td></tr>
-						<tr><td><code>routes/(members)/…</code></td><td>a group: a directory in brackets adds nothing to the path, so files at different paths share its middleware and layout</td></tr>
+						<tr><td><code>routes/(members)/…</code></td><td>a group: a directory in parentheses adds nothing to the path, so files at different paths share its middleware and layout</td></tr>
 						<tr><td><code>routes/.well-known/…</code></td><td>routed, as RFC 8615 asks; any other directory whose name starts with a dot is skipped</td></tr>
 					</tbody>
 				</table>
@@ -80,14 +80,14 @@ view! = |_|
 			<ul>
 				<li>
 					<strong><code>view!</code> is given the page's params:</strong> <code>{"view! = |{ params }| …"}</code>,
-					a record of strings, or of the <a href="#params">types its handlers give them</a>
+					a record of strings, or of the <a href="#params">types it gives them</a>
 					(<code>{"{}"}</code> without params; write <code>|_|</code>). A page is an
 					<a href={"${Paths.components}#kinds"}>effectful component</a>: its body runs once, and it may make
 					signals.
 				</li>
 				<li>
 					<strong>Its data comes from endpoints.</strong> A page isn't given the request. It reads its
-					location with <code>{"Router.location!({})"}</code> and its data with <code>Endpoint.read!</code>,
+					location with <code>{"Router.location!({})"}</code> and its data with <code>{"Api.get_….read!()"}</code>,
 					answered by the server as it renders (<a href={Paths.calls}>talking to the server</a>). What
 					middleware knows, such as who is signed in, comes the same way, from an endpoint behind it
 					(<a href="#middleware">below</a>).
@@ -138,9 +138,9 @@ view! = |_|
 			<p>
 				A directory in brackets is a param: <code>routes/blog/[slug]/+page.rocx</code> is the page at any
 				<code>/blog/…</code>, and its <code>view!</code> is given <code>{"params : { slug : Str }"}</code>.
-				A param is a string, decoded from the URL, unless a handler's annotation gives it another type.
-				Fixed parts are tried before params, so <code>/blog/new</code> can be a page of its own beside
-				<code>/blog/[slug]</code>. A directory may name a file, with dots between letters or digits:
+				A param is a string, decoded from the URL, unless a handler or the page gives it another type
+				(below). Fixed parts are tried before params, so <code>/blog/new</code> can be a page of its own
+				beside <code>/blog/[slug]</code>. A directory may name a file, with dots between letters or digits:
 				<code>routes/sitemap.xml/+server.roc</code> answers <code>/sitemap.xml</code>, and its names drop
 				the dot (<code>Api.get_sitemap_xml</code>). A page from the app the tests build:
 			</p>
@@ -156,13 +156,13 @@ view! = |_|
 			<p>
 				<strong>Typed params.</strong> A handler's annotation may give a param a type other than
 				<code>Str</code>: a number, <code>Bool</code>, or a union of tags written out
-				(<code>{"[Draft, Live]"}</code>). The router reads the path's part as that type first; a part
-				that doesn't read is no match, so <code>/api/count/five</code> is a 404 the handler never sees. The
-				type is the directory's: its handlers must agree (<code>rocx build</code> says where two differ),
-				and its pages, layouts, <code>Paths</code> and <code>Api</code> take it too. A page whose endpoints
-				are under <code>api/</code> declares its own, <code>{"Params : { id : I64 }"}</code>: rocx never
-				reads a page's types from another directory. This site's count of
-				<a href={"${Paths.calls}#events"}>events</a> is typed:
+				(<code>{"[Draft, Live]"}</code>). A page says its own with a type in the file,
+				<code>{"Params : { id : I64 }"}</code>, as its endpoints are under <code>api/</code> and rocx never
+				reads a page's types from another directory. The router reads the path's part as that type first;
+				a part that doesn't read is no match, so <code>/api/count/five</code> is a 404 the handler never
+				sees. The files of one directory must agree on the type (<code>rocx build</code> says where two
+				differ), and its pages, layouts, <code>Paths</code> and <code>Api</code> take it too. This site's
+				count of <a href={"${Paths.calls}#events"}>events</a> is typed:
 			</p>
 			<Code title={Sources.endpoint_count.file} source={Sources.endpoint_count.rocx} />
 			<p>This site's sidebar is built from <code>Paths</code>, each part's pages grouped under headings:</p>
@@ -206,15 +206,25 @@ view! = |_|
 					<a href={"${Paths.ecosystem_forms}#endpoint"}>packages/forms</a>) reads and checks the body, form or
 					JSON, before the handler runs; the handler's <code>body</code> is the rules' record. A body that
 					fails is a <code>422</code> with the issues as JSON, and <code>/openapi.json</code> documents it with
-					the rules' schema (D-093).
+					the rules' schema.
 				</li>
 				<li>
 					<strong>Three more names.</strong> <code>events!</code> answers a GET that asks for events
 					(<code>accept: text/event-stream</code>) with a stream (<a href={"${Paths.calls}#events"}>events</a>).
-					<code>channel!</code> defines a channel pages subscribe to
+					<code>channel!</code> defines a channel pages subscribe to, with its hooks <code>receive!</code>
+					(what a page says), <code>on_open!</code> and <code>on_close!</code>
 					(<a href={"${Paths.calls}#channels"}>channels</a>). <code>respond!</code>, given the request, params
 					and context, answers every method the file doesn't name with its own <code>Server.Response</code>: a
-					page mounted from elsewhere, a JSON-RPC endpoint.
+					package's handler, a JSON-RPC endpoint.
+				</li>
+				<li>
+					<strong>A package's endpoints are route files too.</strong> A package that answers requests
+					offers handlers (<code>Auth.callback_route!</code>, <code>Stripe.webhook_route!</code>,
+					<code>Push.subscribe_route!</code>). The app puts each at the path it wants with a route file whose
+					<code>respond!</code> calls it, so <code>rocx routes</code> lists it and its folder's middleware
+					guards it. A plugin adds tables, jobs and scripts to the server, never a route. Stripe's webhook,
+					in an app that bills with <a href={Paths.ecosystem_stripe}>packages/stripe</a>:
+					<Code title="routes/stripe/webhook/+server.roc" source={"import stripe.Stripe\nimport ../../../Billing\n\nrespond! = |{ request, .. }| Stripe.webhook_route!(request, Billing.on_event!)"} numbers={Bool.False} />
 				</li>
 				<li>
 					<strong>A path is a page or an endpoint.</strong> A page's endpoints (what it reads and what its
@@ -252,8 +262,8 @@ view! = |_|
 			<p>
 				Middleware goes by folder. A <code>+middleware.roc</code> names the middleware around every page,
 				endpoint and channel in its directory and below; nothing else runs any. The one in
-				<code>routes/</code> is the app's, around every request (a package's handlers and paths nothing has
-				included). This site's adds two headers to every answer:
+				<code>routes/</code> is the app's: it runs around every request, a path nothing answers included.
+				This site's adds two headers to every answer:
 			</p>
 			<Code title={Sources.site_root_middleware.file} source={Sources.site_root_middleware.rocx} numbers={Bool.False} />
 			<p>
@@ -276,9 +286,10 @@ view! = |_|
 				then the group's <code>Middlewares.member</code>, then the page, and the answer goes back out through
 				them. The page isn't given the context: it reads <code>GET /api/members</code>, which the server
 				answers through the endpoint's route, behind the same middleware, so the handler gets the member's
-				name. A handler's <code>Endpoint.send!</code> and an MCP tool made from an endpoint go that way too:
-				what guards an endpoint guards every way to it. <code>rocx routes</code> lists every route and what
-				runs around it, outermost first:
+				name. An endpoint a handler sends (<code>{"Api.….send!(arg)"}</code>) and an MCP tool made from an
+				endpoint go that way too: what guards an endpoint guards every way to it. <code>rocx routes</code>
+				lists every route and what runs around it, outermost first (<code>--server</code> lists the
+				endpoints alone, <code>--client</code> the pages):
 			</p>
 			<Code title="A terminal" source={Sources.route_list.rocx} numbers={Bool.False} plain />
 			<ul>
@@ -402,14 +413,15 @@ view! = |_|
 
 			<Heading id="written">What rocx writes</Heading>
 			<p>
-				<code>rocx build</code> turns the routes into Roc modules under <code>Generated/</code>. You never
-				edit them, but knowing them helps you read the compiler's reports:
+				Every build turns the routes into Roc modules under <code>Generated/</code>, and
+				<code>rocx generate</code> writes them alone. You never edit them, but knowing them helps you read
+				the compiler's reports:
 			</p>
 			<TableWrap>
 				<table>
 					<thead><tr><th>Module</th><th>What it holds</th></tr></thead>
 					<tbody>
-						<tr><td><code>ShowcasePage.roc</code>, <code>ApiMembersServer.roc</code>…</td><td>each route file, as a module named after its path</td></tr>
+						<tr><td><code>ShowcasePage.roc</code>, <code>ApiShoutServer.roc</code>, <code>MembersMiddleware.roc</code>…</td><td>each route file and <code>+middleware.roc</code>, as a module named after where it is, a group's name kept (<code>routes/(members)/+middleware.roc</code> is <code>MembersMiddleware</code>)</td></tr>
 						<tr><td><code>Paths.roc</code></td><td>a path for every page (<a href="#params">typed links</a>)</td></tr>
 						<tr><td><code>Api.roc</code></td><td>the app's contract: a function for each endpoint and channel, with its method, URL and types</td></tr>
 						<tr><td><code>Handlers.roc</code></td><td>the server's only: each endpoint bound to its handler</td></tr>
@@ -439,8 +451,8 @@ view! = |_|
 			<Code title={"${Sources.route_routes.file}, in part"} source={Sources.route_routes.rocx} numbers={Bool.False} />
 			<p>
 				<code>App.program</code> answers every request with it, behind
-				<code>routes/+middleware.roc</code>'s middleware: every URL is a route file (D-116), the OpenAPI
-				document too. A route under a <code>+middleware.roc</code> is wrapped in
+				<code>routes/+middleware.roc</code>'s middleware: every URL is a route file, a package's handlers and
+				the OpenAPI document too. A route under a <code>+middleware.roc</code> is wrapped in
 				<code>Middleware.run!</code>, one inside the other, outermost first, and the handler gets what the
 				innermost passed on. The members page and its endpoint run behind their group's:
 			</p>
@@ -474,9 +486,10 @@ view! = |_|
 			</p>
 			<h3>Turning it on</h3>
 			<p>
-				An app serves it from routes of its own (D-116): <code>routes/openapi.json/+server.roc</code>
-				answers with the document, and <code>routes/openapi.html/+server.roc</code> with a page that shows
-				it in Swagger UI or Scalar. Without them, neither is served.
+				An app serves it from routes of its own: <code>routes/openapi.json/+server.roc</code> answers with
+				the document, and <code>routes/openapi.html/+server.roc</code> with a page that shows it in Swagger
+				UI or Scalar. The page reads <code>openapi.json</code> beside it, so keep the two side by side.
+				Without them, neither is served.
 			</p>
 			<Code title="routes/openapi.json/+server.roc" source={"import pf.OpenApi\nimport ../../Generated/Api\n\nrespond! = |{ request, .. }| OpenApi.document_route(request, Api.openapi)"} numbers={Bool.False} />
 			<Code title="routes/openapi.html/+server.roc" source={"import pf.OpenApi\n\nrespond! = |{ request, .. }| OpenApi.page_route(request, Swagger)"} numbers={Bool.False} />
@@ -529,7 +542,7 @@ view! = |_|
 						<tr>
 							<td><code>GET /openapi.json</code></td>
 							<td>the server (native)</td>
-							<td>Sends that text, if the app turned it on, behind its middleware, like every answer.</td>
+							<td>The route's <code>OpenApi.document_route</code> sends that text, behind its folder's middleware.</td>
 						</tr>
 					</tbody>
 				</table>
@@ -592,9 +605,13 @@ view! = |_|
 			<Heading id="limits">Not yet</Heading>
 			<ul>
 				<li>
-					<strong>No static pages with params.</strong> This site's static copy writes the pages without
-					params (<code>Paths.all</code>) and behind no directory's middleware but <code>routes/</code>'s. A
-					page with params would need a list of the values to write.
+					<strong>A static copy has no guarded pages.</strong> <code>rocx build --static</code> writes
+					<code>/</code>, the pages without params, each <code>--route</code> and every page they link to,
+					but none behind a <code>+middleware.roc</code> other than <code>routes/</code>'s.
+				</li>
+				<li>
+					<strong>Nothing warns of a page and an endpoint at one path.</strong> They still answer, by
+					<code>Accept</code>.
 				</li>
 				<li>
 					<strong>One error page</strong>, the app's, at the root of <code>routes/</code>:

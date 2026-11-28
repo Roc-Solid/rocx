@@ -62,7 +62,7 @@ view! = |_|
 		<p>Its tests sit in the same file, under the component:</p>
 		<Code title={Sources.testing_inbox_expects.file} source={Sources.testing_inbox_expects.rocx} numbers={Bool.False} />
 		<p>
-			After <code>rocx build</code>, <code>roc test main.roc</code> runs them with every other
+			After <code>rocx generate</code>, <code>roc test main.roc</code> runs them with every other
 			<code>expect</code> in the app. Through <code>rocx check -- roc test main.roc</code>, a failing
 			<code>expect</code> is reported at its line in the <code>.rocx</code> file
 			(<a href={"${Paths.tooling}#errors"}>errors at your lines</a>). This site's tests run the ones above.
@@ -100,9 +100,8 @@ view! = |_|
 			</Feature>
 			<Feature title="A real browser">
 				<p>
-					Chromium's headless shell, or Firefox. The page hydrates strictly, and the test clicks and types as
-					a person does. A component with signals is tested through its story.
-
+					Chromium's headless shell, or Zen or Firefox. The page hydrates strictly, and the test clicks and
+					types as a person does. A component with signals is tested through its story.
 				</p>
 			</Feature>
 		</FeatureGrid>
@@ -183,8 +182,9 @@ view! = |_|
 		<p>
 			For what a pure component can't show (pages, forms, endpoints, the database), test the running app
 			from <code>node:test</code>. <code>buildForTests</code> builds the app as a deploy does
-			(<code>rocx build</code>, the browser's wasm, the server); a markup problem, type error or warning
-			throws, reported at its line in the <code>.rocx</code> file. <code>startServer</code> starts that
+			(<code>rocx generate</code>, the browser's wasm, the server); a markup problem, type error or warning
+			throws, reported at its line in the <code>.rocx</code> file. The server is a quick dev build unless
+			<code>ROCX_TEST_OPT=speed</code> asks for a release's. <code>startServer</code> starts that
 			server on a free port, usually once for a file's tests:
 		</p>
 		<Code title={Sources.testing_node_setup.file} source={Sources.testing_node_setup.rocx} numbers={Bool.False} />
@@ -239,7 +239,8 @@ view! = |_|
 				On SQLite, <code>testSqlite()</code> makes a database file in its own temporary directory, read and
 				written with Node's <code>node:sqlite</code>. Pass the database itself to the server,
 				<code>{"startServer(server, { database: db })"}</code>, so it can wake the server's job workers
-				(SQLite can't tell another process that a row changed).
+				(SQLite can't tell another process that a row changed). Without one, an app that names no database
+				writes <code>data/app.db</code> where the server starts.
 			</li>
 		</ul>
 		<p>
@@ -380,6 +381,10 @@ view! = |_|
 				in a Roc test.
 			</li>
 			<li>Helpers in this package that run inside the server under test.</li>
+			<li>
+				A browser driven from Roc. <code>packages/headless</code> drives Chromium from Roc already (D-128);
+				Gecko, drags, touch and these queries in its tabs are in its <code>PROPOSALS.md</code>.
+			</li>
 		</ul>
 		<p>Limits:</p>
 		<ul>
@@ -394,8 +399,7 @@ view! = |_|
 			<li>
 				The JavaScript uses the Roc Solid repository it is in (or the one <code>ROCX_ROOT</code> names): its
 				compiler, its browser driver, and its platforms' hosts, which must be built first (<code>just test</code>
-				builds them).
-
+				builds them). An installed release doesn't have it: tests from Node need a clone.
 			</li>
 		</ul>
 	</NoHydration>

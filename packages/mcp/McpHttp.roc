@@ -83,7 +83,7 @@ McpHttp := [].{
 	## path's params (`{ id : Str }`) and as the endpoint's body (`{ tags : List(Str) }`), so the
 	## model sends `{ "id": "7", "tags": ["work"] }`; its answer is the tool's. An endpoint of no
 	## params is the same (`Api.post_api_search`). It is sent as a handler sends it
-	## (`Endpoint.send!`): answered in-process, by its route, with the MCP request's headers (its
+	## (`.send!(arg)`): answered in-process, by its route, with the MCP request's headers (its
 	## `authorization`), so the endpoint's middleware decides, as it does for a script (D-103). A
 	## refusal (`NotFound`, `BadRequest`) goes back to the model as a tool error. A field of the body
 	## named as a param is an input schema `Mcp.problems` reports.

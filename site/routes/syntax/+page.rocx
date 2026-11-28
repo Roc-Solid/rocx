@@ -48,7 +48,7 @@ view! = |_|
 				title="Markup wherever an expression can stand"
 			>
 				A <code>.rocx</code> file is Roc with markup (HTML elements and components) wherever an expression
-				can stand; inside markup, braces take you back to Roc. <code>rocx build</code> turns markup into calls
+				can stand; inside markup, braces take you back to Roc. rocx turns markup into calls
 				to the platform's <code>Html</code> module, so every <code>.rocx</code> file has
 				<code>import pf.Html</code>. Each example is a real file in <code>site/examples</code>, shown with its
 				output; its switch shows the Roc rocx wrote.
@@ -129,7 +129,7 @@ view! = |_|
 						<tr><td><code>{"style:--name={str}"}</code></td><td>Sets a CSS custom property, for the stylesheet to use.</td></tr>
 						<tr><td><code>{"style:color={str}"}</code></td><td>Sets one CSS property. Its name is letters and dashes.</td></tr>
 						<tr><td><code>{"style=\"…\""}</code></td><td>A static style, which the <code>style:</code> attributes join.</td></tr>
-						<tr><td><code>{"<img enhanced:src={path} />"}</code></td><td>A photo of this site that the server makes smaller copies of. Once they are made, a moment after a page first shows it, pages get their <code>srcset</code>, a <code>sizes</code> and the photo's <code>width</code> and <code>height</code>; until then, its <code>src</code>. It loads lazily unless <code>loading</code> or <code>fetchpriority</code> says otherwise. See <a href={"${Paths.platform_server}#photos"}>the server</a>.</td></tr>
+						<tr><td><code>{"<img enhanced:src={path} />"}</code></td><td>A photo of this site (a quoted path too) that the server makes smaller copies of. Once they are made, a moment after a page first shows it, pages get their <code>srcset</code>, a <code>sizes</code> and the photo's <code>width</code> and <code>height</code>; until then, its <code>src</code>. It loads lazily and decodes off the main thread unless <code>loading</code>, <code>fetchpriority</code> or <code>decoding</code> says otherwise. Only an <code>{"<img>"}</code> takes it, and never beside a <code>src</code> or <code>srcset</code>. See <a href={"${Paths.platform_server}#photos"}>the server</a>.</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -245,6 +245,7 @@ view! = |_|
 						<tr><td><code>{"on:drop.data={|items| …}"}</code>, <code>.files</code></td><td>Given what a drop or a paste carries, or its files; <code>on:change.files</code> on a file input gives the files chosen.</td></tr>
 						<tr><td><code>{"on:frame.ms={|ms| …}"}</code></td><td>Runs every animation frame while the element is on the page, given the milliseconds since the last.</td></tr>
 						<tr><td><code>{"on:viewport={|view| …}"}</code></td><td>Runs when the element shows, and each time it scrolls or changes size, given what of it shows.</td></tr>
+						<tr><td><code>{"on:visibilitychange.visible={|shown| …}"}</code></td><td>On <code>{"<Document>"}</code>: given whether the page shows (false while its tab is hidden).</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -292,8 +293,9 @@ view! = |_|
 				The platform also has components you import (<code>import pf.Loading</code>, and so on):
 				<code>{"<Loading fallback={…}>"}</code> and <code>{"<Errored fallback={…}>"}</code> for
 				<a href={"${Paths.components}#waiting"}>waiting and failing</a>, <code>{"<Repeat>"}</code> for rows
-				without a list, <code>{"<Title>"}</code> for the document's title, and <code>{"<Navigate>"}</code> for
-				<a href={"${Paths.routing}#navigating"}>navigating</a>.
+				without a list, <code>{"<Title>"}</code> for the document's title,
+				<code>{"<HttpStatusCode code={404} />"}</code> for the status the server answers the page with, and
+				<code>{"<Navigate>"}</code> for <a href={"${Paths.routing}#navigating"}>navigating</a>.
 			</p>
 
 			<Heading id="whitespace">Whitespace, as HTML has it</Heading>
@@ -334,7 +336,8 @@ view! = |_|
 				<code>p</code> is only this component's paragraphs; and styles don't reach into the components it
 				renders. A page or layout has no block, so its <code>{"<style>"}</code> goes at the file's top level,
 				for the whole file. A component, or a file's top level, has at most one <code>{"<style>"}</code>, with
-				no attributes. Its lines are blank in the Roc, so line numbers stay yours.
+				no attributes, and no <code>@import</code>, <code>@charset</code> or <code>@namespace</code> (they must
+				come first in a stylesheet). Its lines are blank in the Roc, so line numbers stay yours.
 			</p>
 			<Example source={Sources.scoped} output={Scoped.demo({})} live />
 			<p>
@@ -345,11 +348,11 @@ view! = |_|
 				<code>spin</code>. Nested rules work, <code>&amp;</code> too.
 			</p>
 			<p>
-				<code>rocx build</code> puts every <code>{"<style>"}</code> in the app into one stylesheet,
+				rocx puts every <code>{"<style>"}</code> in the app into one stylesheet,
 				<code>Generated/Styles.roc</code>. The root layout adds it to its <code>{"<head>"}</code> with
-				<code>{"{Styles.style}"}</code>: a <code>{"<link>"}</code> to
-				<code>/rocx/styles-<var>hash</var>.css</code>, named by its content, so the browser keeps it for every
-				page and any change gives it a new name.
+				<code>{"<NoHydration>{Styles.style}</NoHydration>"}</code> (so none of it is in the wasm): a
+				<code>{"<link>"}</code> to <code>/rocx/styles-<var>hash</var>.css</code>, named by its content, so the
+				browser keeps it for every page and any change gives it a new name.
 			</p>
 
 			<Heading id="stories">Stories</Heading>

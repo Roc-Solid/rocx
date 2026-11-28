@@ -4,7 +4,8 @@ import pf.Time
 import auth.Auth
 import auth.Roles
 
-## The app's people, and who gets in (`admit!`, which the auth routes ask at every sign-in).
+## Who gets in (`admit!`, which the auth routes ask at every sign-in), where else one may sign in,
+## who is an admin, and the roles the app gives. The users themselves are packages/auth's (D-134).
 Accounts := [].{
 
 	## Where else one may sign in: the plugin's list, and routes/auth/[provider]/'s.

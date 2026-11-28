@@ -4,10 +4,11 @@ import pf.Log
 import auth.Auth
 import email.Email
 
-## Limited per client and per address (packages/guard), so this route counts mails, not page loads.
 ## POST /api/sign-in/mail, from the sign-in page's form: a link that signs `email` in, mailed to
 ## it (over SMTP_URL; without it, under `rocx dev`, to the dev mailbox), going on to `then` after.
 ## The answer is the same whether the address has an account, so it tells nobody who uses the app.
+## The folder's middleware limits it per client and per address (packages/guard), so it counts
+## mails, not page loads.
 post! : { request : Server.Request, params : {}, context : {}, body : { email : Str, then : Str } } => Try({ sent : Str }, Endpoint.Refusal)
 post! = |{ body, .. }| {
 	to = body.email.trim().with_ascii_lowercased()

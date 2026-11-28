@@ -58,8 +58,8 @@ view! = |_|
 			</p>
 			<Code source={"app [program] { charts: \"../packages/charts/main.roc\", pf: platform \"…/server/platform/main.roc\" }"} numbers={Bool.False} />
 			<p>
-				<code>rocx build</code> then copies each chart into your app; in a <code>.rocx</code> file,
-				<code>import charts.BarChart</code> imports it (the <a href={"${Paths.ecosystem}#halves"}>ecosystem's
+				<code>rocx generate</code> (which <code>rocx dev</code> and <code>rocx build</code> run first) copies
+				each chart into your app; in a <code>.rocx</code> file, <code>import charts.BarChart</code> imports it (the <a href={"${Paths.ecosystem}#halves"}>ecosystem's
 				overview</a> explains why). A chart needs its data and a few words about it:
 			</p>
 			<Code source={"import charts.BarChart\nimport charts.Format\n\n<BarChart data!={rain!()} label=\"Rain each month, in millimetres\" format={|mm| Format.num(mm, 0)} />"} numbers={Bool.False} />
@@ -142,7 +142,7 @@ view! = |_|
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
 						<tr>
-							<td><code>{"data! : () => List({ label : Str, values : List(Dec) })"}</code></td>
+							<td><code>{"data! : () => List(StackedBarChart.Column)"}</code>, <code>{"Column : { label : Str, values : List(Dec) }"}</code></td>
 							<td>
 								A column per item, one value per series stacked from the axis up. A column belongs
 								to its
@@ -177,7 +177,7 @@ view! = |_|
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
 						<tr>
-							<td><code>{"data! : () => List({ x : Dec, y : Dec })"}</code></td>
+							<td><code>{"data! : () => List(LineChart.Point)"}</code>, <code>{"Point : { x : Dec, y : Dec }"}</code></td>
 							<td>
 								The points, left to right: across by <code>x</code> (a day, an hour, a time in
 								milliseconds), to scale, and up by <code>y</code>. When they change, the line glides
@@ -253,7 +253,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
-						<tr><td><code>{"data! : () => List(Dec)"}</code></td><td>The values, left to right. When they change, the line glides to them.</td></tr>
+						<tr><td><code>{"data! : () => List(Dec)"}</code></td><td>The values, left to right. When they change, the line glides to them; if their number changes, it jumps.</td></tr>
 						<tr><td><code>{"label! : () => Str"}</code></td><td>What it shows, for screen readers: with no axis, say the trend. An accessor, since it changes with the data.</td></tr>
 					</tbody>
 				</table>
@@ -297,8 +297,10 @@ view! = |_|
 			</TableWrap>
 			<p>
 				The middle shows the total, or a slice's share while you point at it, focus it (Tab reaches each) or
-				point at its legend line. A slice keeps its colour as others come and go; a new slice takes a colour
-				no other has, unless the data gives each its own.
+				point at its legend line. Shares are whole percents that add up to 100, and
+				<code>{"<1%"}</code> for a value too small to make one. Its slice is still drawn, as a sliver; the
+				legend and the total keep the true values. A slice keeps its colour as others come and go; a new
+				slice takes a colour no other has, unless the data gives each its own.
 			</p>
 			<p>
 				A bar or a slice may carry its colour in the data, as a slice for each party in its party's:
@@ -320,7 +322,7 @@ view! = |_|
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
 						<tr>
-							<td><code>{"data! : () => List({ label : Str, x : Dec, y : Dec })"}</code></td>
+							<td><code>{"data! : () => List(ScatterChart.Dot)"}</code>, <code>{"Dot : { label : Str, x : Dec, y : Dec }"}</code></td>
 							<td>
 								A dot per item, across by <code>x</code> and up by <code>y</code>. A dot belongs to
 								its label,
@@ -355,7 +357,7 @@ view! = |_|
 					<tbody>
 						<tr><td><code>{"data! : () => List(List(Dec))"}</code></td><td>A list of values for each row, one value per column. A cell's colour goes from <code>--chart-heat-low</code> at zero to <code>--chart-heat-high</code> at the greatest value.</td></tr>
 						<tr><td><code>{"rows : List(Str)"}</code></td><td>The rows' labels, down the side.</td></tr>
-						<tr><td><code>{"columns : List(Str)"}</code></td><td>The columns' labels. Each appears in the readout; along the bottom there is room for about eight, so with more columns only every second or third is shown.</td></tr>
+						<tr><td><code>{"columns : List(Str)"}</code></td><td>The columns' labels. Each appears in the readout; along the bottom, at most eight are shown, evenly spaced.</td></tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
 						<tr><td><code>{"format : (Dec -> Str) ?? Format.short"}</code></td><td>A value as text: the scale's ends, and the cell pointed at.</td></tr>
 					</tbody>
@@ -414,7 +416,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Property</th><th>Sets</th></tr></thead>
 					<tbody>
-						<tr><td><code>--chart-color</code>, <code>--chart-active</code></td><td>The colour of bars, lines and dots; the colour of a bar or dot pointed at, and of the line chart's point. A bar's own <code>color</code> comes first.</td></tr>
+						<tr><td><code>--chart-color</code>, <code>--chart-active</code></td><td>The colour of bars, lines and dots; the colour of a mark pointed at or focused, of the line chart's point and of the sparkline's last dot. A bar's own <code>color</code> comes first.</td></tr>
 						<tr><td><code>--chart-1</code> to <code>--chart-5</code></td><td>The colours of a donut's slices, a stacked bar chart's series and a stacked area chart's bands. A colour stays with its slice or series; a band takes its place's. A slice's or a band's own <code>color</code> comes first.</td></tr>
 						<tr><td><code>--chart-heat-low</code>, <code>--chart-heat-high</code></td><td>A heatmap's colours at zero and at the greatest value.</td></tr>
 						<tr><td><code>--chart-fill</code>, <code>--chart-stroke</code>, <code>--chart-stroke-width</code>, <code>--chart-outline</code></td><td>The marks' fill opacity (a stacked area chart's bands 0.3 unless set) and outline. With <code>--chart-outline: 1</code>, a slice or a part is outlined in its own colour instead of the surface's.</td></tr>

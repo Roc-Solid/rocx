@@ -228,10 +228,10 @@ Presence := [].{
 		}
 	}
 
-	## Who is here, as a presence stream says: `members!` (in the order they came), `synced!`
-	## (whether the copy follows the server), `receive!` for each message the stream sends, and
+	## Who is here, as a room's channel says: `members!` (in the order they came), `synced!`
+	## (whether the copy follows the server), `receive!` for each message the channel sends, and
 	## `lost!` for when it drops (who was here stays on show until the next snapshot). A message
-	## after a missed one calls `on_gap!`, which should get a snapshot again (reconnect).
+	## after a missed one calls `on_gap!`, which should get a snapshot again (`Endpoint.resync!`).
 	create_presence! : (() => {}) => { members! : () => List(Room.Here(meta)), synced! : () => Bool, receive! : Mirror.Message(meta) => {}, lost! : () => {} }
 		where [meta.is_eq : meta, meta -> Bool]
 	create_presence! = |on_gap!| {

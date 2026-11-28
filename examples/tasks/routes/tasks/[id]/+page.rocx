@@ -13,14 +13,14 @@ import ../../../Generated/Api
 import ../../../Generated/Paths
 
 ## A task's page: everything about it in one form (title, notes, due day, who has it, done), and a
-## button that deletes it. Both are plain forms. Saving posts to this page's own URL
-## (`POST /tasks/:id`), whose endpoint reads the form with `TaskForm.editing` (packages/forms) and
+## button that deletes it. Both are plain forms. Saving posts to its endpoint
+## (`POST /api/tasks/:id`), which reads the form with `TaskForm.editing` (packages/forms) and
 ## sends you back to the list, or refuses it (422) with each field's issues, which show here under
 ## their fields, with what was typed: without JavaScript the browser posts and comes back (a 303,
 ## and a flash); with it, the runtime sends the form with fetch and the page stays. Deleting posts
 ## to `/api/tasks/delete`, which sends a plain form to the list, and answers the runtime with the
 ## list's id, which this page then goes to. A task that isn't there is the app's error page, a 404
-## (its endpoint refuses it, and `get!` fails the page). Leaving it with changes not saved asks
+## (its endpoint refuses it, and `read!` fails the page). Leaving it with changes not saved asks
 ## first (`Router.use_before_leave!`).
 meta = { title: "A task" }
 

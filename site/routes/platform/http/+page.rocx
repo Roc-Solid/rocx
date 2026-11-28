@@ -81,8 +81,8 @@ view! = |_|
 				An older API (<code>Http.get</code>, <code>post_form</code>, <code>post_json</code>,
 				<code>with_header</code>, <code>{"send!(request, opts)"}</code>, <code>send_request!</code>,
 				<code>Http.header</code>, <code>Http.text</code>) is deprecated; each is <code>fetch!</code>
-				underneath. The <a href={Paths.ecosystem_storage}>storage package</a> takes <code>Http.send!</code>
-				because it names no platform, so it can't name <code>Http.Init</code>.
+				underneath. The <a href={Paths.ecosystem_storage}>storage package</a>'s S3 client is still given
+				<code>Http.send!</code>: it is plain Roc on no platform, so it can't name <code>Http.Init</code>.
 			</p>
 
 			<Heading id="limits-out">Limits and errors</Heading>
@@ -273,6 +273,11 @@ view! = |_|
 				it stays out of <code>/openapi.json</code> (<a href={"${Paths.routing}#endpoints"}>endpoints</a>).
 			</p>
 			<Code source={"## Every method, as it comes.\nrespond! : { request : Server.Request, params : {}, context : c } => Server.Response\nrespond! = |{ request, .. }| Server.response(200, [{ name: \"content-type\", value: \"text/plain\" }], \"\${request.method} \${Server.text_of(request)}\")"} numbers={Bool.False} />
+			<p>
+				One method can answer as it likes too, and stay an endpoint: a handler whose answer is
+				<code>{"Try(Server.Response, Endpoint.Refusal)"}</code> has its <code>Ok</code> sent as it is (a
+				text, a file, a redirect that sets a cookie), and its refusals as any handler's.
+			</p>
 
 			<Heading id="limits">Not yet</Heading>
 			<ul>

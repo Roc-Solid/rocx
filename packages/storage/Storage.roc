@@ -18,7 +18,7 @@ import S3
 ## - `memory:<name>` (`memory:` alone too): the server's memory, gone when it stops: for tests.
 ##
 ## A `file:` or `memory:` URL may give the secret its signed URLs are made with (`?secret=…`), so
-## they outlive a restart; without one the server draws one when it starts.
+## they outlive a restart; without one the server draws one when first asked, kept while it runs.
 ##
 ##     bucket = Storage.from_url(Env.var!("STORAGE_URL") ?? "")?
 ##     Storage.put!(bucket, "images/${id}", bytes, { content_type: "image/jpeg" })?

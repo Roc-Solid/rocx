@@ -2,10 +2,11 @@
 
 Send a Roc Solid app's errors to [PostHog's error tracking](https://posthog.com/docs/error-tracking).
 Everything runs in the app: a middleware, two handlers for the app's route files and a plugin's
-background loop. It needs nothing from the platform beyond what any plugin has. The user guide is the docs site's
-[PostHog page](https://roc-solid.github.io/ecosystem/posthog); this file is the reference.
+background loop. It needs nothing from the platform beyond what any plugin has. The user guide is
+the docs site's [PostHog page](https://roc-solid.github.io/ecosystem/posthog); this file is the
+reference.
 
-It reports four kinds of error:
+It reports five kinds of error:
 
 | What | How | Type | Handled |
 | --- | --- | --- | --- |

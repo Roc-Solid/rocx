@@ -1,8 +1,8 @@
 # dbcheck
 
 dbcheck checks an app's row types against what its database says each SQL statement returns, at
-compile time. `rocx check --sql` uses it, and so does `rocx dev` after each build. An app never
-imports it. It is plain Roc on no platform.
+compile time. `rocx check --sql` uses it, and so does `rocx dev` each time it starts the app's
+server. An app never imports it. It is plain Roc on no platform.
 
 For example, if a page reads `Db.all!("select id, note from notes", [])` into
 `List({ id : I64, note : Str })` and `notes.note` has no `not null`, the check fails at that call:

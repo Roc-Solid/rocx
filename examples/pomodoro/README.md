@@ -30,6 +30,18 @@ migrates it as it starts. `rocx dev --port 8081` serves on another port.
 
 To make the chime again: `node sounds.mjs`.
 
+To build it to deploy (the server optimized for speed, the wasm for size, the chime with the
+browser's files):
+
+```sh
+cd examples/pomodoro
+../../bin/rocx build                  # dist/server and dist/static
+dist/server --static dist/static      # on PORT, 8080 unless set
+```
+
+`rocx build --image` makes a container image instead, `pomodoro.tar`, with `/app/data` for the
+database's volume. The phone has no release build yet: `rocx dev --android` is the way onto it.
+
 ### On an Android phone
 
 ```sh
@@ -96,17 +108,18 @@ TODO.md.
 From the repository's root:
 
 ```sh
-just examples pomodoro
+just examples pomodoro           # build, type-check, lint, the SQL, the expects and the node tests
+just examples-release pomodoro   # rocx build, then the node tests against a server built --opt=speed
 ```
 
-That builds the app, type-checks both programs, lints it, checks its SQL against SQLite
-(`rocx check --sql`), runs the `expect`s and the node tests. To run the parts yourself:
+`just examples` checks the SQL against SQLite (`rocx check --sql`) too. To run the parts yourself:
 
 ```sh
 bin/rocx fmt --check examples/pomodoro
 bin/rocx check examples/pomodoro   # build it, type-check both programs; problems at their .rocx lines
-bin/rocx check -- .tools/roc-active test examples/pomodoro/main.roc   # the expects: lengths, the clock, the shares
-node --test 'examples/pomodoro/test/*.test.mjs'                       # over HTTP, and in Chromium
+bin/rocx check --sql examples/pomodoro   # each statement prepared against the migrations
+bin/rocx test examples/pomodoro    # the expects: lengths, the clock, the shares
+node --test 'examples/pomodoro/test/*.test.mjs'   # over HTTP, and in Chromium
 ```
 
 - **`test/http.test.mjs`**: the page rendered on the server (25:00, Focus, Start, today's count); a

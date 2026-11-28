@@ -1,7 +1,7 @@
 ## An avatar stack's arithmetic: who is shown and how many more (`split`), a face's initials when it
 ## has no picture (`initials`), a colour of its own when the app gives none (`color`: the same key,
 ## the same colour, on every page), a status as a word (`status_word`), and what a screen reader hears
-## (`names`, `label`).
+## (`said`, `names`, `label`).
 Stack := [].{
 
 	## A face's status: here (`Online`, no dot), away from the screen (`Away`: a hidden tab, an orange

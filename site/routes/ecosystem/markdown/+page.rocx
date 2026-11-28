@@ -74,10 +74,11 @@ view! = |_|
 				tight list (no blank lines between items) has no <code>{"<p>"}</code> around its items.
 			</p>
 			<p>
-				<code>rocx build</code> copies the component from the package's <code>components/</code> into the app
+				rocx copies the component from the package's <code>components/</code> into the app
 				(<code>Generated/markdown/Markdown.roc</code>), because a package can't import the platform's
-				<code>Html</code> for server and browser at once. There is nothing to register: it is a package, not
-				a plugin.
+				<code>Html</code> for server and browser at once. <code>rocx generate</code> does it, and
+				<code>rocx dev</code> and <code>rocx build</code> run that first. There is nothing to register: it is
+				a package, not a plugin.
 			</p>
 
 			<Heading id="document">The document is data</Heading>
@@ -216,11 +217,11 @@ view! = |_|
 				<code>[a, b]</code>), inline maps, quoted and plain text, <code>|</code> and <code>{">"}</code> blocks,
 				comments, and null, which leaves a field to its default. It doesn't read anchors, aliases or tags.
 			</p>
-			<Callout kind="note" title="In an app, rocx build finds the files">
+			<Callout kind="note" title="In an app, rocx finds the files">
 				<p>
 					In an app you don't list the files. Each lower-case folder under <code>content/</code> is a
-					collection: <code>rocx build</code> finds its Markdown files, at any depth, and writes a module for
-					it, such as <code>Generated/Content/Posts.roc</code> for <code>content/posts/</code>, each file
+					collection: <code>rocx generate</code> (which <code>rocx dev</code> and <code>rocx build</code> run)
+					finds its Markdown files, at any depth, and writes a module for it, such as <code>Generated/Content/Posts.roc</code> for <code>content/posts/</code>, each file
 					imported as text. Put the frontmatter's type beside them (<code>content/posts/Post.roc</code>), and
 					<code>Posts.all</code> is every entry, read as the app is built, and <code>{"Posts.get(id)"}</code>
 					is one. A new post is just a new file. Without a type, the module has only <code>Posts.files</code>,
@@ -271,12 +272,13 @@ view! = |_|
 					filter.
 				</li>
 				<li><code>{"<Markdown>"}</code>, its hooks and <code>Markdown.highlight</code>, on the server and in the browser.</li>
-				<li>Frontmatter read into a record, collections found by <code>rocx build</code> under <code>content/</code>, and a bad file failing the build.</li>
+				<li>Frontmatter read into a record, collections found under <code>content/</code>, and a bad file failing the build.</li>
 			</ul>
 			<p>Not yet (each a proposal in <code>packages/markdown/PROPOSALS.md</code>):</p>
 			<ul>
 				<li>Trusted raw HTML in <code>{"<Markdown>"}</code>, or HTML from an allowlist.</li>
 				<li>The highlighter these docs use, in a package of its own, so any app can colour code.</li>
+				<li>An RSS or Atom feed for a collection. <code>examples/journal</code> writes its own Atom feed.</li>
 				<li>A component that never hydrates, so <code>{"<Markdown>"}</code> stays out of the wasm without <code>{"<NoHydration>"}</code> around it.</li>
 			</ul>
 			<p>

@@ -67,6 +67,12 @@ and nested transactions (D-076). And one more the user asked for: impersonation
 - **Roles on Turso**: the open grant is a partial unique index and an upsert on it; not tried on
   Turso yet.
 
+## 7. Users' next steps (D-134 built the first)
+
+- **The apps onto it**: `rocx new`'s template (its `users` table and `made!`), the notes example
+  (`Store.person_for!`) and packages/stripe's example (`Accounts.made!`) still keep users of their
+  own. Moving them onto `user_for!` is next.
+
 ## Open questions
 
 None now. (Whether `rocx new` should list `Guard.rate_limit` on its sign-in endpoint was the last:

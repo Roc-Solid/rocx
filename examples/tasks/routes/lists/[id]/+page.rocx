@@ -12,10 +12,10 @@ import ../../../components/AddTask
 import ../../../components/FilterTabs
 
 ## A list: its tasks, filtered by the address (`?show=open`), with a box to tick on each, buttons
-## to move and delete, and the form that adds one. Its data is its own URL's (`GET /lists/:id`,
-## in `+server.roc` beside this file), read in a memo: once a change is in, the runtime reads it
+## to move and delete, and the form that adds one. Its data is its endpoint's (`GET /api/lists/:id`,
+## in routes/api/lists/[id]/+server.roc), read in a memo: once a change is in, the runtime reads it
 ## again, and shows the server's list in place of the one it guessed. A list that isn't there is
-## the app's error page, a 404: its endpoint refuses it (`NotFound`), and `get!` fails the page.
+## the app's error page, a 404: its endpoint refuses it (`NotFound`), and `read!` fails the page.
 meta = { title: "A list" }
 
 view! = |{ params, .. }| {

@@ -5,6 +5,6 @@
 ##
 ## `Timeline` is the arithmetic of a moment: how far along a span a frame is, eased, sprung, or
 ## through keyframes; it is plain Roc, on no platform. The components (`<Player>`, `<Sequence>`)
-## are in `components/`: `rocx build` copies them into each app that names this package, since a
+## are in `components/`: `rocx generate` copies them into each app that names this package, since a
 ## package can't import a platform's `Html` for both of an app's halves at once. See README.md.
 package [Timeline] {}

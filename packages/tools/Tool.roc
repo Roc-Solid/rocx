@@ -11,8 +11,8 @@ import JsonValue
 ## any JSON and answers with content of its own: text, images, links.
 ##
 ## A refusal (`Err("No note 7")`) goes back to the model as a tool error, which it can read and act
-## on, as do arguments that don't fit; a failure inside (`Failed`) as a JSON-RPC error, its reason
-## kept out of the answer, for the server's log.
+## on, as do arguments that don't fit. A failure inside (`Failed`) keeps its reason out of the
+## answer, for the server's log: MCP answers a JSON-RPC error, packages/ai `"<name> failed."`.
 Tool(ctx) := {
 	name : Str,
 	title : Str,
@@ -201,8 +201,7 @@ Tool(ctx) := {
 	}
 
 	## What running a tool came to: its answer (content, and data if it has some); a refusal the
-	## model can act on, as a tool error; or a failure inside, as a JSON-RPC error, its reason for
-	## the server's log.
+	## model can act on, as a tool error; or a failure inside, its reason for the server's log alone.
 	Outcome : [Answered({ content : List(Content), structured : Try(JsonValue, [Unstructured]) }), Refused(Str), Failed(Str)]
 
 	## The tool as `tools/list` lists it. A schema that isn't JSON is listed as any object's (and

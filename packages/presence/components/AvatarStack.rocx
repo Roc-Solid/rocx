@@ -9,7 +9,8 @@ import presence.Stack
 ## many more (`+3`). One who comes grows in, one who goes fades out. A screen reader hears who is
 ## here (`Stack.label`), or `label` when one is given, and each face's status after its name.
 ##
-## A "who's viewing this page" stack is one fed by a presence stream for the page's path.
+## A "who's viewing this page" stack needs a room for the page: a route's channel today
+## (PROPOSALS.md, question 1).
 AvatarStack := [].{
 	Props := {
 		faces! : () => List(Stack.Face),

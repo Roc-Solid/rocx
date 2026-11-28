@@ -4,8 +4,9 @@
 ## meal described in words read into a typed record (`Ai.extract!`). The notes are in the server's
 ## memory (`Kv`), and so is each chat (`Chats`).
 ##
-## ANTHROPIC_API_KEY from the environment; under `rocx dev` the model is claude-haiku-5-5 unless
-## ANTHROPIC_MODEL names another. The tests run it against a stand-in for the API (test/stand-in.mjs).
+## ANTHROPIC_API_KEY from the environment, or from the `.env` where `rocx dev` runs; under `rocx dev`
+## the model is claude-haiku-5-5 unless ANTHROPIC_MODEL names another. The tests run it against a
+## stand-in for the API (test/stand-in.mjs).
 app [program] { ai: "../main.roc", crypto: "../../crypto/main.roc", pf: platform "../../../server/platform/main.roc", tools: "../../tools/main.roc" }
 
 import ai.Ai

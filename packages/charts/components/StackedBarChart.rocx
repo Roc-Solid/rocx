@@ -21,6 +21,8 @@ import charts.Ticks
 ## colours (`--chart-1` to `--chart-5`): a sixth series shares one. A value below zero counts as
 ## zero.
 StackedBarChart := [].{
+
+	## A column: its label, and a value for each series, the first at the bottom.
 	Column : { label : Str, values : List(Dec) }
 
 	## A column and its key: its label, numbered when another column before it has the same one.

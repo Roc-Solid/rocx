@@ -8,7 +8,7 @@ import Room
 ## number means a change was missed (`Err(Gap)`): it should ask for a snapshot again.
 Mirror(meta) := { members : List(Room.Here(meta)), version : U64, heard : Bool, synced : Bool }.{
 
-	## What a presence stream sends.
+	## What a room's channel sends a page (`Wire.Event`'s `Presence`).
 	Message(m) : [Snapshot({ version : U64, members : List(Room.Here(m)) }), Delta({ version : U64, change : Room.Change(m) })]
 
 	## A copy that hasn't heard yet: no one here, and changes ignored until a snapshot comes. (`heard`:

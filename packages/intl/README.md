@@ -6,10 +6,9 @@ chosen from a cookie or `Accept-Language`. It is plain Roc on no platform, so a 
 renders and a component in the browser write the same text, and hydration finds what the server
 wrote.
 
-The docs site's intl page (`/ecosystem/intl`) is the guide: a live demo (a picker over numbers,
-money and dates) and, written as the site is built, what each starter locale writes and the
-messages. `example/` is a small app that uses the package on both platforms; the page's listings
-are picked from it. This README is the reference.
+The docs site's intl page (`/ecosystem/intl`) is the guide: a live demo, and what each starter
+locale writes, computed as the site is built. `example/` is a small app that uses the package on
+both platforms; the page's listings are its files. This README is the reference.
 
 ## Installing it
 
@@ -20,8 +19,8 @@ app [program] { intl: "../packages/intl/main.roc", pf: platform "…/server/plat
 ```
 
 Any file of either half of the app, or a test, imports the modules as they are
-(`import intl.Intl`). `rocx build` copies the one component, `components/Language.rocx`, into the
-app (`Generated/intl/Language.roc`), as every package's components are copied, and
+(`import intl.Intl`). The one component, `components/Language.rocx`, is copied into the app when
+rocx writes its code (`Generated/intl/Language.roc`), as every package's components are, and
 `import intl.Language` imports that copy.
 
 ```roc
@@ -53,11 +52,11 @@ intl.t("cart.items", [("count", Int(3))])        # "3 produkty"
 | `Intl` | One locale's way of writing things, and its messages. Made with `new`, `choose` or `for_tag`; the functions are under [Formatting](#formatting) and [Messages](#messages). |
 | `Locale` | A BCP 47 tag: `parse` (`Locale.parse("EN_us")` is `en-US`), `of` (a literal; crashes on a bad one), `tag`, `language_of`, `region_of`, `direction`; `fallbacks` (`pl-PL`, then `pl`); `accept_language(header)`; `best(wanted, supported, default)` and `lookup(wanted, supported)`; `wanted(request, cookie)`, what a request asks for |
 | `Locales` | Each starter locale's data, from CLDR 48: `en`, `en_gb`, `de`, `fr`, `es`, `pl`, `cs`, `ru`, `ar`, `ja`, and `all`. A `Locales.Data` holds a locale's tag, its name in its own language, its number symbols, date names and patterns, relative-time words, and its plural rules (`cardinal`, `ordinal`). |
-| `Plural` | CLDR's categories (`Category : [Zero, One, Two, Few, Many, Other]`), each language's cardinal and ordinal rules, `operands` (a number's digits, as plural rules read them), `Forms` (a word for each category) and `pick`, `name`, `from_name` |
+| `Plural` | CLDR's categories (`Category : [Zero, One, Two, Few, Many, Other]`), each language's cardinal and ordinal rules, `operands` (a number's digits, as plural rules read them) and `of_dec`, `Forms` (a word for each category, `none` to spread) and `pick`, `name`, `from_name` |
 | `NumberFormat` | Numbers by a locale's `Symbols`: `format` with `Options` (`{ min_fraction, max_fraction, grouping }`, `defaults` up to three fraction digits, grouped), `percent`, `compact`, `currency`, `currency_digits`, `digits` |
 | `Date` | A day on the calendar: `ymd(2026, 11, 21)`, `of_millis(ms, offset_minutes)`, `from_days`/`to_days` (days since 1970), `weekday` (Sunday is 0), `add_days`, `add_months`, `days_between`, `days_in_month`, `is_leap_year`, `parse_iso`, `to_iso` |
 | `DateFormat` | Dates and times by CLDR's patterns (`d MMMM y`), in four styles (`Style : [Short, Medium, Long, Full]`) |
-| `RelativeTime` | "in 3 days", "3 dni temu" (`Unit : [Second, Minute, Hour, Day, Week, Month, Year]`); `between(ms)`, the unit a difference is said in |
+| `RelativeTime` | "in 3 days", "3 dni temu" (`Unit : [Second, Minute, Hour, Day, Week, Month, Year]`): `format`, `days` (yesterday, today, tomorrow), and `between(ms)`, the unit a difference is said in |
 | `Message` | The ICU MessageFormat subset under [Messages](#messages): `parse`, `format`, `names`, `literal`, and `Arg : [Text(Str), Int(I64), Num(Dec), Moment(I64)]` |
 | `Catalog` | Translated messages, a set for each locale, with fallback to the default: `new`, `empty`, `add`, `merge`, `find`, `has_key`, `keys`, `locales`, `default_locale`, `missing`, `problems`, `explain` |
 | `Validation` | `catalog`: the words for packages/forms' issues (`too_short`, `not_email`, …) in every starter locale |
@@ -111,7 +110,7 @@ The request's locale is a GET endpoint's answer. The root layout reads it as the
 the page carries it and the browser hydrates in the locale the server chose:
 
 ```roc
-# routes/locale/+server.roc: GET /locale (beside its POST, which keeps a reader's pick)
+# routes/locale/+server.roc: GET /locale (its POST keeps a reader's pick, below)
 import pf.Server
 import pf.Endpoint
 import intl.Intl
@@ -134,7 +133,6 @@ page turns right to left for Arabic:
 # routes/+layout.rocx
 import pf.Html
 import pf.Context
-import pf.Endpoint
 import intl.Language
 import ../I18n
 import ../Generated/Styles
@@ -191,7 +189,8 @@ Basket := [].{
 
 `<Language label="…" />` is a `<select>` of the supported locales, each named in its own language
 ("English", "polski", "العربية"). Picking one switches the page at once, then calls `remember!`.
-The endpoint that keeps the choice is the app's own:
+The endpoint that keeps the choice is the app's own. It sets the cookie on an answer of its own,
+`Answer(…)`:
 
 ```roc
 # routes/locale/+server.roc
@@ -312,7 +311,7 @@ the reader's language, from `Validation.catalog`, which has words for all ninete
 every starter locale, in forms' voice ("Use at least 3 characters"):
 
 ```roc
-intl = Intl.choose(I18n.supported, wanted).with_catalog(Catalog.merge(Validation.catalog, I18n.catalog))
+intl = Intl.choose(I18n.supported, wanted).with_catalog(I18n.catalog)   # merged over Validation.catalog
 
 intl.issue(Issues.key(issue.code), Issues.params(issue.code))     # "Wpisz co najmniej 3 znaki"
 ```
@@ -374,12 +373,13 @@ An app's wasm holds only the locales it names. Measured on 2026-11-21 on a small
 
 ## Status
 
-Works today, and tested: locales and how one is chosen, plural rules, numbers, money, compact
-numbers, dates and times, relative times, messages and catalogs, and forms' issues, for the ten
-starter locales; the `Language` context and picker. The example app renders its page in Polish for
-`Accept-Language: pl` and in Arabic (`dir="rtl"`) for a `locale=ar` cookie, hydrates without a
-warning, switches language in place, keeps the choice through `POST /locale`, and is in it again
-after a reload.
+Works today, and tested by the expects: locales and how one is chosen, plural rules, numbers, money,
+compact numbers, dates and times, relative times, messages and catalogs, and forms' issues, for the
+ten starter locales. The `Language` context and picker work in the example app, which
+`just examples-release` builds and which has no tests of its own. Checked by hand: it renders in
+Polish for `Accept-Language: pl` and in Arabic (`dir="rtl"`) for a `locale=ar` cookie, hydrates
+without a warning, switches language in place, keeps the choice through `POST /locale`, and is in
+it again after a reload.
 
 Not yet (each has a proposal in `PROPOSALS.md`): a middleware and an endpoint shipped by the
 package (today the app writes the dozen lines above); message keys checked by the compiler; named

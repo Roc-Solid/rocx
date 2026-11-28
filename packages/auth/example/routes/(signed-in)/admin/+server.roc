@@ -4,9 +4,10 @@ import auth.Auth
 import ../../../Middlewares
 import ../../../Policy
 
-## GET /admin: for admins (`Policy`'s `Administer`: on `ADMIN_EMAILS`, as who really signed in) with two-factor sign-in on; an
-## admin without it is told to turn it on (403), anyone else refused. Who must have it is the
-## app's to say: the package only answers whether it is on (`Auth.two_factor!`).
+## GET /admin: for admins (`Policy`'s `Administer`: on `ADMIN_EMAILS`, as who really signed in)
+## with two-factor sign-in on; an admin without it is told to turn it on (403), anyone else
+## refused. Who must have it is the app's to say: the package only answers whether it is on
+## (`Auth.two_factor!`).
 get! : { request : Server.Request, params : {}, context : Middlewares.Me } => Try({ admin : Str }, Endpoint.Refusal)
 get! = |{ context, .. }| {
 	Policy.need(context, Administer)?

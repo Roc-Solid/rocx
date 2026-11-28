@@ -38,9 +38,9 @@
 ##   name and its SQL, in its database's flavor: `import "migrations/0001_notes.sql" as notes : Str`
 ##   embeds a file).
 ## - `actors`: the methods of the kinds of actor the app defines (`Actor.handler(method)`), which
-##   `rocx build` lists: the host runs their turns (`actor_for_host!`), one at a time an actor, and
-##   refuses a call to a kind that isn't here; two methods of one kind with one name stop the server
-##   as it starts.
+##   rocx lists (`Generated/App`): the host runs their turns (`actor_for_host!`), one at a time an
+##   actor, and refuses a call to a kind that isn't here; two methods of one kind with one name stop
+##   the server as it starts.
 ## - `logs`: the format of the server's log (`Log`), the host's lines and the app's: `{ format: Auto }`
 ##   (`ROCX_LOG`, `pretty` or `json`, if it is set; or else pretty when stderr is a terminal, and JSON
 ##   when it isn't), `Pretty` or `Json`. `App.program` says `Auto`; an app says otherwise with
@@ -426,7 +426,8 @@ context_for_host! = |{}| {
 ## The last of the start, given the app's context: the actors' timers a stop left waiting, set
 ## again (D-057: a timer may fire at once, and an actor's turn needs the context), then the plugins'
 ## starts, in their order (the first `Err` stops the server; a jobs plugin's queues again the jobs
-## a stop cut short), and a line a plugin on the log.
+## a stop cut short), one line on the log naming them (what each added too, under `--debug`), and
+## under `--dev` the places to open, for the host to list (D-111).
 started_for_host! : Box(AppContext) => Try({}, Str)
 started_for_host! = |boxed| {
 	context = Box.unbox(boxed)

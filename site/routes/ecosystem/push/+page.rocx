@@ -60,8 +60,8 @@ view! = |_|
 			<p>
 				<code>rocx dev</code> restarts the server at each change to its code, and a new pair means each
 				browser's button shows off until clicked again. To keep the pair, copy the two settings into
-				<code>.env</code>. Without <code>VAPID_SUBJECT</code>, the run tells push services
-				<code>mailto:dev@example.com</code>, and logs that.
+				<code>.env</code>, which <code>rocx dev</code> reads as it starts. Without <code>VAPID_SUBJECT</code>,
+				the run tells push services <code>mailto:dev@example.com</code>, and logs that.
 			</p>
 			<p>
 				A deployed server needs all three in its environment: <code>VAPID_PUBLIC_KEY</code>,
@@ -72,9 +72,8 @@ view! = |_|
 			<Code source={"curl -s localhost:8080/__rocx/push/keys\nVAPID_PUBLIC_KEY=BNc…\nVAPID_PRIVATE_KEY=Hw…"} plain numbers={Bool.False} />
 			<p>
 				A browser can only be sent to with the pair it subscribed with, so keep the keys once you have users.
-				Without <code>--dev</code>, a missing key or subject, or two keys that don't belong together, stop
-				the server at start, and it says why and how to make a pair.
-
+				Without <code>--dev</code>, a missing key or subject, or two keys that aren't a pair, stop the server
+				at start, and it says why and how to make a pair.
 			</p>
 			<p>
 				<strong>2. The plugin.</strong> Name the package in the app's header and list its plugin, with the
@@ -83,7 +82,10 @@ view! = |_|
 			<Code title={Sources.push_example_main.file} source={Sources.push_example_main.rocx} />
 			<p>The plugin brings:</p>
 			<ul>
-				<li>its table, <code>push_subscriptions</code>, in the app's database (Postgres or SQLite);</li>
+				<li>
+					its table, <code>push_subscriptions</code>, in the app's database: Postgres or SQLite, and SQLite's
+					<code>data/app.db</code> when the program names none, as here;
+				</li>
 				<li>its job, <code>push.deliver</code>, which the jobs plugin's workers run;</li>
 				<li>
 					the service worker at <code>/push-sw.js</code> and a script every page loads, both served before
@@ -302,7 +304,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Module</th><th>What it does</th></tr></thead>
 					<tbody>
-						<tr><td><code>Push</code></td><td><code>plugin(setup)</code>, the plugin (<code>at</code>, <code>owner</code>); <code>subscribe!(body, owner)</code> and <code>unsubscribe!(endpoint, owner)</code>, which its endpoints call; <code>notify!</code> and <code>broadcast!</code>; <code>public_key!</code> and <code>keys!</code> (from the environment, or under <code>--dev</code> without keys the pair the run made); <code>deliver</code>, the job; <code>send!</code>, one attempt</td></tr>
+						<tr><td><code>Push</code></td><td><code>{"plugin({})"}</code>, the plugin, with no options; <code>key_route!</code>, <code>subscribe_route!</code> and <code>unsubscribe_route!</code>, the handlers the app's route files call; <code>subscribe!(body, owner)</code> and <code>unsubscribe!(endpoint, owner)</code>, which those call; <code>notify!</code> and <code>broadcast!</code>; <code>public_key!</code> and <code>keys!</code> (from the environment, or under <code>--dev</code> without keys the pair the run made); <code>deliver</code>, the job; <code>send!</code>, one attempt</td></tr>
 						<tr><td><code>PushStore</code></td><td>the <code>push_subscriptions</code> table: <code>save!</code> (a row for each endpoint), <code>remove!</code>, <code>remove_id!</code>, <code>find!</code>, <code>of_owner!</code>, <code>everyone!</code>, and <code>delivered!</code> and <code>refused!</code>, which the job calls</td></tr>
 					</tbody>
 				</table>

@@ -3,9 +3,9 @@
 ## sign-in (their account page) give a code from an authenticator app too. README.md says how to run
 ## it, what each file is, and how to put it on a server.
 ##
-## This is the server's program. `rocx build` writes nearly all of it from `routes/` (pages,
-## layouts and endpoints, and the middleware: each `+middleware.roc` runs around the routes in its
-## directory) into `Generated/App`, with `migrations/` in it. This file says the rest: the plugins
+## This is the server's program. rocx writes nearly all of it from `routes/` (pages, layouts and
+## endpoints, and the middleware: each `+middleware.roc` runs around the routes in its directory)
+## into `Generated/App`, with `migrations/` in it. This file says the rest: the plugins
 ## (mail and sign-in), and the database.
 app [program] { auth: "{{root}}/packages/auth/main.roc", crypto: "{{root}}/packages/crypto/main.roc", email: "{{root}}/packages/email/main.roc", guard: "{{root}}/packages/guard/main.roc", pf: platform "{{root}}/server/platform/main.roc", qr: "{{root}}/packages/qr/main.roc", testing: "{{root}}/packages/testing/main.roc" }
 

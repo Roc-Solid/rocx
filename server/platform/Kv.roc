@@ -3,7 +3,7 @@ import Host
 ## The server's key-value store: values by key, kept in its memory for as long as you say, or
 ## until it stops. Never written anywhere, so a restart forgets them all: for what is cheap to lose
 ## and read often (a rate limit's counts, a cache, a one-time token, the dev mailbox). What must
-## last goes in Postgres (`Db`).
+## last goes in the database (`Db`).
 ##
 ## A value is any type JSON can write, kept as JSON and read back as the type its reader asks for.
 ## Each operation is atomic: two requests incrementing one counter both count, two adding one key

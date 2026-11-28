@@ -6,12 +6,11 @@ import auth.Auth
 import ../../../../Accounts
 import ../../../../Middlewares
 
-## Signed-in requests only: the account page's reads and posts are the user's own. (The page, at
-## /account, names the same middleware.)
 ## GET /api/account: the signed-in user's address, their sessions (a browser each), the newest first
 ## (whether it is this browser's, and when it started), and their two-factor sign-in: its `state`,
 ## `off`, `pending` (set up, waiting for the app's first code: the key, and the URI its QR code
-## holds) or `on` (with the recovery codes left).
+## holds) or `on` (with the recovery codes left). Signed-in requests only (the group's
+## `+middleware.roc`, around the page at /account too): it is the user's own.
 get! : { request : Server.Request, params : {}, context : Middlewares.Me } => Try({ email : Str, sessions : List({ id : Str, current : Bool, started : Str }), two_factor : { state : Str, secret : Str, uri : Str, recovery_codes : U64 } }, Endpoint.Refusal)
 get! = |{ context, .. }|
 	match (Auth.sessions!(context.user.id), two_factor!(context.user)) {

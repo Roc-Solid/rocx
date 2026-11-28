@@ -59,8 +59,10 @@ The Rust host (`host/src/`):
 | `kv.rs` | `Kv`: values by key in memory (its tests compile alone). |
 | `blobs.rs` | Objects for packages/storage's `file:` and `memory:` buckets (D-047). |
 | `files.rs` | Plugins' files and the scripts every page loads (D-050). |
+| `images.rs` | `enhanced:src`'s smaller copies of photos: the queue, its two workers, the directory (D-125). |
 | `memory.rs` | Named values the platform's start sets for its own modules (`Host.store_get!`, `store_set!`). |
 | `settings.rs` | What the server was started with, for Roc (`Host.setting!`). |
+| `dotenv.rs` | The file `--env-file` names, read into the environment as the server starts (D-088, D-098). |
 | `logging.rs` | The log: one queue, one writer thread, pretty or JSON lines. |
 | `roc_platform_abi.rs` | Glue generated from `platform/main.roc` (`just glue`). Don't edit it. |
 
@@ -96,7 +98,8 @@ contract) and `Generated/Handlers`. `site/main.roc` and `examples/*/main.roc` ar
    - a plugin's file (`files.rs`, D-050), before the app's middleware can refuse it;
    - under `--debug`: `GET /__rocx/plugin-files` and `GET /__rocx/allocations`;
    - the channels' `/rocx/live` and `/rocx/live/send` (`channels.rs`);
-   - for `GET` and `HEAD`, a `--file` or a file in a `--static` directory.
+   - for `GET` and `HEAD`, a photo's copy under `/rocx/images/` (D-125), then a `--file` or a file
+     in a `--static` directory.
 3. Anything else goes to Roc (`http::from_roc`). The host drops the `x-rocx-channel` and
    `x-rocx-tab` headers (only the host may send them), reads the body (up to `--max-body`, else
    413), and runs `roc::respond` as a coroutine on one of Roc's threads.
@@ -194,14 +197,17 @@ program = App.program({
     database: Sqlite("data/plate.db"),          # optional: Sqlite("data/app.db") by default
     cross_site: Refused,                        # optional: Refused by default
     plugins: [Email.plugin({})],                # optional: none by default
+    links: [{ label: "Jobs", path: "/admin/jobs" }],   # optional: listed under --dev (D-111)
 })
 ```
 
 `App.program` fills in the rest: every route behind its directories' middleware (`+middleware.roc`
 files under `routes/`, `routes/+middleware.roc` around every request: every URL is a route file,
 D-116), the migrations in `migrations/*.sql` (embedded), the actor methods the app's modules
-define, `logs: { format: Auto }` and the routes' claims. `App.jobs` lists the kinds of job the
-modules define, for the jobs plugin. To change the log format, update the record:
+define, `logs: { format: Auto }` and the routes' claims. A plugin of its own, named `app`, comes
+first and adds only links: the app's stories, its OpenAPI page or document, then `links`.
+`App.jobs` lists the kinds of job the modules define, for the jobs plugin. To change the log
+format, update the record:
 `{ ..App.program({ … }), logs: { format: Json } }`. The OpenAPI document is no field: an app serves
 it from route files of its own (`routes/openapi.json/+server.roc` calling
 `OpenApi.document_route(request, Api.openapi)`, `routes/openapi.html/+server.roc` calling
@@ -228,25 +234,31 @@ An endpoint is a method in a route's `+server.roc`. `rocx build` turns the route
 modules: a contract that both programs share, and the handlers only the server has.
 
 ```roc
-# routes/b/[board]/+server.roc: every handler is annotated; rocx build copies its types into Api
+# routes/(members)/api/b/[board]/+server.roc, the data of the page at /b/<board> (D-100)
+# every handler is annotated; rocx build copies its types into Api
 get! : { request : Server.Request, params : { board : Str }, context : Middlewares.Member } => Try(Board.Data, Endpoint.Refusal)
 
 # Generated/Api.roc, the contract: the same in the browser's copy; any module may import it
-get_b_board : { board : Str } -> Endpoint(context, {}, Board.Data)
-get_b_board = |params| Endpoint.remote("GET", "/b/${Server.encode_segment(params.board)}")
+get_api_b_board : { board : Str } -> Endpoint(context, {}, Board.Data)
+get_api_b_board = |params| Endpoint.remote("GET", "/api/b/${Server.encode_segment(params.board)}")
 
 # Generated/Handlers.roc, the server's alone: what Routes answers with
-get_b_board = |params| Endpoint.bind(Api.get_b_board(params), |request, context, {}| BBoardServer.get!({ request, params, context }))
+get_api_b_board = |params| Endpoint.bind(Api.get_api_b_board(params), |request, context, {}| MembersApiBBoardServer.get!({ request, params, context }))
 
-# any module's handler (an MCP server's tools too): in-process, through the route and its middleware
-Endpoint.send!(Api.get_b_board({ board: "launch" }), {})
+# a page reads it; any module's handler (an MCP server's tools too) sends it, in-process, through
+# the route and its middleware (D-102)
+board = Api.get_api_b_board({ board: "launch" }).read!()
+sent = Api.get_api_b_board({ board: "launch" }).send!({})      # Try(Board.Data, Server.Problem)
 ```
 
 **`Generated/Api`** says what each endpoint is: its method, its URL, and the types its handler's
 annotation gives (its params, its body, its answer; a channel's `Channel(who, message, said)`;
 what `events!` streams). Its context type is left open. It imports the modules those types name,
 and no route file. So a store module, a job, an actor or another route can import it and call
-`Endpoint.publish!(Api.channel_b_board({ board }), news)` with full types.
+`Api.channel_api_b_board({ board }).publish!(news)` with full types.
+
+A page's endpoints are under `api/` at the page's path (D-100): a path is a page or an endpoint.
+A pair at one path still answers, with `Vary: Accept`.
 
 `rocx build` refuses, at the handler's line: a handler without an annotation, an annotation it
 can't read, and a type defined in the route file itself (Api can't import the route file, so move
@@ -256,28 +268,33 @@ the type into a module of its own).
 `params : { id : I64 }` (a number, `Bool`, or a union of tags written out, `[Draft, Live]`, as
 well). The router reads the path's part as that type (with `FormBody`, as a form's field), and a
 part that doesn't read is no match: a 404, before the route's middleware or handler runs. The type
-is the param's directory's: every handler under `routes/monitors/[id]/` that names `id` gives it
-the same type, and the pages and layouts there are given it too (`view! = |{ params }|`,
-`Paths.monitors_id({ id: 7 })`). Api's and Paths' URLs write it back with `Server.encode_param`,
-and `/openapi.json` gives the parameter its type's schema.
+is the param's directory's: the handlers and the page in `[id]/` that name it must agree, and the
+pages and layouts below are given it. A page says its own with a type in the page,
+`Params : { id : I64 }` (D-101). Nothing is read across directories, so a page whose endpoint is
+under `api/` says the type again. Api's and Paths' URLs write it back with
+`Server.encode_param` (`Paths.monitors_id({ id: 7 })`), and the OpenAPI document gives the
+parameter its type's schema.
 
 ```roc
-# routes/monitors/[id]/+server.roc
+# routes/api/monitors/[id]/+server.roc
 get! : { request : Server.Request, params : { id : I64 }, context : {} } => Try(Report.Detail, Endpoint.Refusal)
 get! = |{ params, .. }| Status.detail!(params.id).map_err(Store.refused!)
 
+# routes/monitors/[id]/+page.rocx
+Params : { id : I64 }
+
 # Generated/Api.roc
-get_monitors_id : { id : I64 } -> Endpoint(context, {}, Report.Detail)
-get_monitors_id = |params| Endpoint.remote("GET", "/monitors/${Server.encode_param(params.id)}")
+get_api_monitors_id : { id : I64 } -> Endpoint(context, {}, Report.Detail)
+get_api_monitors_id = |params| Endpoint.remote("GET", "/api/monitors/${Server.encode_param(params.id)}")
 ```
 
 **`Generated/Handlers`** binds each contract to its handler with `Endpoint.bind`, so the compiler
 checks that they agree. It imports every route file. `Generated/Routes` answers requests with these
-endpoints. Code that calls an endpoint on the server sends Api's contract with `Endpoint.send!`: the
+endpoints. Code that calls an endpoint on the server sends Api's contract (`.send!(arg)`): the
 host answers it in-process (`roc_fetch`, then `in_process`), through the app's `respond!`, so the
 endpoint's middleware runs, with the request's headers (cookies, `authorization`), the method, the
 body and its `content-type` (D-103). A route file that answers with another route's handler
-directly binds it itself, as `site/routes/calls/+server.roc` does:
+directly binds it itself, as `site/routes/api/calls/+server.roc` does:
 `Endpoint.bind(Api.x(params), |r, c, b| XServer.post!(…))`.
 
 **An answer of its own (D-106).** A handler's `Ok` is sent as JSON, unless its annotation's answer
@@ -351,7 +368,7 @@ The host has one backend per kind in `host/src/db/`, behind the same functions (
   inside an aggregate (`json_group_array(value order by key)`, which examples/board uses).
 
 SQLite is in every host; Postgres and Turso are cargo features of server/host (`postgres`,
-`turso`), both on by default. `rocx build --release` and `--image` build the host with the engine
+`turso`), both on by default. `rocx build` and `rocx build --image` build the host with the engine
 the app's program names alone (D-104), so a release refuses another as it starts.
 
 **Turso writes concurrently (D-049).** Its file is in MVCC mode. `Db.transaction!` begins
@@ -732,13 +749,13 @@ the path, domain and `secure` the cookie was set with. Values are `%XX`-encoded,
 ## Forms: typed bodies, files and the flash
 
 ```roc
-# routes/members/join/+server.roc: a form posts { name }
+# routes/api/members/join/+server.roc: the form on /members/join posts { name }
 post! = |{ body, .. }| if body.name.trim().is_empty() Err(BadRequest("a member has a name")) else Ok("Welcome, ${body.name}")
 
 # the page it was posted from
-Server.flash!({})      # Ok({ url: "/members/join", fields: [{ name: "name", value: "" }], status: 400, body: "a member has a name" })
+Server.flash!({})      # Ok({ url: "/api/members/join", fields: [{ name: "name", value: "" }], status: 400, body: "a member has a name" })
 
-# routes/orders/+server.roc: a form's fields, read by the body's types (D-038)
+# routes/api/orders/+server.roc: a form's fields, read by the body's types (D-038)
 # item=tea&count=2&gift=on&toppings=milk&toppings=honey&size=Large
 post! : { …, body : { item : Str, count : U64, gift : Bool, toppings : List(Str), size : [Small, Large] } } => …
 ```
@@ -796,7 +813,7 @@ and then:
   multipart.
 
 The body's type is the rules' record, the endpoint's arg, so it is a type JSON reads and writes (a
-forms `Date` is its text; a `Try(x, [Missing])` field is one JSON may leave out). `Endpoint.send!`
+forms `Date` is its text; a `Try(x, [Missing])` field is one JSON may leave out). `.send!(arg)`
 and an action send it as JSON, which the rules read again. `post_body` must be `Module.name` (Api
 copies it, and imports no route file), and only `post!`, `put!` and `patch!` have one; rocx build
 says so at its line. A handler refuses what only it can check with the same shape:
@@ -822,14 +839,14 @@ A handler says which of the page's reads its result should refresh with
 page read.
 
 ```roc
-# routes/photos/+server.roc: a title and a photo, from a form with a file
+# routes/api/photos/+server.roc: a title and a photo, from a form with a file
 post! : { request : Server.Request, params : {}, context : c, body : { title : Str, photo : Str } } => Try(Str, Endpoint.Refusal)
 post! = |{ request, body, .. }|
 	match Server.file(request, "photo") {
 		Ok(upload) =>
 			match Storage.put_upload!(bucket, "photos/${upload.name}", upload) {
 				Ok({}) => {
-					Router.revalidate!([Endpoint.url_of(Api.get_photos({}))])
+					Router.revalidate!([Endpoint.url_of(Api.get_api_photos({}))])
 					Ok(body.title)
 				}
 				Err(_) => Err(Status(503, "the photo wasn't kept"))
@@ -972,8 +989,9 @@ nonce used twice under one key gives the key away.
 The rest is pure Roc, so it is a package on no platform (`packages/crypto`, D-025), which a page in
 the browser may use too: `Sha256`, `Hmac` (HMAC-SHA256, and HMAC-SHA1 for TOTP, with a
 constant-time comparison), `Hkdf`, `Base64` (both alphabets, strict), `Base32` (an authenticator
-app's secret), `Hex`, and `Sha1` (for TOTP alone: D-081), each checked by `expect`s against
-published vectors (NIST, RFC 2202, RFC 4231, RFC 4648, RFC 5869).
+app's secret), `Hex`, `Sha1` (for TOTP alone: D-081), and `Uuid` (version 7 and 4 as text, given
+`Time.now_millis!` and `Random.bytes!`: D-133), each checked by `expect`s against published vectors
+(NIST, RFC 2202, RFC 4231, RFC 4648, RFC 5869, RFC 9562).
 
 ## Values in memory: `Kv`
 
@@ -1023,24 +1041,24 @@ there is no broker. Channels are built on these topics.
 
 ## Channels (D-020, D-057)
 
-A channel is a stream of live messages for a page, guarded by a route. The page subscribes with
-`Endpoint.subscribe!` (see `web/README.md` for the browser's side).
+A channel is a stream of live messages for a page, guarded by a route. The page subscribes to it
+(`Api.channel_org_org_news({ org }).subscribe!(heard!)`; `web/README.md` has the browser's side).
 
 ```roc
 # routes/org/[org]/news/+server.roc: behind the route's middleware, which hands on who is asking
 channel! : { request : Server.Request, params : { org : Str }, context : Member } => Try(Channel(Str, News, [Hello(Str)]), Endpoint.Refusal)
 channel! = |{ params, context, .. }| if context.org == params.org Ok(Channel.allow(context.name)) else Err(Forbidden)
 
-receive! = |{ who, said, channel, .. }|        # what a page says: Endpoint.say!(channel, Hello("hi"))
+receive! = |{ who, said, channel, .. }|        # what a page says: channel.say!(Hello("hi"))
     match said {
-        Hello(words) => Ok(Endpoint.publish!(channel, { title: "${who} says ${words}" }))
+        Hello(words) => Ok(channel.publish!({ title: "${who} says ${words}" }))
     }
 on_open! = |{ who, .. }| [{ title: "welcome, ${who}" }]   # sent first, after each Resync
 on_close! = |{ who, tab, why, .. }| Log.info!("left", { who, tab })   # why: Dropped, Gone, or Refused(why)
 
 # anywhere on the server: a request, a job, an actor
-Endpoint.publish!(Api.channel_org_org_news({ org: "acme" }), { title: "Launch" })
-Endpoint.publish_latest!(Api.channel_rooms_room({ room }), member, cursor)   # only the newest per key
+Api.channel_org_org_news({ org: "acme" }).publish!({ title: "Launch" })
+Api.channel_rooms_room({ room }).publish_latest!(member, cursor)   # only the newest per key
 ```
 
 ### A channel route
@@ -1056,7 +1074,7 @@ into a module of its own.
 The route's hooks are all optional. Each is given the path's params, `who`, the tab's id and the
 channel:
 
-- `receive!`: what pages say (`Endpoint.say!`), after the same middleware and check;
+- `receive!`: what pages say (`.say!`), after the same middleware and check;
 - `on_open!`: messages sent first, each time a page subscribes (and after each resync);
 - `on_close!`: told when a subscription ends, outside the middleware, and why:
   - `Dropped`: the page no longer subscribes (the component or effect that subscribed went), while
@@ -1260,7 +1278,7 @@ While rendering:
 - Every hole runs once, with no tracking. A memo is computed when it is made.
 - `<Loading>` renders what is inside it; nothing waits.
 - A failure shows the nearest `<Errored>`'s fallback.
-- An endpoint a component reads (`Endpoint.read!`) is answered in-process and noted (next section).
+- An endpoint a component reads (`.read!()`) is answered in-process and noted (next section).
 - Effects, cleanups and timers (`create_effect!`, `on_settled!`, `on_cleanup!`, `set_interval!`,
   `set_timeout!`) don't run, as in Solid. Their boxes are let go of, since nothing they would undo
   started. `is_pending!` is false.
@@ -1377,7 +1395,7 @@ Log.line!("migrated")                                          # a message alone
 ```
 
 ```
-14:03:12 info  gate failed  error="no session" path=/admin
+14:03:12 info  gate failed  path=/admin error="no session"
 {"time":"2026-11-21T13:03:12.345Z","level":"info","msg":"gate failed","error":"no session","path":"/admin"}
 ```
 
@@ -1504,6 +1522,7 @@ adds no routes (D-116, below).
 | `starts` | Run after every migration and the app's `init!`; an `Err` stops the server. |
 | `checks` | Run once in the background after the start; what they say is logged (an `Err` as a warning). |
 | `needs` | Checked at start: `Env("ACME_KEY")`, `Database`, `Postgres`, `Sqlite`, `Plugin("other")`. |
+| `links` | Places a person may want to open (`Plugin.Link`: `{ label, path }`, a path of the app's or a whole URL), listed under the server's address under `--dev` (D-111). |
 
 Calls, loops and checks are named `<plugin>.<name>`, and are given the app's context. A package
 makes its plugin from options of its own (a nominal record whose fields without a default are
@@ -1581,14 +1600,14 @@ Every page the host renders has a `<script type="module" data-rocx src="…">` f
 the answers and before `start.js`, so a script has registered its effects
 (`window.rocxEffects["acme.ping"]`, which `Browser.call!` finds) before the page wakes. Under
 `--debug`, `GET /__rocx/plugin-files` lists the files (each URL, type, and whether it is a script):
-`site/build.mjs` reads it to copy them into a static copy of a site.
+`rocx build --static` reads it to copy them into a static copy of an app (D-073).
 
 ### Packages that use the platform
 
 A package whose modules use the platform names it in its header, as an app does
 (`package [Acme] { pf: platform "../../server/platform/main.roc" }`). It must be the same file the
 app names. Modules both halves can compile go in a second header beside it, `browser.roc`, which
-`rocx build --client` names for the browser's half instead. Without one, the browser's half doesn't
+`rocx generate` names for the browser's half instead. Without one, the browser's half doesn't
 see the package, and a page that imports it is told where. `server/test/fixture` is a plugin
 package, for the tests.
 
@@ -1738,16 +1757,26 @@ node server/build.mjs <app.roc> <output> [--opt=dev|speed] [--target=arm64mac|x6
   one such call, so that function's stack frame grows with the app: with the Roc nightly, the docs
   site's reached 12.4 MB, past the 8 MiB a render runs on (`test/compiler-bugs/huge-frame-opt-speed`).
   Boxy calls a closure through a pointer: the site's largest frame is 28 KiB, pages render as fast,
-  and builds take a fraction of the time. At the fork's pin 4674b5973d, a specialized site's
-  largest frame is down to 264 KiB (TODO.md); whether specialization becomes the default again is
-  D-064's to decide.
+  and builds take a fraction of the time. The fork's fixes shrink a specialized site's largest
+  frame a long way, but not all of it (TODO.md, `huge-frame-opt-speed`); whether specialization
+  becomes the default again is D-064's to decide.
 
-An app with routes is built to deploy with `rocx build <dir> --release <out> [--target …]`
-(D-078), which needs no Node: the browser's copy and its wasm, then the server's host when it
-changed and the app on it, optimized for speed (boxy, as below), into `<out>/server`, with what it
-serves in `<out>/static`. `--opt speed|size|dev` (D-111) builds both programs at that level instead
-(the server's default is `speed`, the wasm's `size`); `rocx dev` builds both at `dev` unless its
-`--opt` says another.
+An app with routes is built to deploy with `rocx build [dir] [--out dist] [--target …]` (D-107),
+which needs no Node: the browser's copy and its wasm, then the server's host when it changed and
+the app on it, optimized for speed (boxy, as above), into `dist/server`, with what it serves in
+`dist/static`. `--opt speed|size|dev` (D-111) builds both programs at that level instead (the
+server's default is `speed`, the wasm's `size`); `rocx dev` builds both at `dev` unless its `--opt`
+says another. `rocx build --image` (D-099) writes the release as a container image itself, with no
+Dockerfile and no Docker (`<name>.tar`, for `docker load -i`), and `--static` (D-073) every page as
+files.
+
+A release's host has only the database engine the app's program names (D-104): SQLite is in every
+host, and Postgres and Turso are cargo features of `host/` (`postgres`, `turso`), on by default for
+`rocx dev`, the tests and `rocx check --sql`. `Hosts.engines_of` reads the engine from the app's
+`main.roc` (SQLite when it names none, D-105), and each set of engines is built in a target
+directory of its own (`host/target/engines-<name>`). A server started with an engine it wasn't
+built with stops, saying what to write in the program. A musl release's server loses its debug info
+(`llvm-strip --strip-debug`) and keeps its symbols, for a backtrace's names.
 
 `just glue` regenerates `host/src/roc_platform_abi.rs` after a change to `platform/main.roc`'s
 header (with the other platforms' glue).
@@ -1808,9 +1837,10 @@ This is the host's own `--help` (`USAGE` in `http.rs`). Some details:
 ## Tests
 
 `just test-server` runs this platform's tests, then packages/testing's, packages/posthog's, the
-guard, push, auth, stripe and ai examples' (each against an app it builds), and `rocx new`'s
-template's (`templates/test`); a `.env` here reaches none of their servers, which aren't given one. Run
-one file with `node --test server/test/server.test.mjs`. They skip what they can't run:
+guard, push, auth, stripe, ai and video examples' (each against an app it builds),
+packages/headless's, and `rocx new`'s template's (`templates/test`). A `.env` here reaches none of
+their servers, which aren't given one. Run one file with `node --test server/test/server.test.mjs`.
+They skip what they can't run:
 
 - without Roc or Rust (`just setup`), everything;
 - without `DATABASE_URL` (`just db`), what needs Postgres;
@@ -1924,7 +1954,8 @@ every function Roc can call (the glue's runtime and hosted symbols, every export
 
 Elsewhere: `site/test/site.test.mjs` runs the docs site on this platform, in Chromium, and compares
 its pages with the browser runtime's own render; `test/check-sql.test.mjs` covers
-`rocx check --sql`.
+`rocx check --sql`, `test/images.test.mjs` photos' copies (D-125), `test/image.test.mjs` the
+container image (D-099, D-104), and `test/dev.test.mjs` `rocx dev` naming its `.env` (D-098).
 
 ## Not yet
 
@@ -1943,11 +1974,10 @@ its pages with the browser runtime's own render; `test/check-sql.test.mjs` cover
   (a phone's Display P3, with its ICC profile) comes out slightly paler. No AVIF, no HEIC (an
   iPhone's own format), and no photos of other sites (a list of allowed hosts would let them in).
 - A stack overflow in Roc still ends the process.
-- The server speaks HTTP/1.1 only, with no TLS: put it behind a proxy. `x64musl` and `x64mac` are
-  configured, but haven't been run.
-- `roc test` on a module with no `expect` (`Migrations.roc`) never ends, and neither does it on
-  `JobsPage.roc` (packages/admin; `roc check` and both builds are fine), so the page's small helpers
-  and their `expect`s are in `AdminHtml.roc`.
+- The server speaks HTTP/1.1 only, with no TLS: put it behind a proxy.
+- `x64musl` hosts are built for a release, whose smoke test runs one in Alpine on x86_64, and
+  `x64mac` is configured; neither has run here, D-057's x86_64 interrupt paths included.
+- `roc test` on a module with no `expect` (`Migrations.roc`) never ends.
 - `stream_for_host!` wraps `send!` and `sleep!` in lambdas: a hosted function passed on as a value
   trapped in optimized wasm builds with Roc nightly-2026-11-18. This platform is native and
   unaffected, but the wrapping keeps its Roc buildable for wasm.

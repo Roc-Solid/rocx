@@ -1,10 +1,9 @@
-## Scoped styles, as Svelte has them. A .rocx file's top-level <style> styles
-## the markup that file writes, and nothing else: rocx gives each of the file's elements a class
-## named after the file (`rx-k3j9qa`), and adds that class to each selector in the file's CSS. So
-## `.counter` in one file and `.counter` in another never meet, and a component's styles don't reach
-## into the components it renders (their elements are written in other files). `rocx build` joins
-## every file's scoped CSS into one stylesheet, Generated/Styles.roc, which the root layout puts in
-## its <head>.
+## Scoped styles, as Svelte has them. A <style> in a component's block styles that component's
+## markup (a page's, at the file's top level), and nothing else: rocx gives each of its elements a
+## class (`rx-k3j9qa`), and adds that class to each selector in its CSS. So `.counter` in one
+## component and `.counter` in another never meet, and a component's styles don't reach into the
+## components it renders. rocx joins every scoped <style> into one stylesheet, Generated/Styles.roc,
+## which the root layout puts in its <head>.
 ##
 ## Svelte's rules, kept:
 ##   - `.a .b {}` becomes `.a.rx-k3j9qa .b:where(.rx-k3j9qa) {}`: each compound selector gets the

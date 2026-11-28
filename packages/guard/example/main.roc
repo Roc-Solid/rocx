@@ -1,8 +1,8 @@
 ## An app that uses packages/guard: security headers, a body limit and maintenance mode on every
 ## request, a limit on /api and on the login route, a route behind a feature flag, and a page that
 ## shows the new checkout to those who have it on. The middleware is the package's own
-## (`import guard.Guard`): `rocx build .`, then build it as any app. The flags' overrides are kept
-## in its database (SQLite) too, by the package's plugin, so a restart keeps them (D-057).
+## (`import guard.Guard`); `rocx dev` runs it, as any app. The flags' overrides are kept in its
+## database (SQLite) too, by the package's plugin, so a restart keeps them (D-057).
 app [program] { guard: "../main.roc", pf: platform "../../../server/platform/main.roc" }
 
 import Generated/App

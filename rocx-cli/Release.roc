@@ -30,7 +30,7 @@ import Term
 Release := [].{
 
 	usage : Str
-	usage = "usage: rocx build <dir> --release <out> [--target arm64mac|x64mac|arm64musl|x64musl] [--opt speed|size|dev]"
+	usage = "usage: rocx build [dir] [--out dist] [--target arm64mac|x64mac|arm64musl|x64musl] [--opt speed|size|dev]"
 
 	## How hard the compiler works, as `--opt` says it (D-111): `speed`, `size` or `dev`, for both
 	## programs; "" when it doesn't, each its own (the server for speed, the browser's wasm for size).

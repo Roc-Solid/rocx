@@ -6,7 +6,7 @@ import Tally
 ## reads and writes one, a few hundred clients at most), in the server's memory (`Kv`, D-043),
 ## under `guard:<limit>/<shard>`. A hit reads its tally, decides, and swaps the next one in
 ## (`Kv.swap!`): of two requests at once, one wins and the other reads again, so no hit is lost and
-## nothing is written to Postgres. A restart starts every limit again.
+## nothing is written to the database. A restart starts every limit again.
 Kept := [].{
 
 	## Into how many tallies a limit's clients are split.

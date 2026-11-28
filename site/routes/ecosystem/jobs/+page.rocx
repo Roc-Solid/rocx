@@ -59,7 +59,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>Field</th><th>Default</th><th>What it is</th></tr></thead>
 					<tbody>
-						<tr><td><code>jobs</code></td><td>(required)</td><td>the kinds of job the workers run: <code>App.jobs</code>, every kind your modules define, found by <code>rocx build</code></td></tr>
+						<tr><td><code>jobs</code></td><td>(required)</td><td>the kinds of job the workers run: <code>App.jobs</code>, every kind your modules define, found by <code>rocx generate</code> (and every build)</td></tr>
 						<tr><td><code>crons</code></td><td>none</td><td>the schedules, each a <code>Cron.every(…)</code> (<a href="#cron">below</a>)</td></tr>
 						<tr><td><code>workers</code></td><td>4</td><td>how many jobs run at once</td></tr>
 						<tr><td><code>retry_ms</code></td><td>1000</td><td>the wait before a failed job's second attempt, doubled for each attempt after</td></tr>
@@ -73,10 +73,11 @@ view! = |_|
 			<p>
 				The plugin adds the queue's table, <code>rocx_jobs</code> (migration <code>jobs/0001_jobs</code>),
 				the workers, the schedules' loop and the sweep. At start it checks every schedule and queues again
-				the jobs a stop cut short. Without the plugin, queueing a job is an error that says to list it. On
-				Postgres with no <code>DATABASE_URL</code>, the server doesn't start, and says why; under
-				<code>--dev</code> and <code>--debug</code> it starts with a warning, the plugin runs nothing, and
-				queueing returns the database's error.
+				the jobs a stop cut short. Without the plugin, queueing a job is an error that says to list it. An
+				app on SQLite (the default, <code>data/app.db</code>) always has its database. On Postgres with no
+				<code>DATABASE_URL</code>, the server doesn't start, and says why; under <code>--dev</code> and
+				<code>--debug</code> it starts with a warning, the plugin runs nothing, and queueing returns the
+				database's error.
 			</p>
 
 			<Heading id="jobs">A job</Heading>
@@ -87,8 +88,9 @@ view! = |_|
 			</p>
 			<Code title={"${Sources.platform_job.file}, in part"} source={Sources.platform_job.rocx} numbers={Bool.False} />
 			<p>
-				Define kinds at the top of a module's block, as here: <code>rocx build</code> finds every
-				<code>Job.define</code> and <code>Job.define_with</code> there and lists them in <code>App.jobs</code>.
+				Define kinds at the top of a module's block, as here: <code>rocx generate</code> (and every build)
+				finds every <code>Job.define</code> and <code>Job.define_with</code> there and lists them in
+				<code>App.jobs</code>.
 				A program written by hand lists <code>Job.handler(kind)</code> for each kind instead.
 			</p>
 
@@ -214,7 +216,8 @@ view! = |_|
 				<code>respond!</code>, which <a href={"${Paths.platform_http}#routes"}>answers every method</a>, in a
 				folder whose middleware knows who is an admin. <code>mount</code> is the route's path. The page needs
 				the jobs plugin. <code>back</code> is a link to your app's own pages, first in the sidebar (none by
-				default).
+				default). At the sidebar's foot, <em>Back to the app</em> goes to the page of yours you came from, or
+				to <code>/</code>.
 			</p>
 			<Code title="routes/(admin)/admin/jobs/+server.roc" source={"import admin.JobsPage\n\n# routes/(admin)/+middleware.roc guards it, as every route in (admin)/: middleware = Middlewares.admin\nrespond! = |{ request, .. }| JobsPage.respond!(request, { mount: \"/admin/jobs\" })"} numbers={Bool.False} />
 			<ul>

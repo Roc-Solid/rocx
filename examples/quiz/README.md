@@ -31,24 +31,26 @@ their cookie, so they are one visitor.
 
 A question is open for 20 seconds and its answer shows for 7. To change that, set
 `QUIZ_QUESTION_MS` and `QUIZ_REVEAL_MS`: `QUIZ_QUESTION_MS=8000 QUIZ_REVEAL_MS=3000 ../../bin/rocx dev`.
+Lines in a `.env` beside `main.roc` work too: `rocx dev` gives that file to the server.
 `node sounds.mjs` makes the sounds again.
 
 Under `rocx dev`, the components' stories are at http://localhost:8080/__rocx/stories.
 
 ### Build it as it would ship
 
-`rocx dev` builds for development. To build the browser's wasm at its smallest and run the server on
-its own, from the repository's root (`just web-host` first, if the browser's host isn't built yet):
+`rocx dev` builds for development. `rocx build` builds what you deploy: the server optimized for
+speed, with SQLite alone, and the browser's wasm optimized for size, with the app's `static/` beside
+it. From the repository's root:
 
 ```sh
-bin/rocx generate examples/quiz --client examples/quiz/build/client
-.tools/roc-active build --target=wasm32 --opt=size \
-  --output=examples/quiz/build/client/static/rocx/app.wasm examples/quiz/build/client/main.roc
-node server/build.mjs examples/quiz/main.roc examples/quiz/build/quiz
-cd examples/quiz && build/quiz --port 18150 --static build/client/static --static static
+bin/rocx build examples/quiz     # examples/quiz/dist: server and static/
+cd examples/quiz && dist/server --port 18150 --static dist/static
 ```
 
-Then open http://localhost:18150.
+Then open http://localhost:18150. A server started this way reads no `.env`: pass `--env-file .env`,
+or set the variables. Behind a proxy that speaks TLS, set `PUBLIC_URL=https://…`, and the visitor's
+cookie is `Secure` (D-123). `bin/rocx build examples/quiz --image` makes a container image instead
+(`examples/quiz/quiz.tar`, for `docker load -i`; the database goes in `/app/data`).
 
 ## A tour
 
@@ -92,12 +94,13 @@ Then open http://localhost:18150.
 | Sounds through a plugin: `Audio.play!` (packages/audio, `AudioPlayer.plugin({})` in `main.roc`), with sounds made by a script (a mallet and a reed, synthesized) | `sounds.mjs` → `static/sounds/`, `Sound.roc`; played from effects and timers in the two room pages |
 | Transitions: each phase is its own `if` or `match` part that flies, scales or fades in and out (`transition:in`, `transition:out`); names that grow into the lobby (`transition`); podium steps that grow up in turn (`Transition.grow(Bottom).delay(…)`) | `routes/host/[code]/+page.rocx`, `routes/play/[code]/+page.rocx`, `Ui/Lobby.rocx`, `Ui/Podium.rocx` |
 | `transition:move`: the leaderboard's rows gliding to their new places | `Ui/Board.rocx` |
-| Charts (packages/charts): how the room answered, as a `<BarChart>` | `Ui/Tally.rocx` |
+| Charts (packages/charts): how the room answered, as a `<BarChart>` whose bars (`BarChart.Bar`) rise from nothing. A bar may give its `color` (D-130); these take the chart's | `Ui/Tally.rocx` (`bars`) |
 | Forms (packages/forms): one schema for a page and its endpoint (`LiveForm`, `<TextField>`, `<IssueSummary>`); the endpoint names it as its body's rules (`post_body = Joining.form`, D-093), so what doesn't pass, as a form or as JSON, is refused with its issues before the handler runs; a custom parser in `try_map`, refusals shown at their fields, plain posts that come back with a flash | `Draft.roc` + `routes/sets/new/` + `routes/api/sets/`, `Joining.roc` + `routes/+page.rocx` + `routes/api/join/+server.roc`, `routes/play/[code]/` + `routes/api/play/[code]/` |
+| Endpoints that answer with a response of their own: joining and opening a room redirect to the room and set the visitor's cookie, the handler's `Ok` (D-106) | `Entry.roc` (`join!`, `open!`), `Visitor.remembered`, `routes/api/rooms/+server.roc` |
 | SQLite in the server's process: migrations, seeds that can run twice, a transaction, a `json` column | `main.roc`, `migrations/`, `Sets.roc` |
 | Configuration from the environment: how long a question and a reveal last | `Rooms.timing!` (`QUIZ_QUESTION_MS`, `QUIZ_REVEAL_MS`) |
 | Middleware around every request (`routes/+middleware.roc`) that hands every route the visitor (from a cookie); another site's posts the platform refuses | `Visitor.roc`, `routes/+middleware.roc` |
-| Pure `view` components (`Logo`, `Mark`, `Countdown.view`, `SoundSwitch`, `Masthead`) and effectful `view!` ones (`Board`, `Lobby`, `Podium`, `Tally`, and the pages' `Asked`, `Revealed`, `Choosing`, `Playing`) | `Ui/`, the route files |
+| Pure `view` components (`Logo`, `Mark`, `Countdown.view`, `SoundSwitch`, `Masthead`) and effectful `view!` ones (`Board`, `Lobby`, `Podium`, `Tally`, and the pages' `Asked`, `Revealed`, `Entering`, `Playing`, `Choosing`, `Preview`) | `Ui/`, the route files |
 | A route file's own components, and a `<style>` for the whole file; scoped `<style>`s per component; colour tokens in one stylesheet | `routes/host/[code]/+page.rocx`, `Ui/*.rocx`, `static/pinwheel.css` |
 | A big-screen layout (sizes from the viewport) and a phone one; `<Title>`; roles, labels, `aria-live` and `role="status"` | the two room pages |
 | Stories (`<story>`) for the components, at `/__rocx/stories` in a dev build | `Ui/*.rocx` |
@@ -147,7 +150,9 @@ just examples quiz
 ```
 
 That builds the app, type-checks both programs, lints it, checks its SQL against SQLite
-(`rocx check --sql`), runs the `expect`s and the node tests. To run the parts yourself:
+(`rocx check --sql`), runs the `expect`s and the node tests. `just examples-release quiz` builds it
+as it is deployed (`rocx build`) and runs the node tests against a server built with `--opt=speed`.
+To run the parts yourself:
 
 ```sh
 bin/rocx fmt --check examples/quiz

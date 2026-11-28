@@ -16,7 +16,7 @@ Help := [].{
 		{
 			title: "Start",
 			entries: [
-				{ usage: "new [name]", what: "a new app, asking which database (SQLite, Postgres or Turso)" },
+				{ usage: "new [dir]", what: "a new app, asking which database (SQLite, Postgres or Turso)" },
 				{ usage: "dev [dir]", what: "serve the app, rebuilt and reloaded as you save" },
 			],
 		},
@@ -35,14 +35,14 @@ Help := [].{
 				{ usage: "check --sql [dir]", what: "check its SQL on its own database engine" },
 				{ usage: "test [dir]", what: "run its tests" },
 				{ usage: "lint <dir>…", what: "refuse Html.source_text in hand-written Roc" },
-				{ usage: "routes [dir]", what: "list its routes, their middleware and what each does" },
+				{ usage: "routes [dir]", what: "list its routes and the middleware around each" },
 				{ usage: "fmt [--check] <path>…", what: "format .roc and .rocx files" },
 			],
 		},
 		{
 			title: "More",
 			entries: [
-				{ usage: "generate [dir]…", what: "write Generated/ and the browser's copy, and build nothing" },
+				{ usage: "generate [dir]…", what: "write Generated/ (and the browser's copy), and build nothing" },
 				{ usage: "upgrade [version]", what: "move the app to another version of rocx" },
 				{ usage: "agents [dir]", what: "rocx's rules for coding agents, in the app's AGENTS.md" },
 				{ usage: "render <url>", what: "a video on the page (packages/video's <Player>) as MP4 and WebM" },
@@ -63,11 +63,11 @@ Help := [].{
 			"new" =>
 				Str.join_with(
 					[
-						"rocx new [name] [--db sqlite|postgres|turso]",
+						"rocx new [dir] [--db sqlite|postgres|turso]",
 						"",
-						"A new app in the directory `name` (asked for at a terminal when not given), from rocx's",
-						"template: pages, sign-in, its users' table, security headers and a README that says",
-						"what to change first. It asks which database at a terminal; SQLite without one.",
+						"A new app in `dir`, new or empty (asked for at a terminal when not given), from rocx's",
+						"template: pages, sign-in, its users' table, security headers, AGENTS.md and a README that",
+						"says what to change first. It asks which database at a terminal; SQLite without one.",
 						"",
 						"  --db sqlite      a file beside the server, data/app.db (the default)",
 						"  --db postgres    a Postgres server, at DATABASE_URL",
@@ -78,13 +78,16 @@ Help := [].{
 			"dev" =>
 				Str.join_with(
 					[
-						"rocx dev [dir] [--port 8080] [--android [--lan]] [-- server options…]",
+						"rocx dev [dir] [--port 8080] [--opt dev|size|speed] [--android [--lan]] [-- server options…]",
 						"",
 						"The app in `dir` (here by default) built and served under --dev at http://localhost:8080,",
 						"built again and its server restarted as you save; open pages reload. After each start",
-						"its SQL is checked (rocx check --sql). An app without a main.roc gets one.",
+						"its SQL is checked (rocx check --sql). An app without a main.roc gets one. A .env in the",
+						"directory it runs in goes to the server and the check (--env-file .env).",
 						"",
 						"  --port N         where it listens (PORT; 8080 by default)",
+						"  --opt L          how hard the compiler works on both programs: dev (seconds, the",
+						"                   default), or size or speed, as a release builds them",
 						"  --android        each build for the phone's dev client too",
 						"  --lan            the server on this network too, for a phone on its Wi-Fi",
 						"  -- …             what follows is given to the app's server (--database-url, --debug…)",
@@ -94,9 +97,11 @@ Help := [].{
 			"build" =>
 				Str.join_with(
 					[
-						"rocx build [dir] [--out dist] [--target arm64mac|x64mac|arm64musl|x64musl]",
+						"rocx build [dir] [--out dist] [--target arm64mac|x64mac|arm64musl|x64musl] [--opt L]",
 						"rocx build [dir] --image [--out <name>.tar] [--tag name:tag] [--target arm64musl|x64musl]",
-						"rocx build [dir] --static [--out dist] [--base /path/] [--route <path>]… [-- server options…]",
+						"                 [--opt L]",
+						"rocx build [dir] --static [--out dist] [--base /path/] [--route <path>]… [--built <build>]",
+						"                 [-- server options…]",
 						"",
 						"The app in `dir` (here by default) built to deploy: its server optimized for speed, with",
 						"the database engine its program names alone, and the browser's wasm optimized for size.",
@@ -111,8 +116,11 @@ Help := [].{
 						"  --out PATH       where it goes (dist, or <name>.tar for --image)",
 						"  --target T       for another machine; this one's by default (its Linux for --image)",
 						"  --tag name:tag   the image's name (the directory's, :latest, by default)",
+						"  --opt L          both programs at one level (speed, size or dev), where by default the",
+						"                   server is built for speed and the browser's wasm for size",
 						"  --base /path/    where a static copy is served from (/ by default)",
 						"  --route PATH     a path a static copy has though no link reaches it (repeatable)",
+						"  --built DIR      a static copy of a build already made (its server, client/static)",
 					],
 					"\n",
 				)
@@ -121,11 +129,11 @@ Help := [].{
 					[
 						"rocx generate [dir]… [--client <out>] [--dev]",
 						"",
-						"Writes what rocx makes from an app's sources, and builds nothing: its Generated/ modules",
-						"(the routes, the program, the contract) and the browser's copy (build/client, or",
-						"--client), as rocx dev and rocx build do first. For editors and scripts.",
+						"Writes what rocx makes from an app's sources, and builds nothing: the .roc beside each",
+						"component's .rocx and its Generated/ modules (the routes, the program, the contract), as",
+						"rocx dev and rocx build do first. For editors and scripts.",
 						"",
-						"  --client OUT     where the browser's copy goes (one app only)",
+						"  --client OUT     the browser's copy of the app too, into OUT (one app only)",
 						"  --dev            the copy for rocx dev: the components' stories in it",
 					],
 					"\n",
@@ -143,8 +151,10 @@ Help := [].{
 						"",
 						"  --sql            each statement prepared on a scratch database of the app's engine,",
 						"                   built from its migrations: its parameters and columns against the",
-						"                   records the app reads them into",
+						"                   records the app reads them into; what follows -- goes to the app's",
+						"                   server (--database-url, --env-file .env)",
 						"  --engine E       ask Turso about a SQLite app, or SQLite about a Turso app",
+						"  --verbose        list the calls it can't check too (SQL built at run time)",
 						"  -- command       run a command (roc check…) with its reports pointed into .rocx files",
 					],
 					"\n",
@@ -174,7 +184,7 @@ Help := [].{
 					[
 						"rocx routes [dir] [--server] [--client]",
 						"",
-						"The app's routes, each with its method and its middleware's chain, outermost first.",
+						"The app's routes, each with its method and the middleware around it, outermost first.",
 						"",
 						"  --server         only the endpoints",
 						"  --client         only the pages (the error page too)",

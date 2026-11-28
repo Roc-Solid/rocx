@@ -12,8 +12,8 @@ import Submission
 ## data takes its place all at once; one it refuses goes at once, and the value is the server's
 ## again, the refusal in its `error`.
 ##
-##     moves = use_submissions!(Api.post_planner_move({}))
-##     cards! = create_memo!(|| moves.pending_inputs!().fold(Api.get_planner({}).read!(), moved))
+##     moves = use_submissions!(Api.post_api_planner_move({}))
+##     cards! = create_memo!(|| moves.pending_inputs!().fold(Api.get_api_planner({}).read!(), moved))
 ##
 ## Submissions are kept by the endpoint's URL: an endpoint with params in its path has a list for
 ## each URL, so what varies goes in its body. Their types are the endpoint's, from the app's

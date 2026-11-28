@@ -40,7 +40,7 @@ import "migrations/0001_jobs_sqlite.sql" as lite_jobs_table : Str
 ## plugins: [Job.plugin({ jobs: App.jobs, crons: [Cron.every("0 3 * * *", Jobs.tidy, {})] })]
 ## ```
 ##
-## `App.jobs` is every kind the app's modules define (`rocx build` finds each `Job.define` and
+## `App.jobs` is every kind the app's modules define (`rocx generate` finds each `Job.define` and
 ## `Job.define_with` at the top of a module's block); a program written by hand lists
 ## `Job.handler(kind)` for each. `list!`, `get!` and `counts!` read the queue, `retry!`,
 ## `cancel_id!` and `run_now!` act on one job, and `kinds!` and `changes` say what the plugin runs
@@ -56,7 +56,7 @@ Job := [].{
 	## A kind as the workers run it (`Job.handler`): its input as JSON.
 	Handler(context) : { name : Str, attempts : U64, timeout_ms : U64, run! : context, Str => Try({}, Str) }
 
-	## What the jobs plugin runs: the app's kinds of job (`App.jobs`, which rocx build lists, or
+	## What the jobs plugin runs: the app's kinds of job (`App.jobs`, which rocx generate lists, or
 	## `Job.handler(kind)` for each), its schedules (`Cron.every`), how many workers take jobs at
 	## once (each a background loop), how long a failed job waits before its second attempt
 	## (milliseconds; doubled for each after), and what is done when a job has failed for good,

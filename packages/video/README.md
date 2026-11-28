@@ -36,8 +36,8 @@ import video.Sequence
 import video.Timeline
 ```
 
-`rocx build` copies `components/Player.rocx` and `components/Sequence.rocx` into each app that
-names the package (`Generated/video/`), as it copies any package's components: they need the
+`rocx generate` (which `rocx dev` and `rocx build` run first) copies `components/Player.rocx` and
+`components/Sequence.rocx` into each app that names the package (`Generated/video/`). They need the
 server's `Html` on the server and the browser's in the browser, so they are compiled as part of the
 app.
 
@@ -78,13 +78,15 @@ A composition puts scenes on its timeline with `<Sequence>`, and a page plays it
 `packages/video/example` is that app: a page with the video and a bar to scrub it, its stories, and
 tests that play, seek and render it.
 
-Three things to keep in mind:
+Four things to keep in mind:
 
 - **Read the frame where it is tracked.** `frame!()` in a hole, a computed attribute or a memo runs
-  again each frame; in the component's body it is read once. A pure component given a value made
-  from the frame (`<ChoiceCard checked={ticked!() >= 1}>`) is made again when that value changes:
-  give it a memo (`ticked!`, compared with `==`), not the frame, and it is made once per change,
-  so its own CSS transitions play.
+  again each frame; in the component's body it is read once.
+- **Give a pure component a memo, not the frame.** A pure component is made again each time what
+  its props read changes. Given `frame!()`, that is every frame. Given a memo
+  (`ticked! = create_memo!(|| frame!() >= 14)`, then `checked={ticked!()}`), it is made once per
+  change, since a memo computed again to the same value tells no one (D-109). Its own CSS
+  transitions then play.
 - **A computed style doesn't multiply.** The platform lets a style's value hold letters, digits,
   spaces and `.,%#()-+` (`safe_css`), so `calc(… * …)` and `a / b` are dropped. Give the numbers
   as custom properties (`style:--row={row!().to_str()}`) and do the arithmetic in the stylesheet
@@ -171,10 +173,9 @@ rocx render http://localhost:8091/ -o launch.mp4 -o launch.webm
 rocx render http://localhost:8091/__rocx/stories/Launch/a-bar-to-scrub -o frames/
 ```
 
-`rocx render` opens the page in Chromium's headless shell (`$CHROME`, or Playwright's), driven from
-Roc by packages/headless. It takes the page's clock over before the page's own scripts run
-(`clock.js`), lets it load and hydrate in real time, then freezes the clock and films each frame in
-turn:
+`rocx render` opens the page in Chromium's headless shell, driven from Roc by packages/headless
+(D-128). It takes the page's clock over before the page's own scripts run (`clock.js`), lets it load
+and hydrate in real time, then freezes the clock and films each frame in turn:
 
 1. the clock moves on a frame: each timer due runs at its time, then each animation frame asked
    for;
@@ -189,28 +190,27 @@ turn:
 
 A path ending in `/` gets a PNG a frame (`frame-00000.png`, numbered from the video's start). For
 the video files the photographs wait in a temporary folder, and once the last is taken one ffmpeg
-writes each file: `.mp4` in H.264 and `.webm` in VP9, both 4:2:0 and their size made even. ffmpeg
-is `$FFMPEG`, the one on `PATH`, or Nix's (`nixpkgs#ffmpeg-headless`, built once). A frame doesn't
-depend on how long it took to film, so two renders of one composition are the same, frame for frame
-(the example's test renders twice and compares).
+writes each file: `.mp4` in H.264 and `.webm` in VP9, both 4:2:0 and their size made even. A frame
+doesn't depend on how long it took to film, so two renders of one composition are the same, frame
+for frame (the example's test renders twice and compares).
 
 | Option | What it does |
 |---|---|
-| `-o <path>` | A file to write, again for more (`video.mp4` when none). |
+| `-o <path>`, `--out <path>` | A file to write, again for more: `.mp4`, `.webm`, or a folder ending in `/` (`video.mp4` when none). |
 | `--player <n\|label>` | The page's player to film: its index from 0, or its `aria-label`. The first unless it says. |
 | `--scale <n>` | Device pixels a CSS pixel (2): a 1280 by 720 player filmed at 2560 by 1440. |
 | `--from <frame>`, `--to <frame>` | A stretch of it (the last frame in it). |
 | `--crf <n>` | H.264's quality (18; lower is better and bigger). |
 
-ffmpeg is `$FFMPEG`, else the `ffmpeg` on PATH, else Nix's (`nix build nixpkgs#ffmpeg-headless`,
-fetched once). Chromium is `$CHROME`, else Playwright's headless shell, as the tests find it. The
-module exports `render({ url, outputs, player, scale, from, to, crf, browser, onFrame })`, which
-answers `{ fps, frames, width, height, hashes, errors }`, for a script or a test.
+Chromium is `$CHROME`, else Playwright's newest headless shell, as the tests find it. ffmpeg is
+`$FFMPEG`, else the `ffmpeg` on PATH, else Nix's (`nix build nixpkgs#ffmpeg-headless`, fetched
+once). A page that throws while it is filmed has its errors said at the end. `rocx help render`
+lists the options.
 
 ## Stories
 
 A video is a story whose markup has a `<Player>`; nothing else marks it. The catalog
-(`/__rocx/stories`, `rocx build --dev`) shows a transport above the stage whenever a story it shows
+(`/__rocx/stories`, under `rocx dev`) shows a transport above the stage whenever a story it shows
 has a live player:
 
 - play and pause (Space), a frame back and on (← and →, a second with Shift), the start (Home), a
@@ -219,7 +219,7 @@ has a live player:
   in step, each sought to its frame at the same time (a shorter one keeps its last frame until the
   longest ends);
 - **Render** copies the command that films each story shown into an MP4 and a WebM named after it
-  (`rocx render`), when the app names this package.
+  (`rocx render <url> -o <story>.mp4 -o <story>.webm`), when the app names this package.
 
 Comparing works for any stories, videos or not: the pin beside a story in the side (or P) picks it,
 and "Compare N side by side" (or C) opens the picked ones together, from any component.
@@ -230,11 +230,12 @@ and "Compare N side by side" (or C) opens the picked ones together, from any com
   read a media query yet. Its corner button pauses it. The smallest platform change is a read of
   the runtime's `reducedMotion()` (one host function); then a player would rest on its poster.
 - **Playing when seen.** A player starts as the page goes live, not as it scrolls into view; one
-  further down plays its loop meanwhile. An intersection primitive (`on:visible`) would start it
+  further down plays its loop meanwhile. An event for an element coming into view would start it
   there.
 - **Scripted input.** A demo is driven by its props from the frame (a pointer drawn moving, a box
   ticked at a frame), not by real clicks dispatched at frames.
-- **`rocx render`.** Rendering is a Node script; a CLI command would need the CLI to drive Chromium.
+- **Encoding as it films.** `rocx render` hands the frames to ffmpeg after the last is taken: the
+  CLI platform can't write to a child's stdin yet.
 - **Audio.** Videos are silent; ffmpeg could mix a track in.
 - **Rendering on the server** with an app's data (a video per post): a plugin with Chromium and
   ffmpeg beside the server.

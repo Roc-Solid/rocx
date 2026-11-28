@@ -7,8 +7,9 @@ import Yaml
 ## shape, which the app declares as a record. An entry is a file read: its id (its path in the
 ## folder, without `.md`), its frontmatter decoded, and its body parsed.
 ##
-## Finding the files is the build's job: `rocx build` finds an app's collections under `content/`
-## and writes them into `Generated/Content/`. An app may also list files itself, each imported as text:
+## Finding the files is rocx's job: `rocx generate` (which `rocx dev` and `rocx build` run) finds an
+## app's collections under `content/` and writes them into `Generated/Content/`. An app may also list
+## files itself, each imported as text:
 ##
 ##     import "../content/posts/hello.md" as hello : Str
 ##

@@ -1,4 +1,4 @@
-// Builds a Roc Solid app for its tests, the three steps a deploy takes: `rocx build` (its
+// Builds a Roc Solid app for its tests, the three steps a deploy takes: `rocx generate` (its
 // Generated/, and the browser's copy of it), the browser's wasm, and the server, natively. The
 // platforms' hosts must be built already (`just setup`, then `just test` once, builds both).
 //
@@ -32,7 +32,7 @@ function rocBuild(rocx, compiler, args) {
 /**
  * The app in `dir` built into `out` (`<dir>/build/test`): `server`, its executable, and `statics`, the
  * directories it serves (`startServer(server, { statics })`). `client: false` skips the browser's
- * half (no wasm: pages aren't hydrated), as an app of endpoints alone has none; `dev: true` adds the stories (`rocx build --dev`), each a page
+ * half (no wasm: pages aren't hydrated), as an app of endpoints alone has none; `dev: true` adds the stories (`rocx generate --dev`), each a page
  * at `storyPath(…)`; `opt` is the server's optimization (`dev`, quick to build, or `speed`, with boxy
  * lowering unless `specialize` or `ROCX_SPECIALIZE=yes` asks for lambda-set specialization, as
  * server/build.mjs builds an app: D-064), by default what `ROCX_TEST_OPT` says, else `dev`: with
@@ -46,7 +46,7 @@ export async function buildForTests(dir, { out = join(dir, "build", "test"), cli
 	const rocx = rocxBinary();
 	const clientDir = join(out, "client");
 	run(rocx, ["generate", dir, ...(client ? ["--client", clientDir] : []), ...(dev ? ["--dev"] : [])], { env: { ...process.env, ROC: compiler } });
-	// An app of endpoints alone has no browser's half: rocx build wrote no main.roc for it.
+	// An app of endpoints alone has no browser's half: rocx generate wrote no main.roc for it.
 	const browser = client && existsSync(join(clientDir, "main.roc"));
 	if (browser) {
 		const host = join(repo, "web", "platform", "targets", "wasm32", "host.wasm");

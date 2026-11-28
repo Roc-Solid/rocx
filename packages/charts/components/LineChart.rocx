@@ -9,7 +9,7 @@ import charts.Ticks
 ## A line through `data!`'s points, left to right: each across by its `x` (a number: a day, an
 ## hour, a time in milliseconds), to scale, and up by its `y`, the area under it shaded. The axis up
 ## the side runs around the values, widened to round numbers; the one along the bottom runs from
-## the first `x` to the last, its ticks on round numbers. `LineChart.evenly(values)` puts values one
+## the least `x` to the greatest, its ticks on round numbers. `LineChart.evenly(values)` puts values one
 ## apart. With `smooth`, the line curves through the points, and never past one (a monotone curve).
 ## When the data changes, the line glides to it, and the axes' ends with it, a frame at a time; once
 ## they are there, nothing runs. Pointing along the chart shows the point nearest the pointer: its

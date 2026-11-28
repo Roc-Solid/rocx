@@ -38,7 +38,7 @@ Room(meta) := { members : List(Room.Member(meta)), version : U64, settings : Roo
 	## `update`, so a stream can hand on what it heard (`signal`).
 	Signal(m) : [Join({ key : Str, tab : Str, meta : m }), Beat({ key : Str, tab : Str }), Leave({ key : Str, tab : Str }), Update({ key : Str, meta : m })]
 
-	## A room as a plain record, which JSON can carry: what an actor keeps (`save`, `load`).
+	## A room as a plain record, which JSON can carry: what `Kv` keeps (`save`, `load`).
 	Saved(m) : { members : List(Room.Member(m)), version : U64, settings : Room.Settings }
 
 	## A tab unheard for 75 s is gone, and one that left and is back within 5 s never left. A page
@@ -180,7 +180,7 @@ Room(meta) := { members : List(Room.Member(meta)), version : U64, settings : Roo
 	version = |room| room.version
 
 	## When the next sweep could find someone to sweep out: the earliest a tab could expire, or
-	## `Err(Empty)` when no one is here. A stream waits until then, or for what it hears.
+	## `Err(Empty)` when no one is here.
 	deadline : Room(meta) -> Try(U64, [Empty])
 	deadline = |room| {
 		var $soonest = Err(Empty)

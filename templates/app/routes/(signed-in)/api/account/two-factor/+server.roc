@@ -4,10 +4,9 @@ import pf.Log
 import auth.Auth
 import ../../../../../Middlewares
 
-## Signed-in requests only: it is the user's own.
 ## POST /api/account/two-factor: sets up two-factor sign-in: a new secret for an authenticator app,
 ## which the account page shows (as a QR code, and as a key to type in) until the app's first code
-## turns it on (`confirm/`).
+## turns it on (`confirm/`). Signed-in requests only: it is the user's own.
 post! : { request : Server.Request, params : {}, context : Middlewares.Me, body : {} } => Try({}, Endpoint.Refusal)
 post! = |{ context, .. }|
 	match Auth.two_factor_start!(context.user.id, context.user.email) {

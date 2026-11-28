@@ -5,7 +5,7 @@
 ## entries. It is plain Roc, on no platform, so the server and a page in the browser use the same
 ## code.
 ##
-## The component (`<Markdown>`) is in `components/`: `rocx build` copies it into each app that names
-## this package, since a package can't import a platform's `Html` for both apps at once. `Spec` is
-## the specs' examples, as tests. See README.md.
+## The component (`<Markdown>`) is in `components/`: rocx copies it into each app that names this
+## package (`rocx generate`), since a package can't import a platform's `Html` for both apps at
+## once. `Spec` is the specs' examples, as tests. See README.md.
 package [Block, Collection, Frontmatter, Inline, Md, Spec, Yaml] {}

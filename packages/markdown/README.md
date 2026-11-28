@@ -37,8 +37,8 @@ the browser and a test all use the same functions. Import its modules as `markdo
 
 **The component is a `.rocx` file** (`components/Markdown.rocx`). It imports the platform's
 `Html`, which a Roc package can't do for an app that is two programs (the server's and the
-browser's). So `rocx build` copies it into the app, as `Generated/markdown/Markdown.roc`, where
-`pf` is each half's own platform; `rocx build --client` gives the browser's copy the same. In a
+browser's). So rocx copies it into the app as `Generated/markdown/Markdown.roc`, where `pf` is each
+half's own platform. `rocx generate` does it, and `rocx dev` and `rocx build` run that first. In a
 `.rocx` file, `import markdown.Markdown` imports that copy.
 
 ## The modules
@@ -193,9 +193,10 @@ aren't scalars.
 ## Collections
 
 A collection is a folder of Markdown files whose frontmatter has one type. Each folder under the
-app's `content/` is one. `rocx build` finds its `.md` files, at any depth, and writes a module for
-it, `Generated/Content/<Name>.roc` (`content/blog-posts/` is `BlogPosts`), each file imported as
-text. A new post is a new file, and nothing else. A collection's folder is named in lower case.
+app's `content/` is one, named in lower case. rocx finds its `.md` files, at any depth, and writes
+a module for it, `Generated/Content/<Name>.roc` (`content/blog-posts/` is `BlogPosts`), each file
+imported as text (D-042; `rocx generate`, which `rocx dev` and `rocx build` run). A new post is a
+new file, and nothing else.
 
 With one `.roc` file beside the Markdown, named for the frontmatter's type, the module reads the
 files too:
@@ -219,7 +220,7 @@ Posts.files               # List({ path, source }): the files as text
 
 `all` is read when the app is built, so a file whose frontmatter is wrong fails the build, naming
 the file and the field (`content/posts/hello: title is missing`). A typed folder needs the
-markdown package in the app's header; `rocx build` says so if it's missing.
+markdown package in the app's header; rocx says so if it's missing.
 
 A folder with no type has `files` alone, for an app that reads them its own way:
 `Collection.load(Posts.files)`, or several folders of one type read together (`examples/journal`
@@ -283,15 +284,15 @@ Works today:
   these examples.
 - `<Markdown>`, its hooks and `Markdown.highlight`, on both halves of an app; the browser's wasm
   renders the same page as the server.
-- Frontmatter read into a record, collections found by `rocx build`, and a bad file failing the
-  build.
+- Frontmatter read into a record, collections found under `content/` (D-042), and a bad file
+  failing the build.
 
 Not yet (each a proposal in `PROPOSALS.md`):
 
 - Trusted raw HTML in `<Markdown>`, or HTML from an allowlist.
 - The site's highlighter in a package of its own.
-- An RSS or Atom feed for a collection, on the server: a package may have server-only modules now
-  (D-033), and this one has none yet.
+- An RSS or Atom feed for a collection. A package may have server modules (D-033); this one has
+  none yet. `examples/journal` writes its own Atom feed (`routes/[lang]/feed.xml/+server.roc`).
 - A component that never hydrates, without writing `<NoHydration>` around it.
 
 Limits:

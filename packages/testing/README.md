@@ -38,7 +38,7 @@ import { buildForTests, startServer, testSqlite, launchBrowser } from "../packag
 
 They use the Roc Solid repository they are in (or the one `ROCX_ROOT` names): its compiler, its
 `bin/rocx`, and its browser driver. The platforms' hosts must be built there (`just test` builds
-them).
+them). An installed release has no `.mjs` files, so tests from Node need a clone.
 
 ## The four ways to test
 
@@ -71,8 +71,9 @@ expect page({ name: "Ada", unread: [] }).get(Label("Say something")).map_ok(|inp
 expect page({ name: "Ada", unread: [] }).contains(Named("button", "Wave"))
 ```
 
-After `rocx build`, `roc test main.roc` runs every module's `expect`s. Run it as
-`rocx check -- roc test main.roc` and a failing `expect` is reported at its line in the `.rocx` file.
+After `rocx generate` (which writes `Generated/`), `roc test main.roc` runs every module's
+`expect`s. Run it as `rocx check -- roc test main.roc` and a failing `expect` is reported at its line
+in the `.rocx` file.
 
 When a query finds nothing, `get` says what there is instead, for example
 `NotFound("nothing is a button named \"Save\"; the buttons here: \"Add\", \"Clear all\"")`.
@@ -98,7 +99,7 @@ import { buildForTests, startServer, links } from "../packages/testing/index.mjs
 
 let app;
 before(async () => {
-	const { server, statics } = await buildForTests("."); // rocx build, the wasm, the server
+	const { server, statics } = await buildForTests("."); // rocx generate, the wasm, the server
 	app = await startServer(server, { statics });
 });
 after(() => app.stop());
@@ -143,8 +144,8 @@ matches a list's field when one of its items does: `waitForMail({ bcc: "archive@
 They live in the server's memory (`Kv`), with or without a database, so each server a test starts
 begins with an empty mailbox, and a restart forgets it.
 
-`rocx routes --server`, in the app's folder, lists its endpoints, each with its method, path and middleware,
-which helps when writing requests by hand.
+`rocx routes --server`, in the app's folder, lists its endpoints, each with its method, path and
+middleware, which helps when writing requests by hand.
 
 ### 3. Its database and its jobs
 
@@ -168,10 +169,11 @@ await app.stop();
 await db.drop();
 ```
 
-An app on SQLite (`database: Sqlite(…)`) needs no database server. `testSqlite()` makes a database
-file in a new temporary directory. Its `url` (`sqlite:<file>`) is for the server; `db.sql` and
-`db.query` read and write the same file through Node's own SQLite (`node:sqlite`); `drop()` removes
-the directory. The server makes the file and its tables when it starts.
+An app on SQLite needs no database server. An app whose program names no database is on SQLite at
+`data/app.db`, from where the server starts (D-105), so a test without a database of its own writes
+there. `testSqlite()` makes a database file in a new temporary directory instead. Its `url`
+(`sqlite:<file>`) is for the server; `db.sql` and `db.query` read and write the same file through
+Node's own SQLite (`node:sqlite`); `drop()` removes the directory. The server makes the file and its tables when it starts.
 
 `jobs`, `enqueue` and `settleJobs` work as they do for Postgres, with one difference. On SQLite a
 write from the test's process can't wake the server's job workers (SQLite tells only its own
@@ -198,10 +200,10 @@ cache. It answers `null` when there is none, so the test can skip, and the run s
 console (`rocx tests: no Chromium headless shell, so the tests that need it skip …`). In CI (`CI`
 set, as GitHub Actions sets it), or with `ROCX_BROWSERS=required`, a missing browser is an error
 instead, so a CI whose browser install broke fails rather than passing with its browser tests
-skipped; install the browsers in CI (`npx playwright install --with-deps --only-shell chromium
-firefox`), or set `ROCX_BROWSERS=optional` where the browser tests may skip. `browser.open(url)` opens a tab
-and waits for the page to hydrate, strictly: a page that isn't what the browser's half renders
-throws. The tab has the same queries, and its elements are used with real clicks and keys.
+skipped. Install the browsers in CI (`npx playwright install --with-deps --only-shell chromium
+firefox`), or set `ROCX_BROWSERS=optional` where the browser tests may skip. `browser.open(url)`
+opens a tab and waits for the page to hydrate, strictly: a page that isn't what the browser's half
+renders throws. The tab has the same queries, and its elements are used with real clicks and keys.
 `findBy…` looks again until the page shows what it asks for.
 
 The tabs of one browser share their cookies, as one person's browser does. To test two people at
@@ -297,7 +299,7 @@ compare with `==`: their tags, their attributes in order, their text and their c
 | `postgres.mjs` | `testDatabase(url = DATABASE_URL, { template, prefix })`: a database of the test's own (with `template`, a copy of that database), with `url`, `name`, `query(text)`, `` sql`…${value}` `` (values written as literals), `jobs({ kind, state })`, `enqueue(kind, input, { key, attempts })`, `settleJobs({ later, ms })`, `close()` and `drop()`. `connect(url)` opens one connection with the same methods. A client of its own, over Node's sockets: the simple query protocol; SCRAM-SHA-256, MD5 or a clear-text password; rows as objects of numbers, booleans, JSON and text. |
 | `sqlite.mjs` | `testSqlite({ prefix })`: a SQLite file of the test's own, with `url`, `path`, `query(sql, params)`, `` sql`…${value}` `` (values as parameters: a boolean as 1 or 0, a date as ISO text, an object as JSON), `jobs`, `enqueue`, `settleJobs` (the workers woken through the server), `close()` and `drop()`, over `node:sqlite`. |
 | `browser.mjs` | `launchBrowser({ engine })` (`"chromium"` or `"gecko"`; `null` when there is none, said once on the console; an error where browsers are required), `findChrome()`, `findGecko()` (the same), `browsersRequired()` (`ROCX_BROWSERS=required`, or `CI` set unless `ROCX_BROWSERS=optional`). `browser.open(url, { strict, cookies, script, timeout })` and `browser.close()`. A `Tab` has the queries (async), `findBy…` and `findAllBy…` (`(query, options, { ms })`), `waitFor(check, { ms })`, `goto(url)`, `dom()`, `text()`, `requested()`, `errors`, `console`, `screenshot({ width, height, full, dark })`, `drag(source, target, { drop })`, `finish({ cancel })`, `touchDrag(source, target, { hold, lift })`, `lift()` and `close()`. Each `Element` has `tag`, `text`, `role`, `name`, `attr(name)`, `click()`, `focus()`, `fill(text)`, `type(text)`, `press(key)`, `value()`, `checked()` and `selector()`. |
-| `build.mjs` | `buildForTests(dir, { out, client, dev, opt, specialize })`: `rocx build`, the browser's wasm and the server, into `out` (`<dir>/build/test`); answers `{ server, statics }`. `client: false` skips the browser's half; `dev: true` adds the stories; `opt` is the server's optimization (`"dev"`, or `"speed"`, built without lambda-set specialization unless `specialize` or `ROCX_SPECIALIZE=yes`). Also `repo`, the repository it uses. |
+| `build.mjs` | `buildForTests(dir, { out, client, dev, opt, specialize })`: `rocx generate`, the browser's wasm and the server, into `out` (`<dir>/build/test`); answers `{ server, statics }`. `client: false` skips the browser's half; `dev: true` adds the stories; `opt` is the server's optimization (`"dev"`, or `"speed"`, built without lambda-set specialization unless `specialize` or `ROCX_SPECIALIZE=yes`), by default `ROCX_TEST_OPT`, else `"dev"`. Also `repo`, the repository it uses. |
 | `index.mjs` | everything above |
 
 ## Status
@@ -316,7 +318,8 @@ expects. `node --test 'packages/testing/test/*.test.mjs'` (part of `just test`) 
 - `browser.test.mjs`: `tab.drag` in each browser there is; and no browser, skipped outside CI and
   an error in it (it needs nothing).
 - `app.test.mjs`: everything above against a real app it builds (`test/fixture.mjs`), with
-  Postgres when it is there, and Chromium and Gecko (required in CI, as above). It needs the toolchain and the platforms' hosts built.
+  Postgres when it is there, and Chromium and Gecko (required in CI, as above). It needs the
+  toolchain and the platforms' hosts built.
 
 Not yet. Each of these needs a change outside the package, written up in `PROPOSALS.md`:
 
@@ -327,7 +330,10 @@ Not yet. Each of these needs a change outside the package, written up in `PROPOS
 - clearing the dev mailbox between tests (today, `waitForMail`'s `after` skips the messages already
   there);
 - requests answered in-process from Roc, and `view!` components rendered in a Roc test (`rocx test`);
-- helpers in this package that run inside the server under test.
+- helpers in this package that run inside the server under test;
+- a browser driven from Roc. packages/headless (D-128) drives Chromium from Roc already, over the CLI
+  platform's `WebSocket`; Gecko, drags, touch and these queries in its tabs are in its
+  PROPOSALS.md.
 
 Limits:
 

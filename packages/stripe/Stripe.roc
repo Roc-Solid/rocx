@@ -158,11 +158,11 @@ Stripe := [].{
 	api_version = "2025-03-31.basil"
 
 	## The Stripe plugin: the tables (`stripe/0001_stripe` to `stripe/0003_forgotten`, the same on
-	## SQLite and Postgres), and a look at the keys once the server has started (`stripe.keys`: test or live mode). It needs a database, and
-	## `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`: outside `--dev`, a server without them doesn't
-	## start; under `--dev` it starts with Stripe off (each call answers `StripeErr`, the webhook
-	## refuses every event, 503), as the AI plugin does without its key. `STRIPE_API_URL` points it at
-	## another API than Stripe's (a test's stand-in).
+	## SQLite and Postgres), and a look at the keys once the server has started (`stripe.keys`: test
+	## or live mode). It needs a database, and `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`:
+	## outside `--dev`, a server without them doesn't start; under `--dev` it starts with Stripe off
+	## (each call to Stripe answers `StripeErr`, the webhook refuses every event, 503).
+	## `STRIPE_API_URL` points it at another API than Stripe's (a test's stand-in).
 	plugin : Stripe.Options -> Plugin.Value(context)
 	plugin = |options| {
 		at = options.webhook_at

@@ -46,7 +46,7 @@ export const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const site = join(root, "site");
 export const out = join(site, "build");
 export const dist = join(site, "dist");
-/** The browser's copy of the site (`rocx build --client`), which the browser's app is built from. */
+/** The browser's copy of the site (`rocx generate --client`), which the browser's app is built from. */
 export const client = join(out, "client");
 
 /** The pages, from site/routes (`/`, `/syntax`; `/blog/[slug]` would be one too). */

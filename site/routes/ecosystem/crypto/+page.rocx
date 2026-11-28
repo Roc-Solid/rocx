@@ -85,7 +85,7 @@ view! = |_|
 				The package's <code>README.md</code> (<code>packages/crypto/</code>) lists every function's type.
 			</p>
 			<p>
-				A row's id: <code>{"Uuid.v7(Time.now_millis!({}).to_u64_wrap(), Random.bytes!(10))"}</code>, the time and
+				A row's id: <code>{"Uuid.v7(Time.now_millis!({}), Random.bytes!(10))"}</code>, the time and
 				random bytes from the server platform, as the module is plain Roc. A version 7 id leads with when it
 				was made, so rows added by id go to the end of an index, and sorting by id sorts by time; it also
 				tells whoever sees it when that was, which a version 4 id doesn't. Both are 36 characters of text, the
@@ -103,8 +103,9 @@ view! = |_|
 			<p>
 				Each module's <code>expect</code>s check it against published test vectors: NIST's SHA-256 and SHA-1
 				examples, every test case of RFC 4231 (HMAC-SHA256) and RFC 2202 (HMAC-SHA1), RFC 5869's SHA-256
-				cases (HKDF), RFC 4648's (Base64, Base32 and hex), and RFC 9562's UUID examples. <code>Sha256</code> wraps Roc's builtin
-				<code>Crypto.SHA256</code>; <code>Sha1</code> is the package's own Roc. The server platform's tests
+				cases (HKDF), RFC 4648's (Base64, Base32 and hex), and RFC 9562's UUID examples.
+				<code>Sha256</code> wraps Roc's builtin <code>Crypto.SHA256</code>; <code>Sha1</code> is the package's
+				own Roc. The server platform's tests
 				also compare SHA-256, HMAC, HKDF, Base64 and hex with Node's <code>crypto</code> through a running
 				server, and the auth package's tests compare authenticator codes with Node's.
 			</p>

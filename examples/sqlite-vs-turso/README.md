@@ -48,9 +48,11 @@ it back (start once with `turso:<path>?mvcc=off`).
 `rocx dev` builds without optimizations, so its times are only for trying the app. For numbers worth
 comparing, build it as `just db-bench` does (below).
 
-### Build it as it would ship
+### Build it optimized
 
-From the repository's root:
+`rocx build` makes the release, but a release's server has only the engine its program names
+(D-104): this app names SQLite, so its `dist/server` refuses a `turso:` URL. To time both engines,
+build it as `just db-bench` does, with every engine in the host. From the repository's root:
 
 ```sh
 bin/rocx generate examples/sqlite-vs-turso
@@ -111,7 +113,7 @@ Each fetch and join checks that it read what it should.
 
 | Feature | Where |
 |---|---|
-| An app of endpoints alone: two `POST` endpoints and no pages, so `rocx build` writes no browser half. | `routes/bench/+server.roc`, `routes/bench/big/+server.roc` |
+| An app of endpoints alone: two `POST` endpoints and no pages, so rocx writes no browser half. | `routes/bench/+server.roc`, `routes/bench/big/+server.roc` |
 | A typed JSON body (`body : { size : U64 }`) and a typed answer (`Bench.Report`), turned into JSON by the platform. A failure is `Err(Status(500, why))`. | `routes/bench/+server.roc`, `Bench.roc` |
 | The database named in the program (`database: Sqlite("data/bench.db")`) and overridden at start with `--database-url`. `Db.engine!` says which engine the server opened. | `main.roc`, `engine!` in `Bench.roc` |
 | Timing in Roc with the server's monotonic clock (`Time.now_nanos!`). | `timed!` in `Bench.roc` |
@@ -146,11 +148,12 @@ and compare the engines with each other rather than with another machine's numbe
 ## Test it
 
 ```sh
-just examples sqlite-vs-turso
+just examples sqlite-vs-turso           # build, type-check, lint, the SQL, the expects and the test
+just examples-release sqlite-vs-turso   # rocx build, then the test against a server built --opt=speed
 ```
 
-This builds the app, type-checks it, lints it, checks its SQL (`rocx check --sql`), and runs the
-`expect`s and `test/bench.test.mjs`. The test runs the benchmark small (size 1, and the big run at
+`just examples` builds the app, type-checks it, lints it, checks its SQL (`rocx check --sql`), and
+runs the `expect`s and `test/bench.test.mjs`. The test runs the benchmark small (size 1, and the big run at
 2,000 orders) on all three engines, each on a file of its own: SQLite, Turso in MVCC mode, and Turso
 in WAL mode. It checks that every workload answers with what it did, and that the transactions'
 bodies ran at least once each (exactly once where writes take turns). No database server is needed.

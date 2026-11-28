@@ -162,9 +162,9 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		}
 
 	## The endpoint, asked with a query (`weeks=1`, as a URL writes it after the `?`): the page's own,
-	## to read the data for what it shows (`Endpoint.with_query(Api.get_board({}),
-	## Router.location!({}).query)`). Its handler reads it as `request.query`. It replaces a query the
-	## URL had; an empty one leaves the endpoint as it was.
+	## to read the data for what it shows (`Api.get_board({}).with_query(Router.location!({}).query)`).
+	## Its handler reads it as `request.query`. It replaces a query the URL had; an empty one leaves
+	## the endpoint as it was.
 	with_query : Endpoint(context, arg, result), Str -> Endpoint(context, arg, result)
 	with_query = |endpoint, query|
 		if query.is_empty() {
@@ -198,7 +198,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 		}
 
 	## From a component, in the browser: listens to an endpoint's events with the platform's
-	## `Call.listen!` (`Endpoint.listen!(Api.events_api_count_to({ to }), heard!)`): `heard!` is
+	## `Call.listen!` (`Api.events_api_count_to({ to }).listen!(heard!)`): `heard!` is
 	## given each event as it comes, typed, then `Ended`, or what went wrong.
 	listen! : Endpoint(context, {}, Events(event)), ([Event(event), Ended, Failed(Server.Problem)] => {}) => {}
 		where [event.Json.Parseable([InvalidJson(Str)])]
@@ -220,7 +220,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 
 	## From a component, in the browser: subscribes to a channel (a route's `channel!`), from an
 	## effect, until the effect runs again or its component goes
-	## (`create_effect!(|| org!(), |org| Endpoint.subscribe!(Api.channel_org_org_news({ org }), heard!))`).
+	## (`create_effect!(|| org!(), |org| Api.channel_org_org_news({ org }).subscribe!(heard!))`).
 	## `heard!` is given what its subscription hears (`Channel.Event`), in order, one at a time:
 	## `Resync` when it should read its data again, then each `Message`; or why it hears nothing.
 	##
@@ -241,10 +241,10 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	}
 
 	## From a component, in the browser: says `said` on a channel, to the server, where its route's
-	## `receive!` hears it, if its check lets the page in (`Endpoint.say!(Api.channel_rooms_room({
-	## room }), Moved({ x, y }))`). What a page says in one frame goes in one request
-	## (`POST /rocx/live/send`); nothing waits for it, and a refusal is a warning in the console. Not
-	## on the server.
+	## `receive!` hears it, if its check lets the page in
+	## (`Api.channel_rooms_room({ room }).say!(Moved({ x, y }))`). What a page says in one frame goes
+	## in one request (`POST /rocx/live/send`); nothing waits for it, and a refusal is a warning in
+	## the console. Not on the server.
 	say! : Endpoint(context, {}, Channel(who, message, said)), said => {}
 		where [said.Json.Encodable(e)]
 	say! = |endpoint, said|
@@ -261,7 +261,7 @@ Endpoint(context, arg, result) :: { method : Str, url : Str, run : Server.Reques
 	resync! = |endpoint| Host.resync!(endpoint.url)
 
 	## On the server: publishes `message` to every page subscribed to a channel
-	## (`Endpoint.publish!(Api.channel_org_org_news({ org: "acme" }), news)`), from a request, a
+	## (`Api.channel_org_org_news({ org: "acme" }).publish!(news)`), from a request, a
 	## job or an actor: only those subscribed with the same params hear it. A subscriber hears the
 	## messages on a channel in the order they were published; one that falls too far behind (256)
 	## hears `Resync` instead of what it missed. In the server's memory (`Live`): published while

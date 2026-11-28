@@ -1,6 +1,6 @@
 // A Roc Solid app's server under test: started on a port of its own, asked as a browser asks it (a
 // cookie jar, forms, JSON, endpoint reads, events), its dev mailbox read, its log parsed. The
-// server is the app as built (`node server/build.mjs main.roc build/server`, after `rocx build`).
+// server is the app as built (`node server/build.mjs main.roc build/server`, after `rocx generate`).
 //
 //   const app = await startServer("build/server", { database: db.url });
 //   const browser = app.client();
@@ -21,7 +21,7 @@ import { parse, within } from "./dom.mjs";
  *   one wakes its job workers);
  * - `dev`: `--dev` (the mailbox's pages, crash pages, page reloads);
  * - `statics`: directories it serves files from (`--static`, each);
- * - `context`: a file of what its middleware is given (`--context-file`);
+ * - `context`: a file whose text the app's `init!` is given (`--context-file`);
  * - `flags`: any other flags; `env`: added to this process's environment (`ROCX_LOG` is `json`,
  *   so `logs()` can read it, unless `env` says otherwise).
  *

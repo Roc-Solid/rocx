@@ -1,4 +1,4 @@
-// What the journal's tests share: the app built once at a time (rocx build writes Generated/ in
+// What the journal's tests share: the app built once at a time (rocx generate writes Generated/ in
 // the app's own folder, so two test files building at once would race; a lock directory takes
 // turns), its server started with the journal's own files (`static/`) beside the built wasm, and a
 // check that XML is well formed, for the feeds and the sitemap.
@@ -10,7 +10,7 @@ import { buildForTests, startServer } from "../../../packages/testing/index.mjs"
 /** The journal's folder. */
 export const dir = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** The journal, built (`rocx build`, the browser's wasm, the server): `{ server, statics }`. */
+/** The journal, built (`rocx generate`, the browser's wasm, the server): `{ server, statics }`. */
 export async function build() {
 	const lock = join(dir, "build", "building.lock");
 	mkdirSync(join(dir, "build"), { recursive: true });

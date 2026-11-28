@@ -6,7 +6,7 @@
 ##   `Flags`), security headers (`Security`) and checks on a request (`Checks`).
 ## - The middleware that runs them on the server (`Guard`), with what it keeps between requests in
 ##   the server's memory (`Kept`: the rate limits' tallies; `FlagStore`: the flags' overrides), on
-##   `Kv` (D-043).
+##   `Kv` (D-043). `FlagStore.plugin({})` keeps the overrides in the app's database too (D-057).
 ##
 ## It names the server platform, for the middleware; the browser's half sees the modules both
 ## halves can compile (`browser.roc`). The component that shows a flagged part of a page is

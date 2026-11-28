@@ -51,8 +51,8 @@ In `routes/`, `+page.rocx` is a page, `+server.roc` an endpoint (what a page rea
 posts), and `+layout.rocx` wraps the pages below it. A path is a page or an endpoint, never both: a
 page's endpoints live under `api/`, at the page's path, so what `/account` reads and posts is
 under `routes/(signed-in)/api/account/`: the account at `/api/account`, two-factor sign-in's forms at
-`/api/account/two-factor`. `rocx build` writes `Generated/` from them (the routes, `Api`, `Paths`):
-don't edit it, and don't commit it.
+`/api/account/two-factor`. rocx writes `Generated/` from them (the routes, `Api`, `Paths`) as
+`rocx dev` and `rocx build` start: don't edit it, and don't commit it.
 
 Middleware goes by folder: a `+middleware.roc` runs around every page and endpoint in its folder
 and the folders below it, outermost first, and `routes/+middleware.roc` around every request.

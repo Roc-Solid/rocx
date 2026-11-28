@@ -51,8 +51,9 @@ view! = |_|
 			/>
 			<p>
 				In a <code>.rocx</code> file, <code>import qr.QrCode</code> for the component and
-				<code>import qr.Qr</code> for the encoder and its drawing functions. <code>rocx build</code> copies
-				the component from the package's <code>components/</code> into the app, as
+				<code>import qr.Qr</code> for the encoder and its drawing functions. <code>rocx generate</code>
+				(which <code>rocx dev</code> and <code>rocx build</code> run first) copies the component from the
+				package's <code>components/</code> into the app, as
 				<code>Generated/qr/QrCode.roc</code> (as for the <a href={Paths.ecosystem_charts}>charts</a>): a
 				package can't import the platform's <code>Html</code> for the server and the browser at once.
 			</p>
@@ -166,7 +167,6 @@ view! = |_|
 				</li>
 				<li>
 					The level is never raised for you, even when the chosen version could hold the text at a higher one.
-
 				</li>
 				<li>No logo in the middle, and no Kanji mode, ECI, structured append or micro QR codes.</li>
 			</ul>

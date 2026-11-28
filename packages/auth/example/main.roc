@@ -1,9 +1,10 @@
 ## packages/auth's example: an app whose people sign in by a mailed link, or at a provider, and
-## whose own table of users `Accounts.admit!` fills. The plugin brings its tables (D-072), the
-## package its handlers, which the app's routes in routes/auth/ call (D-116: a link and a provider
-## coming back, the code, signing out, the dev sign-in), and the middleware `Middlewares` names
-## (each group's `+middleware.roc` puts one around its routes). Its pages are its own: a home page that says who is signed in,
-## a sign-in page (an address, the providers set up, and the dev sign-in under `--dev`), and the page
+## whose users the package keeps (D-134: `Accounts.admit!` asks `Auth.user_for!`, after turning
+## away refused.example). The plugin brings its tables (D-072), the package its handlers, which the
+## app's routes in routes/auth/ call (D-116: a link and a provider coming back, the code, signing
+## out, the dev sign-in), and the middleware `Middlewares` names (each group's `+middleware.roc`
+## puts one around its routes). Its pages are its own: a home page that says who is signed in, a
+## sign-in page (an address, the providers set up, and the dev sign-in under `--dev`), and the page
 ## a mailed link opens, whose button signs in (so a mail scanner that opens the link can't use it).
 ## An admin (`ADMIN_EMAILS`) may act as anyone for half an hour (`/impersonate`), to see the app as
 ## they do. Anyone may turn on two-factor sign-in (`/two-factor`: a code from an authenticator app

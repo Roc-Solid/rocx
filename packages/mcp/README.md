@@ -72,10 +72,12 @@ import ../../Middlewares
 middleware = Middlewares.signed_in
 ```
 
-A tool made from an endpoint sends it as a handler sends one (`Endpoint.send!`): the server answers
-it in-process, by the endpoint's route, with the MCP request's headers (its `authorization`, its
-cookies). So the endpoint's own middleware decides, as it does for a script, and an agent can do
-what the same credentials can do over HTTP, and no more (D-103).
+A tool made from an endpoint sends it as a handler sends one (`Api.x(params).send!(arg)`). The
+server answers it in-process, by the endpoint's route, with the MCP request's headers (its
+`authorization`, its cookies). So the endpoint's own middleware decides, as it does for a script: an
+agent can do what the same credentials can do over HTTP, and no more (D-103). Each such call is a
+second request through the app's middleware, inside the MCP request: it has its own log line, and a
+rate limit counts it too.
 
 ## The protocol's modules
 
@@ -97,14 +99,14 @@ made there is served here as it is, and packages/ai's models use it too.
 
 ## The HTTP side
 
-`McpHttp` imports the server platform (`Server`, `Endpoint`, `OpenApi`, `Events`, `Log`), so the package names it, and its `browser.roc` lists the protocol's modules alone for the
-browser's half of an app (D-033, as packages/push and packages/guard do). `roc test
-packages/mcp/main.roc` runs McpHttp's expects with the protocol's.
+`McpHttp` imports the server platform (`Server`, `Endpoint`, `OpenApi`, `Events`, `Log`), so the
+package names it. Its `browser.roc` lists the protocol's modules alone, for the browser's half of an
+app (D-033). `roc test packages/mcp/main.roc` runs McpHttp's expects with the protocol's.
 
 | `McpHttp.` | What it is |
 |---|---|
 | `respond!(server, request, context)` | The answer to one request to the MCP route, for a route file's `respond!`. |
-| `endpoint(Api.x, about, McpHttp.openapi({}))` | An endpoint as a tool. `Api.x` is the function from the endpoint's path params to the endpoint, from `Generated/Api` (its contract). The tool's arguments are one object, read both as the path's params and as the body: `{ "id": "7", "tags": ["work"] }` for `Api.put_api_notes_id_tags`. An endpoint with no params takes its body alone. It is sent as a handler sends it (`Endpoint.send!`): answered in-process by its route, behind its middleware, with the MCP request's headers. Its answer is the tool's, and a refusal (`NotFound`, `BadRequest`, its middleware's 401) goes back to the model as a tool error. A body field with the same name as a path param is a problem `Mcp.problems` reports. |
+| `endpoint(Api.x, about, McpHttp.openapi({}))` | An endpoint as a tool. `Api.x` is the function from the endpoint's path params to the endpoint, from `Generated/Api` (its contract). The tool's arguments are one object, read both as the path's params and as the body: `{ "id": "7", "tags": ["work"] }` for `Api.put_api_notes_id_tags`. An endpoint with no params takes its body alone. It is sent as a handler sends it (`.send!(arg)`): answered in-process by its route, behind its middleware, with the MCP request's headers. Its answer is the tool's, and a refusal (`NotFound`, `BadRequest`, its middleware's 401) goes back to the model as a tool error. A body field with the same name as a path param is a problem `Mcp.problems` reports. |
 | `function(Module.name!, about, McpHttp.openapi({}))` | A function of the app's own, `arg => result`, as a tool, run inside the MCP request, behind the MCP route's middleware. An argument that isn't a record is the arguments' `input` field. |
 | `tool(about, handler!, McpHttp.openapi({}))` | A handler written for the tool, `arg, Caller(c) => Try(result, Str)`, its schemas written from its types. |
 | `Caller(c)` | What a tool is given: `{ request, context, progress! }`. `context` is what the middleware passed on, such as who is asking. |

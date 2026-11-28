@@ -56,8 +56,7 @@ view! = |_|
 			<p>
 				This site has no server, so the demo plays its part: it keeps a list of who is here and tells the
 				package's stores what a room's channel would. Press a button, or let Auto (on from the start) act
-				every
-				1.5 seconds.
+				every 1.5 seconds.
 			</p>
 		</NoHydration>
 		<Demo>
@@ -78,28 +77,26 @@ view! = |_|
 			</p>
 			<Code source={"app [program] { pf: platform \"…/server/platform/main.roc\", presence: \"…/packages/presence/main.roc\" }"} numbers={Bool.False} />
 			<p>
-				<code>rocx build</code> copies the components and browser stores into the app, so both halves compile
-				them. Each component takes its data as an accessor (a function ending in <code>!</code> that reads a
+				<code>rocx generate</code> (which <code>rocx dev</code> and <code>rocx build</code> run first) copies the
+				components and browser stores into the app, so both halves compile them. Each component takes its data as an accessor (a function ending in <code>!</code> that reads a
 				value), so it shows whatever feeds it: a room's channel, or here, the demo.
 			</p>
 			<Code title={"${Sources.presence_use.file}, in part"} source={Sources.presence_use.rocx} />
 			<p>
-				In an app, a room is a route's <a href={"${Paths.platform_live}#channels"}>channel</a>, named by its
-				URL. The channel's check admits a member as the person the middleware says they are: key and metadata
-				come from the server, never the page. Its hooks are <code>PresenceServer</code>'s, so a tab joins as
-				it
-				subscribes and leaves when the subscription ends. The whole route from examples/board:
+				In an app, a room is a route's <a href={"${Paths.platform_live}#channels"}>channel</a> under
+				<code>api/</code>, named by its URL. The channel's check admits a member as the person the
+				middleware says they are: key and metadata come from the server, never the page. Its hooks are
+				<code>PresenceServer</code>'s, so a tab joins as it subscribes and leaves when the subscription
+				ends. The whole route from examples/board:
 			</p>
 			<Code title={Sources.presence_route.file} source={Sources.presence_route.rocx} />
 			<p>
 				The page joins with <code>Presence.join!</code>, given the channel. It subscribes, tells the room
-				every
-				15 seconds that the tab is still here, and returns the accessors the components read
+				every 15 seconds that the tab is still here, and returns the accessors the components read
 				(<code>members!</code>, <code>others!</code>, <code>typing!</code>, <code>cursors!</code>) and the
-				functions
-				that tell the room about this tab (<code>status!</code>, <code>update!</code>, <code>typed!</code>,
-				<code>moved!</code>…). It all goes over the tab's one live stream, with its other channels; presence
-				needs no endpoint.
+				functions that tell the room about this tab (<code>status!</code>, <code>update!</code>,
+				<code>typed!</code>, <code>moved!</code>…). It all goes over the tab's one live stream, with its
+				other channels; presence needs no other endpoint.
 			</p>
 			<Code title={"${Sources.presence_join.file}, in part"} source={Sources.presence_join.rocx} />
 			<p>
@@ -107,16 +104,14 @@ view! = |_|
 				<code>Offline</code>: a typo is a compile error, and the avatar stack knows how to show each. Set it
 				from a handler or an effect with <code>{"(here.status!)(Busy)"}</code>. To show a hidden tab as away,
 				add <code>{"<Document on:visibilitychange.visible={here.visible!} />"}</code>: while hidden, the tab
-				is
-				<code>Away</code> and its cursor gone; shown again, its status comes back.
+				is <code>Away</code> and its cursor gone; shown again, its status comes back.
 			</p>
 			<p>
 				A member's metadata, <code>Wire.Meta(d)</code>, is what the components show (name, picture, colour,
 				status) plus <code>data</code>: the app's own, of any type JSON can carry and <code>==</code> can
 				compare (<code>{"{}"}</code> for none). The channel's check sets it first; the page changes
 				<code>data</code> with <code>{"(here.update!)(data)"}</code>, up to a kibibyte of JSON. On the board
-				it
-				is the card a person has open (<code>{"{ card : Str }"}</code>), shown on each tile. Name, picture and
+				it is the card a person has open (<code>{"{ card : Str }"}</code>), shown on each tile. Name, picture and
 				colour stay the server's. A room where only the server may set <code>data</code> refuses
 				<code>Update</code> in its own <code>receive!</code>. <code>{"Wire.meta(name, data)"}</code> makes
 				metadata, leaving the rest to the components.
@@ -134,12 +129,9 @@ view! = |_|
 							<td><code>{"faces! : () => List(Stack.Face)"}</code></td>
 							<td>
 								who is here, in order: <code>{"{ key, name, image, color, status }"}</code>, made
-								from a
-								member by <code>Wire.face</code>. With no <code>image</code>, a face shows its
-								initials on its
-								<code>color</code>; with no <code>color</code> either, on one picked from its key,
-								the same
-								every time
+								from a member by <code>Wire.face</code>. With no <code>image</code>, a face shows
+								its initials on its <code>color</code>; with no <code>color</code> either, on one
+								picked from its key, the same every time
 							</td>
 						</tr>
 						<tr><td><code>{"max : U64 ?? 5"}</code></td><td>how many places the stack takes, counting the <code>+N</code></td></tr>
@@ -212,11 +204,9 @@ view! = |_|
 			<Heading id="how">How a room works</Heading>
 			<p>
 				<strong>The server keeps the room</strong> in its own memory: no broker to run. <code>Room</code> is
-				the
-				room's state: who is here, with their metadata, since when, and from which tabs. <code>join</code>,
-				<code>leave</code>, <code>update</code> (new metadata) and <code>sweep</code> return the changes
-				others
-				should hear (<code>Joined</code>, <code>Left</code> or <code>Changed</code>), numbering the state with
+				the room's state: who is here, with their metadata, since when, and from which tabs.
+				<code>join</code>, <code>leave</code>, <code>update</code> (new metadata) and <code>sweep</code>
+				return the changes others should hear (<code>Joined</code>, <code>Left</code> or <code>Changed</code>), numbering the state with
 				each. <code>Room</code> never reads a clock: the caller passes the time in, so tests check a timeout
 				without waiting:
 			</p>
@@ -224,39 +214,36 @@ view! = |_|
 			<ul>
 				<li>
 					<strong>Leaving has a grace period.</strong> A member with two tabs is one face, and leaves with
-					the
-					last. A tab whose stream ends leaves after five seconds unless it is back, so a reload or
-					reconnect
-					doesn't flicker out and in. A page that drops the room while the tab stays open (it went to
-					another
-					room) leaves at once: its <code>on_close!</code> hook is told <code>Dropped</code>.
+					the last. A tab whose stream ends leaves after five seconds unless it is back, so a reload or
+					reconnect doesn't flicker out and in. A page that drops the room while the tab stays open (it
+					went to another room) leaves at once: its <code>on_close!</code> hook is told
+					<code>Dropped</code>.
 				</li>
 				<li>
 					<strong>Vanishing has a timeout.</strong> A page says it is here every 15 seconds; a tab unheard
-					for 75
-					seconds (a laptop shut, a network gone) is swept out, however long its connection lingers.
-					Browsers
-					may slow a hidden tab's timers to once a minute, so 75 seconds is that minute plus a beat.
+					for 75 seconds (a laptop shut, a network gone) is swept out, however long its connection
+					lingers. Browsers may slow a hidden tab's timers to once a minute, so 75 seconds is that
+					minute plus a beat. The live stream usually notices first: the server writes a beat on it
+					every 15 seconds, and drops a connection that leaves it unacknowledged for 20. That ends the
+					tab's subscription (<code>Gone</code>), and the grace runs from there.
 				</li>
 				<li>
 					<strong>Changes are numbered.</strong> A page's copy of the room (<code>Mirror</code>) takes a
 					snapshot, then each change in order, ignoring any older than the snapshot. A skipped number
-					means a
-					missed change, and the page asks for a fresh snapshot.
+					means a missed change, and the page asks for a fresh snapshot.
 				</li>
 				<li>
 					<strong>Kept in memory, swapped in.</strong> Each room lives in the server's
 					<a href={Paths.platform_kv}>Kv</a> store. A change reads the room, sweeps it, changes it, and
-					writes
-					it back only if no one else changed it meanwhile (<code>Kv.swap!</code>), else reads it again.
-					So two
-					tabs joining at once both count, and nothing is written to the database. The change is then
-					published on the room's channel, numbered. A room silent for a quarter of an hour is forgotten.
+					writes it back only if no one else changed it meanwhile (<code>Kv.swap!</code>), else reads
+					it again. So two tabs joining at once both count, and nothing is written to the database. The
+					change is then published on the room's channel, numbered. Since each change sweeps first, a
+					tab past its grace goes at the room's next change, another tab's beat at the latest. A room
+					silent for a quarter of an hour is forgotten.
 				</li>
 				<li>
 					<strong>Typing and cursors are passed on, never kept.</strong> The server forwards them to the
-					other
-					tabs. Only a cursor's latest place counts, so a tab that falls behind skips to it.
+					other tabs. Only a cursor's latest place counts, so a tab that falls behind skips to it.
 				</li>
 			</ul>
 
@@ -323,12 +310,10 @@ view! = |_|
 			<Heading id="styling">Styling</Heading>
 			<p>
 				Sizes and colours come from CSS custom properties. The avatar stack:
-				<code>--avatar-size</code> (2rem), <code>--avatar-overlap</code>, <code>--avatar-ring</code> (the ring
-				between faces; set it to the page's background), <code>--avatar-font</code>,
-				<code>--avatar-more</code>,
-				<code>--avatar-away</code>, <code>--avatar-busy</code> and <code>--avatar-offline</code> (an offline
-				face's
-				opacity, 0.5). The typing line: <code>--typing-color</code> and <code>--typing-size</code>. Cursors:
+				<code>--avatar-size</code> (2rem), <code>--avatar-overlap</code> (0.375rem), <code>--avatar-ring</code>
+				(the ring between faces; set it to the page's background), <code>--avatar-font</code>,
+				<code>--avatar-more</code>, <code>--avatar-away</code>, <code>--avatar-busy</code> and
+				<code>--avatar-offline</code> (an offline face's opacity, 0.5). The typing line: <code>--typing-color</code> and <code>--typing-size</code>. Cursors:
 				<code>--cursor-glide</code> (0.12s; the demo's is 1.4s) and <code>--cursor-font</code>. Under
 				<code>prefers-reduced-motion</code>, the dots stop bobbing and cursors jump instead of gliding.
 			</p>
@@ -336,12 +321,12 @@ view! = |_|
 			<Heading id="status">Status</Heading>
 			<p>
 				Everything above works today. In examples/board, two people in their own browsers see each other,
-				which card each has open, one going away while their tab is
-				hidden, and a third leaving when they close their browser.
+				which card each has open, one going away while their tab is hidden, and a third leaving when they
+				close their browser.
 			</p>
 			<p>
-				Not yet (the package's PROPOSALS.md has details): the live stream itself as the heartbeat (today the
-				page sends one every 15 seconds), and a room named by the page's path with no route of its own (a
+				Not yet (the package's PROPOSALS.md has details): a room that trusts the live stream's end and
+				drops the page's 15-second beats, and a room named by the page's path with no route of its own (a
 				"who's viewing this page" stack).
 			</p>
 			<details>

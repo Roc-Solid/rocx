@@ -32,7 +32,8 @@ rocx changes. Write the app's own notes outside that block.
   save, its SQL checked after each start. It passes the folder's `.env` to the server.
 - `rocx check`: rocx's own checks, then the compiler on the server's program and the browser's;
   each problem is reported at its `.rocx` line. Exit 1 on an error, 2 on warnings alone. Run it
-  before saying a change is done. `rocx check --sql` checks the SQL against the app's engine.
+  before saying a change is done. `rocx check --sql` checks the SQL against the app's engine
+  (`rocx check --sql -- --env-file .env` for the settings in `.env`).
 - `rocx test`: the app's `expect`s. HTTP and browser tests use packages/testing.
 - `rocx fmt <paths>`: formats `.roc` and `.rocx` files; `--check` only reports.
 - `rocx routes`: every route with its methods and the middleware around it; `--server` lists only
@@ -51,8 +52,9 @@ rocx changes. Write the app's own notes outside that block.
   Endpoints whose URL is fixed by someone else (a webhook, an OAuth callback, `/.well-known/…`)
   stay where their URL must be.
 - Params are `Str` unless a type says otherwise: a handler's `params : { id : I64 }`, and a page's
-  `Params : { id : I64 }` alias, which must agree. A path part that doesn't read as its type is a
-  404 before anything runs.
+  own `Params : { id : I64 }` alias. Nothing is read across folders, so a page and its endpoint
+  under `api/` each say the type. A path part that doesn't read as its type is a 404 before
+  anything runs.
 - Links use `Paths` (`Paths.lists_id({ id })`), which rocx writes from the routes: a wrong param
   doesn't compile.
 
@@ -99,8 +101,9 @@ post! : { request : Server.Request, params : {}, context : Gate.Member, body : {
 ## Pages and components
 
 - A `.rocx` file is a Roc module with markup in it. A page has `view! = |{ params, .. }| …` and
-  may have `meta = { title: … }`; a component has `Props` and `view`, or `view!` when it reads
-  what changes.
+  may have `meta = { title: … }`. A component has `view` (pure: markup from its props), or `view!`
+  when it makes signals or memos, reads a context or reads an endpoint. A `Props := { … }` type is
+  optional, for defaults (`title : Str ?? ""`).
 - Holes: `{x}` shows text, a number or markup, by its type (older code writes `{=x}`: the same).
   `{...items.map(|item| <li key={item.id}>…</li>)}` shows a list. `{if …}` and `{match …}` in a
   hole make a part that's made again only when the branch changes.
@@ -109,37 +112,49 @@ post! : { request : Server.Request, params : {}, context : Gate.Member, body : {
 - Attributes: `name={expr}`, `name?={bool}`, `name??={str}` (left out when empty),
   `class:name={bool}`, `style:--var={str}`, `on:click={handler!}`. No inline `onclick="…"`, no
   `style={…}` computed whole.
-- Props are getters: a component reads the newest value each time. Components run once; holes and
-  effects run again as what they read changes.
-- `<style>` in a component is scoped to it. `transition={Transition.fade}` animates a row or a
-  part as it comes and goes.
+- A `view!`'s props are getters: it reads the newest value where it uses one. A pure `view`'s are
+  values, and its call is made again when one changes (pass `name!={…}`, an accessor, to keep its
+  elements). Components run once; holes and effects run again as what they read changes.
+- `<style>` in a component is scoped to it. `transition={Transition.fade}` (`import pf.Transition`)
+  animates a row or a part as it comes and goes.
 
 ## Data and reactivity
 
 - `create_signal!`, `create_memo!`, `create_effect!(compute, apply)`, `untrack!`: Solid 2.0's,
-  in Roc. Anything named with `!` that reads a signal or a memo is tracked.
+  in Roc (`import pf.Solid exposing [create_signal!, create_memo!, …]`). A read (`count!()`) is
+  tracked in a hole, an attribute, a memo or an effect's first function. In a component's body it
+  is read once (`untrack!` says that is meant); in a handler it is the current value.
+- A memo compares its new value with its last by `==`, and an equal one tells no one, so its value
+  must be data: no functions, no markup (compute those in a plain function).
 - A page reads its data with `Api.get_x(params).read!()` inside a memo. While the server renders,
   the read is answered in-process and the answer travels with the page, so hydrating fetches
   nothing. A refusal fails the read for the nearest `<Errored>`; use `.send!({})` to get it as a
   value instead.
 - **Data that changes**: hand components the memo's accessor (`data!`) and read it where it's
   shown. `refresh!(data!)` asks the server again and keeps the old value showing until the new one
-  is in (`is_pending!` says it's waiting). Rows keyed by id then update in place. Don't wrap a view
-  in `[data].map(|d| <View key={d} …/>)` to show a new answer: every refresh would remount the
-  whole view.
+  is in (`is_pending!` says it's waiting). Rows keyed by id then update in place, and a memo of the
+  part a view shows (`title! = create_memo!(|| data!().title)`) stays quiet when that part is the
+  same. Don't wrap a view in `[data].map(|d| <View key={d} …/>)` to show a new answer: every
+  refresh would remount the whole view.
 - Live updates: an endpoint's `events!` streams values; a page listens with
-  `Endpoint.listen!(Api.get_x({}), |heard| …)` inside an effect (it stops when the page goes) and
-  `refresh!`es what the news is about, not everything.
+  `Endpoint.listen!(Api.events_api_x({}), |heard| …)` inside an effect (it stops when the page
+  goes) and `refresh!`es what the news is about, not everything. A channel (`channel!`) is
+  subscribed to the same way: `Endpoint.subscribe!(Api.channel_api_x(params), heard!)`.
 
 ## Forms and actions
 
 - A form posts to an endpoint: `<form method="post" action={Endpoint.url_of(Api.post_x({}))}>`.
   It works before the runtime loads and without JavaScript: the server sends the browser back to
-  the page with a flash. With the runtime, the form goes by `fetch`, the page's reads are read
-  again, and an endpoint's own redirect is followed.
+  the page with a flash. With the runtime, a form a component reads (`use_submission!`) goes by
+  `fetch` for that component; one nothing reads is answered as a plain form, in place. Either way
+  the page's reads are read again, and an endpoint's own redirect is followed.
 - `use_submission!(endpoint)` gives the latest submission: `input!()` (what was sent, as the
-  endpoint reads it), `field!(name)` (a field as typed), `result!()`, `error!()` (a refusal) and
-  `pending!()`. Show refusals where the form is: one nobody reads shows nothing.
+  endpoint reads it), `field!(name)` (a field as typed), `result!()`, `error!()` (a refusal),
+  `pending!()`, `clear!()` and `retry!()`. Show refusals where the form is: one nobody reads shows
+  nothing. A form nothing reads that fails (a 500) shows it in the nearest `<Errored>`.
+- A form that succeeded is reset (`data-rocx-keep` on it keeps what was typed); `field!` is ""
+  after a success and what was typed after a refusal, so `value={submission.field!("name")}` puts
+  it back.
 - `use_action!(endpoint)` sends from code (a drag, a toggle); `create_optimistic!` shows the
   change before the server answers.
 
@@ -152,6 +167,8 @@ post! : { request : Server.Request, params : {}, context : Gate.Member, body : {
   clicks, so keep them short.
 - `Router.location!({})` reads the path and query; read it where it's used, not once at the top
   of a layout (a layout that does is made again on every navigation, and a dev build says so).
+- `data-rocx-reload` on a link or a form (or around it) leaves it to the browser: a whole load,
+  for a sign-out that must drop every state.
 
 ## The database
 
@@ -181,6 +198,12 @@ file under `routes/`, and a package that answers requests (auth's sign-in steps,
 storage's signed links) offers handlers a route file calls with a one-line `respond!`. Each
 package's README says what it adds, the settings it reads and the route files it wants. Import a
 package's module by its name (`import auth.Auth`); never copy a package's code into the app.
+
+packages/auth can keep the app's users (`Auth.user_for!` in the app's `admit!`, `Auth.user!`;
+`rocx new`'s template still keeps a `users` table of its own) and their roles (`Roles.current!`).
+What a user may do is the app's own pure function of what the request knows
+(`Policy.can(context, Edit(post))`, and `Policy.need(context, Edit(post))?` in a route), never a
+stored list: auth's README, "What a user may do".
 
 ## Deploying
 

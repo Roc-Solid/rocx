@@ -86,7 +86,7 @@ OpenApi := [].{
 	path = |at, params, operations| with_parameters(at, params.map(|name| { name: name, schema: "{\"type\":\"string\"}" }), operations)
 
 	## A path as `path` writes it, its params of the types their handlers give them (D-092): `api`
-	## is Api's function of the path's params (`Api.get_monitors_id`), which this doesn't call; each
+	## is Api's function of the path's params (`Api.get_api_monitors_id`), which this doesn't call; each
 	## field of its params' record is a parameter of the path, with its schema (`{ id : I64 }`: an
 	## integer).
 	typed_path : Str, (params -> Endpoint(context, arg, result)), List(Str), List(Str) -> Str

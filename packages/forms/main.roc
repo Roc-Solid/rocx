@@ -10,6 +10,6 @@
 ## on no platform, so the browser's half of an app and the server's use the same code.
 ##
 ## The components (`<TextField>`, `<CheckboxField>`, `<IssueSummary>`, and `LiveForm`, a form's
-## state in a component) are in `components/`: `rocx build` copies them into each app that names
-## this package. See README.md.
+## state in a component) are in `components/`: rocx copies them into each app that names this
+## package. See README.md.
 package [Date, Form, Issues, Regex, Value] {}

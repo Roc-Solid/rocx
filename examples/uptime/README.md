@@ -41,21 +41,25 @@ The app reads these environment variables:
 | `SMTP_URL` | Where alerts are sent (`smtp://user:password@host:587?tls=required`). Without it, they are kept for the dev mailbox under `--dev`, and without `--dev` the server doesn't start. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | An OpenTelemetry collector for the metrics (`http://localhost:4318`). Without it, nothing is measured. |
 
+`rocx dev` gives its server the `.env` in `examples/uptime`, if there is one, so these can go there
+(`ADMIN_PASSWORD=acme-demo`). A server you start yourself reads a file only when `--env-file`
+names it.
+
 ### Build it as it would ship
 
-`rocx dev` builds quickly, without optimizations. To build and start it as you would in production
-(from the repository's root):
+`rocx dev` builds quickly, without optimizations. `rocx build` builds to deploy: the server optimized
+for speed, the browser's wasm for size, and the app's `static/` with the browser's files in
+`dist/static`.
 
 ```sh
-just web-host   # the browser's host, which the WebAssembly is linked with
-bin/rocx generate examples/uptime --client examples/uptime/build/client
-.tools/roc-active build --target=wasm32 --opt=size --output=examples/uptime/build/client/static/rocx/app.wasm examples/uptime/build/client/main.roc
-node server/build.mjs examples/uptime/main.roc examples/uptime/build/uptime --opt=speed
-cd examples/uptime && ADMIN_PASSWORD=acme-demo build/uptime --port 8080 \
-  --static build/client/static --static static
+cd examples/uptime
+../../bin/rocx build                                            # dist/server and dist/static
+ADMIN_PASSWORD=acme-demo dist/server --static dist/static       # with SMTP_URL set too
 ```
 
 Without `--dev` the server needs `SMTP_URL`, to send the alerts: it doesn't start without one.
+`rocx build --image` makes a container image instead, `uptime.tar`, with `/app/data` for the
+database's volume.
 
 ## A tour
 
@@ -114,7 +118,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 | The incident rules, tested with `expect`s: open when the streak reaches the threshold, close on the next pass, and after a manual close, don't open again until the monitor has passed and failed again. | `Incident.roc` |
 | The nightly roll-up: each past day's checks summed into `daily` (once, with `on conflict do nothing`), and checks older than a week deleted once their day is rolled up. | `Jobs.nightly`, `Store.roll_up!` |
 | Email alerts through packages/email: one job per subscriber. The email's HTML is a pure component turned into a string (`Html.to_str`). Its unsubscribe link opens a page with a button, so opening the link changes nothing. | `Alerts.roc`, `Ui/AlertMail.rocx`, `routes/unsubscribe/`, `routes/api/unsubscribe/` |
-| The jobs page from packages/admin, on a route file of the app's in the admin's group, so the group's middleware (the admin's sign-in) is around it (D-116): `JobsPage.respond!(request, { mount, back })`. | `routes/(admin)/admin/jobs/+server.roc` |
+| The jobs page from packages/admin, on a route file of the app's in the admin's group, so the group's middleware (the admin's sign-in) is around it (D-116): `JobsPage.respond!(request, { mount, back })`. Under `--dev`, the server lists it among the places to open (`links` in `main.roc`). | `routes/(admin)/admin/jobs/+server.roc`, `main.roc` |
 
 ### The live status page
 
@@ -129,7 +133,7 @@ Where to look in the code for each Roc Solid feature the app uses.
 
 | Feature | Where |
 |---|---|
-| Each page's data comes from its endpoint, under `api/` at the page's path (`GET /api` for `/`, `GET /api/admin` for `/admin`): a path is a page or an endpoint, never both. The page reads it with `Endpoint.read!` while the server renders it, and the data travels in the page for hydration. The same JSON is the app's API. | `routes/api/**/+server.roc`, `Status.roc`, `Report.roc` |
+| Each page's data comes from its endpoint, under `api/` at the page's path (`GET /api` for `/`, `GET /api/admin` for `/admin`): a path is a page or an endpoint, never both. The page reads it with `Api.get_api({}).read!()` in a memo while the server renders it, and the data travels in the page for hydration. The same JSON is the app's API. | `routes/api/**/+server.roc`, `Status.roc`, `Report.roc` |
 | A 404 for a monitor or incident that doesn't exist: the page's `<Errored>` shows `Ui/Missing.rocx`, which sets the status with `<HttpStatusCode>`. An id that isn't a number is no route at all, since the params are typed: the endpoint's annotation (`params : { id : I64 }`, D-092) and the page's own `Params : { id : I64 }` (D-101), as the page's endpoint is under `api/` | `routes/monitors/[id]/+page.rocx`, `routes/incidents/[id]/+page.rocx`, `routes/api/monitors/[id]/+server.roc`, `Ui/Missing.rocx` |
 | Forms that work without JavaScript and, with it, are sent in place by the runtime, each component reading its form's answer (`use_submission!`): subscribe, sign in, check now, pause, post an update, break the demo. | `Ui/SubscribeForm.rocx`, `Ui/AdminRow.rocx`, `Ui/UpdateForm.rocx`, `routes/(admin)/admin/+page.rocx`, `routes/admin/sign-in/+page.rocx` |
 | Pure components (`view`): the state pill, the 90-day strip, the banner, the incident card, and the monitor card. Effectful components (`view!`): the forms (they make submissions), the group (its list of rows), and the 404 (it sets the status). | `Ui/` |
@@ -166,19 +170,19 @@ data again, so what a page shows is always what its endpoint answers.
 ## Test it
 
 ```sh
-just examples uptime
+just examples uptime           # build, type-check, lint, the SQL, the expects and the node tests
+just examples-release uptime   # rocx build, then the node tests against a server built --opt=speed
 ```
 
-This builds the app, type-checks the server's and the browser's programs, lints it, checks its SQL
-(`rocx check --sql`), and runs the `expect`s and the node tests. For a quick type check alone, run
-`../../bin/rocx check` in `examples/uptime` (exit 1 on an error, 2 on warnings).
+`just examples` builds the app, type-checks the server's and the browser's programs, lints it,
+checks its SQL (`rocx check --sql`), and runs the `expect`s and the node tests. For a quick type
+check alone, run `../../bin/rocx check` in `examples/uptime` (exit 1 on an error, 2 on warnings).
 
 To run the parts by hand from the repository's root (each test file makes its own SQLite file in a
 temporary directory and removes it after):
 
 ```sh
-bin/rocx generate examples/uptime
-bin/rocx check -- .tools/roc-active test examples/uptime/main.roc   # the expects
+bin/rocx test examples/uptime                  # the expects
 node --test 'examples/uptime/test/*.test.mjs'
 ```
 

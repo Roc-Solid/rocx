@@ -22,15 +22,24 @@ import headless.Tab
 main! = |_| {
 	chrome = Chrome.launch!(Chrome.find!({})?)?
 	tab = Chrome.open!(chrome)?
+	photographed = counted!(tab)
+	Chrome.close!(chrome)
+	File.write_bytes!("page.png", photographed?)?
+	Ok({})
+}
+
+counted! : Tab => Try(List(U8), [Failed(Str)])
+counted! = |tab| {
 	Tab.goto!(tab, "http://127.0.0.1:8091/", 10_000)?
 	Tab.click!(tab, "button.add")?
 	Tab.wait!(tab, "document.querySelector('output').textContent === '1'", 2_000)?
 	Tab.viewport!(tab, { width: 1280, height: 720, scale: 2 })?
-	File.write_bytes!("page.png", Tab.screenshot!(tab, Viewport)?)?
-	Chrome.close!(chrome)
-	Ok({})
+	Tab.screenshot!(tab, Viewport)
 }
 ```
+
+Close the browser on every path. One the program leaves running is stopped when the program ends,
+but its profile stays in the temporary directory.
 
 ## `Chrome`
 
@@ -54,7 +63,7 @@ message, what the page threw, or what timed out.
 | `Tab.before_each_document!(tab, source)` | Runs `source` in every document the tab loads from then on, before the page's own scripts (a clock to freeze, a listener) |
 | `Tab.click!(tab, selector)`, `Tab.click_at!(tab, x, y)` | A real click in the middle of what the CSS selector finds (scrolled into view at once first), or at a point |
 | `Tab.type!(tab, selector, text)` | Focuses the element and inserts `text` where the caret is, as typing does (an `input` event) |
-| `Tab.press!(tab, key)` | A key pressed and released: `Enter` (which submits a form), `Escape`, `Tab`, `Backspace`, the arrows, `" "` |
+| `Tab.press!(tab, key)` | A key pressed and released: `Enter` (which submits a form), `Escape`, `Tab`, `Backspace`, the arrows, `" "`. A letter reaches the page's key handlers but types nothing (`type!` types) |
 | `Tab.viewport!(tab, { width, height, scale })` | Lays the page out at that size in CSS pixels, `scale` device pixels each |
 | `Tab.screenshot!(tab, Viewport)`, `Tab.screenshot!(tab, Clip({ x, y, width, height }))` | A PNG of the viewport, or of a box of the page (from the document's top left, past the viewport too), at the device's scale |
 | `Tab.errors!(tab)` | What the page threw since this was last asked, oldest first |

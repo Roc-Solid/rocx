@@ -1,12 +1,12 @@
-## Board: a live kanban board for a small team. rocx build writes nearly all of the program from
-## routes/ (`Generated/App`: every page, endpoint and channel, the migrations in migrations/, and the
-## actors the app's modules define; what every request goes through, routes/+middleware.roc and
-## the `+middleware.roc` of the boards' group); this says the rest: the plugins, and its database,
-## SQLite (D-045).
+## Board: a live kanban board for a small team. rocx writes nearly all of the program from routes/
+## into `Generated/App` (`rocx generate`; `rocx dev` and `rocx build` do it first): every page,
+## endpoint and channel, the migrations in migrations/, and what requests go through (each folder's
+## `+middleware.roc`). This says the rest: the plugin, and its database, SQLite (D-045).
 ##
 ## packages/auth keeps who joined as whom as a session in the database, its cookie `board_session`.
-## With no routes for links or providers, nobody signs in that way: joining (`/join`) starts the session
-## itself (`Auth.switch!`, ending the session the browser had), for the person picked or made.
+## The app has no routes for auth's links or providers, so nobody signs in that way: joining
+## (`/join`) starts the session itself (`Auth.switch!`, ending the session the browser had), for the
+## person picked or made (a row of the app's own `people`).
 app [program] { auth: "../../packages/auth/main.roc", guard: "../../packages/guard/main.roc", pf: platform "../../server/platform/main.roc", presence: "../../packages/presence/main.roc" }
 
 import auth.Auth

@@ -41,8 +41,10 @@ state.
 3. Start the server with a collector to send to:
 
    ```sh
-   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_SERVICE_NAME=shop ./server
+   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 OTEL_SERVICE_NAME=shop dist/server
    ```
+
+   `rocx dev` reads them from the app's `.env` too.
 
 Nothing is copied into the app. `example/` does all of this (`rocx dev`): `GET /hello/<name>`
 counts `app.greetings`. Without the plugin in the app's list, `Otel.record!` measures nothing, and

@@ -219,7 +219,7 @@ view! = |_|
 			<p>
 				Anywhere only the server runs: an endpoint, a middleware, a job, an actor, a stream. A component
 				also compiles for the browser, so it can't query; it reads through a GET endpoint
-				(<code>Endpoint.read!</code>), which the server answers in-process while rendering. Only the server
+				(<code>.read!()</code>), which the server answers in-process while rendering. Only the server
 				runs the handler, so it may query; the browser's copy has just the endpoint's method and URL
 				(<a href={"${Paths.calls}#user"}>who is asking</a>).
 			</p>
@@ -319,8 +319,8 @@ view! = |_|
 			<p>
 				The URL picks the engine: <code>--database-url turso:data/plate.db</code> runs a SQLite app on Turso,
 				and <code>sqlite:</code> a Turso app on SQLite, to compare them under <code>rocx dev</code>. A release
-				(<code>rocx build --release</code>, <code>--image</code>) has only the engine its program names, to
-				stay small, and refuses another at start.
+				(<code>rocx build</code>, <code>--image</code>) has only the engine its program names, to stay
+				small, and refuses another at start.
 			</p>
 			<p>
 				<strong>What Turso adds: writes at the same time.</strong> Its file is in MVCC mode. A transaction

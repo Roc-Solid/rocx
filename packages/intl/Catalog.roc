@@ -171,7 +171,7 @@ Catalog := { default : Locale, sets : List({ locale : Locale, messages : Dict(St
 		)
 	}
 
-	## A problem in a sentence: `pl has no "cart.items" yet (en's is shown)`.
+	## A problem in a sentence: `pl has no "cart.items" yet (the default's is shown)`.
 	explain : Problem -> Str
 	explain = |problem| {
 		braced = |names| Str.join_with(names.map(|name| "{${name}}"), ", ")

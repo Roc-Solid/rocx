@@ -1,5 +1,5 @@
--- The demo board, so the app looks alive the first time it runs: three people, four columns and a
--- dozen cards. A migration runs once per database, and every insert here is skipped when what it
+-- The demo board, so the app looks alive the first time it runs: three people, four columns and ten
+-- cards. A migration runs once per database, and every insert here is skipped when what it
 -- would make is there already, so running it again by hand changes nothing.
 
 insert into people (name, color) values ('Ada', '#c2255c'), ('Bo', '#3b5bdb'), ('Cyd', '#2b8a3e')

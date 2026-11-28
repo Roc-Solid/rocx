@@ -1,7 +1,7 @@
 ## A day on the calendar: a year, a month (1–12) and a day (1–31), in the proleptic Gregorian
-## calendar, with no time and no zone (a birthday, a due date). Days count from 1970-01-01 as the
-## platform's `Calendar` counts them (Howard Hinnant's algorithms), so a moment's day is
-## `Date.of_millis(ms)`. Plain Roc: the same on the server and in the browser.
+## calendar, with no time and no zone (a birthday, a due date). Days count from 1970-01-01 (Howard
+## Hinnant's algorithms), so a moment's day in UTC is `Date.of_millis(ms, 0)`. Plain Roc: the same
+## on the server and in the browser.
 Date := { year : I64, month : I64, day : I64 }.{
 
 	## The day `year`-`month`-`day`. Out-of-range days roll over, as the arithmetic does:

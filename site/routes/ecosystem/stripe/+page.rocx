@@ -53,9 +53,9 @@ view! = |_|
 			</p>
 			<p>
 				<strong>1. The plugin and the webhook.</strong> List the plugin, for its tables. The server needs
-				<code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code> to start; under <code>--dev</code>
-				it starts without them, with Stripe off, as it does without the AI's key. The webhook is your
-				route (D-116), calling the package's handler with your <code>on_event!</code>.
+				<code>STRIPE_SECRET_KEY</code> and <code>STRIPE_WEBHOOK_SECRET</code> to start. Under <code>--dev</code>
+				it starts without them, with Stripe off. The webhook is your route (D-116), calling the package's
+				handler with your <code>on_event!</code>.
 			</p>
 			<Code title={Sources.stripe_example_main.file} source={Sources.stripe_example_main.rocx} />
 			<Code title="routes/stripe/webhook/+server.roc" source={"import stripe.Stripe\nimport ../../../Billing\n\nrespond! = |{ request, .. }| Stripe.webhook_route!(request, Billing.on_event!)"} numbers={Bool.False} />
@@ -191,15 +191,15 @@ view! = |_|
 						<tr><td><code>Stripe.paid_for!(user, what)</code></td><td>whether such a subscription has a price or product (<code>price_…</code>, <code>prod_…</code>), or a paid one-time payment was for the price and hasn't been refunded in full or disputed since</td></tr>
 						<tr><td><code>Stripe.subscription!(user)</code></td><td>their subscription: status, items (each price's amount, currency, interval and lookup key: what this subscriber pays), when it renews or ends, whether it ends then</td></tr>
 						<tr><td><code>Stripe.payments!(user)</code></td><td>their one-time payments that were paid, and not refunded in full or disputed since</td></tr>
-						<tr><td><code>{"Stripe.portal!(user, return_url)"}</code></td><td>the URL of their Customer Portal, or <code>NoCustomer</code></td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
 
 			<Heading id="billing-page">A billing page of your own</Heading>
 			<p>
-				The portal does everything a subscriber may change. To show billing on a page of your own instead,
-				in your words, these ask Stripe each time (read them on that page, not on every page):
+				The portal (<code>{"Stripe.portal!(user, return_url)"}</code>, its URL, or <code>NoCustomer</code>)
+				does everything a subscriber may change. To show billing on a page of your own instead, in your
+				words, these ask Stripe each time (read them on that page, not on every page):
 			</p>
 			<TableWrap>
 				<table>
@@ -237,8 +237,7 @@ view! = |_|
 				five tables, the same on SQLite and Postgres: <code>stripe_customers</code> (each user's Stripe
 				customer), <code>stripe_checkouts</code>, <code>stripe_subscriptions</code> (as the events last said),
 				<code>stripe_events</code> (those handled, swept after 30 days) and <code>stripe_forgotten</code>
-				(customers whose users were deleted). Your users stay in your table; the package knows them by your
-				id.
+				(customers whose users were deleted). The package keeps no users: it knows them by your app's id.
 			</p>
 			<p>
 				Deleting someone, <code>{"Stripe.forget!(user)"}</code> deletes their customer at Stripe, which ends

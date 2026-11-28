@@ -407,7 +407,7 @@ check: (fmt "--check")
     just examples-check
 
 # How long checking takes (test/check-times.mjs): each example app's and the docs site's `rocx
-# build`, and `rocx check` of each of its programs with no cache (all of the work, every time), the
+# generate`, and `rocx check` of each of its programs with no cache (all of the work, every time), the
 # median of three, as a table; `--baseline <file>` compares with an earlier run's `--out <file>`.
 # CI runs it after `just check`, against the last green master run's, and warns when a check got
 # slower by half (and by 250 ms or more), so checking that grows slow is seen.
@@ -431,7 +431,7 @@ grammar-check:
     node --test 'editors/vscode/test/*.test.mjs'
 
 # The VS Code extension (editors/vscode, with the rocx grammar from editors/grammars), packaged
-# into editors/build/rocx-<version>.vsix by vsce (from npm) and installed into VS Code (`code` on
+# into editors/build/rocx.vsix by vsce (from npm) and installed into VS Code (`code` on
 # the PATH), for every workspace. Again after a pull, to update it.
 vscode-extension:
     rm -rf editors/build/vscode && mkdir -p editors/build/vscode/syntaxes

@@ -133,7 +133,7 @@ view! = |_|
 					<Code source={"doubled! = create_memo!(||\n\tcount!() * 2)"} numbers={Bool.False} />
 					<p>
 						A value computed from others, again when they change; read it like a signal. Computed again to
-						the same value, it tells no one.
+						a value <code>==</code> the last, it tells no one, so its value is data: not a function or markup.
 					</p>
 				</Feature>
 			</FeatureGrid>
@@ -193,9 +193,10 @@ view! = |_|
 
 			<h3>Memos and the server</h3>
 			<p>
-				A memo starts computing when it is made. One that reads an endpoint (<code>Endpoint.read!</code>,
-				see <a href={Paths.calls}>talking to the server</a>) is async: five such memos send five requests at
-				once, and a hole that reads one waits (<a href="#waiting">waiting and failing</a>).
+				A memo starts computing when it is made. One that reads an endpoint
+				(<code>{"Api.get_user({}).read!()"}</code>, see <a href={Paths.calls}>talking to the server</a>) is
+				async: five such memos send five requests at once, and a hole that reads one waits
+				(<a href="#waiting">waiting and failing</a>).
 				<code>refresh!(user!)</code> asks the server again; the old value stays on screen, and
 				<a href="#pending"><code>is_pending!(user!)</code></a> says it is on its way out. Roc can't compare
 				functions, so <code>refresh!</code> finds the memos by running the accessor once and noting what it
@@ -206,8 +207,8 @@ view! = |_|
 			<p>
 				<code>{"doubled = count!() * 2"}</code> in the body is the starting count times two, for good. To
 				follow the count, read it in the hole (<code>{"{(count!() * 2).to_str()}"}</code>) or a memo. This is
-				the one mistake the model invites, so a dev build (<code>rocx dev</code>, <code>rocx build --dev</code>)
-				warns in the browser's console, once per place, as Solid 2.0's does:
+				the one mistake the model invites, so a dev build (<code>rocx dev</code>) warns in the browser's
+				console, once per place, as Solid 2.0's does:
 			</p>
 			<Code source={"rocx: Ui/Chart.rocx:44:39 reads a value that changes (a signal, a memo or a prop) in a component's body, once, as the component runs: what it shows won't follow it. Read it where it is used (in markup, a memo, an effect's compute or a handler), or, if one read is what you want, say so: untrack!(|| …)"} plain numbers={Bool.False} />
 			<p>
@@ -274,7 +275,7 @@ view! = |_|
 				</Feature>
 			</FeatureGrid>
 			<p>
-				You don't mark the call: <code>rocx build</code> writes the one that fits, so a component can switch
+				You don't mark the call: rocx writes the one that fits, so a component can switch
 				kinds without its callers changing. Start with <code>view</code>; add the <code>!</code> when the
 				component needs its own state, a context or the server. Solid can't tell the two apart, since any
 				JavaScript function may do anything. Roc can, so a pure component is guaranteed to keep no state,
@@ -308,7 +309,7 @@ view! = |_|
 				<li>
 					<strong>In the component's body</strong>: read once (<code>{"first = text"}</code> keeps the first
 					value). Fine for a start value, with <code>untrack!</code>; otherwise the dev build warns
-					(<a href="#primitives">a read in the body is read once</a>), and <code>rocx build</code> warns at a
+					(<a href="#primitives">a read in the body is read once</a>), and rocx warns at a
 					call given a <code>match</code> arm's name or a row's item (<a href="#control">if, match and .map</a>).
 				</li>
 				<li>
@@ -429,7 +430,7 @@ view! = |_|
 				</p>
 				<p>
 					A component that reads such a name or a row's item once, in its body (<code>{"shown = card"}</code>),
-					keeps the first value: a bug. <code>rocx build</code> warns at the call, and <code>rocx check</code>
+					keeps the first value: a bug. rocx warns at the call, and <code>rocx check</code>
 					exits with 2. The ways out: read the prop where it is used, write <code>{"untrack!(|| card)"}</code>
 					if one read is meant, or key the part by the value as above.
 				</p>
@@ -447,7 +448,8 @@ view! = |_|
 					<code>{"<Repeat count!={n!()} from!={first!()}>{|index| …}</Repeat>"}</code>
 					(<code>import pf.Repeat</code>, Solid 2.0's <code>{"<Repeat>"}</code>) makes a row per index from
 					<code>from!</code> (default 0) up to, not including, <code>from! + count!</code>, with no list
-					behind them. When the range moves, only rows entering it are made. With
+					behind them. When the range moves, only rows entering it are made; <code>{"fallback={…}"}</code> shows
+					while the count is 0. With
 					<a href="#handlers"><code>on:viewport</code></a> it becomes a virtual list:
 					<a href={Paths.ecosystem_virtual}>packages/virtual</a> renders a million rows as the twenty that
 					show.
@@ -606,10 +608,15 @@ view! = |_|
 					This page's prose is in them.
 				</li>
 				<li>
-					<strong>A page that doesn't match</strong> what the app renders (a browser extension added a
-					node, the parser repaired broken markup) has its <code>{"<body>"}</code> rendered again from the
-					same answers, with a console warning; the <code>{"<head>"}</code> and
-					<code>{"<NoHydration>"}</code> regions keep the server's nodes.
+					<strong>Browser extensions are passed over.</strong> An element one adds straight in
+					<code>{"<html>"}</code>, <code>{"<head>"}</code> or <code>{"<body>"}</code> (a password
+					manager's popup) is left where it is. A page that still doesn't match what the app renders (the
+					parser repaired broken markup, an extension's node inside the app's own elements) has its
+					<code>{"<body>"}</code> rendered again from the same answers. The console names the node
+					(<code>{"expected <circle>, found <rect> in body > svg.dot"}</code>), and the document gets a
+					<code>rocx:mismatch</code> event for an app's error reporting. The <code>{"<head>"}</code> and
+					<code>{"<NoHydration>"}</code> regions keep the server's nodes. To make a mismatch throw in your
+					own browser, run <code>{"localStorage.setItem(\"rocx:strict\", \"1\")"}</code> and reload.
 				</li>
 			</ul>
 
@@ -673,15 +680,33 @@ view! = |_|
 
 			<h3>Going to another page</h3>
 			<p>
-				<code>{"navigate!(Paths.blog_slug({ slug }))"}</code> (<code>import pf.Router exposing [navigate!]</code>,
-				Solid Router's <code>useNavigate</code>) goes to another of the app's pages once the handler ends,
-				rendering it in place like a link's click. <code>{"navigate_with!(to, { replace, scroll })"}</code>
-				takes Solid Router's options. A handler that waits and runs again navigates once; navigating while
-				rendering fails. <code>{"Router.location!({})"}</code> and <code>{"Router.is_routing!({})"}</code> say
-				where the page is and whether a navigation is on its way; <code>{"use_search_params!({})"}</code> reads
-				and changes the query in place; every link at the page's path gets <code>aria-current</code>; and a
-				component that must redirect as it renders renders <code>{"<Navigate href={…} />"}</code>. Details:
-				<a href={"${Paths.routing}#navigating"}>navigating, without a load</a>.
+				A click on a link to another of the app's pages renders that page in place, without a load.
+			</p>
+			<ul>
+				<li>
+					<code>{"navigate!(Paths.blog_slug({ slug }))"}</code> (<code>import pf.Router exposing [navigate!]</code>,
+					Solid Router's <code>useNavigate</code>) goes there once the handler ends;
+					<code>{"navigate_with!(to, { replace, scroll })"}</code> takes Solid Router's options. A handler that
+					waits and runs again navigates once. Navigating while rendering fails.
+				</li>
+				<li>
+					<code>{"Router.location!({})"}</code> and <code>{"Router.is_routing!({})"}</code> say where the page
+					is and whether a navigation is on its way. <code>{"use_search_params!({})"}</code> reads and changes
+					the query in place. <code>{"use_before_leave!"}</code> may stop a navigation (an unsaved draft).
+				</li>
+				<li>
+					A component that must redirect as it renders renders <code>{"<Navigate href={…} />"}</code>.
+				</li>
+				<li>
+					Every link to the page gets <code>{"aria-current=\"page\""}</code>, and one to a page above it
+					<code>{"aria-current=\"true\""}</code>: style them by that.
+				</li>
+				<li>
+					<code>data-rocx-reload</code> on a link, or around it, leaves it to the browser: a load.
+				</li>
+			</ul>
+			<p>
+				Details: <a href={"${Paths.routing}#navigating"}>navigating, without a load</a>.
 			</p>
 
 			<h3>Timers, sounds and the browser</h3>
@@ -792,8 +817,8 @@ view! = |_|
 			<p>
 				The design came from this component in the browser platform's tests: five answers (you, your posts,
 				friends, likes and notifications), one spinner until all are in. Posts and friends can each fail
-				alone; anything else fails the whole. (<code>{"Api.current_user!({})"}</code> and the others wrap
-				<code>Endpoint.read!</code>, which reads a GET endpoint.)
+				alone; anything else fails the whole. (<code>{"Api.current_user!({})"}</code> and the others each read a
+				GET endpoint with its <code>read!()</code>.)
 			</p>
 			<Code title={"${Sources.signals_glance.file}, in part"} source={Sources.signals_glance.rocx} numbers={Bool.False} />
 			<ol class="timeline">
@@ -901,27 +926,39 @@ view! = |_|
 			</p>
 			<ul>
 				<li>
-					A form whose submission a component reads gets its result or refusal there; a result reads the
-					page's data again, and a redirect is followed.
+					<strong>A form whose submission a component reads</strong> gets its result or refusal there. A
+					result reads the page's data again, and a <code>{"<NoHydration>"}</code> that read data as the server
+					rendered it is taken again from the page's document. A redirect is followed in place, and the
+					layouts it keeps read again what they read, so a sign-in shows in the header.
 				</li>
 				<li>
-					A form nothing reads is followed in place like a plain form: back to the page with the flash
-					(below), or to the endpoint's redirect.
+					<strong>A form nothing reads</strong> is answered as a plain form, in place: back to the page with
+					the flash (below), or to the endpoint's redirect. Brought back to the page it is on, the page is
+					kept (its signals, scroll and focus), and what it read follows the server. An answer that isn't a
+					page to go to (a crash, a middleware's refusal, no answer) shows in the nearest
+					<code>{"<Errored>"}</code> around the form, with a retry.
 				</li>
 				<li>
-					A form that succeeded is emptied (<code>data-rocx-keep</code> keeps it). A server failure shows in
-					the nearest <code>{"<Errored>"}</code> around the form.
+					<strong>A form that succeeded starts empty</strong>, as after a plain post, and
+					<code>field!</code> gives "" (<code>data-rocx-keep</code> on the form or around it keeps it). After
+					a refusal, <code>field!</code> gives what was typed, to put it back.
+				</li>
+				<li>
+					<strong><code>data-rocx-reload</code></strong> on a form, its button or an element around them
+					leaves it to the browser: a plain post and a load (<code>{"data-rocx-reload=\"off\""}</code> takes
+					it back inside).
 				</li>
 			</ul>
 			<Code title={"${Sources.components_form.file}, in part"} source={Sources.components_form.rocx} numbers={Bool.False} />
 			<p>
 				Without the runtime (before it loads, or with JavaScript off), the form posts like any HTML form, and
 				the endpoint sends the browser back with a <em>flash</em>: what was typed and the result or refusal,
-				kept on the server for a minute under an id in a cookie. The page's submission is then the flash, so
-				the page looks as it would with the runtime and hydrates as rendered.
+				kept on the server for a minute under an id in a cookie, and read once. The page's submission is then
+				the flash, so the page looks as it would with the runtime and hydrates as rendered. A password field
+				is never filled in again.
 				<code>{"Server.flash!({})"}</code> reads it directly: <code>{"Ok({ url, fields, status, body })"}</code>
-				or <code>Err(NoFlash)</code>. The endpoint's side and redirects: <a href={"${Paths.calls}#forms"}>forms</a>,
-				on the server page.
+				or <code>Err(NoFlash)</code>. The endpoint's side and redirects:
+				<a href={"${Paths.calls}#forms"}>talking to the server</a>.
 			</p>
 
 			<Heading id="actions">Actions and optimistic values</Heading>
@@ -1191,6 +1228,8 @@ view! = |_|
 						<tr><td><code>{"const [params, set] = useSearchParams(); set({ days: 30 })"}</code></td><td><code>{"search = use_search_params!({})"}</code>, <code>{"search.set!([(\"days\", \"30\")])"}</code>, in a handler</td></tr>
 						<tr><td><code>{"<A href=\"/lists/7\" activeClass=\"current\" end>"}</code></td><td><code>{"<a href={Paths.lists_id({ id })}>"}</code>, styled by <code>{"a[aria-current=\"page\"]"}</code> (at its path) or <code>{"a[aria-current]"}</code> (under it too): every link is marked</td></tr>
 						<tr><td><code>{"<Navigate href=\"/login\" />"}</code></td><td><code>{"<Navigate href={Paths.login} />"}</code></td></tr>
+						<tr><td><code>{"useBeforeLeave((e) => { if (dirty()) e.preventDefault() })"}</code></td><td><code>{"use_before_leave!(|leave| if dirty!() { leave.prevent!() })"}</code></td></tr>
+						<tr><td><code>{"<HttpStatusCode code={404} />"}</code> (SolidStart)</td><td>the same (<code>import pf.HttpStatusCode</code>)</td></tr>
 						<tr><td><code>{"<Title>{post().title}</Title>"}</code> (@solidjs/meta)</td><td><code>{"<Title>{post!().title}</Title>"}</code> (<code>import pf.Title</code>)</td></tr>
 						<tr><td><code>{"<Meta name=\"description\" content={…} />"}</code>, <code>{"<Link …/>"}</code>, <code>{"<Style>"}</code> (@solidjs/meta)</td><td>the same, with nothing to import</td></tr>
 						<tr><td><code>{"<TransitionGroup>"}</code>, from <code>solid-transition-group</code></td><td><code>{"transition={Transition.fade}"}</code> on the element, as Svelte writes it</td></tr>
@@ -1297,12 +1336,12 @@ view! = |_|
 				<div class="roadmap-done">
 					<h3>Works now</h3>
 					<ul>
-						<li>Signals and <code>update!</code>, memos, <code>refresh!</code>, <code>is_pending!</code>, <code>latest!</code>, <code>untrack!</code></li>
+						<li>Signals and <code>update!</code>, memos compared by <code>==</code>, <code>refresh!</code>, <code>is_pending!</code>, <code>latest!</code>, <code>untrack!</code></li>
 						<li>Holes in text, attributes, classes and styles; static when nothing they read changes</li>
 						<li>Pure and effectful components; getter and accessor props; <code>{"{...rest}"}</code></li>
 						<li>Warnings for a value read once in a body, an arm or a row</li>
 						<li>Contexts; components that run where they are rendered</li>
-						<li>One tree per page, hydrated whole; <code>{"<NoHydration>"}</code></li>
+						<li>One tree per page, hydrated whole, browser extensions passed over; <code>{"<NoHydration>"}</code></li>
 						<li><code>if</code> and <code>match</code> in a hole, each part kept while its branch holds</li>
 						<li><code>.map</code> by key and by position; <code>{"<Repeat>"}</code> by index</li>
 						<li>Stores tracked by part; selectors; rows told only when their item changed</li>
@@ -1310,12 +1349,12 @@ view! = |_|
 						<li>Handlers that wait for the server; modifier keys; frames; <code>on:viewport</code>; document and window events</li>
 						<li>Effects split as in Solid 2.0; render effects; error handlers; <code>on_cleanup!</code>, <code>on_settled!</code></li>
 						<li>Timers, cleared by <code>clear!</code> or with their part</li>
-						<li>Forms sent by the runtime; submissions; a flash without it</li>
+						<li>Forms sent by the runtime, or answered in place as plain forms; emptied after a success; a flash without JavaScript</li>
 						<li>Actions, submissions, optimistic values, <code>retry!</code>, revalidate keys, fields ahead of time, files</li>
 						<li>Drag and drop by mouse, touch and pen; drag data and image; dropped files</li>
 						<li>Transitions in and out; moves, keyed across lists</li>
 						<li><code>{"<Title>"}</code>, <code>{"<Meta>"}</code>, <code>{"<Link>"}</code>, <code>{"<Style>"}</code></li>
-						<li>Navigating without a load: links, <code>navigate!</code>, back and forward, the query in place</li>
+						<li>Navigating without a load: links, <code>navigate!</code>, back and forward, the query in place, prefetch, <code>use_before_leave!</code></li>
 						<li>Sound files (<code>Audio.play!</code>) and the page's own functions (<code>Browser.call!</code>)</li>
 					</ul>
 				</div>

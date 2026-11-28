@@ -20,9 +20,9 @@ import qr.QrCode   # the component, in a .rocx file
 ```
 
 The package's `main.roc` exposes `Qr` alone. The component is `components/QrCode.rocx`:
-`rocx build` copies it into each app that names the package, as `Generated/qr/QrCode.roc`, since a
-package can't import the platform's `Html` for the server and the browser at once. It is not a
-plugin: there is nothing to register.
+`rocx generate` (which `rocx dev` and `rocx build` run first) copies it into each app that names
+the package, as `Generated/qr/QrCode.roc`, since a package can't import the platform's `Html` for
+the server and the browser at once. It is not a plugin: there is nothing to register.
 
 ## A code on a page
 

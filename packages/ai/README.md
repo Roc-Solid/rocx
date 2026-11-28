@@ -7,19 +7,24 @@ a Roc type (`Ai.extract!`), a model that uses the app's own functions as tools u
 (`Agent`, as Strands Agents' agents as tools). Pure Roc on the server platform's
 `Http.fetch_chunks!`: no platform change, no SDK.
 
-The package keeps the parts that are easy to get wrong: the stream's events put back together into
-the model's message, its thinking and signatures exactly as they came (the API checks them when a
-conversation goes on); a rate limit, an overloaded API or a passing server error tried again after
-the time the API asks for, but never once text has gone to a page; a refusal that the app must handle rather than empty text; the request
-ended when the page that asked goes, so the model stops writing; a JSON Schema the API's structured
-outputs accept, written from a Roc type; each turn's tokens on the log. The app keeps its prompts,
-its tools and what it does with the answers.
+The package keeps the parts that are easy to get wrong:
+
+- the stream's events put back together into the model's message, its thinking and signatures
+  exactly as they came (the API checks them when a conversation goes on);
+- a rate limit, an overloaded API or a passing server error tried again after the time the API asks
+  for, but never once text has gone to a page;
+- a refusal the app must handle, rather than empty text;
+- the request ended when the page that asked goes, so the model stops writing;
+- a JSON Schema the API's structured outputs accept, written from a Roc type;
+- each turn's tokens on the log.
+
+The app keeps its prompts, its tools and what it does with the answers.
 
 The docs site's page, `/ecosystem/ai`, is the guide; this is the reference. `example/` is a notes
-assistant (a chat with an assistant agent that hands notes to a notes keeper and meals to a
-nutritionist, each an agent it uses as a tool; a summary; a meal read into a record),
-and its tests (`example/test`) run it against a stand-in for the API (`example/test/stand-in.mjs`),
-never the API itself.
+assistant: a chat with an assistant agent that hands notes to a notes keeper and meals to a
+nutritionist (each an agent it uses as a tool), a summary, and a meal read into a record. Its tests
+(`example/test`) run it against a stand-in for the API (`example/test/stand-in.mjs`), never the API
+itself.
 
 ## Installing it
 
@@ -31,15 +36,15 @@ never the API itself.
 
    program = App.program({
        init!: |_started| Ok({}),
-       middleware: Middleware.same_origin({}),
        plugins: [Ai.plugin({})],
    })
    ```
 
 2. Give the server an API key (console.anthropic.com): `ANTHROPIC_API_KEY`, in the environment or
    in the file `--env-file` names (`rocx dev` names the `.env` where it runs; D-088, D-098).
-   Outside `--dev` the server doesn't start without one; under `--dev` (as `rocx dev` starts it) it
-   starts, and each call answers `NoKey`.
+   Outside `--dev` the server doesn't start without one. Under `--dev` (as `rocx dev` starts it) it
+   starts, logs `AI off: no ANTHROPIC_API_KEY (each call answers NoKey)`, and each call answers
+   `NoKey`.
 
 3. The model is `claude-opus-5-5`, and `claude-haiku-5-5` under `--dev`, where answers should
    come fast and cost little. `ANTHROPIC_MODEL`, or the plugin's `model`, names another for both;
@@ -66,7 +71,7 @@ Every call takes an `Ai.Request`, a record whose fields all have defaults but on
 | `model` | the plugin's | This call's model |
 | `max_tokens` | `64_000` | How much the model may write, its thinking too |
 | `effort` | `Medium` | `Low`, `Medium`, `High`, `XHigh`, `Max`: how hard it thinks; more costs more and takes longer |
-| `cache` | `Bool.True` | Keep what is sent in the API's prompt cache, so the next call that starts the same reads it for a tenth |
+| `cache` | `Bool.True` | Keep what is sent in the API's prompt cache, so the next call that starts the same reads it for a tenth of the price or less |
 | `max_turns` | `10` | How many turns `run!` takes at most |
 | `label` | `""` | What the call is, on the log (`ai.turn`'s `label`: `"summary"`, an agent's name) |
 | `updates` | `Bool.False` | Whether `run!` tells its listener what to show while the model works ([Updates](#updates)) |
@@ -231,13 +236,13 @@ updates go is the app's: the listener is a function, so they can go out as an en
 with a form and listens for its progress:
 
 ```roc
-# routes/chats/[chat]/updates/+server.roc: the channel (`Generated/Api`'s channel_chats_chat_updates)
+# routes/api/chat/[chat]/updates/+server.roc: the channel (`Generated/Api`'s channel_api_chat_chat_updates)
 channel! : { request : Server.Request, params : { chat : Str }, context : Me } => Try(Channel(Str, Tool.Update, []), Endpoint.Refusal)
 
 # where the work runs
-Agent.chat!(Team.assistant, conversation, me, |heard|
+Agent.chat!(Team.assistant, conversation, {}, |heard|
     match heard {
-        Update(update) => Ok(Endpoint.publish!(Api.channel_chats_chat_updates({ chat }), update))
+        Update(update) => Ok(Endpoint.publish!(Api.channel_api_chat_chat_updates({ chat }), update))
         _ => Ok({})
     })
 ```
@@ -270,8 +275,9 @@ Each turn is on the log, with its tokens:
 
 `label` is the request's (an agent's name), and is left out when it has none.
 
-`input` is what was read without the cache, `cache_read` what came from it (a tenth of the price),
-`cache_write` what was written to it (a quarter more, once). With `cache` on (the default) a
+`input` is what was read without the cache, `cache_read` what came from it (a tenth of the input
+price, a twentieth on Opus 5.5 and Sonnet 5.5), `cache_write` what was written to it (a quarter
+more, once). With `cache` on (the default) a
 conversation's next turn reads all of the last one from the cache. A prompt shorter than the
 model's minimum (512 to 4,096 tokens, by model) isn't cached, and costs nothing more for asking.
 
@@ -282,7 +288,7 @@ model's minimum (512 to 4,096 tokens, by model) isn't cached, and costs nothing 
 | Tag | When |
 |---|---|
 | `NoKey` | No `ANTHROPIC_API_KEY` (under `--dev`) |
-| `Status(code, why)` | The API refused: 400 the request, 401 the key, 429 too many (still, after two tries), 529 overloaded |
+| `Status(code, why)` | The API refused: 400 the request, 401 the key, 429 too many (still, after two retries), 529 overloaded |
 | `Unreachable(why)`, `TimedOut`, `Broken(why)` | No whole answer came |
 | `Refused(category)` | The model declined (the API's category, as `"cyber"`; often `""`) |
 | `Truncated` | `extract!`'s answer reached `max_tokens` before its JSON ended |
@@ -303,11 +309,15 @@ true`: every call streams, so a long answer never times out (30 minutes at most)
 carries the effort (and `extract!`'s format); `cache_control` asks for the prompt cache. No sampling
 parameters (`temperature` and the rest are refused on that version), no `thinking` (the current
 models think as they need to, `effort` saying how much), and no forced `tool_choice` (Claude Opus 5.5
-refuses it). `effort` is always sent, so the model must take it: Claude Opus 4.5 and every model
-from the 4.6s on do; Claude Haiku 4.5 and Sonnet 4.5 refuse it (a 400). With `updates`, on the
-models that write progress notes, `thinking` is `{"type": "adaptive", "display": "updates"}`, and
-`anthropic-beta` lists `thinking-display-updates-2026-08-18` (beside the fallback's, comma
-separated).
+refuses it).
+
+`effort` is always sent, so the model must take it. Claude Opus 4.5 and every model from the 4.6s on
+do; Claude Haiku 4.5 and Sonnet 4.5 refuse it (a 400). Opus 4.5 takes `Low` to `High` only, and the
+4.6s have no `XHigh`.
+
+With `updates`, on the models that write progress notes, `thinking` is `{"type": "adaptive",
+"display": "updates"}`, and `anthropic-beta` lists `thinking-display-updates-2026-08-18` (beside the
+fallback's, comma separated).
 
 On the models that take it (`claude-opus-5-5`, `claude-opus-5`, `claude-sonnet-5-5`,
 `claude-fable-5-2`, `claude-fable-5-1`, and Mythos 5.2 and 5.1) it sends `"fallbacks": "default"`

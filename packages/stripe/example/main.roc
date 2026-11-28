@@ -1,9 +1,8 @@
 ## packages/stripe's example: an app that sells a subscription (Basic or Pro, monthly) and an e-book
-## (once), through Stripe's hosted Checkout. The plugin brings the rest (D-082), with the webhook a
-## route of the app's (routes/stripe/webhook/, the package's handler, D-116) that keeps its tables in
-## step with Stripe: the customers, the Customer Portal, and what the app reads
-## to know who has paid for what. `Billing.on_event!` is the app's own part of each event: an
-## e-book bought becomes an order. People sign in with packages/auth's dev sign-in (`rocx dev`: any
+## (once), through Stripe's hosted Checkout. The plugin brings its tables (D-082). The webhook is a
+## route of the app's (routes/stripe/webhook/, D-116) calling the package's handler, which keeps the
+## tables in step with Stripe. `Billing.on_event!` is the app's own part of each event: an e-book
+## bought becomes an order. People sign in with packages/auth's dev sign-in (`rocx dev`: any
 ## address at once); `Accounts.admit!` keeps a row for each.
 ##
 ## Its pages: the pricing page (`/`), Checkout's way back (`/billing/done`), the account (`/account`:

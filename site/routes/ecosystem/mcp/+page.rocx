@@ -107,9 +107,11 @@ view! = |_|
 			<code>McpHttp</code> serves the MCP server from a route, such as <code>routes/mcp/+server.roc</code>,
 			behind its directory's <a href={"${Paths.routing}#middleware"}>middleware</a>, which decides who may
 			ask. It makes tools from an <a href={"${Paths.routing}#endpoints"}>endpoint</a>, a function of the
-			app's own, or a handler written for the tool. An endpoint's tool calls it as a handler does, through
-			its own route and middleware with the MCP request's token, so an agent can do what the same
-			credentials can do over HTTP, and no more. This sketch serves one and makes one tool of each kind:
+			app's own, or a handler written for the tool. An endpoint's tool sends it as a handler does
+			(<code>.send!(arg)</code>), through its own route and middleware with the MCP request's token, so an
+			agent can do what the same credentials can do over HTTP, and no more. Each such call is a second
+			request through the app's middleware, with its own log line. This sketch serves one and makes one
+			tool of each kind:
 		</p>
 		<Code title="A sketch (this site serves no MCP): the route, its middleware, and the server" source={Sources.mcp_http_sketch.rocx} />
 		<TableWrap>

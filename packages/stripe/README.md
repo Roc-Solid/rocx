@@ -47,12 +47,13 @@ Postgres against a stand-in for Stripe's API (`example/test/stand-in.mjs`), neve
    ```
 
 3. Give the server its keys: `STRIPE_SECRET_KEY` (`sk_test_…` while you build, `sk_live_…` in
-   production; a restricted key, `rk_…`, with write access to Customers, Checkout Sessions and the
-   Customer Portal, and read access to Subscriptions, will do) and `STRIPE_WEBHOOK_SECRET` (the
-   webhook endpoint's signing secret, `whsec_…`). Outside `--dev` the server doesn't start without
-   them; under `--dev` it starts with Stripe off (each call answers `StripeErr`, the webhook refuses
-   every event with a 503), as the AI plugin does without its key, and once it
-   has, it logs which mode they are (`stripe.keys`).
+   production) and `STRIPE_WEBHOOK_SECRET` (the webhook endpoint's signing secret, `whsec_…`). A
+   restricted key (`rk_…`) will do. It needs write access to Customers, Checkout Sessions,
+   Subscriptions (`cancel!`, `keep!`) and the Customer Portal, and read access to Prices, Invoices
+   and PaymentMethods (`price!`, `invoices!`, `card!`). Outside `--dev` the server doesn't start
+   without both keys. Under `--dev` it starts with Stripe off: each call to Stripe answers
+   `StripeErr`, and the webhook refuses every event with a 503. Once started, it logs the keys' mode
+   (`stripe.keys`).
 
 4. Send the browser to Checkout from an endpoint of the app's (a plan's button posts to it):
 
@@ -143,8 +144,8 @@ does. It says where the app put it, for the line the plugin logs once the server
 URL to give Stripe is `<public URL><webhook_at>`. What the app does with each event is
 `webhook_route!`'s argument (`on_event!`, [below](#the-webhook)).
 
-The environment: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (needed), and `STRIPE_API_URL`
-(Stripe's API by default; a test's stand-in, or `stripe-mock`).
+The environment: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (needed outside `--dev`), and
+`STRIPE_API_URL` (Stripe's API by default; a test's stand-in, or `stripe-mock`).
 
 ## Checkout
 
@@ -294,7 +295,7 @@ Stripe.Item : {
     price : Str, product : Str, quantity : U64,
     unit_amount : I64,                # what one costs, in the currency's smallest unit (499: $4.99)
     currency : Str,                   # "usd"
-    interval : Str,                   # "day", "week", "month" or "year"
+    interval : Str,                   # "day", "week", "month" or "year"; "" for a one-time price
     interval_count : U64,             # every how many of them (1)
     lookup_key : Str,                 # "" for none
 }
@@ -451,18 +452,19 @@ Postgres (times are milliseconds, given by the package):
 dependencies, the endpoints the package calls answering with Stripe's objects, a `complete(id)` that
 does what paying on Checkout's page does (a subscription charged to a Visa ending 4242, `CARD`, with
 its first invoice), `update`, `deleteCustomer`, `bill(subscription)` (a month's invoice),
-`giveCard(customer)` (a default card of the customer's own), `event(type, object)` and `sign(body)`
-(a `Stripe-Signature` as Stripe makes it). Every request it was sent is in `requests` (`{ method,
-path, form, query, headers }`), and `since(n)` lists those after the `n`th as `METHOD /path`.
-Copy it into an app's tests, or import it from where rocx is. `stripe-mock`
-(Stripe's own) answers every endpoint with fixed objects, but keeps no state.
+`giveCard(customer)` (a default card of the customer's own), `failedInvoice(subscription)` (an
+invoice whose payment failed), `event(type, object)` and `sign(body)` (a `Stripe-Signature` as
+Stripe makes it). Every request it was sent is in `requests` (`{ method, path, form, query,
+headers }`), and `since(n)` lists those after the `n`th as `METHOD /path`. Copy it into an app's
+tests, or import it from where rocx is. `stripe-mock` (Stripe's own) answers every endpoint with
+fixed objects, but keeps no state.
 
 ## Status
 
 Built and tested (D-082): Checkout (payments and subscriptions, trials, promotion codes), the
 Customer Portal, the webhook (signatures, once, out of order), the tables on SQLite and Postgres, the
 checks for who has paid, a one-time payment refunded in full or disputed no longer paid for, the
-app's own idempotency keys (`post_with!`), and an app's own billing page (D-129: the card, the
-invoices, cancelling and keeping, the portal at the card). Not yet: Stripe Tax, metered billing,
-Connect, embedded Checkout, changing a plan from the app, refunds beyond `post!`. PROPOSALS.md has
-them.
+app's own idempotency keys (`post_with!`), prices by their lookup key (`price!`), an app's own
+billing page (D-129: the card, the invoices, cancelling and keeping, the portal at the card), and
+each item's price terms (D-131). Not yet: Stripe Tax, metered billing, Connect, embedded Checkout,
+changing a plan from the app, refunds beyond `post!`. PROPOSALS.md has them.

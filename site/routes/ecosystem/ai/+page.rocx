@@ -62,8 +62,8 @@ view! = |_|
 				<a href="https://console.anthropic.com">console.anthropic.com</a>)
 				in the environment or in a <code>.env</code> where you run <code>rocx dev</code>
 				(<a href={"${Paths.platform_settings}#env"}>which passes it to the server</a>). Without a key the
-				server
-				doesn't start, except under <code>--dev</code>, where each call answers <code>NoKey</code>.
+				server doesn't start, except under <code>--dev</code>, where it logs
+				<code>AI off: no ANTHROPIC_API_KEY</code> and each call answers <code>NoKey</code>.
 			</p>
 			<p>The model it asks:</p>
 			<TableWrap>
@@ -115,7 +115,7 @@ view! = |_|
 						<tr><td><code>model</code></td><td>the plugin's</td><td>this call's model</td></tr>
 						<tr><td><code>max_tokens</code></td><td><code>64_000</code></td><td>how much the model may write, thinking included</td></tr>
 						<tr><td><code>effort</code></td><td><code>Medium</code></td><td><code>Low</code>, <code>Medium</code>, <code>High</code>, <code>XHigh</code> or <code>Max</code>: how hard it thinks. More costs more and takes longer</td></tr>
-						<tr><td><code>cache</code></td><td><code>Bool.True</code></td><td>use the API's prompt cache: a later call that starts the same reads it at a tenth of the price</td></tr>
+						<tr><td><code>cache</code></td><td><code>Bool.True</code></td><td>use the API's prompt cache: a later call that starts the same reads it at a tenth of the price or less</td></tr>
 						<tr><td><code>max_turns</code></td><td><code>10</code></td><td>how many turns <code>run!</code> takes at most</td></tr>
 						<tr><td><code>label</code></td><td><code>""</code></td><td>names the call on the log (<code>ai.turn</code>'s <code>label</code>: <code>"summary"</code>, an agent's name)</td></tr>
 						<tr><td><code>updates</code></td><td><code>Bool.False</code></td><td>whether <code>run!</code> reports what the model is doing (<a href="#updates">updates</a>)</td></tr>
@@ -352,7 +352,7 @@ view! = |_|
 				<a href={"${Paths.platform_live}#channels"}>channel</a> instead:
 			</p>
 			<Code
-				source={"Agent.chat!(Team.assistant, conversation, me, |heard|\n\tmatch heard {\n\t\tUpdate(update) => Ok(Endpoint.publish!(Api.channel_chats_chat_updates({ chat }), update))\n\t\t_ => Ok({})\n\t})"}
+				source={"Agent.chat!(Team.assistant, conversation, {}, |heard|\n\tmatch heard {\n\t\tUpdate(update) => Ok(Endpoint.publish!(Api.channel_api_chat_chat_updates({ chat }), update))\n\t\t_ => Ok({})\n\t})"}
 				numbers={Bool.False}
 			/>
 			<p>
@@ -395,7 +395,10 @@ view! = |_|
 					when empty);
 				</li>
 				<li><code>input</code>: read without the cache;</li>
-				<li><code>cache_read</code>: read from the cache, at a tenth of the price;</li>
+				<li>
+					<code>cache_read</code>: read from the cache, at a tenth of the input price (a twentieth on Opus 5.5
+					and Sonnet 5.5);
+				</li>
 				<li><code>cache_write</code>: written to the cache, once, at a quarter more;</li>
 				<li><code>output</code>: what the model wrote; <code>ms</code>: how long the turn took.</li>
 			</ul>
@@ -416,7 +419,7 @@ view! = |_|
 					<thead><tr><th>Tag</th><th>When</th></tr></thead>
 					<tbody>
 						<tr><td><code>NoKey</code></td><td>no <code>ANTHROPIC_API_KEY</code> (under <code>--dev</code>)</td></tr>
-						<tr><td><code>Status(code, why)</code></td><td>the API refused: 400 the request, 401 the key, 429 too many (still, after two tries), 529 overloaded</td></tr>
+						<tr><td><code>Status(code, why)</code></td><td>the API refused: 400 the request, 401 the key, 429 too many (still, after two retries), 529 overloaded</td></tr>
 						<tr><td><code>Unreachable(why)</code>, <code>TimedOut</code>, <code>Broken(why)</code></td><td>no whole answer came</td></tr>
 						<tr><td><code>Refused(category)</code></td><td>the model declined (the API's category, as <code>"cyber"</code>; often <code>""</code>)</td></tr>
 						<tr><td><code>Truncated</code></td><td><code>extract!</code>'s answer reached <code>max_tokens</code> before its JSON ended</td></tr>
@@ -451,8 +454,8 @@ view! = |_|
 			</p>
 			<p>
 				<code>effort</code> is always sent. Claude Opus 4.5 and every model from 4.6 on accept it; Claude
-				Haiku
-				4.5 and Sonnet 4.5 refuse it (a 400), so <code>ANTHROPIC_MODEL</code> can't name them.
+				Haiku 4.5 and Sonnet 4.5 refuse it (a 400), so <code>ANTHROPIC_MODEL</code> can't name them. Opus
+				4.5 takes <code>Low</code> to <code>High</code> only, and the 4.6s have no <code>XHigh</code>.
 			</p>
 			<p>
 				On models that support it (<code>claude-opus-5-5</code>, <code>claude-opus-5</code>,

@@ -30,9 +30,9 @@ view! = |_| {
 		>
 			Only members see this page. Before it rendered, <code>Middlewares.member</code> read your
 			<code>member</code> cookie; without one, it would have sent you to join. The page then read its
-			endpoint, <code>GET {Endpoint.url_of(Api.get_api_members({}))}</code>, which runs behind the same
-			middleware, named in its own file, and answered with the name it handed on. A script that asks that endpoint for JSON gets
-			the same answer, or a 401 without the cookie.
+			endpoint, <code>GET {Endpoint.url_of(Api.get_api_members({}))}</code>. It is in the same group, behind
+			the same middleware, and answered with the name it handed on. A script that asks that endpoint for
+			JSON gets the same answer, or a 401 without the cookie.
 		</PageHero>
 		<form method="post" action={Endpoint.url_of(Api.post_api_members_leave({}))}>
 			<Button submit>Leave</Button>

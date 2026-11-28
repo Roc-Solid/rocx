@@ -44,21 +44,23 @@ The app reads these settings from the environment:
 
 Mail is sent from `Notes <notes@example.com>` (the `from` given to `Email.plugin` in `main.roc`).
 
+`rocx dev` gives its server the `.env` in `examples/notes`, if there is one, so the settings can go
+there. A server you start yourself reads a file only when `--env-file` names it.
+
 ### Build it as it would ship
 
-`rocx dev` builds quickly, without optimizations. To build and start it as you would in production
-(from the repository's root):
+`rocx dev` builds quickly, without optimizations. `rocx build` builds to deploy: the server optimized
+for speed, the browser's wasm for size.
 
 ```sh
-just web-host   # the browser's host, which the WebAssembly is linked with
-bin/rocx generate examples/notes --client examples/notes/build/client
-.tools/roc-active build --target=wasm32 --opt=size --output=examples/notes/build/client/static/rocx/app.wasm examples/notes/build/client/main.roc
-node server/build.mjs examples/notes/main.roc examples/notes/build/server --opt=speed
-cd examples/notes && build/server --port 8080 --static build/client/static
+cd examples/notes
+../../bin/rocx build                  # dist/server and dist/static
+dist/server --static dist/static      # with SMTP_URL set; on PORT, 8080 unless set
 ```
 
 Without `--dev` the server needs `SMTP_URL`, to send the sign-in links: it doesn't start without one
-(add `--dev` to try it locally, with the dev mailbox).
+(add `--dev` to try it locally, with the dev mailbox). `rocx build --image` makes a container image
+instead, `notes.tar`, with `/app/data` for the database's volume.
 
 ## A tour
 
@@ -132,9 +134,10 @@ Where to look in the code for each Roc Solid feature the app uses.
 | One rule set for a note's title, body and tags, whoever writes it (a page, a script, an agent), tested with `expect`s, and one module of operations that every way in calls. | `Note.roc`, `Notebook.roc` |
 | Appends that never overwrite each other: the note is read and written in one transaction, and SQLite's transactions take turns. | `Store.append!`, `Note.appended` |
 | Tags, pinning and archiving. | `Notebook.tag!`, `Notebook.pin!`, `Notebook.archive!`, `routes/(api)/api/notes/[id]/+server.roc` (`post!`, the note page's buttons) |
-| Pages that read their endpoints (`Endpoint.read!`), with the types they answer with in one module, shared by the server and the browser. A page's endpoints are under `api/` at the page's path (`/settings` reads and posts to `/api/settings`): a path is a page or an endpoint, never both. A note's page reads the JSON API's note, `GET /api/notes/<id>`, and posts its buttons there. | `Pages.roc`, each `+page.rocx`, `routes/(signed-in)/api/`, `routes/(api)/api/` |
-| A 404 for a note that doesn't exist or isn't yours. The endpoint refuses both alike, so ids tell nothing, and `Endpoint.read!` turns the refusal into the app's error page. | `routes/(signed-in)/notes/[id]/+page.rocx`, `routes/+error.rocx` |
-| Forms that work without JavaScript. With it, the runtime sends each form to one of the app's endpoints with `fetch` and the page stays (D-095); a page that shows the answer reads it with `use_submission!`. | every `<form method="post">` |
+| Pages that read their endpoints (`Api.get_api_notes_id({ id: id }).read!()`), with the types they answer with in one module, shared by the server and the browser. A page's endpoints are under `api/` at the page's path (`/settings` reads and posts to `/api/settings`): a path is a page or an endpoint, never both. A note's page reads the JSON API's note, `GET /api/notes/<id>`, and posts its buttons there. | `Pages.roc`, each `+page.rocx`, `routes/(signed-in)/api/`, `routes/(api)/api/` |
+| A 404 for a note that doesn't exist or isn't yours. The endpoint refuses both alike, so ids tell nothing, and the page's `read!()` turns the refusal into the app's error page. | `routes/(signed-in)/notes/[id]/+page.rocx`, `routes/+error.rocx` |
+| Forms that work without JavaScript. With it, the runtime sends each form with `fetch` and the page stays (D-095). A form a page reads (`use_submission!`) gets its answer as JSON; one nothing reads is answered as a plain form would be, in place (D-118), and a form that succeeded starts empty again (D-122). | every `<form method="post">`; `use_submission!` in `routes/(signed-in)/settings/+page.rocx` and the note's pages |
+| An endpoint that answers with a response of its own, a redirect, as its `Ok` (`Try(Server.Response, Endpoint.Refusal)`, D-106). | `routes/(signed-in)/api/new/+server.roc`, `routes/api/sign-out/+server.roc` |
 | Pure components (`view`) for what only shows its props; an effectful component (`view!`) for what keeps state, here the editor's draft and tabs (`create_signal!`). | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx`, `Ui/Prose.rocx`, `Ui/Brand.rocx` (pure); `Ui/Editor.rocx` (effectful) |
 | Pure components tested in `expect`s with packages/testing's `Dom`. | `Ui/NoteCard.rocx`, `Ui/Topbar.rocx` |
 | Scoped styles and a look of its own (ink, paper, a highlighter), light and dark, narrow screens. | each component's `<style>`; the design tokens in `routes/+layout.rocx` |
@@ -205,19 +208,19 @@ http://127.0.0.1:8080/api/me`), and http://127.0.0.1:8080/openapi.html describes
 ## Test it
 
 ```sh
-just examples notes
+just examples notes           # build, type-check, lint, the SQL, the expects and the node tests
+just examples-release notes   # rocx build, then the node tests against a server built --opt=speed
 ```
 
-This builds the app, type-checks the server's and the browser's programs, lints it, checks its SQL
-(`rocx check --sql`), and runs the `expect`s and the node tests. For a quick type check alone, run
-`../../bin/rocx check` in `examples/notes` (exit 1 on an error, 2 on warnings).
+`just examples` builds the app, type-checks the server's and the browser's programs, lints it,
+checks its SQL (`rocx check --sql`), and runs the `expect`s and the node tests. For a quick type
+check alone, run `../../bin/rocx check` in `examples/notes` (exit 1 on an error, 2 on warnings).
 
 To run the parts by hand from the repository's root (each test file builds the app and starts its
 own server on its own SQLite file; the browser test needs Chromium):
 
 ```sh
-bin/rocx generate examples/notes
-bin/rocx check -- .tools/roc-active test examples/notes/main.roc   # the expects
+bin/rocx test examples/notes                  # the expects
 node --test 'examples/notes/test/*.test.mjs'
 ```
 
@@ -268,6 +271,9 @@ got a prompt. With a wrong token it got 401.
   30 days, kept going while in use. "Sign out everywhere" ends every session of yours. The `people`
   table's `session_epoch` column is from before, when the app signed its own cookies; nothing uses
   it now.
+- **People are the app's own `people` table.** `Account.admit!` answers its person's id, and the
+  plugin keeps it in the session. packages/auth keeps users of its own now (`auth_users`,
+  `Auth.user_for!`, D-134); notes doesn't use them yet.
 - **Tokens start read-only** in the form: writing is the choice you make. A token's last use is
   written at most once a minute, so a busy agent writes one row a minute, not one per call.
 - **An AI client needs a token**, even from the browser the person is signed in on. An agent acts
@@ -287,7 +293,7 @@ got a prompt. With a wrong token it got 401.
 
 Writing the app turned up gaps in the platform and the packages. Most are fixed now (a form's
 unticked checkbox, the app's public address, a plain form's flash, guard's refusal of a plain form,
-404s from `Endpoint.read!`, typed submissions in the browser). These are still worth knowing:
+404s from a page's read, typed submissions in the browser). These are still worth knowing:
 
 1. **A tool call is a second request.** A tool made from an endpoint is sent through the
    endpoint's route, in-process, with the MCP request's token (D-103), so the API's middleware

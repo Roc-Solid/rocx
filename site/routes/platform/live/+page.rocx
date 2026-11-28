@@ -69,7 +69,7 @@ view! = |_|
 				<li>
 					<strong><code>Resync</code></strong>: the page may have missed something, so it should read its
 					data again (<code>refresh!</code>). Sent each time the tab's stream connects or reconnects, when
-					the subscriber fell behind, and when a page asks (<code>Endpoint.resync!</code>). The route's
+					the subscriber fell behind, and when a page asks (<code>channel.resync!()</code>). The route's
 					<code>on_open!</code> messages follow it.
 				</li>
 				<li><strong><code>Message(message)</code></strong>: something published, as the channel's type.</li>
@@ -81,14 +81,14 @@ view! = |_|
 			</ul>
 			<p>
 				The server publishes with
-				<code>Endpoint.publish!(Api.channel_org_org_news({"{ org: \"acme\" }"}), news)</code>, from a request,
-				a job or an actor. Only subscribers with the same params hear it, in publish order. A page's first
-				data comes from a <code>get!</code> endpoint on the same path (<code>Endpoint.read!</code>); the
+				<code>Api.channel_org_org_news({"{ org: \"acme\" }"}).publish!(news)</code>, from a request, a job
+				or an actor. Only subscribers with the same params hear it, in publish order. A page's first data
+				comes from a <code>get!</code> endpoint, often in the channel's file (<code>.read!()</code>); the
 				channel carries the changes after that.
 			</p>
 			<ul>
 				<li>
-					<strong>Only the latest matters?</strong> <code>Endpoint.publish_latest!(channel, key, message)</code>
+					<strong>Only the latest matters?</strong> <code>channel.publish_latest!(key, message)</code>
 					is for values where only the newest counts (a cursor's position). A subscriber that is behind
 					gets only the newest message per key, unordered with the channel's other messages.
 				</li>
@@ -106,7 +106,7 @@ view! = |_|
 			<ul>
 				<li>
 					<strong><code>receive!</code></strong> handles what a page says
-					(<code>Endpoint.say!(channel, said)</code>) after the same middleware and check, or refuses it.
+					(<code>channel.say!(said)</code>) after the same middleware and check, or refuses it.
 					What a page says within one frame goes in one request.
 				</li>
 				<li>
@@ -229,7 +229,7 @@ view! = |_|
 				<table>
 					<thead><tr><th>For</th><th>Use</th><th>Lasts</th></tr></thead>
 					<tbody>
-						<tr><td>live data for pages, checked</td><td>a channel (<code>channel!</code>, <code>Endpoint.subscribe!</code>, <code>Endpoint.publish!</code>)</td><td>while the subscribers last</td></tr>
+						<tr><td>live data for pages, checked</td><td>a channel (<code>channel!</code>, <code>.subscribe!</code>, <code>.publish!</code>)</td><td>while the subscribers last</td></tr>
 						<tr><td>who is here, now</td><td>a room (<code>Live.join!</code>, <code>Live.count!</code>), or a channel's hooks</td><td>while the calls in it last</td></tr>
 						<tr><td>telling every listening call</td><td>a topic (<code>Live.publish!</code>, <code>Live.listen!</code>)</td><td>while the listeners last</td></tr>
 						<tr><td>a count, a cache, a token used once</td><td>a value in memory (<a href={Paths.platform_kv}><code>Kv</code></a>: <code>Kv.increment!</code>, <code>Kv.set!</code>, <code>Kv.take!</code>)</td><td>its time to live, or until a restart</td></tr>

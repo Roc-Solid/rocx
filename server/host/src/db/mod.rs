@@ -116,7 +116,7 @@ fn left_out(flavor: Flavor) -> String {
         Flavor::Sqlite => ("SQLite", "database: Sqlite(path)"),
         Flavor::Turso => ("Turso", "database: Turso(path)"),
     };
-    format!("this server was built without {engine}: `rocx build --release` and `--image` build in the engine the app's program names alone, so say `{said}` in the program to have it")
+    format!("this server was built without {engine}: `rocx build` and `rocx build --image` build in the engine the app's program names alone, so say `{said}` in the program to have it")
 }
 
 /// A URL's scheme alone, for a message: its password stays out of the log.

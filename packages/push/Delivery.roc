@@ -8,7 +8,7 @@ import WebPush
 ## |---|---|---|
 ## | 2xx (201 Created) | `Delivered` | nothing more: the push service has it |
 ## | 404, 410 | `Gone` | deletes the subscription: the browser unsubscribed, or it expired |
-## | 429, 503 with `Retry-After` | `RetryAfter(ms)` | sends it again then, if its TTL lasts |
+## | 408, 429, 5xx with `Retry-After` | `RetryAfter(ms)` | sends it again then, if its TTL lasts |
 ## | 408, 429, 5xx | `Retry(why)` | sends it again later, waiting longer each time |
 ## | 400, 401, 403, 413, others | `Refused(why)` | gives up and says why: sending again won't help |
 ##

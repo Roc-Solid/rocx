@@ -16,6 +16,8 @@ import charts.Ticks
 ## `label` names the chart for screen readers; `format_x` and `format_y` write the values across
 ## and up (`Format.short` unless said).
 ScatterChart := [].{
+
+	## A dot: its label, across (`x`) and up (`y`).
 	Dot : { label : Str, x : Dec, y : Dec }
 
 	## A dot and its key: its label, numbered when another dot before it has the same one.

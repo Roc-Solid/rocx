@@ -1,9 +1,10 @@
 ## The site's program, on the server platform (`server/platform`: native code, in a Rust host). rocx
-## build writes nearly all of it from site/routes (`Generated/App`: every page and endpoint, behind
-## each directory's middleware, routes/+middleware.roc around every request); this says what only
-## the site can: what its middleware is given, and that it serves its endpoints' OpenAPI document,
-## with a page to read it in (`/openapi.json`, and `/openapi.html` in Swagger UI). The browser's half is the same pages, compiled to WebAssembly from the browser's copy
-## of the site (`rocx build site --client site/build/client` writes its main.roc).
+## writes nearly all of it from site/routes (`Generated/App`: every page and endpoint, behind each
+## directory's middleware, routes/+middleware.roc around every request); this says what only the
+## site can: what its middleware is given, and its plugins. The OpenAPI document and its page are
+## route files (routes/openapi.json, routes/openapi.html). The browser's half is the same pages,
+## compiled to WebAssembly from the browser's copy of the site (`rocx generate site --client
+## site/build/client` writes its main.roc).
 app [program] { admin: "../packages/admin/main.roc", audio: "../packages/audio/main.roc", charts: "../packages/charts/main.roc", forms: "../packages/forms/main.roc", guard: "../packages/guard/main.roc", intl: "../packages/intl/main.roc", markdown: "../packages/markdown/main.roc", mcp: "../packages/mcp/main.roc", pf: platform "../server/platform/main.roc", presence: "../packages/presence/main.roc", push: "../packages/push/main.roc", qr: "../packages/qr/main.roc", testing: "../packages/testing/main.roc", tools: "../packages/tools/main.roc", video: "../packages/video/main.roc", virtual: "../packages/virtual/main.roc" }
 
 import audio.AudioPlayer

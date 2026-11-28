@@ -34,7 +34,7 @@ import Value
 Static := [].{
 
 	usage : Str
-	usage = "usage: rocx build <dir> --static <out> [--base /path/] [--route <path>]… [--built <build>] [-- server options…]"
+	usage = "usage: rocx build [dir] --static [--out dist] [--base /path/] [--route <path>]… [--built <build>] [-- server options…]"
 
 	## What `rocx build … --static` was asked: the app's directory, where the copy goes, the base it is
 	## served under (`/` or `/docs/`), paths to ask for besides the pages, the build to use (none:

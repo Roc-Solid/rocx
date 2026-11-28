@@ -83,13 +83,13 @@ node --test --test-concurrency=1 --test-name-pattern="stores" web/test/platform.
 
 ### How a page comes alive
 
-1. **Build.** `rocx build --client` writes the browser's copy of the app (`build/client`): the
-   `.rocx` files as Roc, a `main.roc` whose `main!` is `Generated/Root`, and every `<NoHydration>`
-   emptied. It copies `start.js` and `runtime.js` into `build/client/static/rocx/` (the runtime
-   minified, but in a dev build). Then `roc build --target=wasm32` links the copy with `host.wasm`
-   into `app.wasm` beside them. `rocx dev` and `site/build.mjs` run both steps. A static copy and
-   a release ship a runtime with only what the app uses ([The runtime an app
-   ships](#the-runtime-an-app-ships-d-087)).
+1. **Build.** `rocx generate` writes the browser's copy of the app (`build/client`, or
+   `--client <out>`): the `.rocx` files as Roc, a `main.roc` whose `main!` is `Generated/Root`,
+   and every `<NoHydration>` emptied. It copies `start.js` and `runtime.js` into
+   `build/client/static/rocx/` (the runtime minified, but in a dev build). Then
+   `roc build --target=wasm32` links the copy with `host.wasm` into `app.wasm` beside them.
+   `rocx dev`, `rocx build` and `site/build.mjs` run both steps. `rocx build` ships a runtime with
+   only what the app uses ([The runtime an app ships](#the-runtime-an-app-ships-d-087)).
 2. **Server render.** The server platform renders the page (`server/host/src/signals.rs`). Every
    hole runs once. Comments mark where each computed hole, part and row is (`<!--x-->…<!--/x-->`).
    Before `</body>` it writes the flash (if the page read one), the answers, the plugins' scripts
@@ -134,7 +134,7 @@ Most modules are **shared**: written here and copied into `server/platform` by
 | `Search`, `Leave` | yes | The query (`get!`, `all!`, `set!`, `set_with!`); a navigation about to leave (`to`, `from`, `options`, `delta`, `default_prevented`, `prevent!`, `retry!`). |
 | `Navigate` | no | `<Navigate href>`: here, a navigation that replaces the history entry; the server's is a 303. |
 | `Call` | yes | `fetch!` (a request) and `listen!` (a stream of server-sent events). |
-| `Endpoint` | yes | An endpoint as a typed value: read it (`get!`, `read!`, `with_query`), send it (`send!`), listen to it, subscribe to a channel (`subscribe!`, `say!`, `resync!`, and on the server `publish!`, `publish_latest!`), bind a form (`url_of`, `with_fields`), check its body by the app's rules (`checked`, D-093), and, on the server, run and answer it (`bind`, `run!`, `respond!`, `posted_by`). |
+| `Endpoint` | yes | An endpoint as a typed value, its methods called on it (D-102): read it (`read!`, `with_query`), send it (`send!`), listen to it (`listen!`), subscribe to a channel (`subscribe!`, `say!`, `resync!`, and on the server `publish!`, `publish_latest!`), bind a form (`url_of`, `with_fields`), check its body by the app's rules (`checked`, D-093), and, on the server, bind and answer it (`bind`, `respond!`, `for_runtime`, `posted_by`). |
 | `Submission`, `Submissions` | yes | A form's or an action's submissions: `pending!`, `input!`, `field!`, `result!`, `error!`, `clear!`, `retry!`; `all!`, `pending_inputs!`. |
 | `FormBody` | yes | Reads a form's fields as the endpoint's body type (D-038). |
 | `Channel` | yes | What a route's `channel!` answers (`Channel.allow(who)`) and what a subscriber hears. |
@@ -143,15 +143,15 @@ Most modules are **shared**: written here and copied into `server/platform` by
 | `Time` | no | The clock: `now_millis!`, `now_nanos!`, under the server's names. |
 | `Host` | no | The hosted functions (above). |
 
-`Generated/Api` (written by `rocx build`) is the app's contract: each endpoint's method, URL and
+`Generated/Api` (written by rocx) is the app's contract: each endpoint's method, URL and
 types, the same in the browser's copy as on the server (D-037). The browser answers no requests:
 the server platform answers every endpoint, the GETs a page reads among them.
 
 ### The runtime an app ships (D-087)
 
 `runtime.js` answers every host function any app's wasm may call, and has the code each needs.
-`rocx build --static` and `--release`, once the app's wasm is built, ship it **shaken**
-(`rocx-cli/Shake.roc`), then minified:
+`rocx build` (`dist/`, `--image` and `--static` alike), once the app's wasm is built, ships it
+**shaken** (`rocx-cli/Shake.roc`), then minified:
 
 - the entries of `makeImports` the wasm doesn't import go (its import section says which);
 - then every member of `Runtime` that no kept code names (`.name`), starting from what is outside
@@ -166,8 +166,7 @@ Shake reads the runtime by its lines, as it is written: a member starts at one t
 next line that is one tab and `}`, and the imports are the entries at three tabs. Keep that shape,
 and put a feature's tag on a whole statement. A runtime written another way ships whole, with a
 warning. A member reached only by a name built at run time (`this[name]`) would be left out: the
-runtime has none. `rocx build --client`, `rocx dev` and the tests that load `runtime.js` use it
-whole.
+runtime has none. `rocx generate`, `rocx dev` and the tests that load `runtime.js` use it whole.
 
 ## Markup: what Roc hands the runtime
 
@@ -205,7 +204,7 @@ Attributes are arrays, their kind first:
 | `sv`, `so` | `Html.style_var`, `Html.style_of`: `style:color`, `style:--size` |
 | `f`, `fo` | `Html.flag`, `Html.flag_of`: a boolean attribute |
 | `ci`, `co` | `Html.class_if`, `Html.class_of`: `class:name={…}` |
-| `on` | `Html.on`, `on_value`, `on_checked`, `on_named_key` (a fourth item: the key, `"Shift+Enter"`), `on_data` (`".data"`), `on_files` (`".files"`) |
+| `on` | `Html.on`, `on_value`, `on_checked` (and `on_visible`, written as one), `on_named_key` (a fourth item: the key, `"Shift+Enter"`), `on_data` (`".data"`), `on_files` (`".files"`) |
 | `onk` | `Html.on_key`, `Html.on_keys` (a fourth item, `"keys"`) |
 | `onp` | `Html.on_prevent`: `on:click.prevent` |
 | `frame`, `view`, `pt` | `Html.on_frame`, `Html.on_viewport`, `Html.on_point` |
@@ -477,7 +476,7 @@ Keys compare as text: a key is inspected once per read.
 A component's body runs once, so a read there doesn't follow what it read. This is Solid 2.0's
 `STRICT_READ_UNTRACKED` dev warning:
 
-- A dev build (`rocx build --dev`, `rocx dev`) writes each accessor a component's body calls
+- A dev build (`rocx dev`, or `rocx generate --dev`) writes each accessor a component's body calls
   (`goal!()`, a prop's getter `label!()`) as `Html.read_at!("Ui/Chart.rocx:44:39", goal!)`, which
   tells the runtime where the read is while it runs (`Host.read_at!`).
 - A tracked read there, while a component runs, is a console warning, once per place:
@@ -489,7 +488,7 @@ A component's body runs once, so a read there doesn't follow what it read. This 
   transpiler doesn't see as a call of an accessor (`helper!(x)`).
 - Other builds write no `read_at!` and warn of nothing; the server never warns.
 
-`rocx build` also warns, at build time, when a match arm's value or a `.map` row's item is given
+rocx also warns, as it writes the code, when a match arm's value or a `.map` row's item is given
 to a component that reads it once in its body. `rocx check` counts that warning (exit 2).
 
 ## Components, props and control flow
@@ -667,8 +666,9 @@ have (D-079).
 behind them, one per index from `from!` (0 by default) up to `from! + count!`. Each is keyed by its
 index (`Html.each`, the node `.map`'s rows use, so the server renders it and hydrating adopts it as
 one). When the range moves, only the rows that enter it are made and only those that leave it go.
-The child is given its index, which doesn't change, so a kept row has nothing to run again. Virtual
-lists render the rows that show with it (packages/virtual).
+The child is given its index, which doesn't change, so a kept row has nothing to run again. Its
+`fallback` shows while the count is 0. Virtual lists render the rows that show with it
+(packages/virtual).
 
 ### Fallbacks are made as they show
 
@@ -708,42 +708,47 @@ base off the page's path. So the browser sees `/rocx/syntax` as the server sees 
 
 ### Forms and submissions
 
-The route table rocx build writes (`Router.app!`, D-040) lists the paths of the app's endpoints
-that take a POST (`posts`: each `+server.roc` with a `post!`, `/lists/[id]` matching any one
-segment). `use_submission!(endpoint)` (or `use_submissions!`) registers the endpoint's URL with the
-runtime too, by its path without the site's base, for as long as its component is there. Once the
-app is told (or something registers), the runtime listens for `submit` on the page, once. It sends
-a form with `fetch` when the form (D-095):
+The route table rocx writes (`Router.app!`, D-040) lists the paths of the app's endpoints that take
+a POST (`posts`: each `+server.roc` with a `post!`, `/lists/[id]` matching any one segment).
+`use_submission!(endpoint)` and `use_submissions!` (not `use_action!`) register the endpoint's URL
+with the runtime too, by its path without the site's base, while their component is there. Once
+the app is told (or something registers), the runtime listens for `submit` on the page, once
+(`submitted`). It sends a form with `fetch` when the form (D-095):
 
 - posts (`method="post"`) to one of the app's endpoints, or to a registered URL, on this site
   under its base, and isn't `text/plain`;
 - goes into this tab (no `target`, or `_self`);
+- has no `data-rocx-reload`, nor its button, nor an element around them (D-124; `"off"` takes it
+  back for what is inside);
 - wasn't prevented by a handler (an `on:submit` handler prevents it).
 
-So whether a form goes with `fetch` doesn't depend on whether a component reads its submissions,
-but how it goes does (D-118). One that succeeded (a result, or a redirect that isn't a refusal
-coming back) is emptied, its fields their own values again, as the page a plain post comes back to
-has it and SvelteKit's are (D-122), unless it, or what is around it, says `data-rocx-keep`; and
-`field!` is "" after a result, so an input bound to it starts empty too. A form nothing reads whose
-answer the browser would show as a page (a crash's 500, a middleware's refusal, no answer at all) is
-shown where the form is (D-121): the nearest `<Errored>` around it shows its fallback (the app's
-error page, around the page, at the least), given `POST /notes: 500: …` and a retry. One a component reads (`use_submission!`, `use_submissions!`,
-`use_action!` of its endpoint) goes as the runtime's, for its result or refusal, as below. One nothing
-reads goes as the browser would post it (`accept: text/html`, no `x-rocx-submission`), with
-`x-rocx-in-place: 1`: the endpoint answers it as a plain form (its result or refusal flashed back to
-the page it came from, or its own redirect), the server gives the runtime that redirect, and the
-runtime follows it in place. So the page shows what a plain post would show (a refusal the page
-reads from the flash among it), and only what changed changes: brought back to the page it is on,
-the page is kept (D-119), what it read following the document. A submission is kept under its endpoint's path (its query is fields,
-`with_fields`'). A refusal, or no answer, of a runtime's submission that no component asks for
-shows nothing on the page, so the console says so (`unread`), in every build. Any other form is the browser's: another site's, a path no endpoint
-has a `post!` for (a `+server.roc` that answers with `respond!`, such as the one that calls
-packages/auth's `Auth.sign_out_route!` at `/auth/sign-out`), or one posted before the runtime is
-there.
+Any other form is the browser's: another site's, a path no endpoint has a `post!` for (a
+`+server.roc` that answers with `respond!`, such as `/auth/sign-out` calling packages/auth's
+`Auth.sign_out_route!`), or one posted before the runtime is there.
 
-It sends the fields URL-encoded, with `accept: application/json` and `x-rocx-submission: 1`. A form
-with files (`enctype="multipart/form-data"`, D-054) goes as the browser's `FormData`; its input is
-its fields URL-encoded, a file's field being the file's name. A form whose URL is a known
+Whether a form goes with `fetch` doesn't depend on whether a component reads its submissions; how
+it goes does (D-118):
+
+- **Read by a component** (its endpoint registered): it goes as the runtime's, for its result or
+  refusal (below).
+- **Read by nothing**: it goes as the browser would post it (`accept: text/html`, no
+  `x-rocx-submission`), with `x-rocx-in-place: 1`. The endpoint answers it as a plain form (its
+  result or refusal flashed back to the page it came from, or its own redirect), the server gives
+  the runtime that redirect (`Endpoint.for_runtime`), and the runtime follows it in place. So the
+  page shows what a plain post would show, the flash among it, and only what changed changes. An
+  answer that isn't where to go (a crash's 500, a middleware's refusal, no answer at all) is shown
+  where the form is (D-121, `failAround`): the nearest `<Errored>` around it shows its fallback (the
+  app's error page, around the page, at the least), given `POST /notes: 500: …` and a retry.
+- **Succeeded** (a result, or a redirect that isn't a refusal coming back in a plain form's flash):
+  the form is reset, its fields their own values again, as the page a plain post comes back to has
+  it and SvelteKit's are (D-122, `emptied`), unless it, or what is around it, says `data-rocx-keep`.
+  `field!` is "" after a result, so an input bound to it starts empty too.
+
+A submission is kept under its endpoint's path (its query is fields, `with_fields`').
+
+A form a component reads goes with its fields URL-encoded, `accept: application/json` and
+`x-rocx-submission: 1`. A form with files (`enctype="multipart/form-data"`, D-054) goes as the
+browser's `FormData`; its input is its fields URL-encoded, a file's field being the file's name. A form whose URL is a known
 endpoint's with fields after it (`Endpoint.with_fields(endpoint, { id })`, Solid Router's
 `action.with`: `/todos/toggle?id=7`) belongs to that endpoint. The URL's fields come first in its
 input, as the server reads them, with or without JavaScript.
@@ -777,7 +782,9 @@ as the server refuses it (422, the issues as JSON).
 `use_action!(endpoint)` gives a function a handler calls with the endpoint's arg (`Host.submit!`).
 The call is queued with the handler's writes, so a handler that waits and runs again sends it once.
 It is sent as `Endpoint.send!` sends it (JSON, with `x-rocx-submission: 1`), as a new submission in
-the endpoint's list. Nothing waits for it.
+the endpoint's list. Nothing waits for it. A refusal, or no answer, of an action whose endpoint no
+`use_submission!` or `use_submissions!` reads shows nothing on the page, so the console says so
+(`unread`), in every build.
 
 `use_submissions!(endpoint)` reads that list: `all!` (records with `id`, `pending`, `input`,
 `result`, `error`), `pending!`, `pending_inputs!` (what those still on their way sent, parsed as the
@@ -798,7 +805,8 @@ How a submission ends:
   `/` or `?`, run again; `[]` means none, and the submission is done at once.
 - Then it is marked done in the run of the last read to get its answer (or fail, or go). So what
   reads both sees the server's new data and the submission's end in one flush, and the optimistic
-  value gives way with no frame of the old data.
+  value gives way with no frame of the old data. Its form is reset (D-122), and a `<NoHydration>`
+  that read data is taken again from the page's document (D-120, `refreshRegionsFromServer`).
 - **Refused** (any other status, or no answer). It is done at once: its input isn't applied any
   more, the value is the server's again, and the refusal is in `error`.
 
@@ -981,7 +989,7 @@ browser's runs them; a page whose regions read nothing asks for nothing.
   markup between `<!--nohydration-->` and `<!--/nohydration-->`, with no comments of its own
   inside. (One region inside another is just part of it.) An endpoint read inside isn't noted in
   the answers, since the browser never reads it.
-- **In the browser's copy** of a `.rocx` file (`rocx build --client`), it has no children. An
+- **In the browser's copy** of a `.rocx` file (`rocx generate`), it has no children. An
   import only those children used is dropped, as is one only a route file's `middleware` used:
   none of it is in the wasm. A name only they used is rewritten where it is bound (a record
   pattern's field as `params: _`, a parameter or a local as `_lang`), so the browser's build has
@@ -1065,9 +1073,9 @@ sections).
 ### Setting up
 
 `Generated/Root` calls `Router.app!` first, with the build's id, whether it is a dev build, and the
-route table (JSON: each page's path and its levels' code, root layout first; §18's ids, kept for
-wasm splitting later; and `posts`, the paths of the endpoints that take a POST, for
-[forms](#forms-and-submissions), D-095). The build's id is also on every page's bootstrap, as
+route table (JSON: each page's path and its levels' code, root layout first, a dev build's stories
+among them; the error page's code; §18's ids, kept for wasm splitting later; and `posts`, the paths
+of the endpoints that take a POST, for [forms](#forms-and-submissions), D-095). The build's id is also on every page's bootstrap, as
 `data-build`.
 
 As it hydrates the document, the runtime (`listenForNavigation`):
@@ -1488,7 +1496,8 @@ area:
   The component is kept with its signals, and only what reads the prop is patched.
 - **Static holes and untracked reads** (`Untracked.rocx`, D-052): `untrack!` in a hole, a memo and a
   body, `latest!`, a component given constants beside one given what changes, written without
-  comments and taken as text, strictly, and never patched. Built with `--dev` from a copy: the
+  comments and taken as text, strictly, and never patched. A memo computed again to the same value
+  telling no one, and the pure view given it kept (D-109). Built with `--dev` from a copy: the
   warning of a read in a body, once for two runs of its place.
 - **Effects and timers.** `Effects.rocx`: an effect run after hydration and again after its
   cleanup (none on the server), a timer and a listen stopping with their component.
@@ -1509,7 +1518,9 @@ area:
   `is_pending!` false on the first load, true while a refresh is on its way, false on the server.
 - **Documents** (`Document.rocx`; inside an `<Errored>`, `Wrapped.rocx`): rendered in Node as the
   server platform answers a page and hydrated by `start.js`; a tampered document's `<body>`
-  rendered again (strictly, a throw); the host's `data-rocx` elements passed over; `start.js`
+  rendered again (strictly, a throw); the host's `data-rocx` elements passed over; an extension's
+  elements in `<body>` and `<head>` passed over and kept, a mismatch inside an `<svg>` named, with
+  `rocx:mismatch` (D-112); `start.js`
   under `/rocx/` asking for nothing outside it; a `<NoHydration>` the browser's wasm hasn't (its
   nodes kept, strictly and after `<body>` is rendered again; the browser's build rendered against
   the page's answers and regions, byte for byte). `RawText.rocx`: raw text and a doctype.
@@ -1603,9 +1614,13 @@ when told to). In Chromium, strictly, the tests check:
 - **Forms to the app's endpoints** (D-095, D-118): which form URLs the route table makes an
   endpoint's (in Node); in Chromium, forms nothing asks about posted as the browser would
   (`x-rocx-in-place`), answered as plain forms and followed in place, no load: a result and a refusal
-  back to the page, made anew from its document, a path with a param and fields in its query, a
-  redirect of the endpoint's own; a form into a frame and one to a path no endpoint has left to the
-  browser.
+  back to the page, kept, a path with a param and fields in its query, a redirect of the endpoint's
+  own; a form into a frame and one to a path no endpoint has left to the browser.
+- **After a form:** a submission's redirect followed in place, the layout it keeps reading again
+  what the new document says, asking no one (D-117, D-119); a server failure shown in the page's
+  `<Errored>` (D-121); a form or a link marked `data-rocx-reload` left to the browser (D-124); a
+  form that succeeded emptied, one marked `data-rocx-keep` not (D-122); a result taking again the
+  `<NoHydration>` regions that read data, and asking nothing for those that didn't (D-120).
 
 The docs site's own tests (`site/test/`) run the site on the native server and compare each page
 with the browser runtime's render of it, byte for byte outside its `<NoHydration>`s.

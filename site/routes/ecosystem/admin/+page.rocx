@@ -46,8 +46,8 @@ view! = |_|
 			</PageHero>
 			<p>
 				Mount it with one route file, behind your app's middleware. The package also draws the
-				<a href={"#jobs-page"}>jobs page</a>, a plugin showing the queue of
-				<a href={Paths.ecosystem_jobs}>packages/jobs</a>.
+				<a href={"#jobs-page"}>jobs page</a>, the queue of <a href={Paths.ecosystem_jobs}>packages/jobs</a>,
+				on a route file of yours too.
 			</p>
 
 			<Heading id="install">Installing it</Heading>
@@ -381,11 +381,8 @@ view! = |_|
 				<li>A foreign key or a check over several columns gives no widget: each column is edited alone.</li>
 				<li>No actions on several rows at once, and no history of who changed what.</li>
 				<li>
-					Every route passes the effects. A server-only <code>AdminPage</code> could take <code>Db</code>
-					itself
-					(<code>AdminPage.respond!(request, context, admin)</code>); the package's
-					<code>PROPOSALS.md</code>
-					weighs it.
+					Every route passes the effects. A server-only module could pass them itself, so a route would be
+					<code>respond!(request, context, admin)</code>; the package's <code>PROPOSALS.md</code> has it.
 				</li>
 			</ul>
 			<Note>
