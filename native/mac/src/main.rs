@@ -12,7 +12,8 @@
 //! `css` (the CSS the phone ignores); navigation's (D-138): `link:<text>` (a tap on the link that
 //! says it), `nav:<to>` (`Router.navigate!`), `back` (Android's back), `where` (the location and
 //! the history), `cookies` (the jar), `at:<id>` (a tap on the view with that id) and `at:<id>=<text>`
-//! (typing into it).
+//! (typing into it), `textarea:<text>` (typing into the first text area), `check:<text>` (the checkbox
+//! or radio beside that text, toggled).
 //!
 //! Options: `--origin <url>`, `--path <start path>`, `--files <dir>` (where the cookie jar is kept,
 //! as an app's files dir).
@@ -138,6 +139,39 @@ fn main() {
                             }
                         }
                     }
+                }
+            }
+            // The first multi-line field: `textarea:<text>` types into it.
+            "textarea" => match find("textarea", None) {
+                Some(id) => {
+                    println!("type {value:?} into the text area (#{id})");
+                    core::event(id, "input", value);
+                }
+                None => println!("no text area"),
+            },
+            // `check:<text>`: the checkbox (or radio) beside the text that has it, toggled.
+            "check" => {
+                let views = core::native::shown_views();
+                let mut found = None;
+                let mut parents: Vec<&u64> = views.keys().collect();
+                parents.sort();
+                'look: for parent in parents {
+                    let children = &views[parent].children;
+                    for pair in children.windows(2) {
+                        let (Some(first), Some(second)) = (views.get(&pair[0]), views.get(&pair[1])) else { continue };
+                        if first.kind == "checkbox" && second.props.get("text").is_some_and(|text| text.contains(value)) {
+                            found = Some((pair[0], first.props.get("checked").map(String::as_str) != Some("true")));
+                            break 'look;
+                        }
+                    }
+                }
+                match found {
+                    Some((id, now)) => {
+                        println!("check {value:?} (#{id}): {now}");
+                        core::event(id, "click", &now.to_string());
+                        core::event(id, "change", &now.to_string());
+                    }
+                    None => println!("no checkbox beside {value:?}"),
                 }
             }
             "enter" => match find("input", None) {
