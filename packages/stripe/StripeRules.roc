@@ -246,9 +246,10 @@ StripeRules := [].{
 
 	## An invoice as its object says: its id (`in_…`), its customer, the subscription it bills ("" for
 	## none), its status (`paid`, `open`, …), what it asks and what was paid (the currency's smallest
-	## unit), its currency, the page where it can be paid, how many times its payment was tried, and
-	## why it was made (`subscription_cycle`, `subscription_create`, …).
-	Invoice : { id : Str, customer : Str, subscription : Str, status : Str, amount_due : I64, amount_paid : I64, currency : Str, hosted_url : Str, attempt_count : U64, billing_reason : Str }
+	## unit), its currency, the page where it can be paid, how many times its payment was tried, why
+	## it was made (`subscription_cycle`, `subscription_create`, …), when it was made (seconds since
+	## 1970), its number (`B7D2A1C4-0001`, "" while it is a draft), and its PDF's URL ("" for none).
+	Invoice : { id : Str, customer : Str, subscription : Str, status : Str, amount_due : I64, amount_paid : I64, currency : Str, hosted_url : Str, attempt_count : U64, billing_reason : Str, created : I64, number : Str, pdf_url : Str }
 
 	## The invoice `json` is, from any API version: before 2025-03-31 its subscription is its own
 	## field, since then its `parent`'s.
@@ -270,8 +271,65 @@ StripeRules := [].{
 			hosted_url: StripeRules.text(json, ["hosted_invoice_url"]),
 			attempt_count: StripeRules.int(json, ["attempt_count"]).to_u64_wrap(),
 			billing_reason: StripeRules.text(json, ["billing_reason"]),
+			created: StripeRules.int(json, ["created"]),
+			number: StripeRules.text(json, ["number"]),
+			pdf_url: StripeRules.text(json, ["invoice_pdf"]),
 		})
 	}
+
+	## The invoices in a list of them (`GET /v1/invoices`'s answer), the newest first; one that can't
+	## be read is left out.
+	invoices_in : Str -> List(StripeRules.Invoice)
+	invoices_in = |json|
+		StripeRules.elements(StripeRules.at(json, ["data"]) ?? "[]")
+			.keep_oks(StripeRules.invoice)
+			.sort_with(|a, b| if (a.created > b.created) Before else if (a.created < b.created) After else Same)
+
+	## A card, as a payment method's `card` says it: its brand as Stripe writes it (`visa`,
+	## `mastercard`, `amex`, …), its last four digits, and the month and year it expires.
+	Card : { brand : Str, last4 : Str, exp_month : U64, exp_year : U64 }
+
+	## The card of the payment method at `path` in `json` (an object Stripe was asked to `expand`):
+	## `NoCard` when there is none there (null, an id alone), or it isn't a card (a bank account,
+	## Link).
+	card_at : Str, List(Str) -> Try(StripeRules.Card, [NoCard, ..others])
+	card_at = |json, path|
+		match StripeRules.at(json, path) {
+			Ok(method) if method.starts_with("{") and StripeRules.text(method, ["type"]) == "card" and !StripeRules.text(method, ["card", "last4"]).is_empty() =>
+				Ok({
+					brand: StripeRules.text(method, ["card", "brand"]),
+					last4: StripeRules.text(method, ["card", "last4"]),
+					exp_month: StripeRules.int(method, ["card", "exp_month"]).to_u64_wrap(),
+					exp_year: StripeRules.int(method, ["card", "exp_year"]).to_u64_wrap(),
+				})
+			_ => Err(NoCard)
+		}
+
+	## The form of a Customer Portal session for `customer` opened at changing their card
+	## (`flow_data[type]=payment_method_update`), going back to `return_url` once it is changed, and
+	## from the portal's own link back.
+	card_portal_form : Str, Str -> List((Str, Str))
+	card_portal_form = |customer, return_url| [
+		("customer", customer),
+		("return_url", return_url),
+		("flow_data[type]", "payment_method_update"),
+		("flow_data[after_completion][type]", "redirect"),
+		("flow_data[after_completion][redirect][return_url]", return_url),
+	]
+
+	## The form that sets whether a subscription ends at its period's end (`cancel!`: `Bool.True`),
+	## or goes on (`keep!`). Going on undoes either way it was set to end: `cancel_at_period_end`
+	## (which sets `cancel_at` to the period's end too), or a `cancel_at` of its own (set in the
+	## Dashboard), which an empty value unsets. `cancel_at_ms` is the subscription's (0: none).
+	ends_form : Bool, Bool, I64 -> List((Str, Str))
+	ends_form = |at_end, cancel_at_period_end, cancel_at_ms|
+		if at_end {
+			[("cancel_at_period_end", "true")]
+		} else if !cancel_at_period_end and cancel_at_ms != 0 {
+			[("cancel_at", "")]
+		} else {
+			[("cancel_at_period_end", "false")]
+		}
 
 	## Where an event about a subscription stands among the others about it: its time (seconds) four
 	## times over, and within one second `created` first, then any other, then `deleted`. A kept
@@ -600,3 +658,20 @@ expect StripeRules.is_session_id("cs_test_a1B2") and !StripeRules.is_session_id(
 expect StripeRules.price_in("{\"object\":\"list\",\"data\":[{\"id\":\"price_pro\",\"lookup_key\":\"pro_monthly\"}],\"has_more\":false}") == Ok("price_pro")
 expect StripeRules.price_in("{\"object\":\"list\",\"data\":[],\"has_more\":false}") == Err(NoPrice)
 expect StripeRules.price_in("nonsense") == Err(NoPrice)
+
+# ---- invoices listed, a card, the portal at the card, ending at the period's end ----
+expect StripeRules.invoice("{\"id\":\"in_3\",\"customer\":\"cus_1\",\"status\":\"paid\",\"created\":1700000000,\"number\":\"B7D2A1C4-0001\",\"invoice_pdf\":\"https://pay.stripe.com/invoice/x/pdf\"}").map_ok(|i| (i.created, i.number, i.pdf_url)) == Ok((1700000000, "B7D2A1C4-0001", "https://pay.stripe.com/invoice/x/pdf"))
+expect StripeRules.invoice("{\"id\":\"in_4\",\"status\":\"draft\",\"number\":null,\"invoice_pdf\":null}").map_ok(|i| (i.created, i.number, i.pdf_url)) == Ok((0, "", ""))
+expect StripeRules.invoices_in("{\"object\":\"list\",\"data\":[{\"id\":\"in_old\",\"created\":100},{\"id\":\"cus_x\"},{\"id\":\"in_new\",\"created\":200}],\"has_more\":false}").map(|i| i.id) == ["in_new", "in_old"]
+expect StripeRules.invoices_in("{\"data\":[]}") == [] and StripeRules.invoices_in("{}") == []
+expect StripeRules.card_at("{\"id\":\"sub_1\",\"default_payment_method\":{\"id\":\"pm_1\",\"type\":\"card\",\"card\":{\"brand\":\"visa\",\"last4\":\"4242\",\"exp_month\":12,\"exp_year\":2034}}}", ["default_payment_method"]) == Ok({ brand: "visa", last4: "4242", exp_month: 12, exp_year: 2034 })
+expect StripeRules.card_at("{\"invoice_settings\":{\"default_payment_method\":{\"type\":\"card\",\"card\":{\"brand\":\"mastercard\",\"last4\":\"4444\",\"exp_month\":1,\"exp_year\":2030}}}}", ["invoice_settings", "default_payment_method"]).map_ok(|card| card.brand) == Ok("mastercard")
+expect StripeRules.card_at("{\"default_payment_method\":\"pm_1\"}", ["default_payment_method"]) == Err(NoCard)
+expect StripeRules.card_at("{\"default_payment_method\":null}", ["default_payment_method"]) == Err(NoCard)
+expect StripeRules.card_at("{\"default_payment_method\":{\"type\":\"us_bank_account\",\"us_bank_account\":{\"last4\":\"6789\"}}}", ["default_payment_method"]) == Err(NoCard)
+expect StripeRules.card_portal_form("cus_1", "https://example.com/account").contains(("flow_data[after_completion][redirect][return_url]", "https://example.com/account"))
+expect StripeRules.card_portal_form("cus_1", "https://example.com/account").contains(("flow_data[type]", "payment_method_update"))
+expect StripeRules.ends_form(Bool.True, Bool.False, 0) == [("cancel_at_period_end", "true")]
+expect StripeRules.ends_form(Bool.False, Bool.True, 1702592000000) == [("cancel_at_period_end", "false")]
+expect StripeRules.ends_form(Bool.False, Bool.False, 1702592000000) == [("cancel_at", "")]
+expect StripeRules.ends_form(Bool.False, Bool.False, 0) == [("cancel_at_period_end", "false")]

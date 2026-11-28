@@ -7,8 +7,8 @@
 ## address at once); `Accounts.admit!` keeps a row for each.
 ##
 ## Its pages: the pricing page (`/`), Checkout's way back (`/billing/done`), the account (`/account`:
-## the subscription, the orders, a button to the portal), a page for subscribers (`/pro`) and the
-## e-book, for those who bought it (`/ebook`).
+## the subscription, cancelled or kept from there, its card and invoices, the orders, a button to
+## the portal), a page for subscribers (`/pro`) and the e-book, for those who bought it (`/ebook`).
 app [program] { auth: "../../auth/main.roc", crypto: "../../crypto/main.roc", pf: platform "../../../server/platform/main.roc", stripe: "../main.roc" }
 
 import auth.Auth

@@ -1,13 +1,26 @@
 import pf.Html
 import ../../../Generated/Api
 
-## The account: the subscription and what it costs to change it (Stripe's Customer Portal, from a
-## button), the e-books bought, and signing out. Signed in only (`Middlewares.signed_in`).
+## The account: the subscription (cancelled, or kept after all, from here; the plan changed in
+## Stripe's Customer Portal, from a button), the card it is charged to (changed in the portal,
+## opened at the card), the invoices, the e-books bought, and signing out. Signed in only
+## (`Middlewares.signed_in`).
 meta = { title: "Your account" }
 
 ## The account, as `GET /api/account` says.
 account! : {} => { email : Str, plan : Str, status : Str, until : Str, ending : Bool, customer : Bool, orders : List({ id : Str, what : Str, day : Str }) }
 account! = |{}| Api.get_api_account({}).read!()
+
+## The card and the invoices, as `GET /api/billing` says (asked of Stripe).
+billing! : {} => { card : Str, invoices : List({ id : Str, number : Str, status : Str, amount_paid : I64, currency : Str, day : Str, pdf : Str }) }
+billing! = |{}| Api.get_api_billing({}).read!()
+
+## An amount in the currency's smallest unit, as people read it: `15.00 USD`.
+amount : I64, Str -> Str
+amount = |cents, currency| {
+	rest = cents % 100
+	"${(cents // 100).to_str()}.${if (rest < 10) "0" else ""}${rest.to_str()} ${currency.with_ascii_uppercased()}"
+}
 
 ## What the page says of a subscription's period.
 period : Bool -> Str
@@ -15,6 +28,8 @@ period = |ending| if (ending) "It ends on" else "It renews on"
 
 view! = |_| {
 	me = account!({})
+	paid = billing!({})
+	live = !me.plan.is_empty() and me.status != "canceled" and me.status != "incomplete_expired"
 	<main>
 		<h1>Your account</h1>
 		<p>Signed in as <strong>{me.email}</strong>.</p>
@@ -24,11 +39,37 @@ view! = |_| {
 		} else {
 			<p><strong>{me.plan}</strong>, <span class="status">{me.status}</span>. {period(me.ending)} {me.until}.</p>
 		}}
+		{if live and me.ending {
+			<form method="post" action="/api/billing/keep">
+				<button type="submit">Keep it</button>
+			</form>
+		} else if live {
+			<form method="post" action="/api/billing/cancel">
+				<button type="submit">Cancel at the period's end</button>
+			</form>
+		}}
 		{if me.customer {
 			<form method="post" action="/api/billing/portal">
 				<button type="submit">Manage billing</button>
 			</form>
 		}}
+		<h2>Card</h2>
+		{if paid.card.is_empty() {
+			<p class="card">None on file.</p>
+		} else {
+			<p class="card">{paid.card}.</p>
+		}}
+		{if me.customer {
+			<form method="post" action="/api/billing/card">
+				<button type="submit">Change card</button>
+			</form>
+		}}
+		<h2>Invoices</h2>
+		<ul class="invoices">
+			{...paid.invoices.map(|invoice|
+				<li key={invoice.id}>{invoice.day}, {invoice.number}: {amount(invoice.amount_paid, invoice.currency)}, {invoice.status}{if (invoice.pdf.is_empty()) "" else " "}{if (invoice.pdf.is_empty()) <></> else <a href={invoice.pdf}>PDF</a>}</li>
+			)}
+		</ul>
 		<h2>Orders</h2>
 		<ul class="orders">
 			{...me.orders.map(|order|

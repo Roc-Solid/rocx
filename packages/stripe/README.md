@@ -2,8 +2,10 @@
 
 Payments and subscriptions for Roc Solid apps through [Stripe](https://stripe.com), as a plugin
 (D-082): Stripe's hosted Checkout for a one-time payment or a subscription, its hosted Customer
-Portal for managing one, a webhook that keeps the app's database in step with Stripe, and typed
-answers to "what has this user paid for". Cards are typed on Stripe's pages, never the app's.
+Portal for managing one, a webhook that keeps the app's database in step with Stripe, typed
+answers to "what has this user paid for", and what an app's own billing page shows and does (the
+card, the invoices, cancelling and keeping: D-129). Cards are typed on Stripe's pages, never the
+app's.
 
 The package keeps the parts that are easy to get wrong: the webhook's signature (and its age), each
 event handled once however often it comes, events that come out of order, one Stripe customer per
@@ -109,7 +111,8 @@ Send it at least these events:
 
 `example/` sells two monthly plans (Basic, Pro) and an e-book: a pricing page whose buttons post to
 `/api/billing/checkout`, the page Checkout goes back to (`/billing/done`), an account page with the
-subscription, the orders and the portal's button, a page for subscribers (`/pro`) and the e-book for
+subscription (cancelled or kept from there), its card (changed in the portal opened at it), the
+invoices, the orders and the portal's button, a page for subscribers (`/pro`) and the e-book for
 those who bought it (`/ebook`). `Billing.on_event!` writes an order when an e-book is paid. People
 sign in with packages/auth's dev sign-in, so it runs under `rocx dev` only. With your test mode's
 prices:
@@ -216,6 +219,45 @@ Stripe.portal! : Str, Str => Try(Str, [NoCustomer, StripeErr(Str), DbErr(Str), .
 their card, their invoices, cancelling. What they change there comes back as events. `NoCustomer`
 when they have never checked out. What the portal offers is set in the Dashboard.
 
+## An app's own billing page
+
+The portal does everything a subscriber may change. An app that would rather show billing on a page
+of its own (beside the account's other settings, in its own words) has these, D-129:
+
+```roc
+Stripe.card! : Str => Try(Stripe.Card, [NoCard, StripeErr(Str), DbErr(Str), ..])
+Stripe.invoices! : Str => Try(List(Stripe.Invoice), [StripeErr(Str), DbErr(Str), ..])
+Stripe.cancel! : Str => Try(Stripe.Subscription, [NotSubscribed, StripeErr(Str), DbErr(Str), ..])
+Stripe.keep! : Str => Try(Stripe.Subscription, [NotSubscribed, StripeErr(Str), DbErr(Str), ..])
+Stripe.card_portal! : Str, Str => Try(Str, [NoCustomer, StripeErr(Str), DbErr(Str), ..])
+
+Stripe.Card : { brand : Str, last4 : Str, exp_month : U64, exp_year : U64 }
+```
+
+- `card!(user)` is the card their subscription is charged to: the subscription that hasn't ended,
+  asked of Stripe with its `default_payment_method` (Checkout sets it to the card typed there),
+  else their customer's default (`invoice_settings.default_payment_method`, set in the portal).
+  `brand` as Stripe writes it (`visa`, `mastercard`, `amex`). `NoCard` when they have never checked
+  out, or neither is a card (a bank account, Link).
+- `invoices!(user)` is their invoices, the newest first, the last 24: a subscription's first (of
+  nothing, for a trial) and each month's, drafts too (`status`). Each has its `number`, `created_ms`,
+  what was paid, the page where it can be seen and paid (`hosted_url`) and its PDF (`pdf_url`). None
+  when they have never checked out.
+- `cancel!(user)` sets their subscription that hasn't ended to end at its period's end
+  (`cancel_at_period_end`), as the portal's Cancel does: paid for until then, nothing more charged;
+  during a trial that is the trial's end, before the first charge. `keep!(user)` undoes it (or an
+  end set in the Dashboard, a `cancel_at`), so it goes on, charged as before. Each keeps Stripe's
+  answer at once, so `subscription!` (and so the page) says it before the event comes; the
+  `customer.subscription.updated` event still counts when it does. `NotSubscribed` when they have
+  no subscription that hasn't ended: one that has can't be taken back, it is a new checkout.
+- `card_portal!(user, return_url)` is the portal opened at changing the card
+  (`flow_data[type]=payment_method_update`), coming back to `return_url` once it is changed: the
+  one thing such a page can't do itself, since cards are typed on Stripe's pages.
+
+`card!` and `invoices!` ask Stripe each time (the package keeps no cards or invoices): read them on
+the billing page, not on every page. The example's account page has all of them
+(`/api/billing`, `/api/billing/cancel`, `/api/billing/keep`, `/api/billing/card`).
+
 ## Who has paid
 
 All of these read the package's tables, never Stripe:
@@ -291,7 +333,7 @@ file out of a group that guards. An app with nothing of its own to do gives `|_|
 Stripe.Event : { id : Str, type : Str, created_ms : I64, livemode : Bool, user : Str, about : Stripe.About, object : Str }
 Stripe.About : [Session(Stripe.Session), Subscription(Stripe.Subscription), Invoice(Stripe.Invoice), Other]
 Stripe.Session : { id : Str, user : Str, customer : Str, mode : [Payment, Subscription, Setup], status : [Open, Complete, Expired], paid : Bool, amount_total : I64, currency : Str, subscription : Str, prices : List({ price : Str, quantity : U64 }), metadata : List((Str, Str)) }
-Stripe.Invoice : { id : Str, customer : Str, subscription : Str, status : Str, amount_due : I64, amount_paid : I64, currency : Str, hosted_url : Str, attempt_count : U64, billing_reason : Str }
+Stripe.Invoice : { id : Str, customer : Str, subscription : Str, status : Str, amount_due : I64, amount_paid : I64, currency : Str, hosted_url : Str, attempt_count : U64, billing_reason : Str, created_ms : I64, number : Str, pdf_url : Str }
 ```
 
 `user` is the app's user the event is about: the session's `client_reference_id`, or the user whose
@@ -377,14 +419,20 @@ milliseconds, given by the package):
 
 `STRIPE_API_URL` points the package at a stand-in. `example/test/stand-in.mjs` is one: Node, no
 dependencies, the endpoints the package calls answering with Stripe's objects, a `complete(id)` that
-does what paying on Checkout's page does, `update`, `deleteCustomer`, `event(type, object)` and
-`sign(body)` (a `Stripe-Signature` as Stripe makes it). Copy it into an app's tests. `stripe-mock`
+does what paying on Checkout's page does (a subscription charged to a Visa ending 4242, `CARD`, with
+its first invoice), `update`, `deleteCustomer`, `bill(subscription)` (a month's invoice),
+`giveCard(customer)` (a default card of the customer's own), `event(type, object)` and `sign(body)`
+(a `Stripe-Signature` as Stripe makes it). Every request it was sent is in `requests` (`{ method,
+path, form, query, headers }`), and `since(n)` lists those after the `n`th as `METHOD /path`.
+Copy it into an app's tests, or import it from where rocx is. `stripe-mock`
 (Stripe's own) answers every endpoint with fixed objects, but keeps no state.
 
 ## Status
 
 Built and tested (D-082): Checkout (payments and subscriptions, trials, promotion codes), the
 Customer Portal, the webhook (signatures, once, out of order), the tables on SQLite and Postgres, the
-checks for who has paid, a one-time payment refunded in full or disputed no longer paid for, and
-the app's own idempotency keys (`post_with!`). Not yet: Stripe Tax, metered billing, Connect,
-embedded Checkout, refunds and invoices beyond `post!`. PROPOSALS.md has them.
+checks for who has paid, a one-time payment refunded in full or disputed no longer paid for, the
+app's own idempotency keys (`post_with!`), and an app's own billing page (D-129: the card, the
+invoices, cancelling and keeping, the portal at the card). Not yet: Stripe Tax, metered billing,
+Connect, embedded Checkout, changing a plan from the app, refunds beyond `post!`. PROPOSALS.md has
+them.

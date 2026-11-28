@@ -5,8 +5,9 @@
 // several), an event handled once however often it comes, a subscription's events in any order (a
 // late one never puts an older state back; two in one second are asked of Stripe), the success page
 // settling a checkout before the events come, a one-time payment fulfilled by the app's `on_event!`
-// (and rolled back when that fails), the Customer Portal, a deleted customer forgotten, and the
-// pages only payers see. The example is built for SQLite (always) and for Postgres (when
+// (and rolled back when that fails), the Customer Portal (and opened at the card), a deleted customer
+// forgotten, billing from the app (the card, the invoices, cancelling and keeping), and the pages only
+// payers see. The example is built for SQLite (always) and for Postgres (when
 // DATABASE_URL is set), each in build/<database>/app.
 //
 //   node --test 'packages/stripe/example/test/*.test.mjs'
@@ -439,6 +440,102 @@ for (const database of databases) {
 				[200, 200, 200, 200, 200],
 			);
 			assert.equal(await count(`select count(*) as n from orders where user_id = '${joId}'`), 1);
+		});
+
+		test("billing from the app: the card (the subscription's, else the customer's default, else none) and the invoices, the newest first, asked of Stripe; cancelling at the period's end and keeping it after all, kept at once; the portal opened at the card", async () => {
+			const billing = (client) => client.read("/api/billing");
+			const { client } = await signedIn("nell@example.com");
+			// Never checked out: no card, no invoices, nothing to cancel, no portal, and Stripe isn't asked.
+			let from = stripe.requests.length;
+			assert.deepEqual(await billing(client), { card: "", invoices: [] });
+			assert.equal((await client.post("/api/billing/cancel", {})).location, "/account");
+			assert.equal((await client.post("/api/billing/keep", {})).location, "/account");
+			assert.equal((await client.post("/api/billing/card", {})).location, "/");
+			assert.deepEqual(stripe.since(from), []);
+
+			const id = await checkout(client, "price_pro");
+			const { subscription } = stripe.complete(id);
+			const t = now();
+			assert.equal((await deliver(stripe.event("customer.subscription.created", subscription, { created: t }))).status, 200);
+
+			// The card Checkout kept, the subscription's; its first invoice.
+			from = stripe.requests.length;
+			const first = await billing(client);
+			assert.equal(first.card, "visa ending 4242, expires 12/2034");
+			assert.deepEqual(stripe.since(from), [`GET /v1/subscriptions/${subscription.id}`, "GET /v1/invoices"]);
+			assert.deepEqual(stripe.requests[from].query.getAll("expand[]"), ["default_payment_method"]);
+			assert.equal(stripe.requests[from + 1].query.get("customer"), subscription.customer);
+			assert.deepEqual(first.invoices.map((each) => [each.id, each.status, each.amount_paid, each.currency]), [[subscription.latest_invoice, "paid", 1500, "usd"]]);
+
+			// A month later, another: the newest first, with its number, day and PDF.
+			const later = stripe.bill(subscription.id, { created: t + 60 });
+			const listed = (await billing(client)).invoices;
+			assert.deepEqual(listed.map((each) => each.id), [later.id, subscription.latest_invoice]);
+			assert.equal(listed[0].number, later.number);
+			assert.equal(listed[0].day, new Date(later.created * 1000).toISOString().slice(0, 10));
+			assert.equal(listed[0].pdf, later.invoice_pdf);
+			assert.match(listed[0].pdf, /^https:\/\/pay\.stripe\.com\/invoice\//);
+
+			// No card on the subscription: the customer's default, asked for expanded; neither, none.
+			stripe.update(subscription.id, { default_payment_method: null });
+			assert.equal((await billing(client)).card, "");
+			stripe.giveCard(subscription.customer, { brand: "mastercard", last4: "4444", exp_month: 1, exp_year: 2030 });
+			from = stripe.requests.length;
+			assert.equal((await billing(client)).card, "mastercard ending 4444, expires 1/2030");
+			assert.deepEqual(stripe.since(from), [`GET /v1/subscriptions/${subscription.id}`, `GET /v1/customers/${subscription.customer}`, "GET /v1/invoices"]);
+			assert.deepEqual(stripe.requests[from + 1].query.getAll("expand[]"), ["invoice_settings.default_payment_method"]);
+
+			// Cancelled from the app: Stripe told, and the account says so at once, before any event; paid for until then.
+			from = stripe.requests.length;
+			assert.equal((await client.post("/api/billing/cancel", {})).location, "/account");
+			assert.deepEqual(stripe.since(from), [`POST /v1/subscriptions/${subscription.id}`]);
+			assert.deepEqual({ ...stripe.requests[from].form }, { cancel_at_period_end: "true" });
+			assert.ok(stripe.requests[from].headers["idempotency-key"], "an idempotency key");
+			assert.equal(stripe.subscriptions.get(subscription.id).cancel_at_period_end, true);
+			assert.equal((await account(client)).ending, true);
+			assert.equal((await client.get("/pro")).status, 200);
+			// Its event, when it comes, says the same.
+			assert.equal((await deliver(stripe.event("customer.subscription.updated", stripe.subscriptions.get(subscription.id), { created: t + 5 }))).status, 200);
+			assert.equal((await account(client)).ending, true);
+
+			// Kept after all.
+			from = stripe.requests.length;
+			assert.equal((await client.post("/api/billing/keep", {})).location, "/account");
+			assert.deepEqual({ ...stripe.requests[from].form }, { cancel_at_period_end: "false" });
+			assert.equal(stripe.subscriptions.get(subscription.id).cancel_at, null);
+			assert.equal((await account(client)).ending, false);
+
+			// An end set in the Dashboard (a cancel_at of its own) is unset the same way.
+			const dated = stripe.update(subscription.id, { cancel_at: t + 86400 });
+			assert.equal((await deliver(stripe.event("customer.subscription.updated", dated, { created: t + 10 }))).status, 200);
+			assert.equal((await account(client)).ending, true);
+			from = stripe.requests.length;
+			assert.equal((await client.post("/api/billing/keep", {})).location, "/account");
+			assert.deepEqual({ ...stripe.requests[from].form }, { cancel_at: "" });
+			assert.equal((await account(client)).ending, false);
+
+			// The portal opened at the card, coming back to the account.
+			from = stripe.requests.length;
+			const portal = await client.post("/api/billing/card", {});
+			assert.equal(portal.status, 303, portal.text);
+			assert.match(portal.location, /^https:\/\/billing\.stripe\.com\/p\/session\/test_[0-9a-f]+\/flow$/);
+			assert.deepEqual(stripe.since(from), ["POST /v1/billing_portal/sessions"]);
+			assert.deepEqual({ ...stripe.requests[from].form }, {
+				customer: subscription.customer,
+				return_url: `${server.url}/account`,
+				"flow_data[type]": "payment_method_update",
+				"flow_data[after_completion][type]": "redirect",
+				"flow_data[after_completion][redirect][return_url]": `${server.url}/account`,
+			});
+
+			// Ended: nothing to cancel or keep, and Stripe isn't asked.
+			const ended = stripe.update(subscription.id, { status: "canceled", canceled_at: t + 30, ended_at: t + 30 });
+			assert.equal((await deliver(stripe.event("customer.subscription.deleted", ended, { created: t + 30 }))).status, 200);
+			from = stripe.requests.length;
+			assert.equal((await client.post("/api/billing/cancel", {})).location, "/account");
+			assert.equal((await client.post("/api/billing/keep", {})).location, "/account");
+			assert.deepEqual(stripe.since(from), []);
+			assert.equal((await account(client)).status, "canceled");
 		});
 	});
 }

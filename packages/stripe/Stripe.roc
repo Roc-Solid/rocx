@@ -15,9 +15,10 @@ import "migrations/0002_refunds.sql" as refunds : Str
 
 ## Payments and subscriptions through Stripe, as a plugin (D-082): Stripe's hosted Checkout for a
 ## one-time payment or a subscription (`checkout!`), its hosted Customer Portal for managing one
-## (`portal!`), a webhook that keeps the app's tables in step with Stripe, and what the app reads to
-## know what someone has paid for (`subscribed!`, `paid_for!`, `subscription!`, `payments!`). No
-## card forms: Stripe's pages take the cards.
+## (`portal!`), a webhook that keeps the app's tables in step with Stripe, what the app reads to
+## know what someone has paid for (`subscribed!`, `paid_for!`, `subscription!`, `payments!`), and
+## what an app's own billing page shows and does (`card!`, `invoices!`, `cancel!`, `keep!`,
+## `card_portal!`). No card forms: Stripe's pages take the cards.
 ##
 ## ```roc
 ## plugins: [Stripe.plugin({})]    # STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
@@ -120,9 +121,15 @@ Stripe := [].{
 	}
 
 	## An invoice: its id (`in_…`), its customer, the subscription it bills ("" for none), its status
-	## (`paid`, `open`, …), what it asks and what was paid, its currency, the page where it can be
-	## paid, how many times its payment was tried, and why it was made (`subscription_cycle`, …).
-	Invoice : { id : Str, customer : Str, subscription : Str, status : Str, amount_due : I64, amount_paid : I64, currency : Str, hosted_url : Str, attempt_count : U64, billing_reason : Str }
+	## (`draft`, `open`, `paid`, `uncollectible`, `void`), what it asks and what was paid, its
+	## currency, the page where it can be seen and paid, how many times its payment was tried, why it
+	## was made (`subscription_create`, `subscription_cycle`, …), when it was made (milliseconds since
+	## 1970), its number (`B7D2A1C4-0001`, "" while it is a draft) and its PDF's URL ("" for none).
+	Invoice : { id : Str, customer : Str, subscription : Str, status : Str, amount_due : I64, amount_paid : I64, currency : Str, hosted_url : Str, attempt_count : U64, billing_reason : Str, created_ms : I64, number : Str, pdf_url : Str }
+
+	## A card a subscription is charged to (`card!`): its brand as Stripe writes it (`visa`,
+	## `mastercard`, `amex`, …), its last four digits, and the month and year it expires.
+	Card : { brand : Str, last4 : Str, exp_month : U64, exp_year : U64 }
 
 	## What an event is about, read: a Checkout Session (`checkout.session.*`), a subscription
 	## (`customer.subscription.*`), an invoice (`invoice.*`), or something else (its `object`).
@@ -218,6 +225,81 @@ Stripe := [].{
 				if (url.is_empty()) Err(StripeErr("Stripe's portal session has no URL")) else Ok(url)
 			}
 		}
+
+	## As `portal!`, but opened at changing the card (`flow_data[type]=payment_method_update`): the
+	## page asks for the new card alone, and goes back to `return_url` once it is given, as from the
+	## portal's link back. For an app's own billing page, whose "Change card" is the one thing it
+	## can't do itself (cards are Stripe's pages' to take). `NoCustomer` when they have never checked
+	## out.
+	card_portal! : Str, Str => Try(Str, [NoCustomer, StripeErr(Str), DbErr(Str), ..others])
+	card_portal! = |user, return_url|
+		match StripeStore.customer_of!(user).map_err(unread)? {
+			Missing => Err(NoCustomer)
+			Found(customer) => {
+				text = posted!("/v1/billing_portal/sessions", StripeRules.card_portal_form(customer, StripeRules.absolute(return_url, Env.public_url!({}))), random_key!({})).map_err(stripe_err)?
+				url = StripeRules.text(text, ["url"])
+				if (url.is_empty()) Err(StripeErr("Stripe's portal session has no URL")) else Ok(url)
+			}
+		}
+
+	## The card `user`'s subscription is charged to: their subscription that hasn't ended, asked of
+	## Stripe with its `default_payment_method` (Checkout sets it), else their customer's default
+	## (`invoice_settings.default_payment_method`, set in the portal or the Dashboard). `NoCard` when
+	## they have never checked out, or neither is a card (none, a bank account, Link). Asked of
+	## Stripe each time: the package keeps no card.
+	card! : Str => Try(Stripe.Card, [NoCard, StripeErr(Str), DbErr(Str), ..others])
+	card! = |user| {
+		customer =
+			match StripeStore.customer_of!(user).map_err(unread)? {
+				Found(found) => found
+				Missing => return Err(NoCard)
+			}
+		current = Stripe.subscriptions!(user)?.find_first(|each| !Stripe.ended(each.status))
+		subscribed =
+			match current {
+				Ok(subscription) => {
+					text = fetched!(StripeRules.api_path("/v1/subscriptions", subscription.id), [("expand[]", "default_payment_method")]).map_err(stripe_err)?
+					StripeRules.card_at(text, ["default_payment_method"])
+				}
+				Err(_) => Err(NoCard)
+			}
+		match subscribed {
+			Ok(card) => Ok(card)
+			Err(NoCard) => {
+				text = fetched!(StripeRules.api_path("/v1/customers", customer), [("expand[]", "invoice_settings.default_payment_method")]).map_err(stripe_err)?
+				StripeRules.card_at(text, ["invoice_settings", "default_payment_method"])
+			}
+		}
+	}
+
+	## `user`'s invoices, the newest first (the last 24): each month's of a subscription, a trial's
+	## first (of nothing), a one-time payment's when Checkout made one, drafts too (`status`). None
+	## when they have never checked out. Asked of Stripe each time.
+	invoices! : Str => Try(List(Stripe.Invoice), [StripeErr(Str), DbErr(Str), ..others])
+	invoices! = |user|
+		match StripeStore.customer_of!(user).map_err(unread)? {
+			Missing => Ok([])
+			Found(customer) => {
+				text = fetched!("/v1/invoices", [("customer", customer), ("limit", "24")]).map_err(stripe_err)?
+				Ok(StripeRules.invoices_in(text).map(invoice_of))
+			}
+		}
+
+	## `user`'s subscription that hasn't ended, set to end at its period's end
+	## (`cancel_at_period_end`): it stays paid for until then, and nothing more is charged; during a
+	## trial, that is the trial's end, before the first charge. Stripe's answer is kept at once, so
+	## `subscription!` says it before the event comes (`customer.subscription.updated`, which still
+	## counts). `NotSubscribed` when they have no subscription that hasn't ended. As the portal's
+	## Cancel does, for an app's own billing page.
+	cancel! : Str => Try(Stripe.Subscription, [NotSubscribed, StripeErr(Str), DbErr(Str), ..others])
+	cancel! = |user| ends!(user, Bool.True)
+
+	## Undoes `cancel!` (or an end set in the Dashboard): `user`'s subscription that hasn't ended goes
+	## on after its period, charged as before. Kept at once, as `cancel!`'s is. `NotSubscribed` when
+	## they have no subscription that hasn't ended (one that has ended can't be taken back: that is
+	## a new checkout).
+	keep! : Str => Try(Stripe.Subscription, [NotSubscribed, StripeErr(Str), DbErr(Str), ..others])
+	keep! = |user| ends!(user, Bool.False)
 
 	## The Checkout Session `id` (the success page's `?session_id=`), as Stripe says it is now, if it
 	## is `user`'s, and kept, with its subscription: so the page Checkout goes back to shows what was
@@ -555,6 +637,40 @@ row_of = |read, user, version, now| {
 	updated_at: now,
 }
 
+## `user`'s subscription that hasn't ended, set to end at its period's end (`at_end`) or to go on,
+## and Stripe's answer kept (`fetched_subscription!`: its state, not a version, so the event about
+## the change still counts).
+ends! : Str, Bool => Try(Stripe.Subscription, [NotSubscribed, StripeErr(Str), DbErr(Str), ..others])
+ends! = |user, at_end|
+	match Stripe.subscriptions!(user)?.find_first(|each| !Stripe.ended(each.status)) {
+		Err(_) => Err(NotSubscribed)
+		Ok(current) => {
+			text = posted!(StripeRules.api_path("/v1/subscriptions", current.id), StripeRules.ends_form(at_end, current.cancel_at_period_end, current.cancel_at_ms), random_key!({})).map_err(stripe_err)?
+			read = StripeRules.subscription(text).map_err(|why| StripeErr("Stripe's answer wasn't a subscription: ${why}"))?
+			row = row_of(read, user, 0, now!({}))
+			StripeStore.fetched_subscription!(row)?
+			Ok(subscription_of(row))
+		}
+	}
+
+## An invoice as Stripe's object says, as the app is given it (its time in milliseconds).
+invoice_of : StripeRules.Invoice -> Stripe.Invoice
+invoice_of = |read| {
+	id: read.id,
+	customer: read.customer,
+	subscription: read.subscription,
+	status: read.status,
+	amount_due: read.amount_due,
+	amount_paid: read.amount_paid,
+	currency: read.currency,
+	hosted_url: read.hosted_url,
+	attempt_count: read.attempt_count,
+	billing_reason: read.billing_reason,
+	created_ms: read.created * 1000,
+	number: read.number,
+	pdf_url: read.pdf_url,
+}
+
 ## A subscription's row, as the app is given it.
 subscription_of : StripeStore.SubscriptionRow -> Stripe.Subscription
 subscription_of = |row| {
@@ -766,7 +882,7 @@ kept! = |event, ready, now|
 		}
 		Inv(read) => {
 			user = known!(read.customer)?
-			Ok((user, Invoice(read)))
+			Ok((user, Invoice(invoice_of(read))))
 		}
 		Deleted(customer) => {
 			user = known!(customer)?

@@ -19,6 +19,7 @@ meta = {
 		{ id: "how", label: "How a payment goes" },
 		{ id: "webhook", label: "The webhook" },
 		{ id: "paid", label: "Who has paid" },
+		{ id: "billing-page", label: "A billing page of your own" },
 		{ id: "testing", label: "Testing without Stripe" },
 		{ id: "tables", label: "The tables" },
 		{ id: "safety", label: "Safety" },
@@ -194,8 +195,26 @@ view! = |_|
 					</tbody>
 				</table>
 			</TableWrap>
+
+			<Heading id="billing-page">A billing page of your own</Heading>
 			<p>
-				For the rest of Stripe's API (a refund, a list of invoices), <code>Stripe.post!</code> and
+				The portal does everything a subscriber may change. To show billing on a page of your own instead,
+				in your words, these ask Stripe each time (read them on that page, not on every page):
+			</p>
+			<TableWrap>
+				<table>
+					<thead><tr><th>Function</th><th>Does</th></tr></thead>
+					<tbody>
+						<tr><td><code>Stripe.card!(user)</code></td><td>the card their subscription is charged to (brand, last four digits, expiry): the subscription's, else their customer's default; <code>NoCard</code> for none</td></tr>
+						<tr><td><code>Stripe.invoices!(user)</code></td><td>their invoices, the newest first, each with its number, status, amount, page and PDF</td></tr>
+						<tr><td><code>Stripe.cancel!(user)</code></td><td>their subscription ends at its period's end (a trial's end, before the first charge), and <code>subscription!</code> says so at once</td></tr>
+						<tr><td><code>Stripe.keep!(user)</code></td><td>undoes that: it goes on, charged as before</td></tr>
+						<tr><td><code>{"Stripe.card_portal!(user, return_url)"}</code></td><td>the portal opened at changing the card, coming back once it is changed: cards are typed on Stripe's pages</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				For the rest of Stripe's API (a refund, a plan changed), <code>Stripe.post!</code> and
 				<code>Stripe.get!</code> call it as the package does: the secret key, a pinned
 				<code>Stripe-Version</code>, an idempotency key on a create, a retry after a network error. That key
 				is new each call. When the app may ask twice (a job run again, a form sent twice),
@@ -207,8 +226,9 @@ view! = |_|
 				<code>STRIPE_API_URL</code> points the package at another server. The example's tests start a
 				stand-in for Stripe's API (<code>example/test/stand-in.mjs</code>, Node with no dependencies): the
 				endpoints the package calls, answering with Stripe's objects, and what paying on Checkout's page
-				would do. Each test signs an event as Stripe does and sends it to the webhook. Copy it into your
-				app's tests.
+				would do (a subscription on a Visa ending 4242, with its first invoice), or a month's bill, or a
+				card saved in the portal. It keeps every request it was sent, for a test to look at. Each test
+				signs an event as Stripe does and sends it to the webhook. Copy it into your app's tests.
 			</p>
 
 			<Heading id="tables">The tables</Heading>
@@ -237,9 +257,10 @@ view! = |_|
 			<Heading id="status">Status</Heading>
 			<p>
 				Built and tested: Checkout (payments, subscriptions, trials, promotion codes), the Customer Portal,
-				the webhook, the checks for who has paid, and refunds and disputes taking back a one-time payment.
-				Not yet, in the package's <code>PROPOSALS.md</code>: Stripe Tax, metered billing, Connect and embedded
-				Checkout.
+				the webhook, the checks for who has paid, refunds and disputes taking back a one-time payment, and a
+				billing page of your own (the card, the invoices, cancelling and keeping). Not yet, in the package's
+				<code>PROPOSALS.md</code>: Stripe Tax, metered billing, Connect, embedded Checkout and changing a plan
+				from the app.
 			</p>
 		</NoHydration>
 	</>

@@ -31,7 +31,9 @@ queues them, and a loop (or the jobs plugin) that sends them.
 
 The portal changes plans, as the Dashboard allows. An app with its own plan page would call
 `POST /v1/subscriptions/<id>` with the new item's price and `proration_behavior`; `post!` can, today.
-A typed `Stripe.change!(user, price)` would read the subscription's item from the package's table.
+A typed `Stripe.change!(user, price)` would read the subscription's item from the package's table,
+and keep Stripe's answer at once, as `cancel!` and `keep!` do (D-129: ending at the period's end, and
+going on after all, are typed).
 
 ## 5. Connect
 
@@ -45,11 +47,12 @@ Checkout inside the app's page (`ui_mode: embedded`) needs Stripe.js in the brow
 and a script of the plugin's (as push's is). The hosted page is enough to start; this is for an
 app that wants to keep its own frame around the payment.
 
-## 7. Invoices and refunds, typed
+## 7. Refunds, typed
 
-`invoice.paid` and `invoice.payment_failed` reach `on_event!`, read; a list of a customer's invoices
-and refunds go through `get!` and `post!`. Typed functions (`Stripe.invoices!(user)`,
-`Stripe.refund!(payment)`) if apps ask for them.
+`invoice.paid` and `invoice.payment_failed` reach `on_event!`, read, and a user's invoices are
+`Stripe.invoices!(user)` (D-129). Refunds go through `post_with!` (an app's own idempotency key, so
+one asked twice makes one). A typed `Stripe.refund!(payment)` if apps ask for it: the payment's
+PaymentIntent from the package's table, and the refund's state kept as `charge.refunded` keeps it.
 
 ## Open questions
 

@@ -1,8 +1,10 @@
 // A stand-in for Stripe's API, for packages/stripe's tests: the endpoints the package calls, each
 // answering with the objects Stripe's API reference shows for version 2025-03-31.basil (the one the
 // package pins), kept in memory; and what Stripe itself would do, for a test to do instead: complete
-// a Checkout Session, change a subscription, delete a customer, and make an event, signed as Stripe
-// signs it for a webhook. The real Stripe is never asked.
+// a Checkout Session, change a subscription, delete a customer, give a customer a card, bill a
+// subscription, and make an event, signed as Stripe signs it for a webhook. The real Stripe is never
+// asked. A completed checkout's subscription is charged to a Visa ending 4242 (`CARD`), and has its
+// first invoice.
 //
 //   const stripe = await standIn();           // STRIPE_API_URL=stripe.origin, STRIPE_SECRET_KEY=SECRET_KEY
 //   const { session, subscription } = stripe.complete(id);
@@ -26,6 +28,9 @@ export const PRICES = {
 	price_pro: { product: "prod_pro", unit_amount: 1500, recurring: { interval: "month", interval_count: 1, usage_type: "licensed" }, lookup_key: "pro_monthly" },
 	price_ebook: { product: "prod_ebook", unit_amount: 900, recurring: null, lookup_key: null },
 };
+
+/** The card a completed checkout's subscription is charged to, as Checkout keeps the one typed there. */
+export const CARD = { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2034 };
 
 /** Now, in seconds, as Stripe's times are. */
 export const now = () => Math.floor(Date.now() / 1000);
@@ -81,6 +86,10 @@ export async function standIn() {
 	const customers = new Map();
 	const sessions = new Map();
 	const subscriptions = new Map();
+	/** Payment methods (`pm_…`), each a card. */
+	const paymentMethods = new Map();
+	/** Invoices (`in_…`), each a customer's. */
+	const invoices = new Map();
 	/** What a session was made with, kept as Stripe keeps its line items. */
 	const lines = new Map();
 	/** Answers by `Idempotency-Key`: the same key is the same answer. */
@@ -171,7 +180,52 @@ export async function standIn() {
 
 	function portal(form) {
 		if (!customers.has(form.customer)) return refused(400, `No such customer: '${form.customer}'`, { code: "resource_missing", param: "customer" });
-		return { status: 200, body: { id: id("bps"), object: "billing_portal.session", configuration: "bpc_test_standin", created: now(), customer: form.customer, flow: null, livemode: false, locale: null, on_behalf_of: null, return_url: form.return_url ?? null, url: `https://billing.stripe.com/p/session/test_${randomBytes(12).toString("hex")}` } };
+		// A flow (`flow_data[type]`): the portal opened at one thing, and where it goes after.
+		const type = form["flow_data[type]"];
+		if (type && !["payment_method_update", "subscription_cancel", "subscription_update", "subscription_update_confirm"].includes(type)) return refused(400, `Invalid flow_data[type]: ${type}`, { param: "flow_data[type]" });
+		const after = form["flow_data[after_completion][type]"];
+		const flow = type ? { type, after_completion: { type: after ?? "portal_homepage", redirect: after === "redirect" ? { return_url: form["flow_data[after_completion][redirect][return_url]"] ?? null } : null, hosted_confirmation: null }, coupon: null, subscription_cancel: null, subscription_update: null, subscription_update_confirm: null } : null;
+		return { status: 200, body: { id: id("bps"), object: "billing_portal.session", configuration: "bpc_test_standin", created: now(), customer: form.customer, flow, livemode: false, locale: null, on_behalf_of: null, return_url: form.return_url ?? null, url: `https://billing.stripe.com/p/session/test_${randomBytes(12).toString("hex")}${type ? "/flow" : ""}` } };
+	}
+
+	/** A card payment method for `customer`, as `pm_…`. */
+	function paymentMethod(customer, card) {
+		const made = { id: id("pm"), object: "payment_method", allow_redisplay: "always", billing_details: { address: null, email: null, name: null, phone: null }, card: { brand: card.brand, checks: { address_line1_check: null, address_postal_code_check: null, cvc_check: "pass" }, country: "US", display_brand: card.brand, exp_month: card.exp_month, exp_year: card.exp_year, funding: "credit", last4: card.last4, networks: { available: [card.brand], preferred: null }, wallet: null }, created: now(), customer, livemode: false, metadata: {}, type: "card" };
+		paymentMethods.set(made.id, made);
+		return made.id;
+	}
+
+	/** `object` with the payment method at `field` (an id) put in its place, as `expand[]` asks. */
+	function expanded(object, field) {
+		const pm = object?.[field];
+		return typeof pm === "string" && paymentMethods.has(pm) ? { ...object, [field]: paymentMethods.get(pm) } : object;
+	}
+
+	/** An invoice of `subscription` (basil: the subscription is its `parent`'s), kept. */
+	function invoiceOf(subscription, { status = "paid", amount, billing_reason = "subscription_cycle", created = now(), attempt_count } = {}) {
+		const due = amount ?? subscription.items.data.reduce((sum, item) => sum + item.price.unit_amount * item.quantity, 0);
+		const paid = status === "paid" ? due : 0;
+		const count = [...invoices.values()].filter((each) => each.customer === subscription.customer).length + 1;
+		const made = { id: id("in"), object: "invoice", account_country: "US", account_name: "Example", amount_due: due, amount_paid: paid, amount_remaining: due - paid, attempt_count: attempt_count ?? (status === "draft" ? 0 : 1), attempted: status !== "draft", auto_advance: status !== "paid", billing_reason, collection_method: "charge_automatically", created, currency: "usd", customer: subscription.customer, customer_email: customers.get(subscription.customer)?.email ?? null, hosted_invoice_url: status === "draft" ? null : `https://invoice.stripe.com/i/acct_test/test_${randomBytes(8).toString("hex")}`, invoice_pdf: status === "draft" ? null : `https://pay.stripe.com/invoice/acct_test/test_${randomBytes(8).toString("hex")}/pdf`, livemode: false, metadata: {}, next_payment_attempt: status === "open" ? now() + 3 * 86400 : null, number: status === "draft" ? null : `B7D2A1C4-${String(count).padStart(4, "0")}`, parent: { quote_details: null, subscription_details: { metadata: subscription.metadata, subscription: subscription.id }, type: "subscription_details" }, period_end: created, period_start: created - 30 * 86400, status, total: due };
+		invoices.set(made.id, made);
+		return made;
+	}
+
+	/** `subscription` set to end at its period's end, or to go on (`POST /v1/subscriptions/:id`). */
+	function changed(subscription, form) {
+		const end = Math.max(...subscription.items.data.map((item) => item.current_period_end));
+		if ("cancel_at_period_end" in form) {
+			if (!["true", "false"].includes(form.cancel_at_period_end)) return refused(400, "Invalid boolean: " + form.cancel_at_period_end, { param: "cancel_at_period_end" });
+			const at_end = form.cancel_at_period_end === "true";
+			subscription.cancel_at_period_end = at_end;
+			subscription.cancel_at = at_end ? end : null;
+			subscription.canceled_at = at_end ? now() : null;
+		}
+		if ("cancel_at" in form) {
+			subscription.cancel_at = form.cancel_at === "" ? null : Number(form.cancel_at);
+			if (form.cancel_at === "") subscription.canceled_at = null;
+		}
+		return { status: 200, body: structuredClone(subscription) };
 	}
 
 	function answer(method, path, form, query) {
@@ -194,10 +248,27 @@ export async function standIn() {
 				.map(price);
 			return { status: 200, body: { object: "list", data: data.slice(0, Number(query.get("limit") ?? 10)), has_more: false, url: "/v1/prices" } };
 		}
-		if (method === "GET" && (match = /^\/v1\/subscriptions\/([^/]+)$/.exec(path))) {
+		if ((match = /^\/v1\/subscriptions\/([^/]+)$/.exec(path))) {
 			const subscription = subscriptions.get(decodeURIComponent(match[1]));
 			if (!subscription) return refused(404, `No such subscription: '${decodeURIComponent(match[1])}'`, { code: "resource_missing", param: "id" });
-			return { status: 200, body: subscription };
+			if (method === "POST") {
+				if (["canceled", "incomplete_expired"].includes(subscription.status)) return refused(400, "A canceled subscription can only update its cancellation_details and metadata.");
+				return changed(subscription, form);
+			}
+			if (method === "GET") return { status: 200, body: query.getAll("expand[]").includes("default_payment_method") ? expanded(subscription, "default_payment_method") : subscription };
+		}
+		if (method === "GET" && (match = /^\/v1\/customers\/([^/]+)$/.exec(path))) {
+			const customer = customers.get(decodeURIComponent(match[1]));
+			if (!customer) return refused(404, `No such customer: '${decodeURIComponent(match[1])}'`, { code: "resource_missing", param: "id" });
+			const settings = query.getAll("expand[]").includes("invoice_settings.default_payment_method") ? expanded(customer.invoice_settings, "default_payment_method") : customer.invoice_settings;
+			return { status: 200, body: { ...customer, invoice_settings: settings } };
+		}
+		if (method === "GET" && path === "/v1/invoices") {
+			// A customer's (`customer`), the newest first, as Stripe lists them.
+			const customer = query.get("customer");
+			const data = [...invoices.values()].filter((each) => !customer || each.customer === customer).sort((a, b) => b.created - a.created);
+			const limit = Number(query.get("limit") ?? 10);
+			return { status: 200, body: { object: "list", data: data.slice(0, limit), has_more: data.length > limit, url: "/v1/invoices" } };
 		}
 		return refused(404, `Unrecognized request URL (${method}: ${path}).`);
 	}
@@ -230,6 +301,8 @@ export async function standIn() {
 		customers,
 		sessions,
 		subscriptions,
+		paymentMethods,
+		invoices,
 
 		/**
 		 * As if the session's customer paid on Checkout's page: the session complete and paid (or,
@@ -263,7 +336,7 @@ export async function standIn() {
 					currency: "usd",
 					customer: session.customer,
 					days_until_due: null,
-					default_payment_method: `pm_test_${randomBytes(6).toString("hex")}`,
+					default_payment_method: paymentMethod(session.customer, CARD),
 					discounts: [],
 					ended_at: null,
 					items: {
@@ -273,7 +346,7 @@ export async function standIn() {
 						total_count: items.length,
 						url: `/v1/subscription_items?subscription=${subscriptionId}`,
 					},
-					latest_invoice: id("in"),
+					latest_invoice: null,
 					livemode: false,
 					metadata: subscriptionMetadata,
 					pending_update: null,
@@ -283,6 +356,8 @@ export async function standIn() {
 					trial_start: trialDays > 0 ? start : null,
 				};
 				subscriptions.set(subscriptionId, subscription);
+				// Its first invoice: the first month's, or nothing for a trial's.
+				subscription.latest_invoice = invoiceOf(subscription, { amount: trialDays > 0 ? 0 : undefined, billing_reason: "subscription_create", created: start }).id;
 				session.subscription = subscriptionId;
 			} else if (paid) {
 				session.payment_intent = id("pi");
@@ -304,10 +379,21 @@ export async function standIn() {
 			return { id: customerId, object: "customer", deleted: true, ...(gone ? { email: gone.email } : {}) };
 		},
 
-		/** An invoice of a subscription (basil: the subscription is its `parent`'s), its payment tried and failed. */
+		/** An invoice of a subscription (basil: the subscription is its `parent`'s), its payment tried and failed: kept, and listed. */
 		failedInvoice(subscription) {
-			const amount = subscription.items.data.reduce((sum, item) => sum + item.price.unit_amount * item.quantity, 0);
-			return { id: id("in"), object: "invoice", account_country: "US", account_name: "Example", amount_due: amount, amount_paid: 0, amount_remaining: amount, attempt_count: 1, attempted: true, auto_advance: true, billing_reason: "subscription_cycle", collection_method: "charge_automatically", created: now(), currency: "usd", customer: subscription.customer, customer_email: customers.get(subscription.customer)?.email ?? null, hosted_invoice_url: `https://invoice.stripe.com/i/acct_test/test_${randomBytes(8).toString("hex")}`, livemode: false, metadata: {}, next_payment_attempt: now() + 3 * 86400, number: "B7D2A1C4-0002", parent: { quote_details: null, subscription_details: { metadata: subscription.metadata, subscription: subscription.id }, type: "subscription_details" }, period_end: now(), period_start: now() - 30 * 86400, status: "open", total: amount };
+			return structuredClone(invoiceOf(subscription, { status: "open" }));
+		},
+
+		/** As if Stripe billed the subscription (`subscriptionId`): an invoice, `paid` unless `status` says (`open`, `draft`), made at `created` (seconds). Kept, and listed. */
+		bill(subscriptionId, options = {}) {
+			return structuredClone(invoiceOf(subscriptions.get(subscriptionId), options));
+		},
+
+		/** As if `customerId` saved a card as their default (`invoice_settings.default_payment_method`), in the portal or the Dashboard: its `pm_…`. */
+		giveCard(customerId, card = CARD) {
+			const pm = paymentMethod(customerId, card);
+			customers.get(customerId).invoice_settings.default_payment_method = pm;
+			return pm;
 		},
 
 		/** An event of `type` about `object`, as Stripe sends it to a webhook endpoint. */

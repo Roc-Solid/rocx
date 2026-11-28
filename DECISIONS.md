@@ -7347,3 +7347,58 @@ from outside it.
 
 **Reversible:** yes: render.mjs back from git, the catalog's command with it; the package and the
 platform's module removed.
+
+## D-129 An app's own billing page: the card, the invoices, cancelling and keeping, in packages/stripe
+
+**Status.** Built (2026-11-28).
+
+**Context.** packages/stripe (D-082) sends a subscriber to Stripe's Customer Portal for everything
+they may change, and tells the app who has paid from its own tables. An app that shows billing on a
+page of its own (the plan and when it renews, the card, the invoices, Cancel beside them, in its own
+words and look) had only `get!` and `post!`: Stripe's JSON to read by hand, in the version the
+package pins (since 2025-03-31 an invoice's subscription is its `parent`'s, a period's end each
+item's), and a cancel whose result the page couldn't show until the event came.
+
+**Options.**
+1. Leave it to the portal: a page of the app's own links there for everything.
+2. Typed reads and changes for what such a page shows and does, each asking Stripe, keeping what it
+   changes.
+3. Keep cards and invoices in the package's tables, from the events (`invoice.*`,
+   `payment_method.*`), so the page reads no other server.
+
+**Decision.** 2, with the portal kept for the one thing a page can't do itself, taking a card.
+
+- `card!(user) : Try(Card, [NoCard, StripeErr, DbErr])`, `Card : { brand, last4, exp_month,
+  exp_year }`: the subscription that hasn't ended, asked with `expand[]=default_payment_method`
+  (Checkout sets it to the card typed there), else the customer's
+  `invoice_settings.default_payment_method`. `NoCard` with no customer, or nothing that is a card.
+- `invoices!(user) : Try(List(Invoice), [StripeErr, DbErr])`: `GET /v1/invoices?customer=`, the last
+  24, the newest first; none without a customer. `Invoice` gains `created_ms`, `number` and
+  `pdf_url`, for the webhook's events too.
+- `cancel!(user)` and `keep!(user) : Try(Subscription, [NotSubscribed, StripeErr, DbErr])`: the
+  subscription that hasn't ended set to end at its period's end (`cancel_at_period_end=true`), or
+  to go on (`false`; or `cancel_at=""` for an end set in the Dashboard). Stripe's answer is kept as
+  `checkout_session!` keeps what it reads (its state, not a version), so `subscription!` says it at
+  once and the event about the change still counts when it comes.
+- `card_portal!(user, return_url)`: the portal with `flow_data[type]=payment_method_update`, back
+  to `return_url` once the card is changed.
+- **Tested:** the example's account page has them all (`/api/billing`, its cancel, keep and card);
+  its tests (SQLite and Postgres) through the stand-in, which now keeps payment methods (a completed
+  checkout's subscription on a Visa ending 4242) and invoices (its first, `bill` for a month's,
+  newest first), answers `GET /v1/customers/:id`, `GET /v1/invoices`, `POST /v1/subscriptions/:id`
+  and portal flows: the card from the subscription, from the customer, none; invoices listed;
+  cancelling said before the event, kept after all, a Dashboard's end unset, nothing asked of Stripe
+  for an ended subscription; the portal's flow. StripeRules' readers and forms by `expect`s.
+- **Docs:** the README (An app's own billing page, the types, testing an app), PROPOSALS (4, 7), the
+  docs site's Stripe page.
+
+**Why.** Billing on the app's own page reads as the app, and a cancel shown at once is a page that
+doesn't lie for the seconds before the event. Reading cards and invoices from Stripe each time
+keeps the package's tables what they are (what decides who has paid), and needs no events an app
+would have to subscribe its endpoint to; a billing page is seldom opened, so the requests are few.
+
+**Costs.** `card!` is one or two requests to Stripe and `invoices!` one, each time the page is read:
+an app that showed the card on every page would be slow, and the docs say so. A subscription charged
+through a legacy source (`default_source`, a card object of before PaymentMethods) is `NoCard`.
+
+**Reversible:** yes: the functions go, and an app's page links to the portal again.
