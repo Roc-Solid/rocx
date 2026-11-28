@@ -172,6 +172,14 @@ impl Platform for Android {
         })
     }
 
+    fn focus(&self, views: &[u64]) -> bool {
+        self.views_call("focus", views)
+    }
+
+    fn reveal(&self, views: &[u64]) -> bool {
+        self.views_call("reveal", views)
+    }
+
     fn log(&self, level: Level, text: &str) {
         let priority = match level {
             Level::Debug => 3,
@@ -184,6 +192,25 @@ impl Platform for Android {
         unsafe { __android_log_write(priority, tag.as_ptr(), line.as_ptr()) };
         #[cfg(feature = "dev")]
         ship::line(level, text);
+    }
+}
+
+impl Android {
+    /// Kotlin's `Rocx.<method>(ids)`: the first of these views it has, focused or revealed.
+    fn views_call(&self, method: &str, views: &[u64]) -> bool {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return false };
+        let Ok(mut env) = vm.get_env() else { return false };
+        let done = (|| -> jni::errors::Result<bool> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let ids: Vec<jlong> = views.iter().map(|&id| id as jlong).collect();
+            let array = env.new_long_array(ids.len() as i32)?;
+            env.set_long_array_region(&array, 0, &ids)?;
+            env.call_static_method(&class, method, "([J)Z", &[JValue::Object(&JObject::from(array))])?.z()
+        })();
+        done.unwrap_or_else(|_| {
+            let _ = env.exception_clear();
+            false
+        })
     }
 }
 

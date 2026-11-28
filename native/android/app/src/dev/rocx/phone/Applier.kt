@@ -84,6 +84,9 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         }
     }
 
+    /** The view the host's id names, if there is one (`Rocx.focus`, `Rocx.reveal`). */
+    fun view(id: Long): View? = views[id]
+
     private fun text(buffer: ByteBuffer): String {
         val bytes = ByteArray(buffer.int)
         buffer.get(bytes)
