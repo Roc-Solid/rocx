@@ -43,6 +43,7 @@ class CssPaint(private val density: Float) : Drawable() {
     var ringColour = 0
     var outline: FloatArray? = null
     var outlineColour = 0
+    var outlineStyle: String? = null
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -131,7 +132,11 @@ class CssPaint(private val density: Float) : Drawable() {
         outline?.let { o ->
             val width = o[0] * density
             val offset = o[1] * density
-            stroke.pathEffect = null
+            stroke.pathEffect = when (outlineStyle) {
+                "dashed" -> DashPathEffect(floatArrayOf(width * 3f, width * 2f), 0f)
+                "dotted" -> DashPathEffect(floatArrayOf(width, width), 0f)
+                else -> null
+            }
             stroke.strokeWidth = width
             stroke.color = outlineColour
             val grow = offset + width / 2f
@@ -286,9 +291,10 @@ class CssPaint(private val density: Float) : Drawable() {
             }
             "outline" -> {
                 val parts = value.split(" ")
-                if (parts.size == 3) {
+                if (parts.size >= 3) {
                     outline = floatArrayOf(parts[0].toFloatOrNull() ?: 0f, parts[1].toFloatOrNull() ?: 0f)
                     outlineColour = colour(parts[2]) ?: Color.TRANSPARENT
+                    outlineStyle = parts.getOrNull(3)
                 } else {
                     outline = null
                 }

@@ -1444,7 +1444,8 @@ impl<'a> Projection<'a> {
             };
             if width > 0.0 {
                 let offset = c.px("outline-offset", 0.0).unwrap_or(0.0);
-                props.insert("style.outline".into(), format!("{width} {offset} {}", values::argb(c.colour_of("outline-color").unwrap_or(c.color))));
+                let style = c.get("outline-style").filter(|style| matches!(*style, "dashed" | "dotted")).unwrap_or("solid");
+                props.insert("style.outline".into(), format!("{width} {offset} {} {style}", values::argb(c.colour_of("outline-color").unwrap_or(c.color))));
             }
         }
         let clips = |axis: &str| matches!(c.get(axis).unwrap_or("visible"), "hidden" | "clip" | "auto" | "scroll" | "overlay");
