@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds an app's Android APK (D-063's spike): native views, no JavaScript, no WebView.
 #
-#   native/android/build.sh spike/native-apps/phone-hello [--origin http://10.0.2.2:8095] [--label "Phone hello"] [--opt dev]
+#   native/android/build.sh spike/native-apps/phone-hello [--origin http://10.0.2.2:8095] [--label "Phone hello"] [--opt dev] [--stories]
 #   native/android/build.sh --dev-client
 #   native/android/build.sh <app dir> --host-only   (the host and shell again, the app's last Roc kept)
 #
@@ -33,6 +33,10 @@ label=""
 opt="speed"
 dev_client=""
 host_only=""
+# --stories: the browser copy as `rocx generate --dev` writes it (the components' stories in it), so
+# the phone asks for the stylesheet a server built that way (`rocx build --dev`, an app's own dev
+# build) has: the stylesheet's name is a hash of what it holds, and the stories' styles are in it.
+generate_dev=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --origin) origin="$2"; shift 2 ;;
@@ -40,6 +44,7 @@ while [ $# -gt 0 ]; do
         --opt) opt="$2"; shift 2 ;;
         --dev-client) dev_client=1; shift ;;
         --host-only) host_only=1; shift ;;
+        --stories) generate_dev="--dev"; shift ;;
         -*) echo "build.sh: unknown option $1" >&2; exit 2 ;;
         *) app="$1"; shift ;;
     esac
@@ -91,7 +96,7 @@ if [ -n "$host_only" ] && [ -f "$out/libapp-roc.a" ]; then
 elif [ -z "$dev_client" ]; then
     # ---- 1. The app's browser copy ----
     step "rocx generate --client ($name)"
-    "$repo/bin/rocx" generate --client "$out/client" "$app" >&2
+    "$repo/bin/rocx" generate --client "$out/client" $generate_dev "$app" >&2
 
     # ---- 2. Its Roc, for the phone ----
     step "roc build --target=arm64musl --opt=$opt (an archive: the app alone)"
