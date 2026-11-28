@@ -190,7 +190,9 @@ impl Projection<'_> {
             "input" => {
                 let kind = attr("type").unwrap_or_default().to_ascii_lowercase();
                 if kind == "checkbox" || kind == "radio" {
-                    props.insert("checked".into(), flag(attr("checked").is_some()));
+                    // A tap's state until the app sets it (`engine::dispatch`).
+                    let checked = self.engine.values.get(&node).map(|now| now == "true").unwrap_or_else(|| attr("checked").is_some());
+                    props.insert("checked".into(), flag(checked));
                     ("checkbox", Vec::new())
                 } else if kind == "hidden" {
                     return None;

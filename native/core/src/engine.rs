@@ -1195,6 +1195,10 @@ fn patch(engine: &mut Engine, kind: CompKind, node: NodeId, name: &str, value: &
         CompKind::Style => engine.dom.set_style(node, name, &text),
         CompKind::Class => engine.dom.toggle_class(node, name, on),
         CompKind::Flag => {
+            // The app says whether it is checked: a tap's state gives way.
+            if name == "checked" {
+                engine.values.remove(&node);
+            }
             if on {
                 engine.dom.set_attr(node, name, "");
             } else {
@@ -2813,6 +2817,38 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
             engine.values.insert(node, value.to_string());
         });
     }
+    // A checkbox's or radio's tap (its view's `click`, with whether it is checked now): what it
+    // holds, until the app sets its `checked` (a radio's group mates in its form unchecked).
+    if event == "click" && matches!(value, "true" | "false") {
+        with(|engine| {
+            if engine.dom.tag(node) != Some("input") {
+                return;
+            }
+            let kind = engine.dom.attr(node, "type").unwrap_or("").to_ascii_lowercase();
+            if kind != "checkbox" && kind != "radio" {
+                return;
+            }
+            engine.values.insert(node, value.to_string());
+            if kind == "radio" && value == "true"
+                && let Some(name) = engine.dom.attr(node, "name").map(str::to_string)
+            {
+                let mut top = node;
+                while let Some(parent) = engine.dom.nodes.get(top).and_then(|each| each.parent) {
+                    top = parent;
+                    if engine.dom.tag(top) == Some("form") {
+                        break;
+                    }
+                }
+                let mut stack = vec![top];
+                while let Some(at) = stack.pop() {
+                    if at != node && engine.dom.tag(at) == Some("input") && engine.dom.attr(at, "name") == Some(name.as_str()) && engine.dom.attr(at, "type").is_some_and(|kind| kind.eq_ignore_ascii_case("radio")) {
+                        engine.values.insert(at, "false".into());
+                    }
+                    stack.extend(engine.dom.children(at));
+                }
+            }
+        });
+    }
     let path = with(|engine| {
         let mut path = Vec::new();
         let mut at = Some(node);
@@ -2830,7 +2866,9 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
             engine.listeners.get(at).map(|listeners| listeners.iter().filter(|listener| listener.event == event).map(|listener| (listener.runner, listener.scope.clone(), listener.owner, listener.wanted.clone(), listener.kind.clone())).collect()).unwrap_or_default()
         });
         for (runner, scope, owner, wanted, kind) in listeners {
-            if kind != "onk" && wanted.is_some() && wanted.as_deref() != Some(value) {
+            // A key's handler (`on:keydown.Enter`) runs for that key; `.checked`, `.data`, `.files`
+            // say what a handler is given, not which event it takes.
+            if kind != "onk" && wanted.as_deref().is_some_and(|wanted| !wanted.starts_with('.')) && wanted.as_deref() != Some(value) {
                 continue;
             }
             if kind == "onp" || event == "submit" || (kind != "onk" && wanted.as_deref().is_some_and(|wanted| !wanted.starts_with('.'))) {
@@ -3210,8 +3248,10 @@ fn submitted(form: NodeId, submitter: Option<NodeId>) {
                 && engine.dom.attr(node, "disabled").is_none()
             {
                 let kind = engine.dom.attr(node, "type").unwrap_or("").to_ascii_lowercase();
-                if !(matches!(kind.as_str(), "checkbox" | "radio") && engine.dom.attr(node, "checked").is_none()) && !matches!(kind.as_str(), "submit" | "button" | "reset" | "image" | "file") {
-                    let value = engine.values.get(&node).cloned().or_else(|| engine.dom.attr(node, "value").map(str::to_string)).unwrap_or_else(|| if kind == "checkbox" { "on".into() } else { String::new() });
+                let checkable = matches!(kind.as_str(), "checkbox" | "radio");
+                let checked = engine.values.get(&node).map(|now| now == "true").unwrap_or_else(|| engine.dom.attr(node, "checked").is_some());
+                if !(checkable && !checked) && !matches!(kind.as_str(), "submit" | "button" | "reset" | "image" | "file") {
+                    let value = if checkable { None } else { engine.values.get(&node).cloned() }.or_else(|| engine.dom.attr(node, "value").map(str::to_string)).unwrap_or_else(|| if checkable { "on".into() } else { String::new() });
                     fields.push(format!("{}={}", encode(name), encode(&value)));
                 }
             }

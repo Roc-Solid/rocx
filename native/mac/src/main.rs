@@ -11,7 +11,8 @@
 //! says it), `type:<text>` (typing into the first field), `enter` (the keyboard's Enter in it),
 //! `css` (the CSS the phone ignores); navigation's (D-138): `link:<text>` (a tap on the link that
 //! says it), `nav:<to>` (`Router.navigate!`), `back` (Android's back), `where` (the location and
-//! the history), `cookies` (the jar).
+//! the history), `cookies` (the jar), `at:<id>` (a tap on the view with that id) and `at:<id>=<text>`
+//! (typing into it).
 //!
 //! Options: `--origin <url>`, `--path <start path>`, `--files <dir>` (where the cookie jar is kept,
 //! as an app's files dir).
@@ -113,6 +114,32 @@ fn main() {
                 }
                 None => println!("no field"),
             },
+            // A view by its id (`show` prints them): `at:<id>` taps it, `at:<id>=<text>` types into it.
+            "at" => {
+                let (id, text) = value.split_once('=').map(|(id, text)| (id, Some(text))).unwrap_or((value, None));
+                let id: u64 = id.trim_start_matches('#').parse().unwrap_or(0);
+                match text {
+                    Some(text) => {
+                        println!("type {text:?} (#{id})");
+                        core::event(id, "input", text);
+                    }
+                    None => {
+                        // A checkbox's view says whether it is checked now, as Android's does.
+                        let checkbox = core::native::shown_views().get(&id).filter(|view| view.kind == "checkbox").map(|view| view.props.get("checked").map(String::as_str) != Some("true"));
+                        match checkbox {
+                            Some(now) => {
+                                println!("check #{id}: {now}");
+                                core::event(id, "click", &now.to_string());
+                                core::event(id, "change", &now.to_string());
+                            }
+                            None => {
+                                println!("tap #{id}");
+                                core::event(id, "click", "");
+                            }
+                        }
+                    }
+                }
+            }
             "enter" => match find("input", None) {
                 Some(id) => {
                     println!("enter (#{id})");
