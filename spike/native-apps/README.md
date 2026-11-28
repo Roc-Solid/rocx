@@ -610,6 +610,7 @@ dev server:
 |---|---|
 | APK | about 8.5 MB for the large app; the host grew about 0.85 MB with Taffy and its CSS parser (phone-hello's APK: 2.0 MB) |
 | Its landing page (340 views), first frame | 64–72 ms after `onCreate`, its document fetched and its two stylesheets read: the first styled render projected in 5.7–9 ms, its 40 KB of ops applied in 2–4.5 ms, laid out in 4–6 ms (text measured by `StaticLayout`), its 10–12 KB of frames applied in 1 ms |
+| A members page (the calendar, 182 views), cold start | its styled screen 32–35 ms after the process started (its document's render projected in 1.1 ms, laid out in 1.8 ms); `am start -W` 96–129 ms |
 | A tap to the screen patched | 1.8–3.8 ms (a segmented control's link on the analytics page: the handler, a render that projects the changed part, its layout); examples/pomodoro's Start 0.9 ms |
 | A render with nothing changed | skipped (0.01 ms) |
 | A page of 1,204 views (a test: `cargo test --release -p rocx-native-core thousand -- --ignored --nocapture`, on the Mac) | first render 25 ms (projection 20 ms, layout 3.3 ms), again with nothing it comes from changed about 1 ms |
