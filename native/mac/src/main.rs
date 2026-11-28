@@ -15,7 +15,9 @@
 //! (typing into it), `textarea:<text>` (typing into the first text area), `check:<text>` (the checkbox
 //! or radio beside that text, toggled); controls' (D-139): `choose:<id>=<value>` (a select's or a
 //! date field's choice), `pick:<id>=<path>,…` (files from the system's picker); layout's (D-137):
-//! `boxes` (each element's box on the page), `width:<dp>` (the screen's width, 412 at first: a rotation), `time` (how long the last layout took).
+//! `boxes` (each element's box on the page), `width:<dp>` (the screen's width, 412 at first: a
+//! rotation), `time` (how long the last layout took), `bench:<n>` (n renders with nothing changed,
+//! timed).
 //!
 //! Options: `--origin <url>`, `--path <start path>`, `--files <dir>` (where the cookie jar is kept,
 //! as an app's files dir).
