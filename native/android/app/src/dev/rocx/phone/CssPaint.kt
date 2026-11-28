@@ -173,8 +173,17 @@ class CssPaint(private val density: Float) : Drawable() {
         )
         for (side in 0 until 4) {
             if (w[side] <= 0f || Color.alpha(borderColours[side]) == 0) continue
-            fill.color = borderColours[side]
-            canvas.drawRect(sides[side], fill)
+            if (stroke.pathEffect != null) {
+                // Dashed or dotted: a line along the side's middle.
+                val r = sides[side]
+                stroke.strokeWidth = w[side]
+                stroke.color = borderColours[side]
+                stroke.pathEffect = if (borderStyle == "dotted") DashPathEffect(floatArrayOf(w[side], w[side]), 0f) else DashPathEffect(floatArrayOf(w[side] * 3f, w[side] * 2f), 0f)
+                if (side == 0 || side == 2) canvas.drawLine(r.left, r.centerY(), r.right, r.centerY(), stroke) else canvas.drawLine(r.centerX(), r.top, r.centerX(), r.bottom, stroke)
+            } else {
+                fill.color = borderColours[side]
+                canvas.drawRect(sides[side], fill)
+            }
         }
         canvas.restore()
     }
