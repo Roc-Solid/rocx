@@ -113,7 +113,11 @@ native/target/debug/rocx-native-mac --origin http://127.0.0.1:8095 --path /login
 The runner's steps: `show`, `ops`, `wait:<ms>`, `tap:<text>` (a button), `type:<text>` (the first
 field), `enter`, `textarea:<text>`, `check:<text>` (the checkbox or radio beside that text), `at:<id>`
 and `at:<id>=<text>` (a view by its id: tapped, or typed into), `link:<text>` (a link), `nav:<to>`
-(`Router.navigate!`), `back`, `where` (the location and the history), `cookies`, `css`.
+(`Router.navigate!`), `back`, `where` (the location and the history), `cookies`, `css`; layout's
+(D-137): `show` prints each view's frame (`[x y wxh]`, in its parent), `boxes` each element's box on
+the page (tag, class, x, y, w, h: what a browser's `getBoundingClientRect` says, to compare),
+`width:<dp>` (the screen's width: a rotation), `time` (the last layout's), `bench:<n>` (n renders
+with nothing changed).
 The emulator reaches a server on the Mac at `10.0.2.2`; with `adb reverse tcp:<port> tcp:<port>` it
 reaches it at `http://localhost:<port>`, the same origin a browser on the Mac has, so cookies, a
 server's cross-site form check and its redirects to its own origin agree (`--origin
@@ -628,7 +632,7 @@ dev server:
    (spike/wasm-engine's round 2); other nodes taken off the engine's document stay in its arena,
    and every request's answer stays in its table.
 3. **Layout's gaps** (D-137). Text beside an inline box wraps as one piece (a line is a flex row,
-   not CSS's line boxes), with no space where the markup's whitespace sits between two inline boxes;
+   not CSS's line boxes; whitespace between two inline boxes is a quarter of an em);
    `vertical-align` and baselines aren't kept (a line's items are centred); floats, tables (rows are
    flex rows, cells share them), `column-count`, `@font-face` (the system's fonts stand in), dark
    mode (`prefers-color-scheme` is light), `:active` (no pressed state but the applier's),
