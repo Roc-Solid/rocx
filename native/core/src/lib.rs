@@ -91,6 +91,13 @@ pub trait Platform: Send + Sync {
     fn pick(&self, _view: u64, _accept: &str, _multiple: bool) -> bool {
         false
     }
+    /// On the main thread (D-139): an event on custom element `view` (its `tag`), or on `target`
+    /// inside it, for the app's phone half of the element, if it has one (Android's: Kotlin
+    /// `ElementHalf`s, `Elements.kt`). `value` is the event's (a file input's files, a field's text).
+    fn element(&self, _view: u64, _tag: &str, _event: &str, _target: u64, _value: &str) {}
+    /// On the main thread: the answer to the shell's request `token` (`fetch`), or why there is
+    /// none (status 0, the reason as the body).
+    fn fetched(&self, _token: u64, _status: u16, _headers: &str, _body: &[u8]) {}
     /// On the main thread, while a flush is laid out (D-137): the size of text view `id` (whose
     /// text and look the batch just applied set) at a width, in dp. The Mac's is rough
     /// (`layout::rough_measure`); a phone's is its text engine's.
@@ -150,6 +157,8 @@ pub enum Message {
     Retry(u64),
     /// An image's file is in, or not (D-139).
     Media(u64, media::Loaded),
+    /// The answer to a request of the shell's (D-139, `fetch`).
+    Fetched(u64, u64, Result<http::Bytes, String>),
 }
 
 /// The platform an app's library must be built for (core/build.rs): a dev client refuses another.
@@ -247,6 +256,33 @@ pub(crate) fn focus(views: &[u64]) -> bool {
     PLATFORM.get().is_some_and(|platform| platform.focus(views))
 }
 
+/// An element's phone half told of an event (`Platform::element`).
+pub(crate) fn element_event(view: u64, tag: &str, event: &str, target: u64, value: &str) {
+    if let Some(platform) = PLATFORM.get() {
+        platform.element(view, tag, event, target, value);
+    }
+}
+
+/// A request of the shell's (D-139: an element's phone half uploading a file), on a thread of its
+/// own, as the page's are: its path the app's server's, the app's cookies, `origin` on what isn't
+/// a GET. Its answer comes back on the main thread (`Platform::fetched`).
+pub fn fetch(token: u64, method: &str, url: &str, headers: &str, body: Vec<u8>) {
+    let (full, origin) = engine::with(|engine| (engine.full_url(url), url::Url::parse(&engine.origin).map(|url| url.origin)));
+    let mut lines: Vec<(String, String)> = headers.lines().filter_map(|line| line.split_once(':')).map(|(name, value)| (name.trim().to_string(), value.trim().to_string())).collect();
+    if !matches!(method, "GET" | "HEAD")
+        && let Some(origin) = origin
+        && !lines.iter().any(|(name, _)| name.eq_ignore_ascii_case("origin"))
+    {
+        lines.push(("origin".into(), origin));
+    }
+    let made = generation();
+    let method = method.to_string();
+    std::thread::spawn(move || {
+        let answer = http::fetch_bytes(&method, &full, &lines, &body, false);
+        post(Message::Fetched(made, token, answer));
+    });
+}
+
 /// A file input's picker opened (`Platform::pick`).
 pub(crate) fn pick(view: u64, accept: &str, multiple: bool) -> bool {
     PLATFORM.get().is_some_and(|platform| platform.pick(view, accept, multiple))
@@ -282,16 +318,30 @@ pub fn restart(platform: Box<dyn Platform>, origin: &str, path: &str) {
 }
 
 /// What the phone's shell asks the host (D-139), on the main thread: `cookie` (the jar's `cookie`
-/// header for a URL: a video's player sends it), `attr` (`<view id>\n<name>`: an element's attribute,
-/// for an element's phone half), `files` (`<view id>`: the files a file input holds, as JSON). ""
-/// for nothing.
+/// header for a URL: a video's player sends it), `attr` (`<view id>\n<name>`: an element's attribute
+/// as `=<value>`, "" when it has none, for an element's phone half), `tag` (`<view id>`: its tag),
+/// `reload` (the page asked for
+/// again where it is, a half's `location.reload()`). "" for nothing.
 pub fn ask(what: &str, arg: &str) -> String {
     match what {
         "cookie" => cookies::for_request(arg, now_millis()).unwrap_or_default(),
         "attr" => {
             let Some((id, name)) = arg.split_once('\n') else { return String::new() };
             let Some(node) = id.parse::<u64>().ok().and_then(native::node_of) else { return String::new() };
-            engine::with(|engine| engine.dom.attr(node, name).map(str::to_string)).unwrap_or_default()
+            // `=` and its value; "" when it has none (an empty one is `=`).
+            engine::with(|engine| engine.dom.attr(node, name).map(|value| format!("={value}"))).unwrap_or_default()
+        }
+        // An element's tag (`<view id>`).
+        "tag" => {
+            let Some(node) = arg.parse::<u64>().ok().and_then(native::node_of) else { return String::new() };
+            engine::with(|engine| engine.dom.tag(node).map(str::to_string)).unwrap_or_default()
+        }
+        // A half's `location.reload()`: the page asked for again where it is.
+        "reload" => {
+            let path = engine::with(|engine| engine.path.clone());
+            nav::navigate(&path, nav::Options { replace: true, ..Default::default() });
+            pump();
+            String::new()
         }
         _ => String::new(),
     }
@@ -339,6 +389,17 @@ pub fn pump() {
             Message::Heard(made, id, heard) if made == now => live::heard(id, heard),
             Message::Retry(made) if made == now => live::retry(),
             Message::Media(made, loaded) if made == now => media::loaded(loaded),
+            Message::Fetched(made, token, answer) if made == now => {
+                if let Some(platform) = PLATFORM.get() {
+                    match answer {
+                        Ok(answer) => {
+                            let headers: Vec<String> = answer.headers.iter().map(|(name, value)| format!("{name}: {value}")).collect();
+                            platform.fetched(token, answer.status, &headers.join("\n"), &answer.body);
+                        }
+                        Err(why) => platform.fetched(token, 0, "", why.as_bytes()),
+                    }
+                }
+            }
             _ => {}
         }
     }

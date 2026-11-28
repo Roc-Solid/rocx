@@ -2926,6 +2926,11 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
                 handle(runner, value.to_string(), scope, owner, None, None);
             }
         }
+        // A custom element's phone half (D-139): told of what happens on it and inside it, as its
+        // script's listeners on it are in a browser.
+        if let Some(tag) = with(|engine| engine.dom.tag(*at).filter(|tag| tag.contains('-')).map(str::to_string)) {
+            crate::element_event(*at as u64 + 1, &tag, event, node as u64 + 1, value);
+        }
     }
     if event == "click" && !prevented {
         let (form, link) = with(|engine| {

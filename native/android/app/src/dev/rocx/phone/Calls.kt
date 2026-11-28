@@ -18,6 +18,7 @@ import org.json.JSONObject
  *   fetched from the app's server when its URL is a path, as the browser fetches it.
  * - `vibrate.pattern` (packages/vibrate, `Vibrate.once!`, `Vibrate.pattern!`): `{ pattern }`,
  *   milliseconds on, off, on…, as `navigator.vibrate`'s.
+ * - `clipboard.write` (D-139): `{ text }` put on the clipboard, as `navigator.clipboard.writeText`.
  */
 object Calls {
     fun call(context: Context, name: String, arg: String, origin: String): Boolean {
@@ -29,6 +30,8 @@ object Calls {
         when (name) {
             "audio.play" -> play(context, json, origin)
             "vibrate.pattern" -> vibrate(context, json)
+            // D-139: `{ text }` put on the clipboard, as `navigator.clipboard.writeText`.
+            "clipboard.write" -> Phone.copy(context, json.optString("text"))
             else -> return false
         }
         return true

@@ -132,20 +132,40 @@ cat > "$out/exports.map" <<'EOF'
 EOF
 "$clang" -shared -o "$stage/lib/arm64-v8a/libapp.so" \
     -Wl,--undefined=JNI_OnLoad -Wl,--undefined=Java_dev_rocx_phone_Rocx_start -Wl,--undefined=Java_dev_rocx_phone_Rocx_send -Wl,--undefined=Java_dev_rocx_phone_Rocx_viewport \
-    -Wl,--undefined=Java_dev_rocx_phone_Rocx_back -Wl,--undefined=Java_dev_rocx_phone_Rocx_files -Wl,--undefined=Java_dev_rocx_phone_Rocx_ask \
+    -Wl,--undefined=Java_dev_rocx_phone_Rocx_back -Wl,--undefined=Java_dev_rocx_phone_Rocx_files -Wl,--undefined=Java_dev_rocx_phone_Rocx_ask -Wl,--undefined=Java_dev_rocx_phone_Rocx_fetch \
     "$host" "$out/libapp-roc.a" \
     -llog -landroid -ldl -lm \
     -Wl,--gc-sections -Wl,--version-script="$out/exports.map" -Wl,-z,max-page-size=16384 -Wl,--no-undefined -Wl,--build-id=none -s
 fi
 
 # ---- 5. The Kotlin shell ----
-# Built again only when its sources or R8's rules changed (kotlinc's start is most of a rebuild).
-if [ ! -f "$out/dex/classes.dex" ] || [ -n "$(find "$here/app/src" "$here/app/rules.pro" -newer "$out/dex/classes.dex" -print -quit)" ]; then
+# The app's phone halves of its custom elements (D-139): the Kotlin in its android/ folder, built
+# with the shell, and their list (each `object <Name> : ElementHalf("<tag>")`), written as
+# AppHalves.kt (an empty list for an app with none, and for the dev client).
+gen="$out/gen"
+mkdir -p "$gen"
+app_kt=()
+if [ -z "$dev_client" ] && [ -d "$app/android" ]; then
+    while IFS= read -r file; do app_kt+=("$file"); done < <(find "$app/android" -name '*.kt' | sort)
+fi
+halves=""
+for file in ${app_kt[@]+"${app_kt[@]}"}; do
+    pkg="$(sed -n 's/^package[[:space:]]\{1,\}\([A-Za-z0-9_.]*\).*/\1/p' "$file" | head -1)"
+    for half in $(sed -n 's/^[[:space:]]*object[[:space:]]\{1,\}\([A-Za-z0-9_]*\)[[:space:]]*:[[:space:]]*ElementHalf(.*/\1/p' "$file"); do
+        halves="$halves${halves:+, }${pkg:+$pkg.}$half"
+    done
+done
+printf 'package dev.rocx.phone\n\n// Written by native/android/build.sh: the app'"'"'s phone halves (D-139), from its android/ folder.\ninternal val appHalves: List<ElementHalf> = listOf(%s)\n' "$halves" > "$gen/AppHalves.kt.new"
+if cmp -s "$gen/AppHalves.kt.new" "$gen/AppHalves.kt"; then rm "$gen/AppHalves.kt.new"; else mv "$gen/AppHalves.kt.new" "$gen/AppHalves.kt"; fi
+[ -z "$halves" ] || step "the app's phone halves: $halves"
+# Built again only when its sources, the app's halves or R8's rules changed (kotlinc's start is most
+# of a rebuild).
+if [ ! -f "$out/dex/classes.dex" ] || [ -n "$(find "$here/app/src" "$here/app/rules.pro" "$gen/AppHalves.kt" ${app_kt[@]+"${app_kt[@]}"} -newer "$out/dex/classes.dex" -print -quit)" ]; then
     step "kotlinc + R8 (native/android/app)"
     rm -rf "$out/classes" "$out/dex"
     mkdir -p "$out/classes" "$out/dex"
     JAVA_HOME="$java_home" "$kotlinc" -nowarn -no-reflect -jvm-target 1.8 -classpath "$android_jar" -d "$out/classes/shell.jar" \
-        $(find "$here/app/src" -name '*.kt') 2>&1 | grep -v "^warning: unable to find kotlin-stdlib" >&2 || true
+        $(find "$here/app/src" -name '*.kt') "$gen/AppHalves.kt" ${app_kt[@]+"${app_kt[@]}"} 2>&1 | grep -v "^warning: unable to find kotlin-stdlib" >&2 || true
     [ -f "$out/classes/shell.jar" ] || { echo "build.sh: kotlinc failed" >&2; exit 1; }
     "$java_home/bin/java" -cp "$build_tools/lib/d8.jar" com.android.tools.r8.R8 --release --min-api 29 \
         --lib "$android_jar" --pg-conf "$here/app/rules.pro" --output "$out/dex" \

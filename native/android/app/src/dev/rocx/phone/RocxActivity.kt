@@ -81,6 +81,11 @@ class RocxActivity : Activity() {
         if (!Rocx.back()) super.onBackPressed()
     }
 
+    @Deprecated("the picker's result (D-139), as startActivityForResult gives it")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        if (!Picker.result(this, requestCode, resultCode, data)) super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         // rocx dev launching the client again, or its page's link, with its server.
