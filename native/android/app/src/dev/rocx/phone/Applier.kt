@@ -48,8 +48,11 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
     init {
         // The screen's size in dp (less its system bars): at once from the window, then from each
         // layout of the screen (insets known, a rotation).
-        val metrics = activity.resources.displayMetrics
-        viewport(metrics.widthPixels / density, metrics.heightPixels / density - 80f)
+        // The window's size less its system bars, known before the first layout (API 30), so the
+        // first render is at the right size and isn't made again once the screen is laid out.
+        val window = activity.windowManager.currentWindowMetrics
+        val bars = window.windowInsets.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars())
+        viewport((window.bounds.width() - bars.left - bars.right) / density, (window.bounds.height() - bars.top - bars.bottom) / density)
         screen.addOnLayoutChangeListener { view, left, top, right, bottom, _, _, _, _ ->
             val w = (right - left - view.paddingLeft - view.paddingRight) / density
             val h = (bottom - top - view.paddingTop - view.paddingBottom) / density

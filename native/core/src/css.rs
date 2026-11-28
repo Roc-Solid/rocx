@@ -229,17 +229,15 @@ pub struct Sheet {
 }
 
 thread_local! {
-    static CACHE: std::cell::RefCell<Option<(String, Media, Rc<Sheet>)>> = const { std::cell::RefCell::new(None) };
+    /// The sheets parsed last (a few: a rotation's two screens), each by its text and screen.
+    static CACHE: std::cell::RefCell<Vec<(String, Media, Rc<Sheet>)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 impl Sheet {
     /// The UA stylesheet, then the page's `css`, for a screen: parsed once for each text and screen.
     pub fn of(css: &str, media: Media) -> Rc<Sheet> {
         CACHE.with(|cache| {
-            if let Some((text, seen, sheet)) = cache.borrow().as_ref()
-                && *seen == media
-                && text == css
-            {
+            if let Some((_, _, sheet)) = cache.borrow().iter().find(|(text, seen, _)| *seen == media && text == css) {
                 return sheet.clone();
             }
             let mut sheet = Sheet { rules: Vec::new(), by_id: HashMap::default(), by_class: HashMap::default(), by_tag: HashMap::default(), others: Vec::new(), pseudos: Vec::new(), warnings: Vec::new(), media, has_contexts: Vec::new() };
@@ -247,7 +245,11 @@ impl Sheet {
             sheet.parse(css, true);
             sheet.index();
             let sheet = Rc::new(sheet);
-            *cache.borrow_mut() = Some((css.to_string(), media, sheet.clone()));
+            let mut cache = cache.borrow_mut();
+            if cache.len() >= 3 {
+                cache.remove(0);
+            }
+            cache.push((css.to_string(), media, sheet.clone()));
             sheet
         })
     }
