@@ -57,20 +57,17 @@ pub fn rough_measure(content: &Content, width: Width) -> (f32, f32) {
         Width::AtMost(most) => {
             let mut rows = 1;
             let mut line = 0.0f32;
-            let mut widest = 0.0f32;
             for word in &lines {
                 let word = *word as f32 * advance;
                 let next = if line == 0.0 { word } else { line + advance + word };
                 if next > most && line > 0.0 {
                     rows += 1;
-                    widest = widest.max(line);
                     line = word;
                 } else {
                     line = next;
                 }
             }
             // CSS's fit-content: a text that wraps is as wide as the room, not its longest line.
-            let _ = widest;
             (total.min(most).max(words_widest.min(most)), rows)
         }
     };
@@ -126,7 +123,7 @@ impl Tree {
 
     /// The tree brought to what the views are now: nodes made for new views, let go of for gone
     /// ones, styles, children and contents changed where they did (and those nodes dirtied).
-    pub fn sync<'a>(&mut self, root: u64, views: impl Iterator<Item = (u64, Want<'a>)>) {
+    pub fn sync<'a>(&mut self, _root: u64, views: impl Iterator<Item = (u64, Want<'a>)>) {
         let mut seen: HashMap<u64, ()> = HashMap::default();
         let mut wanted: Vec<(usize, Vec<u64>)> = Vec::new();
         for (view, want) in views {
@@ -204,7 +201,6 @@ impl Tree {
                 }
             }
         }
-        let _ = root;
     }
 
     /// Lays the tree out from `root` on a screen of `width` by `height`, with `measurer` for text.

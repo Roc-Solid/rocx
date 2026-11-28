@@ -1287,7 +1287,7 @@ impl<'a> Projection<'a> {
         if !transform.is_identity() {
             view.transform = Some(transform);
             let origin = values::split(c.get("transform-origin").unwrap_or("50% 50%"), None);
-            let axis = |word: Option<&String>, _horizontal: bool| -> Length {
+            let axis = |word: Option<&String>| -> Length {
                 match word.map(|w| w.as_str()) {
                     Some("left") | Some("top") => Length::Percent(0.0),
                     Some("right") | Some("bottom") => Length::Percent(100.0),
@@ -1298,7 +1298,7 @@ impl<'a> Projection<'a> {
             let (first, second) = (origin.first(), origin.get(1));
             // `top left` and `left top` are one origin.
             let swapped = first.is_some_and(|w| w == "top" || w == "bottom") || second.is_some_and(|w| w == "left" || w == "right");
-            view.origin = if swapped { (axis(second, true), axis(first, false)) } else { (axis(first, true), axis(second, false)) };
+            view.origin = if swapped { (axis(second), axis(first)) } else { (axis(first), axis(second)) };
         }
     }
 
