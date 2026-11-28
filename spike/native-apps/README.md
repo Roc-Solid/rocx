@@ -540,7 +540,8 @@ dev server:
    first is drawn), `text-shadow`, `text-indent`, `hyphens`, `overflow-wrap: normal` (Android breaks
    a word that doesn't fit) and a `:has()` left of a rule's subject reprojecting all its element
    holds. `position: sticky` keeps a top edge only. The projection is incremental, the CSS still
-   parsed on the phone (a 150 KB sheet in about 10 ms, again on a rotation).
+   parsed on the phone (a 150 KB sheet of 1,491 rules in 7.5 ms on the Mac, about twice that on
+   the emulator; again on a rotation).
 4. **CSS at build time.** Parsed on the phone now; the design's build-time table (and `rocx check
    --android`) gives file and line to each warning.
 5. **The server over HTTP.** Plain `http://` only (keep-alive, cookies, redirects and streams are

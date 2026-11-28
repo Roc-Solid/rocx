@@ -7774,8 +7774,8 @@ planned Taffy, text measured by the platform, and a CSS subset checked at build 
    text measured by the platform through Taffy's measure function; the views placed absolutely.
 3. As 2, with the CSS compiled to a table at build time (DESIGN §6.2).
 
-**Decision.** 2, the build-time table left for later (parsing a large app's 150 KB sheet takes about
-10 ms on the phone, once):
+**Decision.** 2, the build-time table left for later (a large app's 150 KB sheet, 1,491 rules, parses
+in 7.5 ms on the Mac and about twice that on the emulator, once, and again on a rotation):
 
 - **CSS** (`css.rs`, `values.rs`): selectors with the four combinators, `:not()`, `:is()`,
   `:where()`, `:has()`, the `-child` and `-of-type` pseudo-classes, attributes, `:disabled`,
