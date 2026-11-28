@@ -18,12 +18,39 @@ Journey := [].{
 	view! : Props => Html
 	view! = |props| {
 		(at!, set_at!) = create_signal!(0)
+		# The step picked before this one: the line runs from it to the new one, and each number it
+		# passes changes as the line gets there.
+		(from!, set_from!) = create_signal!(0)
+		go! = |index| {
+			set_from!(at!())
+			set_at!(index)
+		}
+		# How long a number waits to change: the share of the line's run it takes to reach it.
+		wait! = |index| {
+			now = at!()
+			was = from!()
+			ms =
+				if (now > was and index > was and index <= now)
+					(index - was) * 300 // (now - was)
+				else if (now < was and index >= now and index < was)
+					(was - index) * 300 // (was - now)
+				else
+					0
+			"${ms.to_str()}ms"
+		}
 		steps = props.steps
 		last = steps.len() - 1
 		names = steps.map(|step| step.name)
 		<figure class="journey">
 			<div data-demo="journey">
-				<div class="steps" role="tablist" aria-label="From the file to the page">
+				<div
+					class="steps"
+					role="tablist"
+					aria-label="From the file to the page"
+					style:--count={steps.len().to_str()}
+					style:--last={last.to_str()}
+					style:--at={at!().to_str()}
+				>
 					{...steps.map_with_index(|step, index|
 						<button
 							type="button"
@@ -32,8 +59,9 @@ Journey := [].{
 							aria-controls={"journey-panel-${index.to_str()}"}
 							aria-selected={if (at!() == index) "true" else "false"}
 							class:done={at!() > index}
-							class:reached={at!() >= index}
-							on:click={|| set_at!(index)}
+							style:--index={index.to_str()}
+							style:--wait={wait!(index)}
+							on:click={|| go!(index)}
 						>
 							<span class="num">{(index + 1).to_str()}</span>
 							<span class="name">{step.name}</span>
@@ -53,11 +81,11 @@ Journey := [].{
 						</div>)}
 				</div>
 				<p class="next">
-					<button type="button" on:click={|| set_at!(if (at!() == last) 0 else at!() + 1)}>
+					<button type="button" on:click={|| go!(if (at!() == last) 0 else at!() + 1)}>
 						{if (at!() == last) "Start again" else "Next: ${names.get(at!() + 1) ?? ""}"}
 					</button>
 				</p>
-				<div class="stage" on:click={|| set_at!(last)}>
+				<div class="stage" on:click={|| go!(last)}>
 					<p class="label">{props.label}</p>
 					{...props.children}
 				</div>
@@ -87,39 +115,41 @@ Journey := [].{
 			box-shadow: var(--shadow), 0 0 80px -40px rgb(169 155 255 / 0.45);
 		}
 
-		/* The steps in a row, a line from each number to the next, lit up to the picked one. */
+		/* The steps in a row on one line, from the first number to the last (`--count` steps, the
+		   picked one `--at` of `--last`). */
 		.steps {
+			--line: calc(var(--space-5) + 0.9rem - 1px);
+			--ends: calc(50% / var(--count));
+			position: relative;
 			display: grid;
 			grid-auto-columns: minmax(0, 1fr);
 			grid-auto-flow: column;
 			padding: var(--space-5) 0 var(--space-3);
 		}
 
-		/* Each step but the first draws the line from the step before it: grey, and lit once reached. */
-		/* Under every number: the tabs make no stacking context of their own, so a step's line can't
-		   cover the number before it. */
-		[role="tab"]:not(:first-child)::before,
-		[role="tab"]:not(:first-child)::after {
+		/* The line, grey, and over it the part lit up to the picked step: the gradient stays where it
+		   is and is uncovered (magenta at the first step, cyan at the last), so the lit part grows
+		   to the step picked, or shrinks back to it, rather than fading in. Under the numbers: the
+		   tabs make no stacking context of their own. */
+		.steps::before,
+		.steps::after {
 			content: "";
 			position: absolute;
-			z-index: 0;
-			top: calc(0.9rem - 1px);
-			right: 50%;
-			width: 100%;
+			top: var(--line);
+			right: var(--ends);
+			left: var(--ends);
 			height: 2px;
+			border-radius: 1px;
 			background: var(--rule-strong);
 		}
 
-		[role="tab"]:not(:first-child)::after {
-			background: var(--gradient);
-			opacity: 0;
-			transition: opacity 0.3s;
+		.steps::after {
+			background: linear-gradient(90deg, var(--magenta), var(--accent));
+			clip-path: inset(-4px calc(100% - 100% * var(--at) / var(--last)) -4px 0);
+			transition: clip-path 0.4s cubic-bezier(0.65, 0, 0.35, 1);
 		}
 
-		.reached:not(:first-child)::after {
-			opacity: 1;
-		}
-
+		/* A step: its number, and its name under it. Only the number answers the pointer. */
 		[role="tab"] {
 			position: relative;
 			display: flex;
@@ -128,21 +158,35 @@ Journey := [].{
 			gap: var(--space-2);
 			padding: 0;
 			border: 0;
+			border-radius: 0;
+			outline: none;
 			background: none;
 			color: var(--text-faint);
 			font: inherit;
 			font-size: var(--size-sm);
 			font-weight: 600;
 			cursor: pointer;
-			transition: color 0.15s;
+			transition: color 0.2s var(--wait);
 		}
 
-		[role="tab"]:hover,
+		/* The site's buttons fill under the pointer; a step doesn't. */
+		[role="tab"]:hover:not(:disabled) {
+			background: none;
+		}
+
+		.done {
+			color: var(--text-muted);
+		}
+
 		[aria-selected="true"] {
 			color: var(--text);
 		}
 
+		/* A number is the line's colour where it stands (`--index` of `--last`): filled once passed,
+		   a ring where you are. It changes `--wait` after a step is picked, as the line reaches it;
+		   what the pointer does (the halo) shows at once. */
 		.num {
+			--tint: color-mix(in srgb, var(--magenta), var(--accent) calc(100% * var(--index) / var(--last)));
 			position: relative;
 			z-index: 1;
 			display: grid;
@@ -154,21 +198,39 @@ Journey := [].{
 			background: var(--bg-raised);
 			font: 700 var(--size-xs) var(--mono);
 			transition:
-				border-color 0.15s,
-				background 0.15s,
-				color 0.15s;
+				border-color 0.2s var(--wait),
+				background-color 0.2s var(--wait),
+				color 0.2s var(--wait),
+				box-shadow 0.15s;
 		}
 
 		.done .num {
-			border-color: transparent;
-			background: var(--gradient);
-			color: var(--bg);
+			border-color: var(--tint);
+			background-color: var(--tint);
+			color: var(--accent-text);
 		}
 
 		[aria-selected="true"] .num {
-			border-color: var(--accent);
-			color: var(--accent);
-			box-shadow: var(--glow);
+			border-color: var(--tint);
+			color: var(--tint);
+			box-shadow: 0 0 0 4px color-mix(in srgb, var(--tint) 18%, transparent);
+		}
+
+		[role="tab"]:not([aria-selected="true"]):hover .num {
+			box-shadow: 0 0 0 4px var(--fill-strong);
+		}
+
+		[role="tab"]:focus-visible .num {
+			outline: 2px solid var(--accent);
+			outline-offset: 3px;
+		}
+
+		@media (prefers-reduced-motion: reduce) {
+			.steps::after,
+			[role="tab"],
+			.num {
+				transition: none;
+			}
 		}
 
 		/* Every panel in one cell, the picked one shown: the cell is as tall as the tallest, so the
