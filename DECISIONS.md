@@ -7754,6 +7754,84 @@ to a screen reader, as the line chart is; the legend's words are what it reads o
 
 **Reversible:** yes: the component goes, and an app draws its own again.
 
+## D-137 A phone lays its views out as CSS does: Taffy, text measured by the platform
+
+**Status.** Built (2026-11-28).
+
+**Context.** The Android host (D-063) laid its views out with nested `LinearLayout`s: blocks stacked,
+a flex box was a row, nothing wrapped, there was no grid, no positioning, no inline formatting, and
+margins collapsed only between siblings. Its CSS knew type, class and id selectors, descendant and
+child combinators, and a few dozen properties. A real app (a large one: sixteen pages, a design
+system of about forty components) uses `display` four hundred times, `gap`, padding and margin
+hundreds, `grid-template-columns` fifty, `position` sixty, `flex-wrap`, `overflow`, `transform`,
+`box-shadow`, `line-height`, `white-space`, `:has()`, `:not()`, attribute selectors, custom
+properties everywhere and `@media` on width for its phone layouts. DESIGN.md (§5, §6.2, §6.3)
+planned Taffy, text measured by the platform, and a CSS subset checked at build time.
+
+**Options.**
+1. Keep the platform's layouts (LinearLayout, ConstraintLayout) and map CSS onto them.
+2. Taffy over a tree mirroring the projected views, the CSS resolved in `native/core` at run time,
+   text measured by the platform through Taffy's measure function; the views placed absolutely.
+3. As 2, with the CSS compiled to a table at build time (DESIGN §6.2).
+
+**Decision.** 2, the build-time table left for later (parsing a large app's 150 KB sheet takes about
+10 ms on the phone, once):
+
+- **CSS** (`css.rs`, `values.rs`): selectors with the four combinators, `:not()`, `:is()`,
+  `:where()`, `:has()`, the `-child` and `-of-type` pseudo-classes, attributes, `:disabled`,
+  `:checked`, `:focus`/`:focus-visible`/`:focus-within` from the native focus, `:empty`, `::before`
+  and `::after` with their `content`; a rule index by id, class and tag; the cascade with
+  `!important` and the `style` attribute; shorthands expanded after `var()`; `@media` (a phone's
+  answers), `@supports`, `@layer`, `@container` against the screen; every length unit, `calc()`
+  kept when it has a percentage, every colour syntax with `color-mix()`; a user-agent sheet close
+  to the HTML spec's. What isn't done warns once, as D-063 said.
+- **Boxes** (`native.rs`): projected by `display`, as CSS makes boxes: a block of inline content is
+  one text view of styled runs (a link's run tappable on its own); an inline box among text makes
+  its block a line, a flex row that wraps (CSS's line boxes approximated); `display: contents`,
+  pseudo-elements, list markers; absolute views drawn in their containing block's view, fixed ones on
+  a layer over the scrolling page, siblings by `z-index`; `overflow: auto`/`scroll` a native scroll
+  view.
+- **Layout** (`layout.rs`): Taffy 0.16 on a tree of the engine's own kept between flushes (its
+  `calc()` resolved, aspect-ratio for flex and grid boxes given a width, a flex box's fit-content,
+  `order`, which Taffy hasn't), text measured by the platform (`Platform::measure`: Android's
+  `StaticLayout` over JNI, cached by version and width), the screen's size from the activity.
+- **Ops**: a render applies its views' changes, lays them out, then sends their frames: `FRAME` (7)
+  and `EXTENT` (8) are new, and the paint and post-layout properties (`style.inset`,
+  `style.transform`, gradients, borders and radii per side and corner, shadows, rings, outlines).
+- **Kotlin**: `Box` (a ViewGroup placing children at their frames, clipping to its corners when its
+  overflow says), `TextBox` (styled runs in a `StaticLayout`, CSS line heights, ellipsis and line
+  clamps, link taps), `CssPaint` (every view's background), scroll views around a content box,
+  sticky views moved as the scroll goes, the screen's size told to the host.
+- **Incremental**: the document notes when each node, and anything in it, changed; a render with
+  nothing changed is skipped, and one with changes takes again the views of every element whose
+  subtree, siblings' attributes and parent's styles didn't change.
+- **`on:viewport`** runs: its handler told its element's scroll and size after each layout that
+  changed them, as runtime.js tells it.
+- **Tested:** cargo tests (selectors, the cascade, media and pseudo-elements; lengths, colours,
+  gradients, shadows, transforms, calc; CSS to Taffy; block, flex, grid and absolute layouts;
+  aspect-ratio; a field and its button sharing a wrapping row; a flex item's long text fitting its
+  room; text runs; displays and their boxes; incremental projection, a `:has()` left of the subject;
+  a 1,204-view page's timing); a large app's landing, sign-in and eight members pages on the emulator
+  compared with Chromium at 412 px; examples/pomodoro and phone-hello, each with its server.
+- **Docs:** spike/native-apps/README.md (CSS and layout, how it runs, measurements, gaps),
+  DESIGN.md (§3, §6.3, §13, §16), DECISIONS.md.
+
+**Why.** Taffy implements block, flex and grid from the specs, so an app's CSS means on a phone what
+it means in a browser, with the platform's own text, fields, scrolling and accessibility; a
+LinearLayout mapping would have been a second layout engine of our own, worse at each. Absolute
+placement keeps the applier small and the layout in `native/core`, where iOS gets it too. Measuring
+by the platform keeps the drawn text the measured text.
+
+**Costs.** Two layout engines (Chromium's and Taffy's) and two text engines: an app's text wraps
+where its fonts do (Roboto against a Mac's SF). CSS's line boxes are approximated (a text beside an
+inline box wraps as one piece), as are sticky (top only) and baselines; transitions, animations,
+filters, `@font-face` and dark mode wait. The APK grows about 0.85 MB (Taffy and its CSS parser).
+The projection is the engine's own, kept in step with runtime.js's DOM by the conformance suite
+(DESIGN §12) still to come.
+
+**Reversible:** yes: the projection can go back to sending properties alone and the applier to
+LinearLayouts; the CSS module stands on its own.
+
 ## D-138 A phone app navigates as the browser does: the page's document, its own history, a cookie jar
 
 **Status.** Built (2026-11-28).

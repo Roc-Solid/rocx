@@ -27,15 +27,18 @@ spike/native-apps/phone-hello/routes/+page.rocx
   server and run again, actions and submissions, timers, titles. It builds a document of its own,
   as the browser builds the DOM (`src/dom.rs`: elements, text, the comment pairs that mark a hole's
   range, fragments), so it can follow runtime.js step by step. After each flush the document is
-  projected onto native views and compared with what was sent last (`src/native.rs`): one batch of
-  ops a flush. A CSS subset (`src/css.rs`) resolves the page's stylesheet into the views'
-  properties. An HTTP/1.1 client (`src/http.rs`) asks the server on threads of its own, with a
+  projected onto native views and compared with what was sent last (`src/native.rs`), laid out by
+  Taffy (`src/layout.rs`, D-137), and what changed sent as ops. The page's CSS (`src/css.rs`,
+  `src/values.rs`) is resolved as a browser resolves it, for the subset a phone does (below, CSS and
+  layout). An HTTP/1.1 client (`src/http.rs`) asks the server on threads of its own, with a
   cookie jar (`src/cookies.rs`); navigation (`src/nav.rs`) and live updates (`src/live.rs`) are
   runtime.js's, on a phone (below, Pages, sessions and the server).
 - **`native/android`**: the Android half in Rust (`src/lib.rs`: `JNI_OnLoad`, `Rocx.start` and
   `Rocx.send`, the main looper's wake pipe, logcat), and the Kotlin shell (`app/`): one activity, and
-  an applier that walks a batch of ops into Android views (a box is a `LinearLayout`, text a
-  `TextView`, `<button>`, `<input>` and checkboxes the platform's own). `build.sh` builds an app's
+  an applier that walks a batch of ops into Android views (a box is a `Box`, a ViewGroup that puts
+  each child at the frame the host's layout gave it; a block's text a `TextBox`, its styled runs
+  drawn by a `StaticLayout`; every view's CSS paint a `CssPaint`; fields and checkboxes the
+  platform's own). `build.sh` builds an app's
   APK, or the dev client.
 - **`native/android-dev`** and **`rocx dev --android`**: the dev mode (below). The dev client is the
   same shell with the host as `libhost.so` and no app in it; it loads each build `rocx dev` makes.
@@ -246,11 +249,14 @@ The user's choice (2026-11-23): native code for the app's Roc, no over-the-air u
   what runtime.js does with `NotReady`: the nearest `<Loading>` shows its fallback, and the
   computation runs again once the answer is in. A handler that waits (`Endpoint.send!`) has its
   writes dropped and runs again with the answer, so the POST is typed end to end.
-- **One JNI call a flush.** The engine projects its document onto views after each flush and sends
-  only what changed, as bytes, to `Rocx.apply`. A batch: `CREATE id kind tag`, `SET id key value`,
-  `CHILDREN id [ids]`, `DESTROY id`, `ROOT id`, `TITLE text` (`native/core/src/native.rs`). A `<p>`
-  whose content is text is one `TextView`, its whitespace collapsed as CSS does; text beside blocks
-  gets an anonymous `TextView`. The mount sends 2,975 bytes for 15 views.
+- **Two JNI calls a flush.** The engine projects its document onto views after each flush and sends
+  only what changed, as bytes, to `Rocx.apply`: `CREATE id kind tag`, `SET id key value`,
+  `CHILDREN id [ids]`, `DESTROY id`, `ROOT id`, `TITLE text` (`native/core/src/native.rs`). Then it
+  lays the views out (D-137: Taffy, the text measured by the applier, `Rocx.measure`) and sends
+  their frames: `FRAME id x y w h` and, for what scrolls, `EXTENT id w h` (dp). A block of inline
+  content is one text view of styled runs; text beside blocks gets an anonymous one (below, CSS and
+  layout). A render with nothing changed since the last is skipped, and one with changes takes
+  again the views of what didn't change.
 - **Events** come back as `(id, name, value)`: a tap is `click`, typing is `input` with the field's
   text, the keyboard's done key `keydown Enter`, focus and blur, a checkbox's `click` and `change`.
   They bubble up the engine's document as the DOM's do, and a tap on a form's submit button submits
@@ -319,7 +325,8 @@ All of it in [evidence/](evidence/), made by `evidence/run.sh` and `evidence/web
 | ![](evidence/05-post-refused.png) | `05-post-refused.png`: the field emptied and sent again: the server's 422, as the typed answer's `Err`. |
 
 - `evidence/uiautomator.xml` and `views.txt`: the hierarchy is `ScrollView`, `LinearLayout`,
-  `TextView`, `Button` and `EditText`, all `android.widget.*`; no WebView.
+  `TextView`, `Button` and `EditText`, all `android.widget.*`; no WebView. (Since D-137 a box is the
+  shell's `Box` and text its `TextBox`, which says it is a `TextView` to accessibility.)
 - `evidence/apk-contents.txt`: the APK holds `classes.dex` (the shell, and what R8 keeps of
   Kotlin's library) and `lib/arm64-v8a/libapp.so`, which needs only `libc`, `libm`, `libdl`,
   `liblog` and `libandroid`, exports only JNI, and has no JS engine's symbols; no class uses
@@ -395,25 +402,92 @@ The `viewBox` is fitted and centred (`xMidYMid meet`); with no height of its own
 as the viewBox's shape at its width. Gradients and patterns (drawn as none), `<use>`, clipping,
 masks, `<image>` and `<foreignObject>` warn once and are left out.
 
-## CSS
+## CSS and layout (D-137)
 
-The design compiles CSS at build time; the spike reads the stylesheet the page carries (rocx's
-scoped `Generated/Styles`: a `<style>`, or, since D-040, a `<link>` to its file, which the host asks
-the server for, as a browser does, its first frame waiting for it), after a phone user-agent sheet (h1–h6, p, lists,
-strong, em, small, a). Selectors: type, class, id, `*`, `:root`, `:global()`, `:where()` and `:is()`
-of one compound (rocx's scoped styles put the scope's class in a `:where()`), descendant and child.
-Properties: `display` (none; flex as a row or a column; the rest a column), `flex-direction`, `gap`,
-`padding`, `margin` (collapsed between a column's children), colours and backgrounds, `font-size`,
-`font-weight`, `font-style`, `text-align`, `text-transform`, `font-variant-numeric: tabular-nums`,
-`border-radius`, `border`, `width`, `height` and their `min-`/`max-`, `opacity`, `align-items` (a
-flex column's other than `stretch` makes its children as wide as what they hold, as CSS's does),
-`justify-content`, custom properties and `var()`, and an `<svg>`'s paint (above); px, rem, em and pt,
-and percentages for the sizes (of the box's content, made a size once the box is measured:
-`Box.kt`, as androidx's percent layouts did; with nothing to be a percentage of, a height in the
-scrolling screen, the view's own size); `@media` on width and colour scheme. The `html`'s
-background, or else the `body`'s, fills the screen, as CSS paints the canvas. Anything else (a property, a pseudo-class, an
-at-rule) is warned of once, `rocx: CSS … isn't on phones yet: ignored`, in logcat and, at build
-time, by `build.sh` (`phone: …`), and never fails the build: the user's answer to question 1.
+The design compiles CSS at build time; the phone reads the stylesheets the page carries (rocx's
+scoped `Generated/Styles`, a `<link>` to its file since D-040, and an app's own `<link>`s, which the
+host asks the server for as a browser does, its first frame waiting for them), after a phone
+user-agent sheet close to the HTML spec's (`native/core/src/css.rs`: displays, headings, paragraphs,
+lists and their markers, `button`, `input` and `textarea` as Chromium draws them unstyled, `details`).
+
+**Selectors**: type, class, id, `*`, attributes (`[x]`, `=`, `~=`, `|=`, `^=`, `$=`, `*=`, ` i`), all
+four combinators, `:not()`, `:is()`, `:where()`, `:has()`, `:root`, `:empty`, `:first-child`,
+`:last-child`, `:only-child`, `:nth-child(An+B of S)` and the `-of-type` kin, `:disabled`,
+`:enabled`, `:checked` (a checkbox's tapped state too), `:focus`, `:focus-visible` and
+`:focus-within` (the native focus), `:link`, `:open`, `:placeholder-shown`, `:required`;
+`::before` and `::after` (their `content`, strings and `attr()`: a run of their element's text, or a
+view of their own when positioned, a block or shaped by their CSS), `::placeholder` (a field's hint
+colour) and `::marker`. `:hover` and `:visited` match nothing; other pseudo-elements
+(`::view-transition-*`, `::selection`) drop their rule quietly. The cascade: specificity, order,
+`!important`, the `style` attribute; shorthands expanded after `var()`; inheritance (a unitless
+`line-height` inherited as a number, an `em` one as px). At-rules: `@media` (width, height,
+orientation, colour scheme, reduced motion, hover and pointer as a phone's), `@supports`, `@layer`
+(its rules in place), `@container` (against the screen's width). Values: px, rem, em, %, vw/vh and
+their `s`/`l`/`d` kin, vmin/vmax, ch, ex, pt…, `calc()`, `min()`, `max()`, `clamp()` (kept as an
+expression when a percentage is in it, resolved by Taffy against its basis), colours (hex, `rgb()`,
+`hsl()`, `hwb()`, `oklab()`, `oklch()`, named, `color-mix()`, `light-dark()`), gradients, shadows,
+transforms.
+
+**Boxes** (`native.rs`'s projection, as CSS makes boxes of the DOM): an element's `display` says what
+it is. A block, or a flex or grid item, is a view; one whose content is all inline (text, `span`,
+`strong`, `a`…) is one **text view** (Kotlin's `TextBox`, a `StaticLayout`) whose runs carry their
+colour, weight, size, family, letter spacing, decoration and background, and a link's (or a tappable
+element's) run sends `click` to that element when tapped; whitespace collapses across runs as
+`white-space` says. Inline content beside blocks gets an anonymous text view. An inline box among
+text (`inline-block`, `inline-flex`, an `<svg>`, an image, a field, a button) makes its block a
+**line**: a flex row that wraps, its inline boxes and the text between them its items (CSS's line
+boxes, approximated: a text beside a box wraps as one piece). `display: contents` gives its children
+to its parent; `display: none` and a closed `<details>`'s content are nothing; `<button>`s are
+styled views (the UA sheet's look, the app's CSS over it), not Android `Button`s.
+
+**Layout** (`layout.rs`): Taffy 0.16 lays the views out (block with margin collapsing, flex with
+wrapping, grid with `repeat()`, `minmax()`, `auto-fill`, areas, line names and placement, absolute
+and fixed boxes against their containing blocks, `aspect-ratio`, min/max sizes, `box-sizing`,
+`overflow`), on a tree of the engine's own kept between flushes, so only what changed is laid out
+again. Text is measured by the platform through Taffy's measure function (Android: the text view's
+own `StaticLayout`, over JNI, at a width, at its widest or narrowest; cached by the text's version
+and width; the Mac runner: a rough monospace measure). Where Taffy and CSS part, the engine's tree
+follows CSS: a flex or grid box's `aspect-ratio` for a width given from outside, a flex box's
+fit-content width (no wider than its room unless its narrowest is), `order` (the items sorted), a
+replaced element's percentage size adding nothing to its container's intrinsic size. The screen's
+size comes from the activity (`Rocx.viewport`, from its insets, again on a rotation): media queries
+and viewport units follow.
+
+**Scrolling**: the page scrolls (the activity's `ScrollView`, the root view as tall as the page); an
+element with `overflow: auto` or `scroll` on an axis is a native `ScrollView` or
+`HorizontalScrollView` (both, nested) around a box of its content's size (`EXTENT`), nested
+scrolling on; its scroll is sent (`scroll` events) when something listens. `position: fixed` views
+sit on a layer over the page that doesn't scroll; `position: sticky` keeps its `top` from its scroll
+view's edge within its parent, moved by the applier as the scroll goes. `on:viewport` handlers are
+told their element's scroll and size after each layout that changed them (a header that packs what
+doesn't fit into "More" does).
+
+**Paint** (Kotlin's `CssPaint`, every view's background): a colour, gradient layers (linear with an
+angle or a side, radial with its centre and size, conic), borders per side (width, colour; dashed and
+dotted), radii per corner (px or a percentage), the first outer `box-shadow` (a blurred shadow
+around the box), an inset one drawn as a ring inside it (`inset 0 0 0 2px`), `outline` (with its
+offset; `:focus-visible`'s), `opacity`, `visibility`, `overflow` clipping to the corners,
+`transform` (translate, scale and rotate, percentages of the box, about `transform-origin`, as the
+view's properties), `z-index` (siblings drawn in its order, positioned ones over the rest),
+`clip-path: inset(50%)` (a visually hidden element's) as nothing. The canvas: the `html`'s
+background, or else the `body`'s, under the whole screen; the system bars' icons dark on a light one.
+**Fonts**: the system's sans (Roboto), serif and monospace for a `font-family` list
+(`ui-monospace`, `Menlo`… monospace; `serif`, `Georgia`… serif; the rest sans).
+
+Anything else (a property, a pseudo-class, an at-rule) is warned of once, `rocx: CSS … isn't on
+phones yet: ignored`, in logcat and, at build time, by `build.sh` (`phone: …`), and never fails the
+build: the user's answer to question 1. Not warned of, as a phone has no use for them: `cursor`,
+`user-select`, `transition` and `animation` (which wait: below), scrollbars, `will-change` and the
+like.
+
+Compared with Chromium at 412 px (`--es snapshot <ms>` saves the whole page as the phone draws it,
+at twice its CSS px, to the app's external files, `page.png`): a large app's landing page (5,856 px
+tall on the phone, 5,847 in Chromium), its sign-in page and eight members pages (the board,
+calendar, analytics, accounts, organizations, profile, billing, a new post) match in structure,
+sizes, spacing, colours, wrapping, grids and headers; the differences left are the fonts' (Chromium
+on the Mac has SF Pro Rounded for `ui-rounded`, a phone Roboto, a little wider, so a line can break
+a word earlier), the checkboxes and radios (the platform's own, D-139's), and the page's timed
+animations. examples/pomodoro and phone-hello look as they do in Chromium.
 
 ## Measurements
 
@@ -434,6 +508,17 @@ host's GPU.
 | A tap to the screen patched | 0.14–0.60 ms (the handler, the flush, the ops applied; logcat `tap on #…`); a "Send" that starts a request up to 2.4 ms |
 | On the Mac (`native/mac`, a debug build) | mounted in 1.3–2.5 ms |
 
+D-137's, on the emulator (`rocx:` lines in logcat give each render's times), against a large app's
+dev server:
+
+| | |
+|---|---|
+| APK | about 8.5 MB for the large app; the host grew about 0.85 MB with Taffy and its CSS parser (phone-hello's APK: 2.0 MB) |
+| Its landing page (340 views), first frame | 64–72 ms after `onCreate`, its document fetched and its two stylesheets read: the first styled render projected in 5.7–9 ms, its 40 KB of ops applied in 2–4.5 ms, laid out in 4–6 ms (text measured by `StaticLayout`), its 10–12 KB of frames applied in 1 ms |
+| A tap to the screen patched | 1.8–3.8 ms (a segmented control's link on the analytics page: the handler, a render that projects the changed part, its layout); examples/pomodoro's Start 0.9 ms |
+| A render with nothing changed | skipped (0.01 ms) |
+| A page of 1,204 views (a test: `cargo test --release -p rocx-native-core thousand -- --ignored --nocapture`, on the Mac) | first render 25 ms (projection 20 ms, layout 3.3 ms), again with nothing it comes from changed about 1 ms |
+
 ## Gaps and next steps
 
 1. **Phase 0's conformance suite.** The engine is a port of runtime.js, checked only on this screen
@@ -445,10 +530,17 @@ host's GPU.
    made (`native/mac` says `notes kept: 0` after a run). A list's rows' nodes are freed too
    (spike/wasm-engine's round 2); other nodes taken off the engine's document stay in its arena,
    and every request's answer stays in its table.
-3. **Layout.** `LinearLayout`s, not Taffy: blocks stack, a flex box is a row, margins collapse
-   between siblings only. Inline blocks don't share a line (the field and "Send" do in a browser,
-   not here), and grid, positioning and wrapping aren't there (percentage sizes are, `Box.kt`). Taffy (the design's)
-   is the next step for any second screen.
+3. **Layout's gaps** (D-137). Text beside an inline box wraps as one piece (a line is a flex row,
+   not CSS's line boxes), with no space where the markup's whitespace sits between two inline boxes;
+   `vertical-align` and baselines aren't kept (a line's items are centred); floats, tables (rows are
+   flex rows, cells share them), `column-count`, `@font-face` (the system's fonts stand in), dark
+   mode (`prefers-color-scheme` is light), `:active` (no pressed state but the applier's), the
+   `transition`s and `animation`s (properties change at once), `filter`, `backdrop-filter`,
+   `clip-path` but `inset(50%)`, `background-image: url()`, more than one outer `box-shadow` (the
+   first is drawn), `text-shadow`, `text-indent`, `hyphens`, `overflow-wrap: normal` (Android breaks
+   a word that doesn't fit) and a `:has()` left of a rule's subject reprojecting all its element
+   holds. `position: sticky` keeps a top edge only. The projection is incremental, the CSS still
+   parsed on the phone (a 150 KB sheet in about 10 ms, again on a rotation).
 4. **CSS at build time.** Parsed on the phone now; the design's build-time table (and `rocx check
    --android`) gives file and line to each warning.
 5. **The server over HTTP.** Plain `http://` only (keep-alive, cookies, redirects and streams are
@@ -465,8 +557,9 @@ host's GPU.
    (above) reloads in about a second, on USB and Wi-Fi, each a fresh start; next: the server's
    restart off the reload's path, and the page's APK
    copied again when the dev client is rebuilt while rocx dev runs (it is copied at start).
-8. **Controls.** Images, `select`, `textarea` sizes, dark mode, accessibility roles, the
-   keyboard's other keys (only Enter), `on:submit` from the keyboard.
+8. **Controls.** Images, `select`, `textarea` sizes, checkboxes and radios drawn as their CSS says,
+   accessibility roles, the keyboard's other keys (only Enter), `on:submit` from the keyboard
+   (D-139's).
 9. **Typing.** Once, `adb shell input text` typed while the keyboard was still starting gave a
    doubled first letter ("hhello"); with the keyboard up it never did. Whether that is adb and
    Gboard or the applier isn't settled (a plain `EditText` app would tell).
