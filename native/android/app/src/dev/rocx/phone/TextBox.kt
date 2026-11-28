@@ -95,17 +95,21 @@ open class TextBox(context: Context, private val density: Float) : View(context)
     /** The element a run's tap goes to. */
     private class LinkSpan(val target: Long)
 
-    /** CSS's line-height: each line this tall, the extra split above and below. */
-    private class LineHeight(val height: Int) : LineHeightSpan {
+    /**
+     * CSS's line-height: each line this tall (`height` px), or (`scale`, a unitless line-height)
+     * its biggest run's size times it; the extra split above and below.
+     */
+    private class LineHeight(val height: Int, val scale: Float = 0f) : LineHeightSpan {
         override fun chooseHeight(text: CharSequence, start: Int, end: Int, spanstartv: Int, lineHeight: Int, fm: Paint.FontMetricsInt) {
+            // The line's own metrics come again for each line, as this left them on the last: the
+            // font's top and bottom, which this leaves alone, say its size (Roboto's span 1.327 of it).
+            val want = if (scale > 0f) Math.round((fm.bottom - fm.top) / 1.327f * scale) else height
             val have = fm.descent - fm.ascent
-            if (have <= 0) return
-            val extra = height - have
+            if (have <= 0 || want <= 0) return
+            val extra = want - have
             val above = Math.floorDiv(extra, 2)
             fm.ascent -= above
             fm.descent += extra - above
-            fm.top = fm.ascent
-            fm.bottom = fm.descent
         }
     }
 
@@ -142,7 +146,10 @@ open class TextBox(context: Context, private val density: Float) : View(context)
                 Rocx.say(android.util.Log.ERROR, "text: runs that aren't JSON: ${failure.message}")
             }
         }
-        props["style.lineHeight"]?.toFloatOrNull()?.let { line ->
+        val scale = props["style.lineScale"]?.toFloatOrNull()
+        if (scale != null) {
+            out.setSpan(LineHeight(0, scale), 0, out.length, Spanned.SPAN_INCLUSIVE_INCLUSIVE)
+        } else props["style.lineHeight"]?.toFloatOrNull()?.let { line ->
             out.setSpan(LineHeight(px(line).roundToInt()), 0, out.length, Spanned.SPAN_INCLUSIVE_INCLUSIVE)
         }
         spanned = out
@@ -229,6 +236,8 @@ open class TextBox(context: Context, private val density: Float) : View(context)
         }
         val layout = laid ?: return
         canvas.save()
+        // `overflow` other than visible: what doesn't fit is cut at the view's edges.
+        if (props["style.clip"] == "true") canvas.clipRect(0, 0, this.width, this.height)
         val dx = if (nowrap && layout.width > width) when (alignment()) {
             Layout.Alignment.ALIGN_CENTER -> (width - layout.width) / 2f
             Layout.Alignment.ALIGN_OPPOSITE -> (width - layout.width).toFloat()

@@ -316,6 +316,9 @@ pub fn event(id: u64, name: &str, value: &str) {
             return;
         }
         native::note(node, name);
+        if name == "scroll" {
+            native::scrolled(node, value);
+        }
         engine::dispatch(node, name, value);
     }
     pump();
@@ -361,7 +364,23 @@ pub fn pump() {
         platform.scroll_to(x, y);
     }
     live::reconcile();
+    // `on:viewport` (D-137): what the layout found changed, told, and the screen made again (a
+    // few rounds at most, as a browser's ResizeObserver loop stops).
+    let told = native::viewports();
+    if !told.is_empty() {
+        let depth = VIEWPORT_ROUNDS.fetch_add(1, Ordering::Relaxed);
+        if depth < 4 {
+            for (node, value) in told {
+                engine::fire(node, "viewport", &value);
+            }
+            pump();
+        }
+        VIEWPORT_ROUNDS.fetch_sub(1, Ordering::Relaxed);
+    }
 }
+
+/// How deep `on:viewport`'s rounds of pumps are.
+static VIEWPORT_ROUNDS: AtomicU64 = AtomicU64::new(0);
 
 /// A timer's thread: posts `Fired(id)` after `ms`, or every `ms`, until `stop`.
 pub(crate) fn timer(id: u64, ms: u64, repeat: bool, stop: Arc<AtomicBool>) {

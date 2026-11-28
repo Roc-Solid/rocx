@@ -119,6 +119,8 @@ What doesn't exist yet:
 - Client-side navigation: D-040 is Proposed, not built (§8 needs only part of it). *(Since built in
   the browser; on phones since D-138: §8.)*
 - Anything that turns markup into native views, lays it out, or resolves CSS outside a browser.
+  *(Since D-137 on phones: CSS resolved by `native/core/src/css.rs`, the views laid out by Taffy:
+  §6.3.)*
 
 ## 4. The shape
 
@@ -245,6 +247,14 @@ through Taffy's measure function, with a cache. A block with both inline and blo
 anonymous blocks, as CSS gives it. An `inline-block` in the middle of a line of text is the one hard
 case; at first it breaks the line, and the build reports it.
 
+> **Status (2026-11-28, D-137):** built so on Android, with an `inline-block` among text handled
+> otherwise: its block becomes a line, a flex row that wraps (the inline boxes and the text between
+> them its items), which keeps badges, icons and buttons on one line with their text. Taffy 0.16 on a
+> tree of the engine's own (its `calc()` resolved, `aspect-ratio` and fit-content where Taffy's flex
+> misses them, `order` by sorting the items); text measured by `StaticLayout` over JNI; absolute
+> boxes drawn in their containing block's view and fixed ones on a layer over the scrolling page; a
+> render projects again only what changed (README.md, CSS and layout).
+
 ### 6.4 SVG
 
 Icons, rings and small charts draw as one native vector view each, from the `<svg>`'s subtree (with
@@ -362,8 +372,10 @@ name fails as the web's does, saying which plugin's native half it needs.
 
 **Since (2026-11-28):** the Android host navigates (D-138: links, `navigate!`, back, guards and
 redirects through the page's document, a cookie jar, forms' redirects, keep-alive) and updates live
-(D-140: `listen!`, channels), checked against a large app's dev server on the emulator; Taffy's
-layout is D-137's.
+(D-140: `listen!`, channels), checked against a large app's dev server on the emulator; and lays its
+views out as CSS does (D-137: Taffy for block, flex, grid and positioned boxes, text measured by the
+platform, native scroll views, the CSS subset of §6.2 at run time), its pages looking as Chromium
+shows them at a phone's width.
 
 **Built (2026-11-23): the Android spike**, ahead of phase 0, at the user's request (Android first,
 one simple screen, typed calls to the server). It took from phase 0 the engine (`native/core`, all
@@ -444,9 +456,10 @@ Where the Android spike (README.md) went otherwise than this design, and why:
   batch sent, which says `CREATE`, `SET`, `CHILDREN` (a box's children, in order), `DESTROY`,
   `ROOT`, `TITLE`. The projection is where "a `<p>` is one text view" lives, in one function, and
   the applier stays small. Every view is made before any `CHILDREN` names it.
-- **No Taffy yet.** One screen needs only a column of blocks: `LinearLayout`s, with CSS's margin
-  collapsing between siblings done by the applier. Taffy is still the plan for flex, grid and
-  inline blocks sharing a line.
+- **No Taffy at first.** One screen needed only a column of blocks: `LinearLayout`s, with CSS's
+  margin collapsing between siblings done by the applier. *(D-137 brought Taffy: a render sends its
+  views' changes, lays them out, then sends their frames, `FRAME` and `EXTENT`, which a `Box`
+  ViewGroup places as they say.)*
 - **CSS read on the phone.** The page carries its stylesheet (`Generated/Styles`, in a `<style>`),
   so the spike resolves it there, after a phone user-agent sheet, and warns once of what it ignores;
   `build.sh` mounts the app on the Mac to print those warnings at build time. The build-time table

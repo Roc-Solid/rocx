@@ -861,6 +861,35 @@ pub fn shadow(value: &str, current: Argb, ctx: Ctx) -> Option<String> {
     None
 }
 
+/// The first inset shadow of a `box-shadow`, as a ring inside the box (a border drawn with a
+/// shadow, `inset 0 0 0 2px`): `width #AARRGGBB`, its width the spread (or half its blur).
+pub fn inset_shadow(value: &str, current: Argb, ctx: Ctx) -> Option<String> {
+    for layer in split(value, Some(',')) {
+        let words = split(&layer, None);
+        if !words.iter().any(|word| word.eq_ignore_ascii_case("inset")) {
+            continue;
+        }
+        let mut lengths = Vec::new();
+        let mut color = 0x40000000u32 | (current & 0x00ffffff);
+        for word in words.iter().filter(|word| !word.eq_ignore_ascii_case("inset")) {
+            match px(word, ctx) {
+                Some(px) => lengths.push(px),
+                None => {
+                    if let Some(found) = colour(word, current) {
+                        color = found;
+                    }
+                }
+            }
+        }
+        let at = |i: usize| lengths.get(i).copied().unwrap_or(0.0);
+        let width = if at(3) > 0.0 { at(3) } else { at(2) / 2.0 };
+        if width > 0.0 && color >> 24 != 0 {
+            return Some(format!("{width:.1} {}", argb(color)));
+        }
+    }
+    None
+}
+
 /// A transform, as the parts a view's properties can show: a translation (lengths, or
 /// percentages of the box's own size), a scale and a rotation.
 #[derive(Clone, Debug, Default, PartialEq)]

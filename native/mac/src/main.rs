@@ -158,6 +158,17 @@ fn main() {
                 core::viewport(width, 915.0);
             }
             "boxes" => print!("{}", core::native::boxes()),
+            // The screen rendered again `n` times, nothing changed: what a flush's projection,
+            // diff and layout cost.
+            "bench" => {
+                let n: u32 = value.parse().unwrap_or(50);
+                let started = Instant::now();
+                for _ in 0..n {
+                    core::native::invalidate();
+                    core::pump();
+                }
+                println!("{n} renders: {:.2} ms each", started.elapsed().as_secs_f64() * 1000.0 / n as f64);
+            }
             "time" => println!("laid out in {:.2} ms", core::native::last_layout_ms()),
             // A view by its id (`show` prints them): `at:<id>` taps it, `at:<id>=<text>` types into it.
             "at" => {
