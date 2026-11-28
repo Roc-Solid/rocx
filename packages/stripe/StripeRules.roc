@@ -158,8 +158,13 @@ StripeRules := [].{
 		}
 	}
 
-	## A price a subscription or a checkout is for, its product, and how many.
-	Item : { price : Str, product : Str, quantity : U64 }
+	## A price a subscription is for, its product, and how many; and the price as it was when the
+	## subscription was read: what one costs in the currency's smallest unit (`unit_amount`, 499 for
+	## $4.99) and its currency, how often it is charged (`interval`: `day`, `week`, `month` or
+	## `year`, every `interval_count` of them; "" and 0 for a one-time price), and its lookup key
+	## ("" for none). A subscription keeps the price it was made with, so these say what this one
+	## pays, even once its lookup key has moved to a new price.
+	Item : { price : Str, product : Str, quantity : U64, unit_amount : I64, currency : Str, interval : Str, interval_count : U64, lookup_key : Str }
 
 	## A subscription as its object says (times in seconds since 1970, 0 for none): its id
 	## (`sub_…`), its customer, its status as Stripe writes it (`active`), its items, when its period
@@ -182,13 +187,30 @@ StripeRules := [].{
 			id: id,
 			customer: StripeRules.id_at(json, ["customer"]),
 			status: StripeRules.text(json, ["status"]),
-			items: listed.map(|item| { price: StripeRules.id_at(item, ["price"]), product: StripeRules.id_at(item, ["price", "product"]), quantity: StripeRules.int(item, ["quantity"]).to_u64_wrap() }),
+			items: listed.map(StripeRules.subscription_item),
 			current_period_end: if (own != 0) own else ends.fold(0, |most, each| if (each > most) each else most),
 			cancel_at_period_end: StripeRules.bool(json, ["cancel_at_period_end"]),
 			cancel_at: StripeRules.int(json, ["cancel_at"]),
 			trial_end: StripeRules.int(json, ["trial_end"]),
 			user: StripeRules.text(json, ["metadata", StripeRules.user_key]),
 		})
+	}
+
+	## A subscription item as its object says (`items.data[]`), its price's object in it as Stripe
+	## sends it; a price given by its id alone says only that.
+	subscription_item : Str -> StripeRules.Item
+	subscription_item = |json| {
+		price = |path| ["price"].concat(path)
+		{
+			price: StripeRules.id_at(json, ["price"]),
+			product: StripeRules.id_at(json, price(["product"])),
+			quantity: StripeRules.int(json, ["quantity"]).to_u64_wrap(),
+			unit_amount: StripeRules.int(json, price(["unit_amount"])),
+			currency: StripeRules.text(json, price(["currency"])),
+			interval: StripeRules.text(json, price(["recurring", "interval"])),
+			interval_count: StripeRules.int(json, price(["recurring", "interval_count"])).to_u64_wrap(),
+			lookup_key: StripeRules.text(json, price(["lookup_key"])),
+		}
 	}
 
 	## A Checkout Session as its object says: its id (`cs_…`), its mode (`payment`, `subscription`,
@@ -596,15 +618,17 @@ expect StripeRules.event("{\"id\":\"evt_1\"}").is_err()
 # ---- objects, from two API versions ----
 # 2025-03-31.basil: the period's end is each item's.
 basil : Str
-basil = "{\"id\":\"sub_1\",\"object\":\"subscription\",\"customer\":\"cus_1\",\"status\":\"active\",\"cancel_at_period_end\":true,\"cancel_at\":1702592000,\"trial_end\":null,\"metadata\":{\"app_user_id\":\"u1\"},\"items\":{\"object\":\"list\",\"data\":[{\"id\":\"si_1\",\"current_period_end\":1702592000,\"price\":{\"id\":\"price_pro\",\"product\":\"prod_pro\",\"unit_amount\":900},\"quantity\":2}]}}"
+basil = "{\"id\":\"sub_1\",\"object\":\"subscription\",\"customer\":\"cus_1\",\"status\":\"active\",\"cancel_at_period_end\":true,\"cancel_at\":1702592000,\"trial_end\":null,\"metadata\":{\"app_user_id\":\"u1\"},\"items\":{\"object\":\"list\",\"data\":[{\"id\":\"si_1\",\"current_period_end\":1702592000,\"price\":{\"id\":\"price_pro\",\"product\":\"prod_pro\",\"unit_amount\":900,\"currency\":\"eur\",\"recurring\":{\"interval\":\"year\",\"interval_count\":1},\"lookup_key\":\"pro_yearly\"},\"quantity\":2}]}}"
 
 # Before: the subscription's own.
 acacia : Str
 acacia = "{\"id\":\"sub_2\",\"customer\":{\"id\":\"cus_2\",\"object\":\"customer\"},\"status\":\"past_due\",\"current_period_end\":1700000000,\"cancel_at_period_end\":false,\"cancel_at\":null,\"trial_end\":1690000000,\"metadata\":{},\"items\":{\"data\":[{\"price\":{\"id\":\"price_basic\",\"product\":{\"id\":\"prod_basic\"}},\"quantity\":null}]}}"
 
-expect StripeRules.subscription(basil) == Ok({ id: "sub_1", customer: "cus_1", status: "active", items: [{ price: "price_pro", product: "prod_pro", quantity: 2 }], current_period_end: 1702592000, cancel_at_period_end: Bool.True, cancel_at: 1702592000, trial_end: 0, user: "u1" })
-expect StripeRules.subscription(acacia) == Ok({ id: "sub_2", customer: "cus_2", status: "past_due", items: [{ price: "price_basic", product: "prod_basic", quantity: 0 }], current_period_end: 1700000000, cancel_at_period_end: Bool.False, cancel_at: 0, trial_end: 1690000000, user: "" })
+expect StripeRules.subscription(basil) == Ok({ id: "sub_1", customer: "cus_1", status: "active", items: [{ price: "price_pro", product: "prod_pro", quantity: 2, unit_amount: 900, currency: "eur", interval: "year", interval_count: 1, lookup_key: "pro_yearly" }], current_period_end: 1702592000, cancel_at_period_end: Bool.True, cancel_at: 1702592000, trial_end: 0, user: "u1" })
+expect StripeRules.subscription(acacia) == Ok({ id: "sub_2", customer: "cus_2", status: "past_due", items: [{ price: "price_basic", product: "prod_basic", quantity: 0, unit_amount: 0, currency: "", interval: "", interval_count: 0, lookup_key: "" }], current_period_end: 1700000000, cancel_at_period_end: Bool.False, cancel_at: 0, trial_end: 1690000000, user: "" })
 expect StripeRules.subscription("{\"id\":\"in_1\"}").is_err()
+expect StripeRules.subscription_item("{\"price\":\"price_1\",\"quantity\":1}") == { price: "price_1", product: "", quantity: 1, unit_amount: 0, currency: "", interval: "", interval_count: 0, lookup_key: "" }
+expect StripeRules.subscription_item("{\"price\":{\"id\":\"price_2\",\"product\":\"prod_2\",\"unit_amount\":499,\"currency\":\"usd\",\"recurring\":{\"interval\":\"month\",\"interval_count\":3},\"lookup_key\":null},\"quantity\":1}").interval_count == 3
 expect StripeRules.session("{\"id\":\"cs_test_1\",\"mode\":\"payment\",\"status\":\"complete\",\"payment_status\":\"paid\",\"client_reference_id\":\"u1\",\"customer\":\"cus_1\",\"subscription\":null,\"amount_total\":1500,\"currency\":\"eur\",\"url\":null,\"metadata\":{\"app_user_id\":\"u1\",\"order\":\"7\"},\"payment_intent\":\"pi_1\"}") == Ok({ id: "cs_test_1", mode: "payment", status: "complete", payment_status: "paid", user: "u1", customer: "cus_1", subscription: "", amount_total: 1500, currency: "eur", url: "", metadata: [("app_user_id", "u1"), ("order", "7")], payment_intent: "pi_1" })
 expect StripeRules.charge_change("charge.refunded", "{\"id\":\"ch_1\",\"payment_intent\":\"pi_1\",\"refunded\":true,\"amount_refunded\":900}") == Refunded("pi_1")
 expect StripeRules.charge_change("charge.refunded", "{\"id\":\"ch_1\",\"payment_intent\":\"pi_1\",\"refunded\":false,\"amount_refunded\":100}") == Unchanged

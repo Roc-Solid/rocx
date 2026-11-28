@@ -83,8 +83,14 @@ Stripe := [].{
 	## `past_due`, `canceled`, `unpaid` and `paused` say it; `Other` for one Stripe adds later.
 	Status : [Incomplete, IncompleteExpired, Trialing, Active, PastDue, Canceled, Unpaid, Paused, Other(Str)]
 
-	## A price a subscription is for, its product, and how many.
-	Item : { price : Str, product : Str, quantity : U64 }
+	## A price a subscription is for, its product, and how many; and the price as it was when the
+	## subscription was read: what one costs in the currency's smallest unit (`unit_amount`, 499 for
+	## $4.99) and its currency, how often it is charged (`interval`: `day`, `week`, `month` or
+	## `year`, every `interval_count` of them), and its lookup key ("" for none). A subscription
+	## keeps the price it was made with, so these say what this one pays, even once the lookup key
+	## has moved to a new price (`price!`). A row kept before the package read them has 0 and "" until
+	## Stripe's next event about it.
+	Item : { price : Str, product : Str, quantity : U64, unit_amount : I64, currency : Str, interval : Str, interval_count : U64, lookup_key : Str }
 
 	## A subscription, as the package keeps it: its id (`sub_…`), the app's user and the customer
 	## it is for, its status, its items, when its period ends (when it renews, or ends), whether it
@@ -620,6 +626,23 @@ prices_of = |json| {
 	read ?? []
 }
 
+## The items a subscription's row keeps (JSON); none when they can't be read. A row kept before
+## the items said their price's terms has only the price, the product and how many: the rest is 0
+## and "" until Stripe's next event about the subscription writes the row again.
+items_of : Str -> List(Stripe.Item)
+items_of = |json| {
+	read : Try(List(Stripe.Item), _)
+	read = Json.parse(json)
+	match read {
+		Ok(items) => items
+		Err(_) => {
+			older : Try(List({ price : Str, product : Str, quantity : U64 }), _)
+			older = Json.parse(json)
+			(older ?? []).map(|item| { price: item.price, product: item.product, quantity: item.quantity, unit_amount: 0, currency: "", interval: "", interval_count: 0, lookup_key: "" })
+		}
+	}
+}
+
 ## A subscription as an event or Stripe's API says it, as its row: for `user`, at `version`, kept at
 ## `now`; its times in milliseconds.
 row_of : StripeRules.Subscription, Str, I64, I64 -> StripeStore.SubscriptionRow
@@ -674,14 +697,12 @@ invoice_of = |read| {
 ## A subscription's row, as the app is given it.
 subscription_of : StripeStore.SubscriptionRow -> Stripe.Subscription
 subscription_of = |row| {
-	read : Try(List(Stripe.Item), _)
-	read = Json.parse(row.items)
 	{
 		id: row.id,
 		user: row.user_id,
 		customer: row.customer_id,
 		status: Stripe.status_of(row.status),
-		items: read ?? [],
+		items: items_of(row.items),
 		current_period_end_ms: row.current_period_end,
 		cancel_at_period_end: row.cancel_at_period_end,
 		cancel_at_ms: row.cancel_at,
@@ -961,6 +982,9 @@ expect Stripe.ended(Canceled) and Stripe.ended(IncompleteExpired) and !Stripe.en
 expect again(500, "") and again(429, "") and again(409, "") and !again(400, "") and !again(500, "false") and again(400, "true")
 expect prices_of("[{\"price\":\"price_a\",\"quantity\":2}]") == [{ price: "price_a", quantity: 2 }] and prices_of("nonsense") == []
 expect {
-	row = row_of({ id: "sub_1", customer: "cus_1", status: "active", items: [{ price: "price_pro", product: "prod_pro", quantity: 1 }], current_period_end: 1700000000, cancel_at_period_end: Bool.True, cancel_at: 0, trial_end: 0, user: "" }, "u1", 6800000001, 5)
-	subscription_of(row) == { id: "sub_1", user: "u1", customer: "cus_1", status: Active, items: [{ price: "price_pro", product: "prod_pro", quantity: 1 }], current_period_end_ms: 1700000000000, cancel_at_period_end: Bool.True, cancel_at_ms: 0, trial_end_ms: 0 }
+	item = { price: "price_pro", product: "prod_pro", quantity: 1, unit_amount: 499, currency: "usd", interval: "month", interval_count: 1, lookup_key: "pro_monthly" }
+	row = row_of({ id: "sub_1", customer: "cus_1", status: "active", items: [item], current_period_end: 1700000000, cancel_at_period_end: Bool.True, cancel_at: 0, trial_end: 0, user: "" }, "u1", 6800000001, 5)
+	subscription_of(row) == { id: "sub_1", user: "u1", customer: "cus_1", status: Active, items: [item], current_period_end_ms: 1700000000000, cancel_at_period_end: Bool.True, cancel_at_ms: 0, trial_end_ms: 0 }
 }
+expect items_of("[{\"price\":\"price_pro\",\"product\":\"prod_pro\",\"quantity\":1}]") == [{ price: "price_pro", product: "prod_pro", quantity: 1, unit_amount: 0, currency: "", interval: "", interval_count: 0, lookup_key: "" }]
+expect items_of("nonsense") == [] and items_of("[]") == []

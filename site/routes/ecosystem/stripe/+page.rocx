@@ -189,7 +189,7 @@ view! = |_|
 					<tbody>
 						<tr><td><code>Stripe.subscribed!(user)</code></td><td>whether they have a subscription that is active, trialing, or past due while Stripe tries the card again</td></tr>
 						<tr><td><code>Stripe.paid_for!(user, what)</code></td><td>whether such a subscription has a price or product (<code>price_…</code>, <code>prod_…</code>), or a paid one-time payment was for the price and hasn't been refunded in full or disputed since</td></tr>
-						<tr><td><code>Stripe.subscription!(user)</code></td><td>their subscription: status, items, when it renews or ends, whether it ends then</td></tr>
+						<tr><td><code>Stripe.subscription!(user)</code></td><td>their subscription: status, items (each price's amount, currency, interval and lookup key: what this subscriber pays), when it renews or ends, whether it ends then</td></tr>
 						<tr><td><code>Stripe.payments!(user)</code></td><td>their one-time payments that were paid, and not refunded in full or disputed since</td></tr>
 						<tr><td><code>{"Stripe.portal!(user, return_url)"}</code></td><td>the URL of their Customer Portal, or <code>NoCustomer</code></td></tr>
 					</tbody>

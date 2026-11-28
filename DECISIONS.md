@@ -7451,3 +7451,39 @@ fact over two places, and still say nothing about two slices with one label.
 list of names (`series : List(Str)`), so they still take the five colours.
 
 **Reversible:** yes: the field goes, and the types are plain records again.
+
+## D-131 A subscription's items say their price's terms
+
+**Status.** Built (2026-11-28).
+
+**Context.** `Stripe.Item` was a price's id, its product and how many. An app selling one product
+on more than one plan (a month at a time, or a year) couldn't say which one a subscriber is on, or
+what they pay, without asking Stripe for each price on each page; and an app that promises a
+subscriber their price after it rises (the lookup key moved to a new price, D-127) had nothing to
+show that price from: its pages could only say today's.
+
+**Decision.** `Stripe.Item` (and `StripeRules.Item`) gains the price's terms as the subscription
+object carries them (Stripe sends each item's whole price, in events and in its API's answers):
+`unit_amount : I64` (the currency's smallest unit), `currency : Str`, `interval : Str` (`day`,
+`week`, `month`, `year`; "" for a one-time price), `interval_count : U64` and `lookup_key : Str`
+("" for none). They are kept in the row's `items` JSON with the rest, so `subscription!` and
+`subscriptions!` say them without asking Stripe. `StripeRules.subscription_item` reads one item;
+a price given by its id alone says only that.
+
+- A row kept before this has only the price, product and quantity: it is read with 0 and "" for
+  the rest (`items_of`), where it used to fail to the whole list, until Stripe's next event about
+  the subscription writes it again. No migration: the column is the same JSON.
+- **Tested:** `expect`s (an item with its whole price, one with an id alone, a three-monthly
+  interval, a null lookup key; a row's items read back; an older row's items with zeros; nonsense);
+  the example's tests (a kept row's items with their terms).
+- **Docs:** the README (`Stripe.Item`, what a subscriber pays after a price changes), the docs
+  site's Stripe page.
+
+**Why.** What a subscriber pays is their subscription's, not the lookup key's: the key moves when
+the price changes, and the subscriptions on the old price keep it. The subscription already says
+it, in every event the package reads, so keeping it costs nothing and asks Stripe nothing.
+
+**Costs.** A record type with more fields: an app that builds `Stripe.Item`s itself (its tests)
+writes them all.
+
+**Reversible:** yes: the fields go, and older rows read as before.

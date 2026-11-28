@@ -195,7 +195,11 @@ app. `NoPrice` when no active price has it. It asks Stripe each time, which a ch
 
 A price changed that way leaves the subscriptions on the old one on its id: ask whether someone pays
 for the product (`paid_for!(user, "prod_…")`), or for anything (`subscribed!`), rather than for a
-price id.
+price id. What a subscriber pays is their subscription's, not the key's: each of its items says
+its price's amount, currency, interval and lookup key as Stripe sent them (`Stripe.Item`), so a page
+can say "$4.99 a month" to someone who kept an older price, or tell a yearly plan from a monthly
+one by its lookup key, without asking Stripe. A row kept before the package read these has 0 and ""
+until Stripe's next event about the subscription.
 
 ## The page Checkout goes back to
 
@@ -278,11 +282,20 @@ so a page they guard stays shut.
 Stripe.Subscription : {
     id : Str, user : Str, customer : Str,
     status : Stripe.Status,
-    items : List({ price : Str, product : Str, quantity : U64 }),
+    items : List(Stripe.Item),
     current_period_end_ms : I64,      # when it renews, or ends
     cancel_at_period_end : Bool,      # cancelled in the portal: it ends then
     cancel_at_ms : I64,               # when it is set to end (0: it isn't)
     trial_end_ms : I64,               # 0: no trial
+}
+
+Stripe.Item : {
+    price : Str, product : Str, quantity : U64,
+    unit_amount : I64,                # what one costs, in the currency's smallest unit (499: $4.99)
+    currency : Str,                   # "usd"
+    interval : Str,                   # "day", "week", "month" or "year"
+    interval_count : U64,             # every how many of them (1)
+    lookup_key : Str,                 # "" for none
 }
 
 Stripe.Status : [Incomplete, IncompleteExpired, Trialing, Active, PastDue, Canceled, Unpaid, Paused, Other(Str)]

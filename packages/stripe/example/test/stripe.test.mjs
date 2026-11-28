@@ -273,7 +273,7 @@ for (const database of databases) {
 			assert.equal((await client.get("/pro")).status, 200);
 			const [row] = await db.query(`select status, user_id, items, version from stripe_subscriptions where id = '${subscription.id}'`);
 			assert.equal(row.user_id, user);
-			assert.deepEqual(JSON.parse(row.items), [{ price: "price_pro", product: "prod_pro", quantity: 1 }]);
+			assert.deepEqual(JSON.parse(row.items), [{ price: "price_pro", product: "prod_pro", quantity: 1, unit_amount: 1500, currency: "usd", interval: "month", interval_count: 1, lookup_key: "pro_monthly" }], "each item with its price's terms");
 			assert.equal(Number(row.version), t * 4 + 1, "the update's version: its second, then its kind");
 			const [kept] = await db.query(`select status, payment_status, subscription_id from stripe_checkouts where id = '${id}'`);
 			assert.deepEqual({ ...kept }, { status: "complete", payment_status: "paid", subscription_id: subscription.id });
