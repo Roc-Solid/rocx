@@ -33,7 +33,7 @@ Tally := [].{
 
 	## A bar for each choice: its letter (ticked if it is the right one), and how many took it, or
 	## nothing before the bars have risen.
-	bars : Game.Revealing, Bool -> List({ label : Str, value : Dec })
+	bars : Game.Revealing, Bool -> List(BarChart.Bar)
 	bars = |revealing, risen|
 		revealing.tallies.map_with_index(
 			|took, at| {

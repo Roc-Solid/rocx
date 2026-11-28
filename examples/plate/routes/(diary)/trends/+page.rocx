@@ -36,7 +36,7 @@ view! = |_| {
 			<h2 id="energy">Energy each day</h2>
 			<p class="quiet">{"Target ${Plate.whole(trends!().target.kcal)} kcal a day · ${Ranges.logged(logged!(), trends!().range)}"}</p>
 			<div class="chart">
-				<BarChart data!={Plate.bars(trends!().totals, trends!().range)} label="Energy eaten each day, in kcal" format={|kcal| "${Plate.whole(kcal)} kcal"} />
+				<BarChart data!={Plate.bars(trends!().totals, trends!().range).map(|{ label, value }| { label, value })} label="Energy eaten each day, in kcal" format={|kcal| "${Plate.whole(kcal)} kcal"} />
 			</div>
 		</section>
 		<section class="card" aria-labelledby="average">

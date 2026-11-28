@@ -56,7 +56,7 @@ rather than making another. Two items with the same label are two marks (`Keys.u
 
 | Prop | |
 |---|---|
-| `data! : () => List({ label : Str, value : Dec })` | A bar for each item, in order. A new value glides its bar there. A new bar grows from the axis while the others make room. A bar whose label is gone shrinks into the axis and fades (`transition:out`) while the others close up. A new order slides each bar to its place. |
+| `data! : () => List(BarChart.Bar)`, `Bar := { label : Str, value : Dec, color : Str ?? "" }` | A bar for each item, in order. A new value glides its bar there. A new bar grows from the axis while the others make room. A bar whose label is gone shrinks into the axis and fades (`transition:out`) while the others close up. A new order slides each bar to its place. A bar is in its `color` (any CSS colour: `"#c0392b"`, `"var(--brand)"`), which it keeps when pointed at, or, left out, the chart's. |
 | `label : Str` | What the chart shows, for screen readers. |
 | `format : (Dec -> Str) ?? Format.short` | A value as text: on the ticks, and on a bar when it is pointed at or focused. |
 | `padding : Dec ?? 0.3` | The share of each bar's slot left empty. |
@@ -114,15 +114,31 @@ number. It spans its values' range, so it shows their shape, not their size.
 
 | Prop | |
 |---|---|
-| `data! : () => List({ label : Str, value : Dec })` | A slice for each item, clockwise from twelve o'clock, its share of the ring its share of the total. A new value glides its slice to its new share. A new slice grows from nothing while the others make room; one whose label is gone shrinks to nothing where it was. A value below zero counts as zero. |
+| `data! : () => List(DonutChart.Slice)`, `Slice := { label : Str, value : Dec, color : Str ?? "" }` | A slice for each item, clockwise from twelve o'clock, its share of the ring its share of the total. A new value glides its slice to its new share. A new slice grows from nothing while the others make room; one whose label is gone shrinks to nothing where it was. A value below zero counts as zero. A slice is in its `color` (any CSS colour), it and its legend line, or, left out, one of the chart's five. |
 | `label : Str` | What the chart shows, for screen readers. |
 | `format : (Dec -> Str) ?? Format.short` | A value as text: the total, and each slice's value in the legend. |
 | `total : Str ?? "Total"` | The word under the total. |
 | `thickness : Dec ?? 52` | The ring's width, out of a radius of 150 (SVG units). 150 is a pie. Above 90 the middle has no room, and the total isn't shown. |
 
 The middle shows the total, or, while a slice is pointed at or focused (each can be reached with
-Tab) or its line in the legend is pointed at, that slice's share. A slice keeps its colour while
-others come and go, and a new slice takes a colour no other slice has.
+Tab) or its line in the legend is pointed at, that slice's share. Shares are whole percents that add
+up to 100 (the points left over go to the largest remainders), and "<1%" for a value too small to
+make one, whose slice is still drawn, as a sliver (a hundredth of the ring). A slice keeps its colour while
+others come and go, and a new slice takes a colour no other slice has, unless the data gives each
+its own.
+
+**Colours from the data.** A bar or a slice may carry its colour, as a slice for each party in
+its party's colour:
+
+```roc
+<DonutChart data!={seats!().map(|party| { label: party.name, value: party.seats, color: party.color })} label="Seats by party" />
+```
+
+`color` is left out (or `""`) for the chart's own. A record written where the data is passed is a
+`DonutChart.Slice` (or a `BarChart.Bar`), with `color` or without; a list already typed as plain
+records (`List({ label : Str, value : Dec })`) isn't, so name the chart's type in its annotation
+(`List(DonutChart.Slice)`), or build the records where you pass them
+(`.map(|{ label, value }| { label, value })`).
 
 ### `<ScatterChart>`
 
@@ -187,8 +203,8 @@ charts page has three (Neon, Blueprint and Paper), each one rule plus a prop or 
 
 | Property | Sets |
 |---|---|
-| `--chart-color`, `--chart-active` | bars, lines and dots; a bar or dot pointed at, and the line chart's point |
-| `--chart-1` to `--chart-5` | a donut's slices and a stacked chart's series: a colour that stays with its slice or series |
+| `--chart-color`, `--chart-active` | bars, lines and dots; a bar or dot pointed at, and the line chart's point (a bar's own `color` comes first) |
+| `--chart-1` to `--chart-5` | a donut's slices and a stacked chart's series: a colour that stays with its slice or series (a slice's own `color` comes first) |
 | `--chart-heat-low`, `--chart-heat-high` | a heatmap's colours at zero and at the greatest value |
 | `--chart-fill`, `--chart-stroke`, `--chart-stroke-width`, `--chart-outline` | the marks' fill opacity and outline; with `--chart-outline: 1`, a slice or a part is outlined in its own colour instead of the surface's |
 | `--chart-radius`, `--chart-dot`, `--chart-line-width`, `--chart-area` | bars' corners, dots' radius, lines' width, the shading under a line (0 for none) |
@@ -199,9 +215,9 @@ charts page has three (Neon, Blueprint and Paper), each one rule plus a prop or 
 
 - Values are `Dec`, and Roc has no `F64` to `Dec` conversion yet. Round to an integer and divide:
   `(x * 1000.0).round_to_i64_try()`, then `.to_dec() / 1000.0`.
-- A donut and a stacked bar chart have five colours, so a sixth slice or series shares one. Fold the
-  smallest into "Other". When new data puts a donut's slices in another order, they jump to their
-  new places rather than glide.
+- A stacked bar chart has five colours, so a sixth series shares one, and so does a donut's sixth
+  slice unless the data gives the slices their colours. Fold the smallest into "Other". When new
+  data puts a donut's slices in another order, they jump to their new places rather than glide.
 - A heatmap's cells, a line chart's points and a sparkline's can't be reached with Tab: each of
   these charts is one image to a screen reader, named by its label.
 - A line chart's ticks along the bottom fall on round numbers of its `x`: days since 1970 in steps

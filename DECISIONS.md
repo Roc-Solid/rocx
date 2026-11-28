@@ -7402,3 +7402,52 @@ an app that showed the card on every page would be slow, and the docs say so. A 
 through a legacy source (`default_source`, a card object of before PaymentMethods) is `NoCard`.
 
 **Reversible:** yes: the functions go, and an app's page links to the portal again.
+
+## D-130 A chart's data gives its colours (`color` on a donut's slices and a bar chart's bars), and a donut's shares add up to 100
+
+**Status.** Built (2026-11-28).
+
+**Context.** A donut's slices took the chart's five colours (`--chart-1` to `--chart-5`), each
+slice the next free one, kept while others come and go. An app whose slices have colours of their
+own (a party's, a brand's, a category the rest of the app colours) could only set the five
+variables by position, and a slice's colour is its slot's, not its position's: once the data
+changed, a slice could take another's colour. So such an app drew its own ring. A bar chart's bars
+were all `--chart-color`. The donut's legend rounded each share alone (`Format.percent(…, 0)`), so
+they could add up to 99 or 101 and a slice of 2 in 2,000 said "0%" (an app hid the legend for it and
+drew a list of its own), and drew that slice as a sliver too thin to see.
+
+**Options.**
+1. A prop that maps a label to a colour (`color : Str -> Str`).
+2. The colour in the data: each item may carry one.
+3. Slot variables set by key rather than position (a CSS selector per label).
+
+**Decision.** 2. `DonutChart.Slice := { label : Str, value : Dec, color : Str ?? "" }` and
+`BarChart.Bar := { label : Str, value : Dec, color : Str ?? "" }`: any CSS colour (`"#c0392b"`,
+`"var(--brand)"`), set as the slice's `--slice` and its legend swatch's (a slice going away keeps
+its own while it shrinks), or as the bar's `--chart-color` and `--chart-active` (it keeps its colour
+when pointed at). `""`, the default, is the chart's own colour, as before.
+
+The donut's shares (legend, middle, each slice's accessible name) are whole percents that add up to
+100: each rounded down, the points left over to the largest remainders, "<1%" for a value that
+comes to none. A slice with anything is drawn at least a hundredth of the ring (`least`), the others
+making room; the legend and the total keep the true values.
+
+- The types are nominal now, to have a default: a record written where the chart's data is (`{
+  label, value }`, `.map(|x| { label: …, value: … })`) is one, with or without `color`; a list
+  already typed as plain records isn't, so its annotation names the chart's type
+  (`List(BarChart.Bar)`), or the records are built where they are passed. The site's demos and the
+  quiz example name the type; the plate example's rules, plain Roc on no platform, build them on its
+  page.
+- **Tested:** `expect`s (a slice's and a bar's colour from the data, `""` without; a colour taken at
+  once and kept by a slice that is going; shares that add up to 100, "<1%", nothing; a sliver drawn
+  for a value too small to see); the site's chart tests, unchanged.
+- **Docs:** packages/charts' README, the docs site's charts page.
+
+**Why.** What colours a slice is part of what the slice is: the data already names it, so it can
+say its colour too, and it glides, comes and goes with it. A label-to-colour prop would split one
+fact over two places, and still say nothing about two slices with one label.
+
+**Costs.** A plain record list isn't the chart's type (above). A stacked bar chart's series are a
+list of names (`series : List(Str)`), so they still take the five colours.
+
+**Reversible:** yes: the field goes, and the types are plain records again.

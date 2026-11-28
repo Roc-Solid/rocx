@@ -14,13 +14,19 @@ import charts.Ticks
 ## frame until they get there, and then asks for no more frames. A bar is its label's: one that
 ## comes grows out of the axis as the others make room, one whose label is gone shrinks into the
 ## axis as it fades (`transition:out`) while the others close up, and sorted, each slides to its
-## place. Pointing at a bar, or reaching it with Tab, shows its value.
+## place. Pointing at a bar, or reaching it with Tab, shows its value. A bar is in the colour the
+## data gives it (`color`: any CSS colour, `"#c0392b"` or `"var(--brand)"`), which it keeps when
+## pointed at, or, given none, the chart's (`--chart-color`, `--chart-active` when pointed at).
 ##
 ## `label` names the chart for screen readers, `format` writes a value (`Format.short` unless said,
 ## or `|mm| "${Format.num(mm, 0)} mm"`), and `padding` is the share of each bar's slot left empty
 ## (0.3 unless said).
 BarChart := [].{
-	Bar : { label : Str, value : Dec }
+
+	## A bar: what it is, how much, and its colour, the chart's own when left out.
+	Bar := { label : Str, value : Dec, color : Str ?? "" }.{
+		is_eq : _
+	}
 
 	## A bar and its key: its label, numbered when another bar before it has the same one.
 	Row : { key : Str, bar : BarChart.Bar }
@@ -64,6 +70,8 @@ BarChart := [].{
 					<g key={row.key}
 						class="bar"
 						class:active={hover!() == Ok(row.key)}
+						style:--chart-color={row.bar.color}
+						style:--chart-active={row.bar.color}
 						role="img"
 						tabindex="0"
 						aria-label={"${row.bar.label}: ${format(row.bar.value)}"}
@@ -263,3 +271,6 @@ bottom = 288.0
 
 tick_count : U64
 tick_count = 5
+
+# A bar's colour comes with it from the data; one given none is "".
+expect BarChart.keyed([{ label: "Jan", value: 3.0, color: "#7d59dc" }, { label: "Feb", value: 1.0 }]).map(|row| row.bar.color) == ["#7d59dc", ""]

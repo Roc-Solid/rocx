@@ -102,7 +102,7 @@ view! = |_|
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
 						<tr>
-							<td><code>{"data! : () => List({ label : Str, value : Dec })"}</code></td>
+							<td><code>{"data! : () => List(BarChart.Bar)"}</code>, <code>{"Bar := { label : Str, value : Dec, color : Str ?? \"\" }"}</code></td>
 							<td>
 								A bar per item, in order. A bar belongs to its label: a new value glides it to its
 								new height;
@@ -111,7 +111,9 @@ view! = |_|
 								into the axis and fades (its <code>{"<rect>"}</code>'s
 								<a href={"${Paths.components}#transitions"}><code>transition:out</code></a>) as the
 								others close
-								up. A new order slides each bar to its place.
+								up. A new order slides each bar to its place. A bar is in its <code>color</code> (any CSS
+								colour: <code>"#c0392b"</code>, <code>"var(--brand)"</code>), which it keeps when pointed at;
+								left out, it is the chart's.
 							</td>
 						</tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
@@ -234,7 +236,7 @@ view! = |_|
 					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
 					<tbody>
 						<tr>
-							<td><code>{"data! : () => List({ label : Str, value : Dec })"}</code></td>
+							<td><code>{"data! : () => List(DonutChart.Slice)"}</code>, <code>{"Slice := { label : Str, value : Dec, color : Str ?? \"\" }"}</code></td>
 							<td>
 								A slice per item, clockwise from twelve o'clock, its share of the ring its share of
 								the
@@ -242,7 +244,8 @@ view! = |_|
 								label grows
 								a slice from nothing while the others make room, and a gone label's slice shrinks to
 								nothing
-								where it was. A value below zero counts as zero.
+								where it was. A value below zero counts as zero. A slice is in its <code>color</code> (any CSS
+								colour), it and its legend line; left out, it is one of the chart's five.
 							</td>
 						</tr>
 						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
@@ -255,7 +258,14 @@ view! = |_|
 			<p>
 				The middle shows the total, or a slice's share while you point at it, focus it (Tab reaches each) or
 				point at its legend line. A slice keeps its colour as others come and go; a new slice takes a colour
-				no other has.
+				no other has, unless the data gives each its own.
+			</p>
+			<p>
+				A bar or a slice may carry its colour in the data, as a slice for each party in its party's:
+				<code>{"{ label: party.name, value: party.seats, color: party.color }"}</code>. A record written where
+				the data is passed is the chart's type, with <code>color</code> or without; a list already typed as
+				plain records isn't, so name the chart's type in its annotation (<code>List(DonutChart.Slice)</code>),
+				or build the records where you pass them.
 			</p>
 
 			<Heading id="scatter">{"<ScatterChart>"}</Heading>
@@ -363,8 +373,8 @@ view! = |_|
 				<table>
 					<thead><tr><th>Property</th><th>Sets</th></tr></thead>
 					<tbody>
-						<tr><td><code>--chart-color</code>, <code>--chart-active</code></td><td>The colour of bars, lines and dots; the colour of a bar or dot pointed at, and of the line chart's point.</td></tr>
-						<tr><td><code>--chart-1</code> to <code>--chart-5</code></td><td>The colours of a donut's slices and a stacked chart's series. A colour stays with its slice or series.</td></tr>
+						<tr><td><code>--chart-color</code>, <code>--chart-active</code></td><td>The colour of bars, lines and dots; the colour of a bar or dot pointed at, and of the line chart's point. A bar's own <code>color</code> comes first.</td></tr>
+						<tr><td><code>--chart-1</code> to <code>--chart-5</code></td><td>The colours of a donut's slices and a stacked chart's series. A colour stays with its slice or series. A slice's own <code>color</code> comes first.</td></tr>
 						<tr><td><code>--chart-heat-low</code>, <code>--chart-heat-high</code></td><td>A heatmap's colours at zero and at the greatest value.</td></tr>
 						<tr><td><code>--chart-fill</code>, <code>--chart-stroke</code>, <code>--chart-stroke-width</code>, <code>--chart-outline</code></td><td>The marks' fill opacity and outline. With <code>--chart-outline: 1</code>, a slice or a part is outlined in its own colour instead of the surface's.</td></tr>
 						<tr><td><code>--chart-radius</code>, <code>--chart-dot</code>, <code>--chart-line-width</code>, <code>--chart-area</code></td><td>Bars' rounded corners, dots' radius, lines' width, and the shading under a line (0 for none).</td></tr>
@@ -405,8 +415,9 @@ view! = |_|
 					<code>(x * 1000.0).round_to_i64_try()</code>, then <code>.to_dec() / 1000.0</code>.
 				</li>
 				<li>
-					Donuts and stacked bars have five colours, so a sixth slice or series shares one: fold the
-					smallest into "Other". When new data reorders a donut's slices, they jump rather than glide.
+					Stacked bars have five colours, so a sixth series shares one, and so does a donut's sixth slice
+					unless the data gives the slices their colours: fold the smallest into "Other". When new data
+					reorders a donut's slices, they jump rather than glide.
 				</li>
 				<li>
 					Tab can't reach a heatmap's cells or a line chart's or sparkline's points; to a screen reader,

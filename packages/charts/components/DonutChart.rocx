@@ -7,25 +7,34 @@ import charts.Keys
 import charts.Path
 
 ## A ring cut into a slice for each of `data!`'s values, each as big a share of the ring as its
-## value is of them all, and a legend beside it: each slice's colour, label, value and share. The
+## value is of them all (a value too small to see still a sliver), and a legend beside it: each
+## slice's colour, label, value and share, in whole percents that add up to 100 ("<1%" for one too
+## small to make one). The
 ## middle says the total, or, while a slice or its line in the legend is pointed at or focused,
 ## that slice's share. When the data changes, the slices glide to their new sizes, a frame at a
 ## time: a new one grows from nothing, one whose label is gone shrinks to nothing where it was,
 ## and once they are there, nothing runs.
 ##
-## A slice is its label's, and keeps its colour while others come and go: five colours
-## (`--chart-1` to `--chart-5`), so a sixth slice shares one; fold the smallest into "Other".
+## A slice is its label's, in the colour the data gives it (`color`: any CSS colour,
+## `"#c0392b"` or `"var(--brand)"`), or, given none, in one of the chart's five (`--chart-1` to
+## `--chart-5`), which it keeps while others come and go, so a sixth slice shares one; fold the
+## smallest into "Other".
 ## `label` names the chart for screen readers, `format` writes a value (`Format.short` unless
 ## said), `total` is the word under the total ("Total" unless said), and `thickness` is the ring's,
 ## in the SVG's units, of its 150 radius (52 unless said; 150 is a pie).
 DonutChart := [].{
-	Slice : { label : Str, value : Dec }
+
+	## A slice of the ring: what it is, how much, and its colour, the chart's own when left out.
+	Slice := { label : Str, value : Dec, color : Str ?? "" }.{
+		is_eq : _
+	}
 
 	## A slice and its key: its label, numbered when another slice before it has the same one.
 	Row : { key : Str, slice : DonutChart.Slice }
 
-	## A slice as drawn: its value, on its way to the data's.
-	Placed : { key : Str, value : Dec }
+	## A slice as drawn: its value, on its way to the data's, and the colour it was given ("" for
+	## the chart's own), which one that is going keeps while it shrinks.
+	Placed : { key : Str, value : Dec, color : Str }
 
 	## What is drawn: the slices, in the ring's order (one that is going too, until it has shrunk
 	## to nothing), and each slice's colour.
@@ -41,17 +50,21 @@ DonutChart := [].{
 		data! = props.data!
 		format = props.format
 		rows! = create_memo!(|| DonutChart.keyed(data!()))
-		goal! = create_memo!(|| rows!().map(|row| { key: row.key, value: Dec.max(row.slice.value, 0.0) }))
+		goal! = create_memo!(|| DonutChart.visible(rows!().map(|row| { key: row.key, value: Dec.max(row.slice.value, 0.0), color: row.slice.color })))
 		(drawn!, set_drawn!) = create_signal!(untrack!(|| { slices: goal!(), slots: Keys.slots([], goal!().map(|slice| slice.key)) }))
 		(hover!, set_hover!) = create_signal!(Err(None))
 		# The slices drawn: the data's, and each that is going until it has shrunk to nothing.
 		keys! = create_memo!(|| Keys.merge(drawn!().slices.map(|slice| slice.key), goal!().map(|slice| slice.key)))
 		slots! = create_memo!(|| Keys.slots(drawn!().slots, keys!()))
 		arcs! = create_memo!(|| DonutChart.arcs(drawn!().slices))
-		total! = create_memo!(|| goal!().fold(0.0, |sum, slice| sum + slice.value))
+		total! = create_memo!(|| rows!().fold(0.0, |sum, row| sum + Dec.max(row.slice.value, 0.0)))
 		slot! = |key| (Keys.slot_of(slots!(), key) % colors).to_str()
-		share! = |value| Format.percent(if (total!() > 0.0) value / total!() else 0.0, 0)
-		said! = |row| "${row.slice.label}: ${format(row.slice.value)}, ${share!(Dec.max(row.slice.value, 0.0))}"
+		shares! = create_memo!(|| DonutChart.shares(rows!().map(|row| row.slice.value)))
+		share_of! = |key| {
+			said = shares!()
+			rows!().find_first_index(|row| row.key == key).map_ok(|at| said.get(at) ?? "") ?? ""
+		}
+		said! = |row| "${row.slice.label}: ${format(row.slice.value)}, ${share_of!(row.key)}"
 		row_of! = |key| rows!().find_first(|row| row.key == key)
 		# The middle: the slice pointed at, or the total.
 		pointed! = || {
@@ -60,7 +73,7 @@ DonutChart := [].{
 		}
 		big! = ||
 			match pointed!() {
-				Ok(row) => share!(Dec.max(row.slice.value, 0.0))
+				Ok(row) => share_of!(row.key)
 				Err(_) => format(total!())
 			}
 		small! = ||
@@ -75,6 +88,7 @@ DonutChart := [].{
 						class="slice"
 						class:active={hover!() == Ok(key)}
 						data-slot={slot!(key)}
+						style:--slice={color_of(drawn!().slices, key)}
 						d={DonutChart.path(arcs!(), key, Dec.max(outer - props.thickness, 0.0))}
 						role="img"
 						tabindex="0"
@@ -101,6 +115,7 @@ DonutChart := [].{
 					<li key={row.key}
 						class:active={hover!() == Ok(row.key)}
 						data-slot={slot!(row.key)}
+						style:--slice={row.slice.color}
 						on:pointerenter={|| set_hover!(Ok(row.key))}
 						on:pointerleave={|| set_hover!(Err(None))}
 						transition={Transition.fade}
@@ -108,7 +123,7 @@ DonutChart := [].{
 						<span class="swatch"></span>
 						<span class="name">{row.slice.label}</span>
 						<span class="amount">{format(row.slice.value)}</span>
-						<span class="share">{share!(Dec.max(row.slice.value, 0.0))}</span>
+						<span class="share">{share_of!(row.key)}</span>
 					</li>
 				)}
 			</ul>
@@ -139,6 +154,48 @@ DonutChart := [].{
 		$arcs
 	}
 
+	## The slices as drawn: each with something at least a sliver of the ring (`least`), so a value
+	## too small to see still shows, the others making room.
+	visible : List(DonutChart.Placed) -> List(DonutChart.Placed)
+	visible = |slices| {
+		total = slices.fold(0.0, |sum, slice| sum + slice.value)
+		slices.map(|slice| if (slice.value > 0.0) { ..slice, value: Dec.max(slice.value, total * least) } else slice)
+	}
+
+	## Each value's share of them all, as whole percents that add up to 100: each rounded down, and
+	## the points left over to the largest remainders (the earlier first on a tie). One with
+	## something that comes to none is "<1%"; below zero counts as zero, and nothing at all is "0%"
+	## each.
+	shares : List(Dec) -> List(Str)
+	shares = |values| {
+		kept = values.map(|value| Dec.max(value, 0.0))
+		total = kept.fold(0.0, |sum, value| sum + value)
+		if total <= 0.0 {
+			kept.map(|_| "0%")
+		} else {
+			exact = kept.map(|value| value * 100.0 / total)
+			whole = exact.map(|share| Dec.floor(share))
+			left = 100.0 - whole.fold(0.0, |sum, share| sum + share)
+			var $order = []
+			for item in List.map2(exact, whole, |share, down| share - down).map_with_index(|remainder, index| { index, remainder }) {
+				at = $order.find_first_index(|other| other.remainder < item.remainder) ?? $order.len()
+				$order = $order.take_first(at).append(item).concat($order.drop_first(at))
+			}
+			var $bumped = []
+			for item in $order {
+				if $bumped.len().to_dec() < left {
+					$bumped = $bumped.append(item.index)
+				}
+			}
+			List.map2(kept, whole, |value, down| (value, down)).map_with_index(
+				|(value, down), index| {
+					percent = if ($bumped.contains(index)) down + 1.0 else down
+					if (percent == 0.0 and value > 0.0) "<1%" else "${Format.num(percent, 0)}%"
+				},
+			)
+		}
+	}
+
 	## The slice with `key`'s path: nothing until it is drawn.
 	path : List(DonutChart.Arc), Str, Dec -> Str
 	path = |drawn, key, inner|
@@ -147,8 +204,9 @@ DonutChart := [].{
 			Err(_) => ""
 		}
 
-	## A frame's way from `drawn` toward `goal`: each slice's value toward its own. A new slice
-	## starts at nothing; one that has gone shrinks to nothing where it was, and then is gone.
+	## A frame's way from `drawn` toward `goal`: each slice's value toward its own, and at once to
+	## its colour. A new slice starts at nothing; one that has gone shrinks to nothing where it was,
+	## in the colour it had, and then is gone.
 	glide : DonutChart.Drawn, List(DonutChart.Placed), F64 -> DonutChart.Drawn
 	glide = |drawn, goal, ms| {
 		keys = goal.map(|slice| slice.key)
@@ -159,7 +217,8 @@ DonutChart := [].{
 			was = value_of(drawn.slices, key)
 			next = Ease.toward(was, value_of(goal, key), ms, close)
 			if next != 0.0 or keys.contains(key) {
-				$slices = $slices.append({ key, value: next })
+				color = goal.find_first(|slice| slice.key == key).map_ok(|slice| slice.color) ?? color_of(drawn.slices, key)
+				$slices = $slices.append({ key, value: next, color })
 			}
 		}
 		{ slices: $slices, slots: Keys.slots(drawn.slots, $slices.map(|slice| slice.key)) }
@@ -295,6 +354,11 @@ DonutChart := [].{
 outer : Dec
 outer = 150.0
 
+## The least share of the ring a slice with something is drawn at, in turns: a sliver that can be
+## seen.
+least : Dec
+least = 0.01
+
 ## How many colours the slices have (`--chart-1` to `--chart-5`).
 colors : U64
 colors = 5
@@ -302,3 +366,29 @@ colors = 5
 ## The value of the slice with `key`: nothing when there is none.
 value_of : List(DonutChart.Placed), Str -> Dec
 value_of = |slices, key| slices.find_first(|slice| slice.key == key).map_ok(|slice| slice.value) ?? 0.0
+
+## The colour the slice with `key` was given: "" (the chart's own) when none, or there is no such slice.
+color_of : List(DonutChart.Placed), Str -> Str
+color_of = |slices, key| slices.find_first(|slice| slice.key == key).map_ok(|slice| slice.color) ?? ""
+
+# A slice's colour comes with it from the data; one given none is "".
+expect DonutChart.keyed([{ label: "Roc", value: 3.0, color: "#7d59dc" }, { label: "Zig", value: 1.0 }]).map(|row| row.slice.color) == ["#7d59dc", ""]
+
+# A colour is taken at once; a slice that is going keeps its own while it shrinks.
+expect {
+	drawn = { slices: [{ key: "Roc", value: 3.0, color: "#7d59dc" }, { key: "Zig", value: 1.0, color: "orange" }], slots: [] }
+	next = DonutChart.glide(drawn, [{ key: "Roc", value: 3.0, color: "purple" }], 16.0)
+	next.slices.map(|slice| slice.color) == ["purple", "orange"]
+}
+
+# Whole percents that add up to 100, the points left over to the largest remainders.
+expect DonutChart.shares([1.0, 1.0, 1.0]) == ["34%", "33%", "33%"]
+expect DonutChart.shares([5.0, 995.0]) == ["1%", "99%"]
+
+# Too small to make a percent, but not nothing; nothing at all.
+expect DonutChart.shares([2.0, 1989.0]) == ["<1%", "100%"]
+expect DonutChart.shares([0.0, 0.0]) == ["0%", "0%"]
+expect DonutChart.shares([3.0, -1.0]) == ["100%", "0%"]
+
+# A value too small to see is drawn as a sliver; nothing stays nothing.
+expect DonutChart.visible([{ key: "a", value: 1.0, color: "" }, { key: "b", value: 999.0, color: "" }, { key: "c", value: 0.0, color: "" }]).map(|slice| slice.value) == [10.0, 999.0, 0.0]

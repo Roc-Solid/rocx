@@ -8,7 +8,7 @@ import Shuffle
 ## A project's code, a slice for each language: the charts page's `<DonutChart>`. Another project
 ## grows or shrinks each slice to its new share; CSS isn't in every one, so its slice comes and goes.
 DonutDemo := [].{
-	Project : { seed : U64, lines : List({ label : Str, value : Dec }) }
+	Project : { seed : U64, lines : List(DonutChart.Slice) }
 
 	view! : {} => Html
 	view! = |{}| {

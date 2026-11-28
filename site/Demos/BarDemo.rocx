@@ -9,7 +9,7 @@ import Shuffle
 ## `<BarChart>`. Another morning moves each bar to its new count and slides it to its new place; a
 ## kind not seen this time shrinks into the axis, and one seen again grows back out of it.
 BarDemo := [].{
-	Walk : { seed : U64, birds : List({ label : Str, value : Dec }) }
+	Walk : { seed : U64, birds : List(BarChart.Bar) }
 
 	view! : {} => Html
 	view! = |{}| {
