@@ -1278,6 +1278,11 @@ impl<'a> Projection<'a> {
         if c.is("pointer-events", "none") {
             props.insert("style.untouchable".into(), "true".into());
         }
+        // Transitions a phone's view can make (opacity, transform): `opacity 150 0,transform 120 0`
+        // (each property's duration and delay in ms); the applier animates a change to them.
+        if let Some(transitions) = transitions(c) {
+            props.insert("style.transition".into(), transitions);
+        }
         let transform = values::transform(c.get("transform"), c.get("translate"), c.get("scale"), c.get("rotate"), c.ctx);
         if !transform.is_identity() {
             view.transform = Some(transform);
@@ -1458,6 +1463,44 @@ impl<'a> Projection<'a> {
             _ => self.dom.children(node).map(|child| self.text_content(child)).collect(),
         }
     }
+}
+
+/// `transition` (or its longhands) as the properties a view animates: opacity and transform (and
+/// `translate`, `scale`, `rotate`, `all`), each with its duration and delay in ms.
+fn transitions(c: &Computed) -> Option<String> {
+    let time = |word: &str| -> Option<f32> {
+        let word = word.trim();
+        word.strip_suffix("ms").and_then(|ms| ms.trim().parse::<f32>().ok()).or_else(|| word.strip_suffix('s').and_then(|s| s.trim().parse::<f32>().ok()).map(|s| s * 1000.0))
+    };
+    let mut out = Vec::new();
+    let mut add = |property: &str, duration: f32, delay: f32| {
+        let names: &[&str] = match property {
+            "all" => &["opacity", "transform"],
+            "opacity" => &["opacity"],
+            "transform" | "translate" | "scale" | "rotate" => &["transform"],
+            _ => &[],
+        };
+        for name in names {
+            if duration > 0.0 && !out.iter().any(|(have, _, _): &(&str, f32, f32)| have == name) {
+                out.push((*name, duration, delay));
+            }
+        }
+    };
+    if let Some(shorthand) = c.get("transition").filter(|value| *value != "none") {
+        for layer in values::split(shorthand, Some(',')) {
+            let words = values::split(&layer, None);
+            let times: Vec<f32> = words.iter().filter_map(|word| time(word)).collect();
+            let property = words.iter().find(|word| time(word).is_none() && !word.contains('(') && !matches!(word.as_str(), "ease" | "linear" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end" | "allow-discrete" | "normal")).map(String::as_str).unwrap_or("all");
+            add(property, times.first().copied().unwrap_or(0.0), times.get(1).copied().unwrap_or(0.0));
+        }
+    } else if let Some(properties) = c.get("transition-property") {
+        let durations: Vec<f32> = values::split(c.get("transition-duration").unwrap_or("0s"), Some(',')).iter().filter_map(|d| time(d)).collect();
+        for (at, property) in values::split(properties, Some(',')).iter().enumerate() {
+            let duration = durations.get(at % durations.len().max(1)).copied().unwrap_or(0.0);
+            add(property.trim(), duration, 0.0);
+        }
+    }
+    (!out.is_empty()).then(|| out.iter().map(|(name, duration, delay)| format!("{name} {duration} {delay}")).collect::<Vec<_>>().join(","))
 }
 
 fn z_of(c: &Computed) -> (i32, bool) {
@@ -2177,6 +2220,15 @@ mod tests {
         assert!(block.children.iter().any(|child| *child & AFTER != 0), "a decorative ::after is a box of its own");
         let (_, in_flow) = find(&views, "text", "★ in flow");
         assert_eq!(in_flow.kind, "text");
+    }
+
+    #[test]
+    fn transitions_a_view_can_make() {
+        use Make::*;
+        let views = screen(".a { transition: opacity 0.15s ease, color 120ms; } .b { transition: transform 200ms 50ms; } .c { transition: background 120ms; }", vec![El("p", &[("class", "a")], vec![Text("a")]), El("p", &[("class", "b")], vec![Text("b")]), El("p", &[("class", "c")], vec![Text("c")])]);
+        assert_eq!(find(&views, "text", "a").1.props.get("style.transition").map(String::as_str), Some("opacity 150 0"));
+        assert_eq!(find(&views, "text", "b").1.props.get("style.transition").map(String::as_str), Some("transform 200 50"));
+        assert_eq!(find(&views, "text", "c").1.props.get("style.transition"), None, "a colour's waits");
     }
 
     #[test]

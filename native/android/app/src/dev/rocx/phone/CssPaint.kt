@@ -96,8 +96,9 @@ class CssPaint(private val density: Float) : Drawable() {
             val blur = s[2] * density / 2f
             if (blur > 0.5f) shade.setShadowLayer(blur, 0f, 0f, shadowColour) else shade.clearShadowLayer()
             canvas.save()
-            // Only around the box: what's under it is its own background's.
-            if (background != null && Color.alpha(background!!) == 255) canvas.clipOutPath(outer)
+            // Only around the box, as CSS draws an outer shadow: never under it (a translucent
+            // background doesn't show it).
+            canvas.clipOutPath(outer)
             canvas.drawPath(rounded(box, radii), shade)
             canvas.restore()
         }

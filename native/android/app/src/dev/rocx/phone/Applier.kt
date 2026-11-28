@@ -303,26 +303,28 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 if (paint.empty && view !is EditText) view.background = null
             }
             "clip" -> if (view is Box) view.clip = value == "true" else (contents[id]?.let { view.clipToOutline = value == "true" })
-            "opacity" -> view.alpha = value.toFloatOrNull() ?: 1f
+            "opacity" -> {
+                val alpha = value.toFloatOrNull() ?: 1f
+                val (duration, delay) = transition(id, "opacity")
+                if (duration > 0 && view.isLaidOut) view.animate().alpha(alpha).setDuration(duration).setStartDelay(delay).start() else view.alpha = alpha
+            }
+            "transition" -> if (value.isEmpty()) transitions.remove(id) else transitions[id] = value
             "visibility" -> view.visibility = if (value == "hidden") View.INVISIBLE else View.VISIBLE
             "transform" -> {
                 val parts = value.split(" ").mapNotNull { it.toFloatOrNull() }
-                if (parts.size == 7) {
-                    view.translationX = parts[0] * density
-                    view.translationY = parts[1] * density
-                    cssTranslationY[id] = view.translationY
-                    view.scaleX = parts[2]
-                    view.scaleY = parts[3]
-                    view.rotation = parts[4]
-                    view.pivotX = parts[5] * density
-                    view.pivotY = parts[6] * density
+                val to = if (parts.size == 7) parts else listOf(0f, 0f, 1f, 1f, 0f, view.pivotX / density, view.pivotY / density)
+                if (parts.size == 7) cssTranslationY[id] = to[1] * density else cssTranslationY.remove(id)
+                view.pivotX = to[5] * density
+                view.pivotY = to[6] * density
+                val (duration, delay) = transition(id, "transform")
+                if (duration > 0 && view.isLaidOut) {
+                    view.animate().translationX(to[0] * density).translationY(to[1] * density).scaleX(to[2]).scaleY(to[3]).rotation(to[4]).setDuration(duration).setStartDelay(delay).start()
                 } else {
-                    cssTranslationY.remove(id)
-                    view.translationX = 0f
-                    view.translationY = 0f
-                    view.scaleX = 1f
-                    view.scaleY = 1f
-                    view.rotation = 0f
+                    view.translationX = to[0] * density
+                    view.translationY = to[1] * density
+                    view.scaleX = to[2]
+                    view.scaleY = to[3]
+                    view.rotation = to[4]
                 }
             }
             "inset" -> {
@@ -377,6 +379,19 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         val file = java.io.File(activity.getExternalFilesDir(null), "page.png")
         file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         Rocx.say(Log.INFO, "snapshot: ${file.path} (${bitmap.width}x${bitmap.height})")
+    }
+
+    /** Each view's transitions (`style.transition`: `opacity 150 0,transform 120 0`). */
+    private val transitions = HashMap<Long, String>()
+
+    /** How long a change to a view's `property` takes and waits (ms), as its transitions say. */
+    private fun transition(id: Long, property: String): Pair<Long, Long> {
+        val spec = transitions[id] ?: return Pair(0L, 0L)
+        for (item in spec.split(",")) {
+            val parts = item.split(" ")
+            if (parts.size == 3 && parts[0] == property) return Pair(parts[1].toFloat().toLong(), parts[2].toFloat().toLong())
+        }
+        return Pair(0L, 0L)
     }
 
     /** `position: sticky` views: their edge (top or not) and its offset in dp. */
