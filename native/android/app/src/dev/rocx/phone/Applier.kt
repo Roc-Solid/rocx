@@ -154,6 +154,11 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                     val id = buffer.long
                     moved(id, buffer.float, buffer.float, buffer.float, buffer.float)
                 }
+                10 -> {
+                    val id = buffer.long
+                    val holes = LongArray(buffer.int) { buffer.long }
+                    snapshot(id, holes)
+                }
                 else -> throw IllegalStateException("rocx: unknown op $op")
             }
         }
@@ -626,6 +631,59 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
     private fun extentOf(view: View, frame: Frame) {
         frame.width = maxOf(rootFrame.first, rootExtent.first)
         frame.height = maxOf(rootFrame.second, rootExtent.second)
+    }
+
+    /**
+     * A navigation's view transition (D-142, SNAPSHOT): the screen as it is now (the page left, its
+     * fixed layer too) pictured, cleared where its named views are (`view-transition-name`: they
+     * stay, live, and show through), and put over everything as view `id`, which the host's frames
+     * fade and then take away (DESTROY).
+     */
+    private fun snapshot(id: Long, holes: LongArray) {
+        val started = System.nanoTime()
+        views[id]?.let { destroy(id) }
+        val parent = screen.parent as? ViewGroup ?: return
+        if (parent.width <= 0 || parent.height <= 0) return
+        // A recording of the screen's drawing (a display list, which the render thread draws), not
+        // its pixels: no raster of the whole page on the main thread.
+        val recorded = android.graphics.Picture()
+        val canvas = recorded.beginRecording(parent.width, parent.height)
+        (screen.background as? android.graphics.drawable.ColorDrawable)?.let { canvas.drawColor(it.color) }
+        parent.draw(canvas)
+        recorded.endRecording()
+        val origin = IntArray(2)
+        val at = IntArray(2)
+        parent.getLocationInWindow(origin)
+        val cut = holes.toList().mapNotNull { hole ->
+            val view = views[hole]?.takeIf { it.isShown } ?: return@mapNotNull null
+            view.getLocationInWindow(at)
+            val left = (at[0] - origin[0]).toFloat()
+            val top = (at[1] - origin[1]).toFloat()
+            android.graphics.RectF(left, top, left + view.width * view.scaleX, top + view.height * view.scaleY)
+        }
+        val picture = PagePicture(activity, recorded, cut)
+        parent.addView(picture, FrameLayout.LayoutParams(parent.width, parent.height))
+        views[id] = picture
+        kinds[id] = "page"
+        Rocx.say(Log.DEBUG, "the page left pictured in ${"%.2f".format((System.nanoTime() - started) / 1e6)} ms")
+    }
+
+    /** The page left (D-142): its drawing replayed, but where its named views are, which show through. */
+    private class PagePicture(context: android.content.Context, private val recorded: android.graphics.Picture, private val holes: List<android.graphics.RectF>) : View(context) {
+        init {
+            isClickable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            tag = "rocx:page"
+            // Faded as one picture, on the render thread.
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            canvas.save()
+            for (hole in holes) canvas.clipOutRect(hole)
+            canvas.drawPicture(recorded)
+            canvas.restore()
+        }
     }
 
     /**

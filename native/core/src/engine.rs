@@ -2481,6 +2481,11 @@ pub fn body() -> Option<NodeId> {
     })
 }
 
+/// Whether a read (or a stylesheet) is on its way: the page isn't whole yet (D-142).
+pub fn reading() -> bool {
+    started() && with(|engine| engine.asked.values().any(|asked| matches!(asked, Asked::Read | Asked::Sheet(_) | Asked::Navigation(_))))
+}
+
 /// Whether anything wants the display's frames (`on:frame`).
 pub fn wants_frames() -> bool {
     started() && with(|engine| !engine.frames.is_empty())

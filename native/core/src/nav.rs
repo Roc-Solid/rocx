@@ -499,6 +499,11 @@ pub fn answered(id: u64, result: Result<Answered, String>) {
     let stays = options.refresh && to == engine::with(|engine| engine.path.clone());
     enter(&at, &options);
     engine::with(|engine| engine.nav.navigations += 1);
+    // A view transition, where the app asked for one (D-040 §5.3, D-142): the next render pictures
+    // the page left before it changes.
+    if !stays {
+        crate::native::page_transition();
+    }
     commit(Some(&answer.body), &to, options.refresh);
     if !stays {
         scrolled(&options);

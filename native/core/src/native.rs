@@ -30,6 +30,8 @@
 //! 8 EXTENT   id:u64 w:f32 h:f32           the size of what a scrolling view holds (the page's too)
 //! 9 MOVE     id:u64 x:f32 y:f32 w:f32 h:f32   a frame mid-transition (D-142): the view placed there
 //!                                          at once, its parent not laid out again
+//! 10 SNAPSHOT id:u64 count:u32 ids:u64…   the screen as it is, a picture over it (view `id`), with
+//!                                          holes where these views are (a page's change, D-142)
 //! ```
 //!
 //! What moves (D-142: CSS transitions and animations, Roc's transition directives, glides) is
@@ -66,6 +68,8 @@ const MARKER: u64 = 1 << 44;
 const GAP: u64 = 1 << 46;
 /// The screen's layer: what is `position: fixed`, over the scrolling page.
 pub const LAYER: u64 = 1 << 45;
+/// The picture of the page left (D-142: a navigation's view transition), over the new one.
+pub const PAGE: u64 = 1 << 47;
 const LOW: u64 = (1 << 40) - 1;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -101,6 +105,8 @@ pub struct View {
     pub subgrid: Option<bool>,
     /// What moves it (D-142): its CSS transitions and animations, Roc's transitions.
     pub motion: Option<Box<Moves>>,
+    /// It has a `view-transition-name`: a page's change leaves it as it is (D-142).
+    pub named: bool,
 }
 
 /// What may move a view (D-142), as its style and its element's directives say.
@@ -193,6 +199,7 @@ impl View {
             container: false,
             subgrid: None,
             motion: None,
+            named: false,
         }
     }
 }
@@ -207,6 +214,17 @@ thread_local! {
     static OUTS: RefCell<HashMap<u64, usize>> = RefCell::new(HashMap::new());
     /// Where each view that glides was after the last render, on the page, by its id and its key.
     static GLIDERS: RefCell<(HashMap<u64, [f32; 4]>, HashMap<String, (u64, [f32; 4])>)> = RefCell::new((HashMap::new(), HashMap::new()));
+    /// A navigation's view transition (D-142): asked for (`page_transition`), the animations its
+    /// rules give the page left and the page coming, and whether the picture of the one left is up.
+    static PAGE_WANTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static SETTLING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether the first page has been shown whole (no read on its way) since the app started: before,
+    /// its renders are its first paint's, which a browser has from the server, and start no CSS
+    /// transition (D-142).
+    static WHOLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static PAGE_ANIMATIONS: RefCell<Option<(Vec<CssAnimation>, Vec<CssAnimation>)>> = const { RefCell::new(None) };
+    static PAGE_PLAY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static PAGE_SHOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Whether the page's CSS styles a pressed element (`:active`): a press is told to the engine then.
     static HAS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The element the phone's focus is on (`:focus`), and the one being pressed (`:active`).
@@ -237,6 +255,27 @@ struct Screen {
 pub fn set_reduced_motion(reduced: bool) {
     SCREEN.with(|screen| screen.borrow_mut().reduced = reduced);
     LAST_KEY.with(|last| last.set(0));
+}
+
+/// A navigation is about to change the page (D-142, runtime.js's `transitionsWanted`): when the app
+/// asked for view transitions (`<html data-rocx-transitions>`) and less motion isn't asked for, the
+/// next render plays one: a picture of the page left fades as its `::view-transition-old(root)`
+/// says, over the new page, whose views (but those with a `view-transition-name`, which stay) come
+/// as `::view-transition-new(root)` says (a cross-fade without such rules, as a browser's).
+pub fn page_transition() {
+    let reduced = SCREEN.with(|screen| screen.borrow().reduced);
+    let wanted = !reduced
+        && engine::with(|engine| {
+            let dom = &engine.dom;
+            dom.children(dom.root).find(|&child| dom.tag(child) == Some("html")).is_some_and(|html| dom.attr(html, "data-rocx-transitions").is_some())
+        });
+    PAGE_WANTED.with(|page| page.set(wanted));
+}
+
+/// While the screen is projected again for its `@container` queries (D-142): the change is the same
+/// style resolution's, and starts no CSS transition. Answers what it was.
+pub fn settling(on: bool) -> bool {
+    SETTLING.with(|settling| settling.replace(on))
 }
 
 /// Whether the page's CSS styles a pressed element (D-142: a press is worth a render only then).
@@ -303,6 +342,7 @@ pub fn invalidate() {
 /// The screen is sent again, whole, on the next render (a new activity).
 pub fn forget_shown() {
     SHOWN.with(|shown| *shown.borrow_mut() = None);
+    WHOLE.with(|whole| whole.set(false));
     MOTION.with(|motion| *motion.borrow_mut() = Motion::default());
     GLIDERS.with(|gliders| *gliders.borrow_mut() = Default::default());
     // Parts on their way out go at once: nothing plays their animations any more.
@@ -483,6 +523,15 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
         };
         projection.paint_tree(root);
         projection.subgrids();
+        if PAGE_WANTED.with(|page| page.get()) {
+            let c = match html {
+                Some(html) => projection.compute(html, &top),
+                None => top.clone(),
+            };
+            let old = projection.page_animations("old", &c);
+            let new = projection.page_animations("new", &c);
+            PAGE_ANIMATIONS.with(|page| *page.borrow_mut() = Some((old, new)));
+        }
         kept_now = std::mem::take(&mut projection.kept);
         root
     };
@@ -934,6 +983,7 @@ impl<'a> Projection<'a> {
         }
         self.paint(&mut view, &computed);
         self.moves(node, &mut view, &computed);
+        view.named = computed.get("view-transition-name").is_some_and(|name| name != "none");
         // A tappable view's feedback while pressed (D-142): the platform's ripple, unless the page
         // gives one of its own.
         if view.props.get("click").is_some_and(|click| click == "true")
@@ -1410,6 +1460,17 @@ impl<'a> Projection<'a> {
             return None;
         }
         view.style = layout::style(computed, Role::Anonymous, None);
+        // Its element's `color` transition (D-142): the text inherits the colour as it moves, as a
+        // browser's anonymous box does.
+        let colour: Vec<(String, Timing)> = motion::transitions(computed.get("transition-property"), computed.get("transition-duration"), computed.get("transition-timing-function"), computed.get("transition-delay"))
+            .into_iter()
+            .filter(|(property, _)| motion::keys_of(property).contains(&"style.color"))
+            .map(|(_, timing)| ("style.color".to_string(), timing))
+            .take(1)
+            .collect();
+        if !colour.is_empty() {
+            view.motion = Some(Box::new(Moves { transitions: colour, ..Moves::default() }));
+        }
         self.put(id, view);
         Some(id)
     }
@@ -1721,6 +1782,35 @@ impl<'a> Projection<'a> {
             }
         }
         pose
+    }
+
+    /// A view transition's animations for the root's old or new picture (`part`), as its rules
+    /// (`::view-transition-old(root)`…) say, its keyframes resolved for the page's root; a browser's
+    /// own cross-fade (a quarter second, eased) without them.
+    fn page_animations(&mut self, part: &str, c: &Computed) -> Vec<CssAnimation> {
+        let declarations = self.sheet.view_transition(part, "root");
+        if declarations.is_empty() {
+            let mut pose = Pose::default();
+            pose.looks.insert("style.opacity".into(), "0".into());
+            let at = if part == "old" { 1.0 } else { 0.0 };
+            return vec![CssAnimation { name: format!("-ua-view-transition-fade-{part}"), index: 0, timing: Timing { fill: Fill::Both, ..Timing::once(250.0, 0.0, Easing::Linear, Fill::Both) }, easing: Easing::EASE, paused: false, frames: vec![(at, None, pose)] }];
+        }
+        let get = |name: &str| declarations.iter().rev().find(|(have, _)| have == name).map(|(_, value)| value.clone());
+        let mut out = Vec::new();
+        for (index, named) in motion::animations(&get).into_iter().enumerate() {
+            let Some(rules) = self.sheet.keyframes(&named.name).cloned() else { continue };
+            let mut frames = Vec::new();
+            for rule in rules.iter() {
+                let easing = rule.declarations.iter().rev().find(|(name, _)| name == "animation-timing-function").and_then(|(_, value)| Easing::parse(value));
+                let declarations: Vec<(String, String)> = rule.declarations.iter().filter(|(name, _)| !name.starts_with("animation")).cloned().collect();
+                let pose = self.pose(c, &declarations);
+                for at in &rule.at {
+                    frames.push((*at, easing.clone(), pose.clone()));
+                }
+            }
+            out.push(CssAnimation { name: named.name, index, timing: named.timing, easing: named.easing, paused: named.paused, frames });
+        }
+        out
     }
 
     /// A tappable element's pressed look (D-142): none when the page gives it one (an `:active` rule
@@ -2165,6 +2255,7 @@ pub fn render() -> Vec<u8> {
     // not of layout, as CSS's).
     let mut starts: Vec<(u64, String, String, Timing)> = Vec::new();
     let mut restyled: std::collections::HashSet<(u64, &'static str)> = std::collections::HashSet::new();
+    let settling = SETTLING.with(|settling| settling.get()) || !WHOLE.with(|whole| whole.get());
     let first = SHOWN.with(|shown| {
         let mut shown = shown.borrow_mut();
         // Nothing shown yet and a stylesheet still on its way: the first frame waits for it, as a
@@ -2179,6 +2270,15 @@ pub fn render() -> Vec<u8> {
             Some(last) => (Some(last.root), &last.views, last.title.clone()),
             None => (None, &empty, None),
         };
+        // A navigation's view transition (D-142): the page left pictured first, before anything of
+        // it changes, with holes where its named views are (they stay, live).
+        if PAGE_WANTED.with(|page| page.replace(false)) && !old.is_empty() && PAGE_ANIMATIONS.with(|page| page.borrow().is_some()) {
+            let mut named: Vec<u64> = old.iter().filter(|(_, view)| view.named).map(|(id, _)| *id).collect();
+            named.sort_unstable();
+            ops.snapshot(PAGE, &named);
+            PAGE_PLAY.with(|play| play.set(true));
+            PAGE_SHOWN.with(|shown| shown.set(true));
+        }
         let mut ids: Vec<&u64> = views.keys().collect();
         ids.sort();
         // A view whose kind changed is made again.
@@ -2206,7 +2306,7 @@ pub fn render() -> Vec<u8> {
                 if let Some(was) = was
                     && motion::KEYS.contains(&key.as_str())
                 {
-                    if let Some(timing) = transition_of(view, key) {
+                    if let Some(timing) = transition_of(view, key).filter(|_| !settling) {
                         let from = MOTION.with(|motion| motion.borrow().shown(*id, key).map(str::to_string)).or_else(|| was.props.get(key).cloned()).unwrap_or_default();
                         starts.push((*id, key.clone(), from, timing));
                         return;
@@ -2228,6 +2328,10 @@ pub fn render() -> Vec<u8> {
                         changed(key, "", &mut ops);
                     }
                 }
+            }
+            if let Some(was) = was
+                && !settling
+            {
                 if was.transform != view.transform || was.origin != view.origin {
                     restyled.insert((*id, "style.transform"));
                 }
@@ -2443,6 +2547,9 @@ pub fn render() -> Vec<u8> {
         shown.views = std::mem::take(&mut views);
         // What this render starts moving, and each moving view's look now (D-142).
         moves_after_layout(shown, std::mem::take(&mut starts), screen.reduced, &mut ops);
+        if !engine::reading() {
+            WHOLE.with(|whole| whole.set(true));
+        }
     });
     LAST_LAYOUT.with(|last| last.set(laid_out.as_secs_f64() * 1000.0));
     let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
@@ -2584,6 +2691,11 @@ fn moves_after_layout(shown: &Shown, starts: Vec<(u64, String, String, Timing)>,
             }
         }
         glide(shown, &mut motion, moved && !reduced);
+        if PAGE_PLAY.with(|play| play.replace(false))
+            && let Some((old, new)) = PAGE_ANIMATIONS.with(|page| page.borrow_mut().take())
+        {
+            play_page(shown, &mut motion, &old, &new);
+        }
         let now = motion.clock;
         let frame = motion.frame(now, false, &|id, key| under_of(shown, id, key));
         for (id, key, value) in frame.sets {
@@ -2597,6 +2709,57 @@ fn moves_after_layout(shown: &Shown, starts: Vec<(u64, String, String, Timing)>,
             }
         }
     });
+}
+
+/// A view transition's animations (D-142): the old page's on its picture (`PAGE`), the new page's on
+/// each of its outermost views that hold no named one (a named one stays as it is, as its own group
+/// in a browser's).
+fn play_page(shown: &Shown, motion: &mut Motion, old: &[CssAnimation], new: &[CssAnimation]) {
+    let screen = SCREEN.with(|screen| *screen.borrow());
+    let as_page = |animation: &CssAnimation, frame: [f32; 4]| {
+        let mut played = css_animation(animation, frame);
+        played.kind = Moving::Page;
+        played
+    };
+    for animation in old {
+        motion.play(PAGE, as_page(animation, [0.0, 0.0, screen.width, screen.height]));
+    }
+    // What holds a named view: walked into; what doesn't: animated whole.
+    let mut parents: HashMap<u64, u64> = HashMap::new();
+    for (id, view) in shown.views.iter() {
+        for child in &view.children {
+            parents.insert(*child, *id);
+        }
+    }
+    let mut holding: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    for (id, _) in shown.views.iter().filter(|(_, view)| view.named) {
+        let mut at = parents.get(id);
+        while let Some(parent) = at {
+            if !holding.insert(*parent) {
+                break;
+            }
+            at = parents.get(parent);
+        }
+    }
+    let mut tops = Vec::new();
+    let mut stack = vec![shown.root, LAYER];
+    while let Some(id) = stack.pop() {
+        let Some(view) = shown.views.get(&id) else { continue };
+        if view.named || (id == LAYER && view.children.is_empty()) {
+            continue;
+        }
+        if holding.contains(&id) {
+            stack.extend(view.children.iter().copied());
+        } else {
+            tops.push(id);
+        }
+    }
+    for id in tops {
+        let frame = shown.frames.get(&id).map(|frame| frame.0).unwrap_or([0.0; 4]);
+        for animation in new {
+            motion.play(id, as_page(animation, frame));
+        }
+    }
 }
 
 /// `transition:move` (D-031, runtime.js's `measure` and `glide`): each view that glides and that a
@@ -2652,7 +2815,17 @@ fn glide(shown: &Shown, motion: &mut Motion, moved: bool) {
                 }
                 let Some(to) = boxes.get(id).copied() else { continue };
                 let from = match last.0.get(id) {
-                    Some(from) => *from,
+                    // Where it is seen: a glide playing has it away from its place (runtime.js reads
+                    // the box with its glide's translation, and the next glide starts there).
+                    Some(from) => {
+                        let seen = |text: Option<&str>| -> [f32; 2] {
+                            let n: Vec<f32> = text.unwrap_or("").split_whitespace().filter_map(|word| word.parse().ok()).collect();
+                            if n.len() == 7 { [n[0], n[1]] } else { [0.0, 0.0] }
+                        };
+                        let (shown_at, own) = (seen(motion.shown(*id, "style.transform")), seen(shown.transforms.get(id).map(String::as_str)));
+                        let away = if motion.drives(*id, "style.transform") { [shown_at[0] - own[0], shown_at[1] - own[1]] } else { [0.0, 0.0] };
+                        [from[0] + away[0], from[1] + away[1], from[2], from[3]]
+                    }
                     None => {
                         let Some((other, from)) = key.as_ref().and_then(|key| went.get(key)).copied() else { continue };
                         // A pair: no transition in for it, and the other's part gone at once.
@@ -2683,6 +2856,9 @@ fn glide(shown: &Shown, motion: &mut Motion, moved: bool) {
                     continue;
                 }
                 let scale = |a: f32, b: f32| if b > 0.0 { a / b } else { 1.0 };
+                if std::env::var("ROCX_TRACE_GLIDES").is_ok() {
+                    crate::log(crate::Level::Info, &format!("rocx: glide #{id} from {from:?} to {to:?}"));
+                }
                 motion.play(id, Animation::new(Moving::Glide([from[0] - to[0], from[1] - to[1], scale(from[2], to[2]), scale(from[3], to[3])]), timing, Vec::new()));
             }
         }
@@ -2702,6 +2878,12 @@ pub fn tick(now: f64) -> (Vec<u8>, Vec<(NodeId, &'static str, String)>) {
         Some(MOTION.with(|motion| motion.borrow_mut().frame(now, true, &|id, key| under_of(shown, id, key))))
     });
     let Some(frame) = frame else { return (Vec::new(), Vec::new()) };
+    // The old page's picture goes once its animation is over.
+    if PAGE_SHOWN.with(|page| page.get()) && !MOTION.with(|motion| motion.borrow().running.contains_key(&PAGE)) {
+        PAGE_SHOWN.with(|page| page.set(false));
+        MOTION.with(|motion| motion.borrow_mut().forget(PAGE));
+        ops.destroy(PAGE);
+    }
     for (id, key, value) in frame.sets {
         if key == motion::FRAME {
             let n: Vec<f32> = value.split_whitespace().filter_map(|word| word.parse().ok()).collect();
@@ -2809,6 +2991,16 @@ impl Ops {
             self.bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
+    /// The screen pictured, holes where `holes` are (D-142).
+    fn snapshot(&mut self, id: u64, holes: &[u64]) {
+        self.bytes.push(10);
+        self.id(id);
+        self.bytes.extend_from_slice(&(holes.len() as u32).to_le_bytes());
+        for hole in holes {
+            self.id(*hole);
+        }
+    }
+
     /// A frame mid-transition (D-142).
     fn moved(&mut self, id: u64, frame: [f32; 4]) {
         self.bytes.push(9);
@@ -2884,6 +3076,13 @@ pub fn describe(ops: &[u8]) -> Vec<String> {
                 let view = id(&mut at);
                 let (x, y, w, h) = (float(&mut at), float(&mut at), float(&mut at), float(&mut at));
                 out.push(format!("move {view} {x} {y} {w} {h}"));
+            }
+            10 => {
+                let view = id(&mut at);
+                let count = u32::from_le_bytes(ops[at..at + 4].try_into().unwrap_or_default()) as usize;
+                at += 4;
+                let holes: Vec<String> = (0..count).map(|_| id(&mut at).to_string()).collect();
+                out.push(format!("snapshot {view} [{}]", holes.join(", ")));
             }
             other => {
                 out.push(format!("? op {other}"));
@@ -3117,6 +3316,34 @@ mod tests {
         assert!(half.contains(&format!("move {id} 0 0 150 10")), "{half:?}");
         let end = tick_at(1120.0);
         assert!(end.contains(&format!("set {id} style.background=\"#ff000000\"")) && end.contains(&format!("move {id} 0 0 200 10")), "{end:?}");
+        assert!(!moving());
+    }
+
+    #[test]
+    fn a_page_change_pictures_the_page_left_and_brings_the_new_one() {
+        use Make::*;
+        let css = "body { margin: 0; } header { view-transition-name: header; height: 40px; } main { height: 100px; } ::view-transition-old(root) { animation: 120ms ease-in both page-leave; } ::view-transition-new(root) { animation: 200ms linear 40ms both page-enter; } @keyframes page-leave { to { opacity: 0; } } @keyframes page-enter { from { opacity: 0; transform: translateY(8px); } }";
+        screen(css, vec![El("div", &[("class", "app")], vec![El("header", &[], vec![Text("Acme")]), El("main", &[], vec![Text("first")])])]);
+        let node = |tag: &str| engine::with(|engine| (0..engine.dom.nodes.len()).find(|&node| engine.dom.tag(node) == Some(tag)).unwrap());
+        let (html, header, main) = (node("html"), node("header"), node("main"));
+        engine::with(|engine| engine.dom.set_attr(html, "data-rocx-transitions", ""));
+        render();
+        tick_at(0.0);
+        page_transition();
+        engine::with(|engine| {
+            let text = engine.dom.first_child(main).unwrap();
+            engine.dom.set_text(text, "second");
+        });
+        let ops = describe(&render());
+        assert!(PAGE_SHOWN.with(|page| page.get()), "the page left pictured (its SNAPSHOT op first in the render's first batch)");
+        assert!(ops.contains(&format!("set {PAGE} style.opacity=\"1\"")), "{ops:?}");
+        assert!(ops.contains(&format!("set {} style.opacity=\"0\"", native_id(main))), "the new page's main comes from hidden: {ops:?}");
+        assert!(!ops.iter().any(|op| op.starts_with(&format!("set {} style.opacity", native_id(header)))), "the named header stays: {ops:?}");
+        tick_at(16.0);
+        let half = tick_at(16.0 + 60.0);
+        assert!(half.iter().any(|op| op.starts_with(&format!("set {PAGE} style.opacity="))), "{half:?}");
+        let over = tick_at(400.0);
+        assert!(over.contains(&format!("destroy {PAGE}")), "the picture goes once faded: {over:?}");
         assert!(!moving());
     }
 

@@ -583,7 +583,11 @@ pub fn pump() {
     if told.is_empty() && native::take_rerender() {
         let depth = VIEWPORT_ROUNDS.fetch_add(1, Ordering::Relaxed);
         if depth < 4 {
+            // The same style resolution as the render before, as a browser's container queries are:
+            // what they change starts no transition (D-142).
+            let was = native::settling(true);
             pump();
+            native::settling(was);
         }
         VIEWPORT_ROUNDS.fetch_sub(1, Ordering::Relaxed);
     }

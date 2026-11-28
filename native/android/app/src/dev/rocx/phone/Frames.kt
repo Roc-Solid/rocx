@@ -20,12 +20,28 @@ object Frames : Choreographer.FrameCallback {
         Choreographer.getInstance().postFrameCallback(this)
     }
 
+    /** What the host's frames cost, said every 120 frames (logcat's `rocx`, at Debug). */
+    private var counted = 0
+    private var spent = 0L
+    private var most = 0L
+
     override fun doFrame(frameTimeNanos: Long) {
+        val started = System.nanoTime()
         val more = try {
             Rocx.tick(frameTimeNanos)
         } catch (failure: Exception) {
             Rocx.say(Log.ERROR, "a frame failed: ${failure.message}")
             false
+        }
+        val took = System.nanoTime() - started
+        counted++
+        spent += took
+        most = maxOf(most, took)
+        if (counted == 120) {
+            Rocx.say(Log.DEBUG, "frames: 120 ticks, ${"%.3f".format(spent / 120 / 1e6)} ms each, at most ${"%.3f".format(most / 1e6)} ms")
+            counted = 0
+            spent = 0L
+            most = 0L
         }
         if (more) Choreographer.getInstance().postFrameCallback(this) else running = false
     }

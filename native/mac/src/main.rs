@@ -20,7 +20,8 @@
 //! timed); motion's (D-142): `tick:<ms>` (that long of the display's frames, 16 ms each, on a clock of
 //! the runner's: what moves sends its looks, `ops` prints them), `key:<combo>` (a hardware keyboard's
 //! key down and up, `Mod+K`, `/`, `ArrowDown`, `Escape`, to the focused element or the body:
-//! whether a handler took it), `moving` (whether anything still moves).
+//! whether a handler took it), `focus:<id>` (a view focused, as Tab focuses it), `moving` (whether
+//! anything still moves).
 //!
 //! Options: `--origin <url>`, `--path <start path>`, `--files <dir>` (where the cookie jar is kept,
 //! as an app's files dir).
@@ -195,6 +196,12 @@ fn main() {
                     }
                 }
                 println!("{frames} frames ({:.0} ms on), {}", *clock, if core::native::moving() { "still moving" } else { "nothing moves" });
+            }
+            // A view focused, as a keyboard's Tab focuses it (D-142).
+            "focus" => {
+                let id: u64 = value.parse().unwrap_or(0);
+                println!("focus #{id}");
+                core::event(id, "focus", "");
             }
             "moving" => println!("{}", if core::native::moving() || FRAMES.load(Ordering::Relaxed) && core::native::moving() { "moving" } else { "still" }),
             "key" => {
