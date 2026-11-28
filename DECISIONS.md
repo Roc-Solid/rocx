@@ -7698,3 +7698,58 @@ that comes after can't undo it.
 **Costs.** A row per forgotten customer, kept for good. No refund: an app that owes one refunds first.
 
 **Reversible:** yes: the function and the table go; deleted customers stay deleted at Stripe.
+
+## D-136 A stacked area chart in packages/charts, its bands' colours from the data
+
+**Status.** Built (2026-11-28).
+
+**Context.** An app charting one count split into parts over time (visits by source, views by
+channel, sales by region, each day or since something began) had a line of the total
+(`<LineChart>`), which says nothing of the parts, or a column a day (`<StackedBarChart>`), whose
+series take the five colours by position and whose columns are slots, not a scale of time. Such
+an app drew its own stacked area with the package's `Scale`, `Path`, `Ticks` and `Ease`, and used
+it in two places. The donut's shares that add up to 100 (D-130) were `DonutChart.shares`, inside a
+component, which another component can't import.
+
+**Options.**
+1. Leave it to apps: the arithmetic is the package's already.
+2. A `stacked` prop on `<LineChart>`, taking several series.
+3. A component of its own, `<StackedAreaChart>`: points across to scale, as the line chart's, and a
+   band for each part, its colour from the data, as D-130's slices.
+
+**Decision.** 3. `StackedAreaChart.Data : { xs : List(Dec), bands : List(Band) }`,
+`Band := { label : Str, values : List(Dec), color : Str ?? "" }`: each band stacked from the axis
+up in order (the first at the bottom), filled (`--chart-fill`, 0.3 unless set) under an edge in its
+colour, so the top edge is the whole; the axis up from zero to the highest whole. A band keeps its
+label's key (`Keys.unique`), and is in its `color` (set as its `--band`) or, given none, the
+chart's colour for its place (`--chart-1` to `--chart-5`), as a stacked bar chart's series. A
+legend over the chart says each band's label, its value and, with more than one, its share of the
+whole: at the point nearest the pointer (whose whole shows over the plot and whose `x` on the axis,
+found by `Scale.strips` as the line chart's points), or, while none is, as `resting` says: `Last`,
+the last point's (a running total's now, the default), or `Sum`, all its points' added up (of a
+count each day, the period's: the last point would be only today's so far). Props as the line
+chart's otherwise: `label`, `format`, `format_x`, `smooth`. New values glide the bands to them a
+frame at a time; more points or fewer, or other bands, are the data's at once.
+
+- `Format.shares(values)` is the donut's arithmetic, moved where a component can import it (plain
+  Roc): whole percents that add up to 100, "<1%" for a sliver. `DonutChart.shares` stays, calling it.
+- The donut centres its ring when its legend wraps under it in a narrow box (`justify-content:
+  center`; on one row the legend grows, so nothing moves): before, the ring sat at the row's start.
+- **Tested:** `expect`s (two bands stacked, the second's lower edge the first's upper; below zero
+  and missing values as zero; a band's colour from the data, two bands with one label two bands; the
+  outline; the legend's values and shares at the last point, at a point pointed at and summed; a
+  band alone with no share; gliding the same bands, and other bands at once; `Format.shares`, moved
+  from the donut's); the site's chart test (the demo's three bands from the server, the legend's
+  shares adding up to 100, another fortnight moving them, no frames once there).
+- **Docs:** packages/charts' README (the component, `Format.shares`, the colours, styling, limits),
+  the docs site's charts page (a live demo, a shop's orders each day by where they came from,
+  resting on the fortnight's), the root README's list.
+
+**Why.** A count by part over time is a common dashboard chart, and the parts are what a reader asks
+about ("which of them made the views?"). Its own component keeps `<LineChart>`'s one line simple, and
+the colours from the data let an app's parts look as they do elsewhere in it.
+
+**Costs.** An eighth component copied into each app that names the package. The chart is one image
+to a screen reader, as the line chart is; the legend's words are what it reads of the values.
+
+**Reversible:** yes: the component goes, and an app draws its own again.

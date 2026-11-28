@@ -162,39 +162,10 @@ DonutChart := [].{
 		slices.map(|slice| if (slice.value > 0.0) { ..slice, value: Dec.max(slice.value, total * least) } else slice)
 	}
 
-	## Each value's share of them all, as whole percents that add up to 100: each rounded down, and
-	## the points left over to the largest remainders (the earlier first on a tie). One with
-	## something that comes to none is "<1%"; below zero counts as zero, and nothing at all is "0%"
-	## each.
+	## Each value's share of them all, as whole percents that add up to 100 (`Format.shares`):
+	## what the legend, the middle and each slice's accessible name say.
 	shares : List(Dec) -> List(Str)
-	shares = |values| {
-		kept = values.map(|value| Dec.max(value, 0.0))
-		total = kept.fold(0.0, |sum, value| sum + value)
-		if total <= 0.0 {
-			kept.map(|_| "0%")
-		} else {
-			exact = kept.map(|value| value * 100.0 / total)
-			whole = exact.map(|share| Dec.floor(share))
-			left = 100.0 - whole.fold(0.0, |sum, share| sum + share)
-			var $order = []
-			for item in List.map2(exact, whole, |share, down| share - down).map_with_index(|remainder, index| { index, remainder }) {
-				at = $order.find_first_index(|other| other.remainder < item.remainder) ?? $order.len()
-				$order = $order.take_first(at).append(item).concat($order.drop_first(at))
-			}
-			var $bumped = []
-			for item in $order {
-				if $bumped.len().to_dec() < left {
-					$bumped = $bumped.append(item.index)
-				}
-			}
-			List.map2(kept, whole, |value, down| (value, down)).map_with_index(
-				|(value, down), index| {
-					percent = if ($bumped.contains(index)) down + 1.0 else down
-					if (percent == 0.0 and value > 0.0) "<1%" else "${Format.num(percent, 0)}%"
-				},
-			)
-		}
-	}
+	shares = |values| Format.shares(values)
 
 	## The slice with `key`'s path: nothing until it is drawn.
 	path : List(DonutChart.Arc), Str, Dec -> Str
@@ -225,10 +196,13 @@ DonutChart := [].{
 	}
 
 	<style>
+		/* The ring and its legend share a row; in a narrow box the legend wraps under it and the
+		   ring is centred over it (the legend grows, so on one row this moves nothing). */
 		.donut-chart {
 			display: flex;
 			flex-wrap: wrap;
 			align-items: center;
+			justify-content: center;
 			gap: 1.5rem 2rem;
 			margin: 0;
 		}
@@ -381,14 +355,8 @@ expect {
 	next.slices.map(|slice| slice.color) == ["purple", "orange"]
 }
 
-# Whole percents that add up to 100, the points left over to the largest remainders.
-expect DonutChart.shares([1.0, 1.0, 1.0]) == ["34%", "33%", "33%"]
-expect DonutChart.shares([5.0, 995.0]) == ["1%", "99%"]
-
-# Too small to make a percent, but not nothing; nothing at all.
-expect DonutChart.shares([2.0, 1989.0]) == ["<1%", "100%"]
-expect DonutChart.shares([0.0, 0.0]) == ["0%", "0%"]
-expect DonutChart.shares([3.0, -1.0]) == ["100%", "0%"]
+# The legend's shares are Format.shares': whole percents that add up to 100, "<1%" for a sliver.
+expect DonutChart.shares([2.0, 1.0, 1989.0]) == ["<1%", "<1%", "100%"]
 
 # A value too small to see is drawn as a sliver; nothing stays nothing.
 expect DonutChart.visible([{ key: "a", value: 1.0, color: "" }, { key: "b", value: 999.0, color: "" }, { key: "c", value: 0.0, color: "" }]).map(|slice| slice.value) == [10.0, 999.0, 0.0]

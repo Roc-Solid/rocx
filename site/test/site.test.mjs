@@ -867,7 +867,7 @@ test("the flock flies, grows and shrinks by its buttons or a number typed, and s
 
 test("charts: each glides to other data and stops, Auto gives it more until pressed, bars, slices and dots come and go, and three looks restyle them", { skip }, async () => {
 	const page = await open("/ecosystem/charts");
-	const demos = ["chart-bar", "chart-stacked", "chart-line", "chart-sparkline", "chart-donut", "chart-scatter", "chart-heatmap"];
+	const demos = ["chart-bar", "chart-stacked", "chart-line", "chart-area", "chart-sparkline", "chart-donut", "chart-scatter", "chart-heatmap"];
 	const all = (selector) => `[...document.querySelectorAll(${JSON.stringify(selector)})]`;
 	const settled = async (demo) => {
 		// A glide is over in well under a second; then no frames at all.
@@ -963,6 +963,17 @@ test("charts: each glides to other data and stops, Auto gives it more until pres
 	await roll("chart-stacked");
 	await settled("chart-stacked");
 	assert.equal(await parts(), (await months()) * 3, "three parts a month, another half-year");
+
+	// Stacked area: a band for each source, from the server, the legend saying the fortnight's in
+	// shares that add up to 100; another fortnight glides the bands to it.
+	const bands = () => page.eval(`${all("[data-demo=chart-area] path.band")}.map((band) => band.getAttribute("d"))`);
+	assert.deepEqual(await page.eval(`${all("[data-demo=chart-area] .legend .name")}.map((name) => name.textContent)`), ["Search", "Social", "Email"]);
+	assert.equal(await page.eval(`${all("[data-demo=chart-area] .legend .share")}.reduce((sum, share) => sum + parseInt(share.textContent), 0)`), 100, "the fortnight's shares add up to 100");
+	const fortnight = await bands();
+	assert.equal(fortnight.length, 3, "a band a source");
+	await roll("chart-area");
+	await settled("chart-area");
+	assert.notDeepEqual(await bands(), fortnight, "the bands moved");
 
 	// Sparklines glide to another day.
 	const sparks = () => page.eval(`${all("[data-demo=chart-sparkline] .sparkline .line")}.map((line) => line.getAttribute("d"))`);

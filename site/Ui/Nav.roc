@@ -88,7 +88,7 @@ Nav := [].{
 			{
 				name: "Pages",
 				pages: [
-					{ path: Paths.ecosystem_charts, label: "Charts", blurb: "Seven kinds of chart that glide to their data, styled by CSS" },
+					{ path: Paths.ecosystem_charts, label: "Charts", blurb: "Eight kinds of chart that glide to their data, styled by CSS" },
 					{ path: Paths.ecosystem_forms, label: "Forms", blurb: "A form's rules written once, checked as it is typed and at the endpoint" },
 					{ path: Paths.ecosystem_markdown, label: "Markdown", blurb: "CommonMark in Roc, a <Markdown> component, and typed frontmatter" },
 					{ path: Paths.ecosystem_intl, label: "Intl", blurb: "Numbers, dates and translated messages, as each locale writes them" },

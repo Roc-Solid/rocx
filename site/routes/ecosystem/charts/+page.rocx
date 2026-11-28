@@ -1,6 +1,7 @@
 import pf.Html
 import ../../../Demos/BarDemo
 import ../../../Demos/LineDemo
+import ../../../Demos/AreaDemo
 import ../../../Demos/DonutDemo
 import ../../../Demos/ScatterDemo
 import ../../../Demos/StackDemo
@@ -19,12 +20,13 @@ import ../../../Ui/Demo
 ## they are styled, the modules the arithmetic is in, and the limits.
 meta = {
 	title: "Charts",
-	description: "Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts for Roc Solid apps, drawn as SVG: rendered on the server, hydrated in the browser, gliding to new data a frame at a time, and styled by custom properties.",
+	description: "Bar, stacked bar, line, stacked area, sparkline, donut, scatter and heatmap charts for Roc Solid apps, drawn as SVG: rendered on the server, hydrated in the browser, gliding to new data a frame at a time, and styled by custom properties.",
 	toc: [
 		{ id: "install", label: "Installing it" },
 		{ id: "bar", label: "<BarChart>" },
 		{ id: "stacked", label: "<StackedBarChart>" },
 		{ id: "line", label: "<LineChart>" },
+		{ id: "area", label: "<StackedAreaChart>" },
 		{ id: "sparkline", label: "<Sparkline>" },
 		{ id: "donut", label: "<DonutChart>" },
 		{ id: "scatter", label: "<ScatterChart>" },
@@ -43,8 +45,8 @@ view! = |_|
 				kicker={[<>{"The ecosystem · "}</>, <code>packages/charts</code>]}
 				title="Charts that glide to their data, and then stop"
 			>
-				Seven SVG charts for a dashboard, a report or a live tally: bar, stacked bar, line, sparkline, donut,
-				scatter and heatmap. The server renders them; the browser hydrates them like any component. When data
+				Eight SVG charts for a dashboard, a report or a live tally: bar, stacked bar, line, stacked area,
+				sparkline, donut, scatter and heatmap. The server renders them; the browser hydrates them like any component. When data
 				changes they glide to it, a frame at a time, then nothing runs. Every chart here is live: Randomize
 				gives it new data, Auto (on from the start) does so every 3.3 seconds, and Neon, Blueprint and Paper
 				restyle it with CSS custom properties alone.
@@ -202,6 +204,44 @@ view! = |_|
 				where the line is drawn, so a gliding line doesn't move them.
 			</p>
 
+			<Heading id="area">{"<StackedAreaChart>"}</Heading>
+		</NoHydration>
+		<Demo game meter="chart-area" idle="Roc is idle: the bands are where the data says.">
+			<div data-demo="chart-area"><AreaDemo /></div>
+		</Demo>
+		<NoHydration>
+			<Code title={Sources.charts_use_area.file} source={Sources.charts_use_area.rocx} />
+			<TableWrap>
+				<table>
+					<thead><tr><th>Prop</th><th>Is</th></tr></thead>
+					<tbody>
+						<tr>
+							<td><code>{"data! : () => StackedAreaChart.Data"}</code>, <code>{"Data : { xs : List(Dec), bands : List(StackedAreaChart.Band) }"}</code>, <code>{"Band := { label : Str, values : List(Dec), color : Str ?? \"\" }"}</code></td>
+							<td>
+								The points across (<code>xs</code>, to scale, as a line chart's <code>x</code>) and a
+								band for each part of the whole, a value at each point, stacked from the axis up in
+								order (the first at the bottom), so the top edge is the whole. New values glide the
+								bands to them; with more points or fewer, or other bands, the chart jumps. A value
+								below zero counts as zero. A band is in its <code>color</code> (any CSS colour), it and
+								its line in the legend; left out, it is the chart's colour for its place.
+							</td>
+						</tr>
+						<tr><td><code>label : Str</code></td><td>What the chart shows, for screen readers.</td></tr>
+						<tr><td><code>{"format : (Dec -> Str) ?? Format.short"}</code></td><td>A value as text: on the ticks up the side, each band's in the legend, and the whole over the point under the pointer.</td></tr>
+						<tr><td><code>{"format_x : (Dec -> Str) ?? Format.short"}</code></td><td>An <code>x</code> as text: on the ticks along the bottom, and the point's under the pointer.</td></tr>
+						<tr><td><code>{"smooth : Bool ?? Bool.False"}</code></td><td>Monotone curves through the points, as the line chart's.</td></tr>
+						<tr><td><code>{"resting : [Last, Sum] ?? Last"}</code></td><td>What the legend says while no point is pointed at: each band's value at the last point (<code>Last</code>, a running total's now), or all its points' added up (<code>Sum</code>, of a count each day the period's, as the demo's fortnight).</td></tr>
+					</tbody>
+				</table>
+			</TableWrap>
+			<p>
+				The side axis runs from zero to the highest whole, widened to round numbers; the bottom one as the line
+				chart's. The legend says each band's value and its share of the whole, in whole percents that add up
+				to 100 as a donut's do: at the point you point at, whose whole shows over the plot and whose
+				<code>x</code> on the axis, or, while you point at none, as <code>resting</code> says. To a screen
+				reader the chart is one image, beside the legend's words.
+			</p>
+
 			<Heading id="sparkline">{"<Sparkline>"}</Heading>
 		</NoHydration>
 		<Demo game meter="chart-sparkline" idle="Roc is idle: the lines are where the data says.">
@@ -349,11 +389,12 @@ view! = |_|
 			</p>
 			<details>
 				<summary>The buttons and the looks, and the demos' data: <code>{Sources.demo_shuffle.file}</code>
-				and the seven demos</summary>
+				and the eight demos</summary>
 				<Code title={Sources.demo_shuffle.file} source={Sources.demo_shuffle.rocx} />
 				<Code title={Sources.demo_bars.file} source={Sources.demo_bars.rocx} />
 				<Code title={Sources.demo_stacked.file} source={Sources.demo_stacked.rocx} />
 				<Code title={Sources.demo_line.file} source={Sources.demo_line.rocx} />
+				<Code title={Sources.demo_area.file} source={Sources.demo_area.rocx} />
 				<Code title={Sources.demo_sparkline.file} source={Sources.demo_sparkline.rocx} />
 				<Code title={Sources.demo_donut.file} source={Sources.demo_donut.rocx} />
 				<Code title={Sources.demo_scatter.file} source={Sources.demo_scatter.rocx} />
@@ -374,9 +415,9 @@ view! = |_|
 					<thead><tr><th>Property</th><th>Sets</th></tr></thead>
 					<tbody>
 						<tr><td><code>--chart-color</code>, <code>--chart-active</code></td><td>The colour of bars, lines and dots; the colour of a bar or dot pointed at, and of the line chart's point. A bar's own <code>color</code> comes first.</td></tr>
-						<tr><td><code>--chart-1</code> to <code>--chart-5</code></td><td>The colours of a donut's slices and a stacked chart's series. A colour stays with its slice or series. A slice's own <code>color</code> comes first.</td></tr>
+						<tr><td><code>--chart-1</code> to <code>--chart-5</code></td><td>The colours of a donut's slices, a stacked bar chart's series and a stacked area chart's bands. A colour stays with its slice or series; a band takes its place's. A slice's or a band's own <code>color</code> comes first.</td></tr>
 						<tr><td><code>--chart-heat-low</code>, <code>--chart-heat-high</code></td><td>A heatmap's colours at zero and at the greatest value.</td></tr>
-						<tr><td><code>--chart-fill</code>, <code>--chart-stroke</code>, <code>--chart-stroke-width</code>, <code>--chart-outline</code></td><td>The marks' fill opacity and outline. With <code>--chart-outline: 1</code>, a slice or a part is outlined in its own colour instead of the surface's.</td></tr>
+						<tr><td><code>--chart-fill</code>, <code>--chart-stroke</code>, <code>--chart-stroke-width</code>, <code>--chart-outline</code></td><td>The marks' fill opacity (a stacked area chart's bands 0.3 unless set) and outline. With <code>--chart-outline: 1</code>, a slice or a part is outlined in its own colour instead of the surface's.</td></tr>
 						<tr><td><code>--chart-radius</code>, <code>--chart-dot</code>, <code>--chart-line-width</code>, <code>--chart-area</code></td><td>Bars' rounded corners, dots' radius, lines' width, and the shading under a line (0 for none).</td></tr>
 						<tr><td><code>--chart-grid</code>, <code>--chart-grid-dash</code>, <code>--chart-axis</code>, <code>--chart-muted</code></td><td>The grid and its dashes, the axis, and the text of ticks and labels.</td></tr>
 						<tr><td><code>--chart-surface</code>, <code>--chart-font</code>, <code>--chart-glow</code></td><td>The background behind the marks (it shows in the gaps between slices and parts), the font, and a <code>filter</code> on the marks (Neon's <code>drop-shadow</code>).</td></tr>
@@ -400,7 +441,7 @@ view! = |_|
 						<tr><td><code>Band</code></td><td><code>Band.band(count, range, padding)</code> gives a slot to each bar: <code>.at(slot)</code>, <code>.width()</code>, <code>.center(slot)</code>. A count and a slot may be fractions, as they are while a chart glides from seven bars to six.</td></tr>
 						<tr><td><code>Ticks</code></td><td>About <code>count</code> ticks at 1, 2 or 5 times a power of ten.</td></tr>
 						<tr><td><code>Path</code></td><td>SVG path data: <code>line</code>, <code>smooth</code> (monotone curves), <code>area</code>, <code>smooth_area</code>, and <code>arc</code> (a donut's slice).</td></tr>
-						<tr><td><code>Format</code></td><td>Numbers as labels: <code>num(x, places)</code> (<code>"2.5"</code>, not <code>"2.50"</code>), <code>short</code> (<code>"1.3k"</code>), <code>percent</code>, and <code>coord</code> (to hundredths, for SVG).</td></tr>
+						<tr><td><code>Format</code></td><td>Numbers as labels: <code>num(x, places)</code> (<code>"2.5"</code>, not <code>"2.50"</code>), <code>short</code> (<code>"1.3k"</code>), <code>percent</code>, <code>shares</code> (whole percents that add up to 100, as a donut's legend says them), and <code>coord</code> (to hundredths, for SVG).</td></tr>
 						<tr><td><code>Ease</code></td><td><code>toward(from, to, ms, close)</code>: one frame's step of a glide, which finishes once it is within <code>close</code>.</td></tr>
 						<tr><td><code>Keys</code></td><td>What keeps a mark its own: <code>unique</code> (a key per label, <code>Jan#1</code> for a second <code>Jan</code>), <code>merge</code> (the new keys, with the ones on their way out kept where they were), <code>slots</code> (a colour that stays with its key).</td></tr>
 					</tbody>
@@ -415,12 +456,13 @@ view! = |_|
 					<code>(x * 1000.0).round_to_i64_try()</code>, then <code>.to_dec() / 1000.0</code>.
 				</li>
 				<li>
-					Stacked bars have five colours, so a sixth series shares one, and so does a donut's sixth slice
-					unless the data gives the slices their colours: fold the smallest into "Other". When new data
+					Stacked bars have five colours, so a sixth series shares one, and so do a donut's sixth slice and
+					a stacked area chart's sixth band unless the data gives them their colours: fold the smallest
+					into "Other". When new data
 					reorders a donut's slices, they jump rather than glide.
 				</li>
 				<li>
-					Tab can't reach a heatmap's cells or a line chart's or sparkline's points; to a screen reader,
+					Tab can't reach a heatmap's cells or a line chart's, stacked area chart's or sparkline's points; to a screen reader,
 					each is one image, named by its label.
 				</li>
 				<li>
@@ -451,6 +493,10 @@ view! = |_|
 			<details>
 				<summary>The stacked bar chart: <code>{Sources.chart_stacked.file}</code></summary>
 				<Code title={Sources.chart_stacked.file} source={Sources.chart_stacked.rocx} />
+			</details>
+			<details>
+				<summary>The stacked area chart: <code>{Sources.chart_area.file}</code></summary>
+				<Code title={Sources.chart_area.file} source={Sources.chart_area.rocx} />
 			</details>
 			<details>
 				<summary>The sparkline: <code>{Sources.chart_sparkline.file}</code></summary>

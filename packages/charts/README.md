@@ -1,7 +1,7 @@
 # charts
 
-Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts for Roc Solid apps, drawn as
-SVG. The server renders them into the page and the browser hydrates them like any other component.
+Bar, stacked bar, line, stacked area, sparkline, donut, scatter and heatmap charts for Roc Solid
+apps, drawn as SVG. The server renders them into the page and the browser hydrates them like any other component.
 When the data changes, a chart glides to it, a frame at a time; once it gets there, nothing runs.
 The docs site's charts page (`/ecosystem/charts`) has each one live, with buttons that give it
 other data and restyle it three ways. This README is the reference: every prop, every function of
@@ -41,7 +41,7 @@ Every chart takes:
 - `label`, what the chart shows, for screen readers (`label!` on `<Sparkline>`, which changes with
   its data).
 - `format` (`format_x` and `format_y` on `<ScatterChart>`; `format` and `format_x` on
-  `<LineChart>`), which writes a value as text: `Format.short` (`1.3k`) unless said, or a function
+  `<LineChart>` and `<StackedAreaChart>`), which writes a value as text: `Format.short` (`1.3k`) unless said, or a function
   of your own, `|mm| "${Format.num(mm, 0)} mm"`.
 
 Values are `Dec`, Roc's decimal. examples/plate (`<BarChart>`, `<LineChart>`), examples/quiz
@@ -100,6 +100,34 @@ examples/plate draws weight on the days it was logged, a day to scale (`Date.day
 `Date.from_days` for its labels); examples/uptime draws response times each half hour, its `x`
 the hours before now; the docs' demo is a day's visits, hour by hour, `LineChart.evenly`.
 
+### `<StackedAreaChart>`
+
+| Prop | |
+|---|---|
+| `data! : () => StackedAreaChart.Data`, `Data : { xs : List(Dec), bands : List(StackedAreaChart.Band) }`, `Band := { label : Str, values : List(Dec), color : Str ?? "" }` | The points across (`xs`, to scale, as a line chart's `x`) and a band for each part of the whole, with a value at each point, stacked from the axis up in order (the first at the bottom), so the top edge is the whole. New values glide the bands to them. With more points or fewer, or other bands, the chart jumps to the new data. A value below zero, or a missing one, counts as zero. A band is in its `color` (any CSS colour), it and its line in the legend, or, left out, the chart's colour for its place (`--chart-1` for the first). |
+| `label : Str` | What the chart shows, for screen readers. |
+| `format : (Dec -> Str) ?? Format.short` | A value as text: on the ticks up the side, each band's in the legend, and the whole over the point under the pointer. |
+| `format_x : (Dec -> Str) ?? Format.short` | An `x` as text: on the ticks along the bottom, and the point's under the pointer. |
+| `smooth : Bool ?? Bool.False` | Monotone curves through the points, as a line chart's. |
+| `resting : [Last, Sum] ?? Last` | What the legend says while no point is pointed at: each band's value at the last point (`Last`: a running total's now), or all its points' added up (`Sum`: of a count each day, the period's). |
+
+The axis up the side runs from zero to the highest whole, widened to round numbers; the one along
+the bottom as a line chart's. The legend over the chart says each band's label, its value and,
+with more than one band, its share of the whole there (as a donut says its shares: whole percents
+that add up to 100, "<1%" for a sliver): at the point nearest the pointer, whose whole shows over
+the plot and whose `x` on the axis, or, while none is, as `resting` says. The chart is one image to
+a screen reader, named by its label, beside the legend's words; its points can't be reached with
+Tab. The docs' demo is a shop's orders each day by where they came from, resting on the
+fortnight's (`Sum`):
+
+```roc
+<StackedAreaChart
+	data!={{ xs: days, bands: sources!().map(|source| { label: source.name, values: source.orders, color: source.color }) }}
+	label="Orders each day, by where they came from"
+	resting={Sum}
+/>
+```
+
 ### `<Sparkline>`
 
 | Prop | |
@@ -127,15 +155,15 @@ make one, whose slice is still drawn, as a sliver (a hundredth of the ring). A s
 others come and go, and a new slice takes a colour no other slice has, unless the data gives each
 its own.
 
-**Colours from the data.** A bar or a slice may carry its colour, as a slice for each party in
-its party's colour:
+**Colours from the data.** A bar, a slice or a stacked area chart's band may carry its colour, as
+a slice for each party in its party's colour:
 
 ```roc
 <DonutChart data!={seats!().map(|party| { label: party.name, value: party.seats, color: party.color })} label="Seats by party" />
 ```
 
 `color` is left out (or `""`) for the chart's own. A record written where the data is passed is a
-`DonutChart.Slice` (or a `BarChart.Bar`), with `color` or without; a list already typed as plain
+`DonutChart.Slice` (or a `BarChart.Bar`, a `StackedAreaChart.Band`), with `color` or without; a list already typed as plain
 records (`List({ label : Str, value : Dec })`) isn't, so name the chart's type in its annotation
 (`List(DonutChart.Slice)`), or build the records where you pass them
 (`.map(|{ label, value }| { label, value })`).
@@ -189,7 +217,7 @@ Its numbers are `Dec`, so the ticks from 0 to 1 are exactly 0.2, 0.4, 0.6 and 0.
 | `Band` | `Band.band(count, range, padding)`, `count` equal slots across `range`, a `padding` share of each left empty; `.at(slot)`, where a bar starts; `.width()`, a bar's width; `.slot()`, a slot's width; `.center(slot)`, where its label goes. A count and a slot may be fractions: a chart gliding from seven bars to six has six and a half slots on the way |
 | `Ticks` | `Ticks.step(from, to, count)`, the step between about `count` ticks, 1, 2 or 5 times a power of ten; `Ticks.between(from, to, count)`, the ticks; `Ticks.nice(from, to, count)`, the ends widened to ticks |
 | `Path` | SVG path data for `<path d={…}>`: `line(points)`, `smooth(points)` (monotone curves, as D3's `curveMonotoneX`), `area(points, base)`, `smooth_area(points, base)`, `arc({ x, y, inner, outer, from, to })` (a donut's slice, or with `inner` 0 a pie's; `from` and `to` in turns, 0 at twelve o'clock) |
-| `Format` | `num(x, places)`, at most `places` decimals without trailing zeros (`"2.5"`, not `"2.50"` or `"2.5000000000000000"`); `short(x)`, `"1.3k"`, `"2.5M"`, `"3B"`; `percent(share, places)`, `"25.6%"`; `coord(x)`, to hundredths, for SVG |
+| `Format` | `num(x, places)`, at most `places` decimals without trailing zeros (`"2.5"`, not `"2.50"` or `"2.5000000000000000"`); `short(x)`, `"1.3k"`, `"2.5M"`, `"3B"`; `percent(share, places)`, `"25.6%"`; `shares(values)`, each value's share of them all in whole percents that add up to 100 (`"<1%"` for one too small to make one), as a donut's legend and a stacked area chart's say them; `coord(x)`, to hundredths, for SVG |
 | `Ease` | `toward(from, to, ms, close)`, one frame's step of a glide (a fifth of the way in a 16 ms frame, all of it in 80 ms or more, or once within `close`); `share(ms)`, that share |
 | `Keys` | `unique(labels)`, a key per label (`Jan#1` for a second `Jan`); `merge(was, now)`, the keys `now`, with each key only `was` has (one on its way out) kept after the key it followed; `slots(was, keys)`, a colour slot for each key that stays with it; `slot_of(slots, key)` |
 
@@ -204,9 +232,9 @@ charts page has three (Neon, Blueprint and Paper), each one rule plus a prop or 
 | Property | Sets |
 |---|---|
 | `--chart-color`, `--chart-active` | bars, lines and dots; a bar or dot pointed at, and the line chart's point (a bar's own `color` comes first) |
-| `--chart-1` to `--chart-5` | a donut's slices and a stacked chart's series: a colour that stays with its slice or series (a slice's own `color` comes first) |
+| `--chart-1` to `--chart-5` | a donut's slices, a stacked bar chart's series and a stacked area chart's bands: a colour that stays with its slice or series, and a band's for its place (a slice's or a band's own `color` comes first) |
 | `--chart-heat-low`, `--chart-heat-high` | a heatmap's colours at zero and at the greatest value |
-| `--chart-fill`, `--chart-stroke`, `--chart-stroke-width`, `--chart-outline` | the marks' fill opacity and outline; with `--chart-outline: 1`, a slice or a part is outlined in its own colour instead of the surface's |
+| `--chart-fill`, `--chart-stroke`, `--chart-stroke-width`, `--chart-outline` | the marks' fill opacity (a stacked area chart's bands 0.3 unless set, under their edges) and outline; with `--chart-outline: 1`, a slice or a part is outlined in its own colour instead of the surface's |
 | `--chart-radius`, `--chart-dot`, `--chart-line-width`, `--chart-area` | bars' corners, dots' radius, lines' width, the shading under a line (0 for none) |
 | `--chart-grid`, `--chart-grid-dash`, `--chart-axis`, `--chart-muted` | the grid and its dashes, the axis, the text of ticks and labels |
 | `--chart-surface`, `--chart-font`, `--chart-glow` | the background behind the marks (the gaps between slices and parts), the font, a `filter` on the marks (a `drop-shadow`, say) |
@@ -215,11 +243,11 @@ charts page has three (Neon, Blueprint and Paper), each one rule plus a prop or 
 
 - Values are `Dec`, and Roc has no `F64` to `Dec` conversion yet. Round to an integer and divide:
   `(x * 1000.0).round_to_i64_try()`, then `.to_dec() / 1000.0`.
-- A stacked bar chart has five colours, so a sixth series shares one, and so does a donut's sixth
-  slice unless the data gives the slices their colours. Fold the smallest into "Other". When new
+- A stacked bar chart has five colours, so a sixth series shares one, and so do a donut's sixth
+  slice and a stacked area chart's sixth band unless the data gives them their colours. Fold the smallest into "Other". When new
   data puts a donut's slices in another order, they jump to their new places rather than glide.
-- A heatmap's cells, a line chart's points and a sparkline's can't be reached with Tab: each of
-  these charts is one image to a screen reader, named by its label.
+- A heatmap's cells and a line chart's, a stacked area chart's or a sparkline's points can't be
+  reached with Tab: each of these charts is one image to a screen reader, named by its label.
 - A line chart's ticks along the bottom fall on round numbers of its `x`: days since 1970 in steps
   of 1, 2, 5, 10 or 20, hours in steps of 5, not each Monday or the first of each month.
 - rocx requires HTML tags in lower case, so SVG's camel-cased elements (`<linearGradient>`,

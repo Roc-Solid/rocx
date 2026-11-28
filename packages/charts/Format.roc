@@ -31,6 +31,40 @@ Format := [].{
 	## A share as a percentage: `Format.percent(0.256, 1)` is `"25.6%"`.
 	percent : Dec, U64 -> Str
 	percent = |x, places| "${Format.num(x * 100.0, places)}%"
+
+	## Each value's share of them all, as whole percents that add up to 100: each rounded down, and
+	## the points left over to the largest remainders (the earlier first on a tie). One with
+	## something that comes to none is "<1%"; below zero counts as zero, and nothing at all is "0%"
+	## each. A donut's legend and a stacked area chart's say their shares so.
+	shares : List(Dec) -> List(Str)
+	shares = |values| {
+		kept = values.map(|value| Dec.max(value, 0.0))
+		total = kept.fold(0.0, |sum, value| sum + value)
+		if total <= 0.0 {
+			kept.map(|_| "0%")
+		} else {
+			exact = kept.map(|value| value * 100.0 / total)
+			whole = exact.map(|share| Dec.floor(share))
+			left = 100.0 - whole.fold(0.0, |sum, share| sum + share)
+			var $order = []
+			for item in List.map2(exact, whole, |share, down| share - down).map_with_index(|remainder, index| { index, remainder }) {
+				at = $order.find_first_index(|other| other.remainder < item.remainder) ?? $order.len()
+				$order = $order.take_first(at).append(item).concat($order.drop_first(at))
+			}
+			var $bumped = []
+			for item in $order {
+				if $bumped.len().to_dec() < left {
+					$bumped = $bumped.append(item.index)
+				}
+			}
+			List.map2(kept, whole, |value, down| (value, down)).map_with_index(
+				|(value, down), index| {
+					points = if ($bumped.contains(index)) down + 1.0 else down
+					if (points == 0.0 and value > 0.0) "<1%" else "${Format.num(points, 0)}%"
+				},
+			)
+		}
+	}
 }
 
 ## The step to round to: 10 to the minus `places` (at most 18 places, all a `Dec` has).
@@ -72,3 +106,12 @@ expect Format.short(999.97) == "1k"
 expect Format.short(-2500000.0) == "-2.5M"
 expect Format.short(3000000000.0) == "3B"
 expect Format.percent(0.256, 1) == "25.6%"
+
+# Whole percents that add up to 100, the points left over to the largest remainders.
+expect Format.shares([1.0, 1.0, 1.0]) == ["34%", "33%", "33%"]
+expect Format.shares([5.0, 995.0]) == ["1%", "99%"]
+
+# Too small to make a percent, but not nothing; nothing at all; below zero is nothing.
+expect Format.shares([2.0, 1989.0]) == ["<1%", "100%"]
+expect Format.shares([0.0, 0.0]) == ["0%", "0%"]
+expect Format.shares([3.0, -1.0]) == ["100%", "0%"]

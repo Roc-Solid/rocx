@@ -77,7 +77,7 @@ Sidebar := [].{
 				{
 					name: "Pages",
 					pages: [
-						{ path: "/ecosystem/charts", label: "Charts", blurb: "Seven kinds of chart that glide to their data, styled by CSS" },
+						{ path: "/ecosystem/charts", label: "Charts", blurb: "Eight kinds of chart that glide to their data, styled by CSS" },
 						{ path: "/ecosystem/forms", label: "Forms", blurb: "A form's rules written once, checked as it is typed and at the endpoint" },
 					],
 				},

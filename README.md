@@ -342,8 +342,8 @@ import charts.Format
 ```
 
 `packages/charts` is one: its `Scale`, `Ticks`, `Path` and `Format` modules are plain Roc, and
-`<BarChart>`, `<StackedBarChart>`, `<LineChart>`, `<Sparkline>`, `<DonutChart>`, `<ScatterChart>`
-and `<Heatmap>` are its components.
+`<BarChart>`, `<StackedBarChart>`, `<LineChart>`, `<StackedAreaChart>`, `<Sparkline>`, `<DonutChart>`,
+`<ScatterChart>` and `<Heatmap>` are its components.
 
 ## Syntax
 
@@ -1142,7 +1142,7 @@ browser runtime's engine. See `spike/native-apps/README.md` and `examples/pomodo
 | `server/` | The server platform: native Roc in a Rust host (tokio, hyper, Postgres or SQLite, plugins, channels, actors, `Kv`); see `server/README.md` |
 | `web/` | The browser platform: the modules components are written with (`Html`, `Solid`, `Store`, `Router`, …) and HTTP's (`Server`, `Endpoint`, `Channel`, `Events`, `Middleware`, `OpenApi`), which the server platform shares; its Rust host (`web/host`, built for wasm32) and the memory it shares with the phone's host (`web/memory`); `runtime.js` and `start.js`; see `web/README.md` |
 | `packages/` | The ecosystem. Each package has a README, a `PROPOSALS.md` of what it waits on, and a page on the docs site. A package whose modules use the server platform names it in its `main.roc`, with a `browser.roc` beside it for what the browser's half sees |
-| `packages/charts` | Bar, stacked bar, line, sparkline, donut, scatter and heatmap charts, styled by custom properties: the arithmetic in plain Roc (scales, round ticks, SVG paths, in `Dec`), the components copied into each app |
+| `packages/charts` | Bar, stacked bar, line, stacked area, sparkline, donut, scatter and heatmap charts, styled by custom properties: the arithmetic in plain Roc (scales, round ticks, SVG paths, in `Dec`), the components copied into each app |
 | `packages/forms` | Zod-like schemas: one for the page and the endpoint, issues shown in place, `LiveForm` |
 | `packages/auth`, `stripe`, `jobs`, `email`, `push`, `audio`, `vibrate` | Plugins: sign-in by mailed links and at providers, with sessions, middleware and two-factor sign-in (`Auth.plugin`), payments and subscriptions through Stripe's Checkout and Customer Portal, its webhook kept in step (`Stripe.plugin`), jobs and cron in the app's database (`Job.plugin`), email over SMTP or the dev mailbox (`Email.plugin`), Web Push (`Push.plugin`, `<PushButton>`), sound files from a handler (`AudioPlayer.plugin`), the phone's vibration (`Vibrator.plugin`) |
 | `packages/ai` | Claude from the server, through Anthropic's Messages API: an answer whole (`Ai.ask!`), streamed to a page as it is written (`Ai.stream!`), read into a Roc type (`Ai.extract!`), a model that uses the app's functions as tools, packages/tools' `Tool`s (`Ai.run!`), and agents, each usable as another's tool (`Agent`); conversations kept exactly (`Message`), each turn's tokens on the log (`Ai.plugin`) |

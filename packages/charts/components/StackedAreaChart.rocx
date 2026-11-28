@@ -1,0 +1,534 @@
+import pf.Html
+import pf.Solid exposing [create_memo!, create_signal!, untrack!]
+import charts.Ease
+import charts.Format
+import charts.Keys
+import charts.Path
+import charts.Scale
+import charts.Ticks
+
+## A value over time split into parts (visits by source, sales by region): a band for each of
+## `data!`'s `bands`, stacked from the axis up in the order given (the first at the bottom), so the
+## top edge is the whole and each band's height its part of it. Across, the points are to scale by
+## their `x` (`xs`), as `<LineChart>`'s are; up, the axis runs from zero to the highest whole,
+## widened to round numbers. A legend over the chart says each band's label, its value and, with
+## more than one band, its share of the whole (whole percents that add up to 100, as a donut's): at
+## the point nearest the pointer, whose whole shows over the plot and whose `x` on the axis along the
+## bottom, and while none is, as `resting` says. When the data changes, the bands glide to it a
+## frame at a time, as `<LineChart>`'s line does; once they are there, nothing runs.
+##
+## A band is in the colour the data gives it (`color`: any CSS colour, `"#c0392b"` or
+## `"var(--brand)"`), or, given none, the chart's for its place (`--chart-1` for the first, to
+## `--chart-5`), as a stacked bar chart's series are. `label` names the chart for screen readers,
+## `format` writes a value and `format_x` an `x` (each `Format.short` unless said), `smooth` curves
+## the edges (monotone, as `<LineChart>`'s), and `resting` is what the legend says while no point is
+## pointed at: the bands' values at the last point (`Last`, unless said: a running total's now), or
+## all their points' added up (`Sum`: of a count each day, the whole period's). A value below zero
+## counts as zero, and a missing one as zero too.
+StackedAreaChart := [].{
+
+	## A band: what it is, its value at each of the points (left to right), and its colour, the
+	## chart's own when left out.
+	Band := { label : Str, values : List(Dec), color : Str ?? "" }.{
+		is_eq : _
+	}
+
+	## The points across (`xs`) and each band over them.
+	Data : { xs : List(Dec), bands : List(StackedAreaChart.Band) }
+
+	## A band as drawn: its key (its label, numbered when another band before it has the same one),
+	## its label, a value (zero or more) for every point, and its colour (`""` for the chart's own).
+	Layer : { key : Str, label : Str, values : List(Dec), color : Str }
+
+	## What is drawn: the points, the bands, and the axes' ends, on their way to the data's.
+	Drawn : { xs : List(Dec), layers : List(StackedAreaChart.Layer), across : (Dec, Dec), up : (Dec, Dec) }
+
+	## A band's edges where they are drawn, in the SVG's units: the top of the bands under it, and
+	## that with its own values on it.
+	Edges : { key : Str, lower : List((Dec, Dec)), upper : List((Dec, Dec)) }
+
+	## What a band says in the legend.
+	Said : { key : Str, value : Str, share : Str }
+
+	Props := { data! : () => StackedAreaChart.Data, label : Str, format : (Dec -> Str) ?? Format.short, format_x : (Dec -> Str) ?? Format.short, smooth : Bool ?? Bool.False, resting : [Last, Sum] ?? Last }
+
+	view! : Props => Html
+	view! = |{ data!, label, format, format_x, smooth, resting }| {
+		goal! = create_memo!(|| StackedAreaChart.place(data!()))
+		(drawn!, set_drawn!) = create_signal!(untrack!(goal!))
+		(hover!, set_hover!) = create_signal!(Err(None))
+		x! = create_memo!(|| Scale.linear(drawn!().across, (left, right)))
+		y! = create_memo!(|| Scale.linear(drawn!().up, (bottom, top)))
+		edges! = create_memo!(|| StackedAreaChart.edges(drawn!()))
+		keys! = create_memo!(|| goal!().layers.map(|layer| layer.key))
+		layer_of! = |key| goal!().layers.find_first(|layer| layer.key == key) ?? { key, label: key, values: [], color: "" }
+		slot_of! = |key| ((goal!().layers.find_first_index(|layer| layer.key == key) ?? 0) % colors).to_str()
+		edges_of! = |key| edges!().find_first(|edge| edge.key == key) ?? { key, lower: [], upper: [] }
+		# The strip of the plot nearer each point than the others, which the pointer finds it by:
+		# where the data puts the points, so bands gliding to new values don't move them.
+		strips! = create_memo!(|| StackedAreaChart.strips(goal!()))
+		said! = create_memo!(|| StackedAreaChart.said(goal!(), hover!(), resting, format))
+		said_of! = |key| said!().find_first(|entry| entry.key == key) ?? { key, value: "", share: "" }
+		# The point pointed at, while one is.
+		spot! = || {
+			match hover!() {
+				Ok(i) =>
+					match drawn!().xs.get(i) {
+						Ok(at) => Ok((i, x!().at(at)))
+						Err(_) => Err(None)
+					}
+				Err(_) => Err(None)
+			}
+		}
+		spotted! = || {
+			match spot!() {
+				Ok(_) => Bool.True
+				Err(_) => Bool.False
+			}
+		}
+		spot_x! = || {
+			match spot!() {
+				Ok((_, px)) => px
+				Err(_) => left
+			}
+		}
+		# Where a band's top is at the point pointed at.
+		spot_y! = |key| {
+			match spot!() {
+				Ok((i, _)) =>
+					match edges_of!(key).upper.get(i) {
+						Ok((_, py)) => py
+						Err(_) => bottom
+					}
+				Err(_) => bottom
+			}
+		}
+		spot_text! = |write|
+			match hover!() {
+				Ok(i) =>
+					match goal!().xs.get(i) {
+						Ok(at) => write(i, at)
+						Err(_) => ""
+					}
+				Err(_) => ""
+			}
+		<figure class="area-chart">
+			<ul class="legend">
+				{...keys!().map(|key|
+					<li key={key} data-slot={slot_of!(key)} style:--band={layer_of!(key).color}>
+						<span class="swatch"></span>
+						<span class="name">{layer_of!(key).label}</span>
+						<strong class="amount">{said_of!(key).value}</strong>
+						<span class="share">{said_of!(key).share}</span>
+					</li>
+				)}
+			</ul>
+			<div class="plot">
+				<svg viewBox="0 0 640 320" role="img" aria-label={label}>
+					<g class="ticks" class:spotting={spotted!()} aria-hidden="true">
+						{...StackedAreaChart.ticks(goal!().up).map(|tick|
+							<g key={Format.num(tick, 9)} class:out={StackedAreaChart.outside(drawn!().up, tick)}>
+								<line x1={Format.coord(left)} x2={Format.coord(right)} y1={Format.coord(y!().at(tick))} y2={Format.coord(y!().at(tick))} />
+								<text class="up" x={Format.coord(left - 8.0)} y={Format.coord(y!().at(tick))} dy="0.32em">{format(tick)}</text>
+							</g>
+						)}
+						{...StackedAreaChart.ticks(goal!().across).map(|tick|
+							<g key={Format.num(tick, 9)} class:out={StackedAreaChart.outside(drawn!().across, tick)}>
+								<text class="across" x={Format.coord(x!().at(tick))} y={Format.coord(bottom + 20.0)}>{format_x(tick)}</text>
+							</g>
+						)}
+					</g>
+					{# Each band, then each band's top edge over all of them, so no band's fill tints an edge. }
+					{...keys!().map(|key|
+						<path key={key} class="band" data-slot={slot_of!(key)} style:--band={layer_of!(key).color} d={StackedAreaChart.outline(edges_of!(key), smooth)} />
+					)}
+					{...keys!().map(|key|
+						<path key={key} class="edge" data-slot={slot_of!(key)} style:--band={layer_of!(key).color} d={StackedAreaChart.curve(edges_of!(key).upper, smooth)} />
+					)}
+					<g class="spot" class:shown={spotted!()} aria-hidden="true">
+						<line x1={Format.coord(spot_x!())} x2={Format.coord(spot_x!())} y1={Format.coord(top)} y2={Format.coord(bottom)} />
+						{...keys!().map(|key|
+							<circle key={key} class="dot" data-slot={slot_of!(key)} style:--band={layer_of!(key).color} cx={Format.coord(spot_x!())} cy={Format.coord(spot_y!(key))} r="4" />
+						)}
+						<text x={Format.coord(spot_x!())} y={Format.coord(top - 8.0)}>{spot_text!(|i, _| format(StackedAreaChart.whole(goal!(), i)))}</text>
+						<text x={Format.coord(spot_x!())} y={Format.coord(bottom + 20.0)}>{spot_text!(|_, at| format_x(at))}</text>
+					</g>
+				</svg>
+				{# A strip of the plot for each point, which the pointer finds it by, from top to bottom. }
+				<div class="strips" on:pointerleave={|| set_hover!(Err(None))}>
+					{...strips!().map_with_index(|(from, to), i|
+						<span key={i} style:left={share(from - left)} style:width={share(to - from)} on:pointerenter={|| set_hover!(Ok(i))}></span>
+					)}
+				</div>
+			</div>
+			{# Frames only while something moves: once the bands and the axes are where the data says, none. }
+			{if drawn!() != goal!() {
+				<span hidden on:frame.ms={|ms| set_drawn!(StackedAreaChart.glide(drawn!(), goal!(), ms))}></span>
+			}}
+		</figure>
+	}
+
+	## Where the data puts the bands: each keyed by its label, with a value (zero or more) for every
+	## point, the axis along the bottom from the least `x` to the greatest, and the one up the side
+	## from zero to the highest whole, widened to round numbers.
+	place : StackedAreaChart.Data -> StackedAreaChart.Drawn
+	place = |data| {
+		count = data.xs.len()
+		layers = List.map2(
+			Keys.unique(data.bands.map(|band| band.label)),
+			data.bands,
+			|key, band| { key, label: band.label, color: band.color, values: List.repeat(0.0, count).map_with_index(|_, i| Dec.max(band.values.get(i) ?? 0.0, 0.0)) },
+		)
+		highest = List.repeat(0.0, count).map_with_index(|_, i| layers.fold(0.0, |sum, layer| sum + (layer.values.get(i) ?? 0.0))).fold(0.0, |most, here| Dec.max(most, here))
+		{
+			xs: data.xs,
+			layers,
+			across: Scale.extent(data.xs),
+			up: if (highest > 0.0) Ticks.nice(0.0, highest, tick_count) else (0.0, 1.0),
+		}
+	}
+
+	## Each band's edges as `drawn` puts them: the first's lower edge on the axis, each next one's
+	## on the one under it.
+	edges : StackedAreaChart.Drawn -> List(StackedAreaChart.Edges)
+	edges = |drawn| {
+		across = Scale.linear(drawn.across, (left, right))
+		up = Scale.linear(drawn.up, (bottom, top))
+		places = |sums| List.map2(drawn.xs, sums, |x, y| (across.at(x), up.at(y)))
+		(_, stacked) = drawn.layers.fold(
+			(drawn.xs.map(|_| 0.0), []),
+			|(under, done), layer| {
+				over = List.map2(under, layer.values, |below, own| below + own)
+				(over, done.append({ key: layer.key, lower: places(under), upper: places(over) }))
+			},
+		)
+		stacked
+	}
+
+	## A line through `points`: straight segments, or with `smooth` monotone curves.
+	curve : List((Dec, Dec)), Bool -> Str
+	curve = |points, smooth| if (smooth) Path.smooth(points) else Path.line(points)
+
+	## A band's outline: along its top edge, left to right, then back along its lower edge (a
+	## monotone curve is the same curve either way). Nothing to draw is `""`.
+	outline : StackedAreaChart.Edges, Bool -> Str
+	outline = |sides, smooth|
+		if sides.upper.is_empty() or sides.lower.is_empty() {
+			""
+		} else {
+			"${StackedAreaChart.curve(sides.upper, smooth)}L${StackedAreaChart.curve(sides.lower.rev(), smooth).drop_prefix("M")}Z"
+		}
+
+	## What each band says in the legend: its value at the point pointed at (`hover`), or while none
+	## is, at the last point or all its points' added up (`resting`), and its share of the whole there
+	## (`Format.shares`; none when it is alone).
+	said : StackedAreaChart.Drawn, Try(U64, [None]), [Last, Sum], (Dec -> Str) -> List(StackedAreaChart.Said)
+	said = |goal, hover, resting, format| {
+		values = goal.layers.map(
+			|layer|
+				match hover {
+					Ok(i) => layer.values.get(i) ?? 0.0
+					Err(_) =>
+						match resting {
+							Last => layer.values.last() ?? 0.0
+							Sum => layer.values.fold(0.0, |sum, value| sum + value)
+						}
+				},
+		)
+		shares = Format.shares(values)
+		alone = goal.layers.len() < 2
+		goal.layers.map_with_index(|layer, i| { key: layer.key, value: format(values.get(i) ?? 0.0), share: if (alone) "" else shares.get(i) ?? "" })
+	}
+
+	## The whole at the `i`th point: every band's value there.
+	whole : StackedAreaChart.Drawn, U64 -> Dec
+	whole = |drawn, i| drawn.layers.fold(0.0, |sum, layer| sum + (layer.values.get(i) ?? 0.0))
+
+	## The stretch of the plot nearer each of `goal`'s points than the others, in the SVG's units.
+	strips : StackedAreaChart.Drawn -> List((Dec, Dec))
+	strips = |goal| {
+		across = Scale.linear(goal.across, (left, right))
+		Scale.strips(goal.xs.map(|x| across.at(x)), (left, right))
+	}
+
+	## A frame's way from what is drawn toward the data: each value toward its own, and the axes'
+	## ends toward theirs. With more points or fewer, or other bands, the bands are the data's at once.
+	glide : StackedAreaChart.Drawn, StackedAreaChart.Drawn, F64 -> StackedAreaChart.Drawn
+	glide = |drawn, goal, ms| {
+		(a0, a1) = drawn.across
+		(ga0, ga1) = goal.across
+		(u0, u1) = drawn.up
+		(gu0, gu1) = goal.up
+		# Within a five-hundredth of an axis is there: under a pixel.
+		near_x = (ga1 - ga0) / 500.0
+		near_y = (gu1 - gu0) / 500.0
+		same = drawn.xs.len() == goal.xs.len() and drawn.layers.map(|layer| layer.key) == goal.layers.map(|layer| layer.key)
+		if same {
+			{
+				xs: List.map2(drawn.xs, goal.xs, |from, to| Ease.toward(from, to, ms, near_x)),
+				layers: List.map2(drawn.layers, goal.layers, |from, to| { ..to, values: List.map2(from.values, to.values, |was, now| Ease.toward(was, now, ms, near_y)) }),
+				across: (Ease.toward(a0, ga0, ms, near_x), Ease.toward(a1, ga1, ms, near_x)),
+				up: (Ease.toward(u0, gu0, ms, near_y), Ease.toward(u1, gu1, ms, near_y)),
+			}
+		} else {
+			goal
+		}
+	}
+
+	## An axis's ticks.
+	ticks : (Dec, Dec) -> List(Dec)
+	ticks = |(from, to)| Ticks.between(from, to, tick_count)
+
+	## Whether a tick is off its axis as drawn: one the axis is gliding toward, faded until it is on.
+	outside : (Dec, Dec), Dec -> Bool
+	outside = |(from, to), tick| tick < Dec.min(from, to) or tick > Dec.max(from, to)
+
+	<style>
+		.area-chart {
+			margin: 0;
+		}
+
+		.legend {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.25rem 1.1rem;
+			margin: 0 0 0.6rem;
+			padding: 0;
+			list-style: none;
+			font-size: 0.875em;
+		}
+
+		.legend li {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.4rem;
+		}
+
+		.swatch {
+			width: 0.75rem;
+			height: 0.75rem;
+			border-radius: 3px;
+			background: var(--band);
+		}
+
+		.name,
+		.share {
+			color: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+		}
+
+		.amount {
+			font-weight: 650;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.share {
+			font-variant-numeric: tabular-nums;
+		}
+
+		.share:empty {
+			display: none;
+		}
+
+		svg {
+			display: block;
+			width: 100%;
+			height: auto;
+			overflow: visible;
+			font: 12px/1 var(--chart-font, inherit);
+		}
+
+		.ticks line {
+			stroke: var(--chart-grid, color-mix(in srgb, currentColor 12%, transparent));
+			stroke-dasharray: var(--chart-grid-dash, none);
+		}
+
+		.ticks g {
+			transition: opacity 0.2s;
+		}
+
+		.ticks .out {
+			opacity: 0;
+		}
+
+		.ticks text {
+			fill: var(--chart-muted, color-mix(in srgb, currentColor 60%, transparent));
+			font-variant-numeric: tabular-nums;
+		}
+
+		.ticks .up {
+			text-anchor: end;
+		}
+
+		.ticks .across {
+			text-anchor: middle;
+			transition: opacity 0.15s;
+		}
+
+		/* The point's own `x` takes the axis's place while one is pointed at. */
+		.ticks.spotting .across {
+			opacity: 0;
+		}
+
+		/* A band's colour for its place, unless the data gives it one (`--band`, set on it). */
+		[data-slot="0"] {
+			--band: var(--chart-1, #2a78d6);
+		}
+
+		[data-slot="1"] {
+			--band: var(--chart-2, #eb6834);
+		}
+
+		[data-slot="2"] {
+			--band: var(--chart-3, #1baf7a);
+		}
+
+		[data-slot="3"] {
+			--band: var(--chart-4, #eda100);
+		}
+
+		[data-slot="4"] {
+			--band: var(--chart-5, #e87ba4);
+		}
+
+		.band {
+			fill: var(--band);
+			fill-opacity: var(--chart-fill, 0.3);
+		}
+
+		.edge {
+			fill: none;
+			stroke: var(--band);
+			stroke-width: var(--chart-line-width, 2);
+			filter: var(--chart-glow, none);
+			stroke-linejoin: round;
+			stroke-linecap: round;
+		}
+
+		.spot {
+			opacity: 0;
+			transition: opacity 0.15s;
+			pointer-events: none;
+		}
+
+		.spot.shown {
+			opacity: 1;
+		}
+
+		.spot line {
+			stroke: var(--chart-axis, color-mix(in srgb, currentColor 45%, transparent));
+			stroke-dasharray: 3 3;
+		}
+
+		.spot .dot {
+			fill: var(--band);
+			stroke: var(--chart-surface, white);
+			stroke-width: 2;
+		}
+
+		.spot text {
+			text-anchor: middle;
+			font-weight: 600;
+			fill: currentColor;
+			font-variant-numeric: tabular-nums;
+		}
+
+		.plot {
+			position: relative;
+		}
+
+		/* Over the plot (48 to 620 of the SVG's 640 across, 24 to 288 of its 320 down); each strip
+		   placed across by Roc, in shares of the plot's width. */
+		.strips {
+			position: absolute;
+			top: 7.5%;
+			bottom: 10%;
+			left: 7.5%;
+			right: 3.125%;
+		}
+
+		.strips span {
+			position: absolute;
+			top: 0;
+			bottom: 0;
+		}
+	</style>
+}
+
+## The plot's edges in the SVG's units (640 by 320), as `<LineChart>`'s: room on the left for the
+## values' ticks, below for the ones across, and on the right for the last one's label.
+left : Dec
+left = 48.0
+
+right : Dec
+right = 620.0
+
+top : Dec
+top = 24.0
+
+bottom : Dec
+bottom = 288.0
+
+tick_count : U64
+tick_count = 5
+
+## How many colours the bands have for their places (`--chart-1` to `--chart-5`).
+colors : U64
+colors = 5
+
+## A length across, in the SVG's units, as a share of the plot's width: `"50%"` for 286.
+share : Dec -> Str
+share = |x| "${Format.num(x * 100.0 / (right - left), 3)}%"
+
+# Two bands over three points: the second sits on the first, and the top edge is the whole.
+expect {
+	drawn = StackedAreaChart.place({ xs: [0.0, 1.0, 2.0], bands: [{ label: "Wind", values: [0.0, 10.0, 20.0] }, { label: "Solar", values: [0.0, 30.0, 60.0] }] })
+	stacked = StackedAreaChart.edges(drawn)
+	tops = stacked.map(|edge| edge.upper.map(|(_, y)| y))
+	drawn.up == (0.0, 80.0) and (stacked.get(1) ?? { key: "", lower: [], upper: [] }).lower == (stacked.get(0) ?? { key: "", lower: [], upper: [] }).upper and tops.get(1) == Ok([bottom, bottom - 132.0, bottom - 264.0])
+}
+
+# A value below zero counts as zero, a missing one too; the axis of nothing is zero to one.
+expect {
+	drawn = StackedAreaChart.place({ xs: [0.0, 1.0], bands: [{ label: "Hydro", values: [-5.0] }] })
+	drawn.layers == [{ key: "Hydro", label: "Hydro", values: [0.0, 0.0], color: "" }] and drawn.up == (0.0, 1.0)
+}
+
+# A band keeps the colour the data gives it; two with one label are two bands.
+expect {
+	drawn = StackedAreaChart.place({ xs: [0.0], bands: [{ label: "Roc", values: [1.0], color: "#7d59dc" }, { label: "Roc", values: [2.0] }] })
+	drawn.layers.map(|layer| (layer.key, layer.color)) == [("Roc", "#7d59dc"), ("Roc#1", "")]
+}
+
+# A band's outline goes along its top, back along its bottom, and closes.
+expect StackedAreaChart.outline({ key: "a", lower: [(0.0, 10.0), (5.0, 10.0)], upper: [(0.0, 4.0), (5.0, 2.0)] }, Bool.False) == "M0,4L5,2L5,10L0,10Z"
+
+# Each band says its value and its share, at the last point or the one pointed at.
+expect {
+	drawn = StackedAreaChart.place({ xs: [0.0, 1.0], bands: [{ label: "Wind", values: [10.0, 25.0] }, { label: "Solar", values: [30.0, 75.0] }] })
+	last = StackedAreaChart.said(drawn, Err(None), Last, |value| Format.num(value, 0)).map(|entry| (entry.value, entry.share))
+	first = StackedAreaChart.said(drawn, Ok(0), Last, |value| Format.num(value, 0)).map(|entry| entry.share)
+	last == [("25", "25%"), ("75", "75%")] and first == ["25%", "75%"] and StackedAreaChart.whole(drawn, 1) == 100.0
+}
+
+# Resting on the sum, each band says all its points' added up; a point pointed at, that one's.
+expect {
+	drawn = StackedAreaChart.place({ xs: [0.0, 1.0], bands: [{ label: "Wind", values: [10.0, 15.0] }, { label: "Solar", values: [70.0, 5.0] }] })
+	said = |hover| StackedAreaChart.said(drawn, hover, Sum, |value| Format.num(value, 0)).map(|entry| (entry.value, entry.share))
+	said(Err(None)) == [("25", "25%"), ("75", "75%")] and said(Ok(1)) == [("15", "75%"), ("5", "25%")]
+}
+
+# A band alone says its value, not its share of itself.
+expect {
+	drawn = StackedAreaChart.place({ xs: [0.0, 1.0], bands: [{ label: "Wind", values: [3.0, 848.0] }] })
+	StackedAreaChart.said(drawn, Err(None), Last, |value| Format.num(value, 0)) == [{ key: "Wind", value: "848", share: "" }]
+}
+
+# Gliding keeps the bands while they are the same ones; other bands are the data's at once.
+expect {
+	from = StackedAreaChart.place({ xs: [0.0, 1.0], bands: [{ label: "Wind", values: [0.0, 100.0] }] })
+	to = StackedAreaChart.place({ xs: [0.0, 1.0], bands: [{ label: "Wind", values: [0.0, 50.0] }] })
+	other = StackedAreaChart.place({ xs: [0.0, 1.0], bands: [{ label: "Solar", values: [0.0, 50.0] }] })
+	halfway = StackedAreaChart.glide(from, to, 16.0)
+	moved = (halfway.layers.first() ?? { key: "", label: "", values: [], color: "" }).values
+	moved.get(1) == Ok(90.0) and StackedAreaChart.glide(from, other, 16.0) == other
+}

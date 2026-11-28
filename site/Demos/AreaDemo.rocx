@@ -1,0 +1,49 @@
+import pf.Html
+import pf.Solid exposing [create_signal!]
+import charts.Format
+import charts.StackedAreaChart
+import Random
+import Shuffle
+
+## A shop's orders each day for a fortnight, a band for each place they came from: the charts page's
+## `<StackedAreaChart>`. The legend says each band's orders over the fortnight (`resting={Sum}`), or
+## a day's while one is pointed at. Another fortnight glides each band to its new values.
+AreaDemo := [].{
+	Fortnight : { seed : U64, orders : StackedAreaChart.Data }
+
+	view! : {} => Html
+	view! = |{}| {
+		(fortnight!, set_fortnight!) = create_signal!(AreaDemo.fortnight(11))
+		(look!, set_look!) = create_signal!(Shuffle.first)
+		<Shuffle roll!={|| set_fortnight!(AreaDemo.fortnight(fortnight!().seed))} look!={look!} set_look!={set_look!}>
+			{<StackedAreaChart data!={fortnight!().orders} label="A shop's orders each day for a fortnight, by where they came from" format={|orders| Format.num(orders, 0)} format_x={|day| "Day ${Format.num(day + 1.0, 0)}"} smooth={look!() != Blueprint} resting={Sum} />}
+		</Shuffle>
+	}
+
+	## A fortnight's orders: from each place, each day 60% to 140% of its usual, and half as many
+	## again at the weekend.
+	fortnight : U64 -> AreaDemo.Fortnight
+	fortnight = |seed| {
+		var $seed = seed
+		var $bands = []
+		for source in sources {
+			var $values = []
+			for day in days {
+				roll = Random.below($seed, 81)
+				$seed = roll.seed
+				weekend = if (day % 7 >= 5) 1.5 else 1.0
+				$values = $values.append(Dec.round(source.usual * weekend * (60.0 + roll.value.to_dec()) / 100.0))
+			}
+			$bands = $bands.append({ label: source.label, values: $values })
+		}
+		{ seed: $seed, orders: { xs: days.map(|day| day.to_dec()), bands: $bands } }
+	}
+}
+
+## Where the orders come from, and how many a usual weekday brings.
+sources : List({ label : Str, usual : Dec })
+sources = [{ label: "Search", usual: 40.0 }, { label: "Social", usual: 25.0 }, { label: "Email", usual: 12.0 }]
+
+## A fortnight's days, from 0.
+days : List(I64)
+days = List.from_iter(I64.until(0, 14))
