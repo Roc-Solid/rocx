@@ -299,6 +299,11 @@ the phone build instead.
 > validation before a form is sent (`required`, `email`), its field focused with its message; forms
 > with files as `multipart/form-data`; a double tap a `dblclick`. The keyboard keeps the focused field
 > in view (the screen scrolled above it). `on:viewport` is D-137's.
+>
+> **Status (2026-11-28, D-141):** a touch goes to what is drawn where it lands (a view hanging out of
+> its box, a menu's items, gets it), a finger down off the focused field blurs it, the keyboard goes
+> with its field, and a page script's listeners on `window` (capturing and bubbling, a held event
+> sent on later, Android's back as Escape) are an app's page halves'.
 
 ## 8. Pages and navigation
 
@@ -358,6 +363,12 @@ name fails as the web's does, saying which plugin's native half it needs.
 > `on:<event>.value` reads), asks the app's server with its cookies, and uses the phone (the
 > clipboard, a file's size in pixels). The dev client has none (it would load an app's Kotlin at run
 > time). README.md, "Controls, media and custom elements' phone halves"; DECISIONS.md, D-139.
+>
+> **Status (2026-11-28, D-141):** page scripts that are no element's get page halves too (`object
+> Confirm : PageHalf()`): told of the app's start, each navigation, the events they name before and
+> after the page's handlers (holding one until a dialog's answer), Android's back, and
+> `Browser.call!`'s page functions (an app's `window.rocxEffects`), which they answer before the
+> shell's registry. README.md, "Page halves"; DECISIONS.md, D-141.
 
 ## 11. Building and the dev loop
 

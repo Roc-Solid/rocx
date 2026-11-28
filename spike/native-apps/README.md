@@ -34,14 +34,16 @@ spike/native-apps/phone-hello/routes/+page.rocx
   cookie jar (`src/cookies.rs`); navigation (`src/nav.rs`) and live updates (`src/live.rs`) are
   runtime.js's, on a phone (below, Pages, sessions and the server). Images' files (`src/media.rs`)
   and what a browser does with a page's controls (`src/controls.rs`: a tap's default action, a form's
-  validation and files) are D-139's (below, Controls, media and custom elements' phone halves).
+  validation and files) are D-139's (below, Controls, media and custom elements' phone halves); an
+  app's page halves' questions and hooks (`src/pages.rs`) are D-141's (below, Page halves).
 - **`native/android`**: the Android half in Rust (`src/lib.rs`: `JNI_OnLoad`, `Rocx.start` and
   `Rocx.send`, the main looper's wake pipe, logcat), and the Kotlin shell (`app/`): one activity, and
   an applier that walks a batch of ops into Android views (a box is a `Box`, a ViewGroup that puts
   each child at the frame the host's layout gave it; a block's text a `TextBox`, its styled runs
   drawn by a `StaticLayout`; every view's CSS paint a `CssPaint`; fields, checkboxes and radios the
   platform's own; an image an `ImageBox`, a video a `VideoBox`, a select a `SelectBox`; the system's
-  pickers for dates and files; an app's phone halves of its custom elements, `Elements.kt`).
+  pickers for dates and files; an app's phone halves of its custom elements, `Elements.kt`, and of
+  its page scripts, `Pages.kt`; touches given to what is drawn where they land, `Touches.kt`).
   `build.sh` builds an app's APK (with the Kotlin in the app's `android/` folder), or the dev client.
 - **`native/android-dev`** and **`rocx dev --android`**: the dev mode (below). The dev client is the
   same shell with the host as `libhost.so` and no app in it; it loads each build `rocx dev` makes.
@@ -363,8 +365,10 @@ custom elements is the app's own Kotlin, its "phone halves".
   HTML's formats (`2026-11-28T17:45`) and show the phone's locale's. A `<select>` shows its chosen
   option's label as its CSS draws it, and a tap opens the phone's list of its options (`<optgroup>`
   headings, disabled options shown but not chosen); a choice is its `input` then `change`.
-  Checkboxes and radios are the platform's (`appearance: none` leaves them to the CSS); a radio's
-  group mates in its form are unticked. The system's dialogs are dark on a dark page.
+  Checkboxes and radios are the platform's views, drawn as a browser draws them (D-141's
+  `ControlDrawable`: as big as their box, a light or dark face, `accent-color` once checked;
+  `appearance: none` leaves them to the CSS); a radio's group mates in its form are unticked. The
+  system's dialogs are dark on a dark page.
 - **Forms** are sent as `requestSubmit` sends them: not while a field keeps them back (`required` and
   empty, a radio group with none chosen, an `email` field that isn't an address; `novalidate`,
   `formnovalidate`), that field focused with its message beside it (`setError`). A field's value is
@@ -404,8 +408,59 @@ custom elements is the app's own Kotlin, its "phone halves".
   is the shell's own. Tried with a large app's halves of its upload and copy elements: images and a
   video chosen in the photo picker went to its endpoints (their sizes in pixels and lengths read with
   `BitmapFactory` and `MediaMetadataRetriever`) and showed in its compose form, its profile picture
-  was changed, and its copy buttons put a link on the clipboard. Its menus' page script (closing an
-  open `<details>` on a tap outside) has no half: D-139 recommends the `popover` attribute for menus.
+  was changed, and its copy buttons put a link on the clipboard. Its page scripts that are no
+  element's have page halves (D-141, below).
+
+## Page halves (D-141)
+
+An app's page scripts that are no element's (a cookie set on every page, menus closed by a tap
+elsewhere, a question before a form is sent, `Browser.call!`'s page functions in
+`window.rocxEffects`) get a phone half too: Kotlin in the app's `android/` folder, `object Name :
+PageHalf()`, listed by `build.sh` beside the element halves (`appPageHalves`), told what the
+script's listeners on `window` would hear:
+
+```kotlin
+object Confirm : PageHalf() {
+    override val events = setOf("submit")
+
+    override fun before(page: Page, event: PageEvent): Boolean {
+        val question = event.submitter?.attr("data-confirm") ?: event.target.attr("data-confirm")
+        if (question.isNullOrEmpty()) return false
+        val held = event.hold()
+        Phone.confirm(page.activity, question) { ok -> if (ok) held.resume() else held.drop() }
+        return true
+    }
+}
+```
+
+- **Hooks**: `start` (before the app's first page is asked for: a cookie set there goes with it),
+  `navigated` (after each navigation, the first page's too), `before` (one of the `events` it names
+  on its way to its target, before the page's handlers, as a capturing listener on `window`: true
+  stops it, `event.hold()` stops it until `Held.resume()` sends it on: the page's handlers and its
+  default action, a held submit's fields not checked again), `after` (once the page's handlers had
+  it, before its default action, a bubbling listener), `back` (Android's back, before the app's
+  history: true when the half took it, an open menu closed as Escape closes it), `call`
+  (`Browser.call!(name, arg)`, before the shell's `Calls` and the engine's `calls.rs`). The events are
+  the page's (`click`, `submit`, `input`, `change`, `toggle`…) and `pointerdown`, a finger down
+  anywhere on the element under it. The engine asks (`Platform::page`, `Rocx.page`) only about the
+  events the halves name: an app with none pays nothing.
+- **The page** (`Page`): `path` and `url` (`location`), `cookie` (`document.cookie`: the app's jar,
+  without its `HttpOnly` cookies; setting one keeps it in the jar for the requests after, a script's
+  `HttpOnly` one ignored), `all`/`first` (`querySelectorAll` with the CSS selectors the phone reads);
+  an `Element` also has `closest`, `matches`, `contains`, `all`/`first` inside it, `set` (an attribute
+  set or taken away: what the browser owns, a `<details>`' `open`, whose `toggle` follows) and `view`
+  (its Android view: a scroll view's scroll, a box's size). `Phone.confirm` is `confirm()`'s dialog.
+- **Touches** (`Touches.kt`) go where they are drawn, as a browser's tap hits what is painted: the
+  page's topmost view at a finger down is found (children before parents, the last drawn first, cut
+  off only by a box that clips), and a gesture on a view hanging out of its box (a menu's items
+  below its summary, which Android never handed a touch) goes to the deepest box that doesn't hold
+  the point, in its own coordinates. A finger down off the focused field blurs it and the keyboard
+  goes, as in a phone's browser; the keyboard goes when its field does (a navigation).
+- Tried with a large app's halves (in its repo): its zone cookie (days and times in the phone's zone,
+  as Chromium's in the same zone), its header menus (closed by a tap outside, back and a choice; their
+  links followed), `data-confirm` on a form and on a submit button (Cancel sends nothing), and its
+  timeline's `zoom_to` flight (the zoom presets, Review flying to a draft). Its command palette opens
+  only from a keyboard (⌘K, `/`), which a phone hasn't: the app's own to give a phone a button.
 
 ## What works (evidence)
 
@@ -623,6 +678,16 @@ dev server:
 | A render with nothing changed | skipped (0.01 ms) |
 | A page of 1,204 views (a test: `cargo test --release -p rocx-native-core thousand -- --ignored --nocapture`, on the Mac) | first render 25 ms (projection 20 ms, layout 3.3 ms), again with nothing it comes from changed about 1 ms |
 
+D-141's, the same large app with its page halves, signed in (load average about 4):
+
+| | |
+|---|---|
+| Cold start to its board (111 views) | 37–44 ms after the process started (its document in and mounted in 10–15 ms); `am start -W` 117–132 ms |
+| A navigation by a header link | 6–12 ms (document and commit), then a render of 117–133 views: projected 1.5–1.8 ms, applied 0.7–0.9 ms, laid out 0.8–1.3 ms |
+| A tap to the screen patched | 0.14–0.37 ms (a link, before its navigation); a menu opened 1.8–5 ms |
+| Scrolling a long page, six flings (`dumpsys gfxinfo`) | 333–338 frames, 2.7–3.9% janky, p50 18 ms, p99 20 ms, no slow UI-thread frame (the janky ones are the emulator GPU's "slow issue draw commands") |
+| A finger down's look for the view under it (`Touches`) | well under a millisecond at 300 views |
+
 ## Gaps and next steps
 
 1. **Phase 0's conformance suite.** The engine is a port of runtime.js, checked only on this screen
@@ -652,7 +717,7 @@ dev server:
 5. **The server over HTTP.** Plain `http://` only (keep-alive, cookies, redirects and streams are
    there since D-138 and D-140). Next: rustls with the platform's roots; gzip (a rocx server sends
    nothing compressed, so it waits for one that does). Requests don't say the app's build yet (§9).
-6. **Pages.** Since D-138, as the browser's (above). Not yet: prefetching (a link's page fetched on
+6. **Pages.** Since D-138, as the browser's (above); requests say their page (`Referer`, D-141). Not yet: prefetching (a link's page fetched on
    touch), a hash's element scrolled to (the top instead), the focus moved to a new page and the new
    page said to a screen reader, deep links (an Android App Link opening the app at a path: the
    activity takes a `path` extra only), and the leave listeners asked before the app closes. A
@@ -667,9 +732,10 @@ dev server:
    copies (the document's `srcset`, as runtime.js's `enhancedFrom` reads it), a video's seek bar and
    fullscreen, `<input type="range">`, `color`, `week`, a `multiple` select (one choice), `<datalist>`,
    `popover` (D-139's recommendation for menus: light dismiss done natively), drags, accessibility
-   roles beyond the platform's own views, the keyboard's other keys (only Enter), picked files' own
-   names from the photo picker, phone halves for the dev client (loading an app's Kotlin at run time)
-   and for page scripts that aren't an element's.
+   roles beyond the platform's own views, the keyboard's other keys (only Enter: a hardware
+   keyboard's keys outside a field reach no handler and no half), picked files' own names from the
+   photo picker, phone halves for the dev client (loading an app's Kotlin at run time), Roc's
+   `transition:` directives (in, out, move: an Undo toast goes without its slide) and `on:frame`.
 9. **Typing.** Once, `adb shell input text` typed while the keyboard was still starting gave a
    doubled first letter ("hhello"); with the keyboard up it never did. Whether that is adb and
    Gboard or the applier isn't settled (a plain `EditText` app would tell).

@@ -8049,3 +8049,91 @@ the server is done (the browser's is). The streams stay open while the app is in
 browser tab's do; Android may cut them, and they open again.
 
 **Reversible:** yes: live.rs goes, and the hosted functions are stubs again.
+
+## D-141 An app's page-wide phone halves, and a large app's pages and flows on a phone
+
+**Status.** Built (2026-11-28).
+
+**Context.** D-139 gave an app's custom elements phone halves (Kotlin by tag). An app's page scripts
+also do work that is no element's: a large app sets the reader's time zone as a cookie on every page
+(the server lays days and clock times out in it), closes its `<details>` menus on a tap elsewhere,
+on Escape and on a choice in them, asks before a form with `data-confirm` is sent, and registers page
+functions for `Browser.call!` (`window.rocxEffects`: a timeline's flight to a time). On a phone, with
+no page scripts, its times showed in UTC, a menu stayed open until its summary was tapped again (over
+a navigation too), a delete or a "publish now" went without asking, and its timeline's zoom presets
+did nothing. Going through every page and flow of that app against Chromium at the phone's width
+found more that wasn't the app's: a menu's items could never be tapped, a plain form's answer went to
+`/`, a page that got shorter scrolled on into nothing, the keyboard outlived its field.
+
+**Options.**
+1. Page scripts' work on a phone: (a) page halves, the app's Kotlin as for elements, told what the
+   script's listeners on `window` hear, with the hooks that work needs (its start, each navigation,
+   events before and after the page's handlers, a held event sent on later, Android's back,
+   `Browser.call!`'s page functions); (b) each such script made an element (a `<zone-cookie>`, a
+   menu element) so D-139's halves cover it; (c) rocx built-ins for the common ones (a zone cookie,
+   `confirm`, light dismiss), the rest nothing.
+2. Menus: `popover` (D-139's recommendation) or the app's script's half.
+3. A touch on a view hanging out of its box (Android hands a touch only to a view inside its
+   parent's bounds): leave it, re-parent such views, or find the touched view as drawn and hand it
+   the gesture.
+
+**Decision.** 1(a), 2 by the half (the app's markup unchanged), 3 the last:
+
+- **Page halves** (`pages.rs`, `Pages.kt`): `object Name : PageHalf()` in the app's `android/`
+  folder, listed by `build.sh` beside the element halves (`appPageHalves`). Hooks: `start` (before the
+  first page is asked for: a cookie set there goes with it), `navigated` (after each navigation),
+  `before` (an event of those the half names on its way to its target, before the page's handlers, as
+  a capturing listener: true stops it; `event.hold()` stops it until `Held.resume()` sends it on, the
+  page's handlers and default action then, or `drop()`), `after` (once the page's handlers had it, a
+  bubbling listener), `back` (Android's back, before the app's history), and `call` (`Browser.call!`'s
+  page functions, before the shell's and the engine's). The engine asks the platform
+  (`Platform::page`, `Rocx.page`) only about the events the halves name; a submit comes with the
+  button that sent it, and a held one is sent on without its fields checked again. `pointerdown` is
+  a finger down anywhere, on the element under it. What a half asks of the page (`Rocx.ask`): where
+  it is, its cookies as a script sees them (`document.cookie`: the jar's but the `HttpOnly` ones; a
+  script's `HttpOnly` cookie, or one replacing an `HttpOnly` one, ignored, RFC 6265's rule), its
+  elements by selector (css.rs's selectors: `querySelectorAll`, `closest`, `matches`, `contains`, and
+  within an element), an attribute set or taken away (a `<details>`' `open`, its `toggle` after), an
+  element's view; `Phone.confirm` is `confirm()`'s dialog.
+- **The app's halves** (in its repo): the zone cookie, menus closed by a finger down outside, a
+  choice and back, `data-confirm` asked in the phone's dialog, and `zoom_to`'s flight.
+- **Touches go where they are drawn** (`Touches.kt`): the page's topmost view at the finger is found
+  (children before parents, the last drawn first, cut off only by what clips), and a gesture on one
+  hanging out of its box goes to the deepest box that doesn't hold the point, in its own
+  coordinates. A finger down off the focused field blurs it and hides the keyboard; the keyboard goes
+  when the field it was up for does (a navigation).
+- **Requests say their page** (`Referer`, by the default policy: the whole address to the app's
+  server, the origin elsewhere), so a plain form's answer (D-118's `flash_back!`) goes back to the page
+  it was posted from, not `/`.
+- **What the pass fixed besides**: the root view is as big as its frame or what it holds from its own
+  frame each time (a page that got shorter kept its length); a checkbox or radio is drawn as a
+  browser draws one, as big as its box, in its `accent-color` (the platform's 32 dp buttons spilled
+  over what followed); a subgrid takes its parent grid's columns (Taffy has none: a copy, each row
+  sizing it for itself); `color-mix()`'s shares may be `calc()`s.
+- **Tested:** cargo tests (a script's cookies; a half's selectors over a page: querySelectorAll, closest
+  of a choice in a menu, within an element, contains; selectors the phone can't read; a subgrid's
+  items in their parent's columns, lined up across rows; color-mix with calc() shares); the emulator
+  against a large app's dev server in Europe/Warsaw, every page and its main flows beside Chromium at
+  412 px in the same zone: times as Chromium's, menus closing as on the web and their items followed,
+  "publish now" and a draft's acceptance asking first (Cancel sends nothing), a text and an image post
+  made, scheduled, opened, edited, deleted and brought back with Undo, an organization made and its
+  invite link shown and copied, organizations switched, the billing plans, analytics' legend and
+  heatmap, the timeline's presets and its flight to a draft, live updates from another client. Two
+  differences are the app's own (its join form posts to a page that takes GET, in Chromium too; its
+  command palette opens only from a keyboard).
+- **Docs:** spike/native-apps/README.md (Page halves; what works; gaps), DESIGN.md (§7, §10),
+  DECISIONS.md.
+
+**Why.** The app's scripts are its semantics: written once more in Kotlin beside them, as its elements'
+halves are (D-139), they keep its markup and server as they are, and the hooks are what those scripts
+listen to in a browser, so a half reads as a port of its script. Built-ins would cover three scripts of
+one app; making each an element would change the app for the phone's sake. A touch hitting what is
+drawn is CSS's rule, which a menu, a dropdown or a badge hanging out of its box relies on.
+
+**Costs.** The app keeps each half in step with its script. A half sees events, not the page's
+listeners: a script's own listeners on elements are an element half's. Touch forwarding looks at every
+view under a finger down (well under a millisecond at a thousand views); it doesn't follow rotation or
+scale transforms. The dev client still has no halves (`rocx dev --android`). Subgrid tracks sized per
+row may not line up where a row's content is wider than the others'.
+
+**Reversible:** yes: pages.rs, Pages.kt and Touches.kt go; page scripts do nothing on a phone again.
