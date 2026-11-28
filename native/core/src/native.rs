@@ -623,7 +623,7 @@ impl<'a> Projection<'a> {
                 let picked = media::pick(attr("src").as_deref(), attr("srcset").as_deref(), attr("sizes").as_deref(), crate::density(), media);
                 let mut natural = None;
                 if let Some((url, density)) = picked
-                    && let media::Image::Ready { path, width, height } = media::image(&self.resolve(&url))
+                    && let media::Image::Ready { path, width, height } = media::image(&self.resolve(&url), node)
                 {
                     view.props.insert("src".into(), path);
                     natural = Some((width as f32 / density, height as f32 / density));
@@ -642,7 +642,7 @@ impl<'a> Projection<'a> {
                 }
                 let mut natural = None;
                 if let Some(poster) = attr("poster").filter(|poster| !poster.is_empty())
-                    && let media::Image::Ready { path, width, height } = media::image(&self.resolve(&poster))
+                    && let media::Image::Ready { path, width, height } = media::image(&self.resolve(&poster), node)
                 {
                     view.props.insert("poster".into(), path);
                     natural = Some((width as f32, height as f32));

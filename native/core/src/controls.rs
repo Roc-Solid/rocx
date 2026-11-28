@@ -304,11 +304,20 @@ pub fn is_email(value: &str) -> bool {
 }
 
 /// A field's message beside it (`invalid`), until it changes.
+/// Called outside the engine's borrow (a dispatch's): the field is marked changed when its message
+/// does, so the screen shows it (D-137 projects again only what changed).
 pub fn set_invalid(node: NodeId, said: Option<String>) {
-    INVALID.with(|invalid| match said {
+    let was = INVALID.with(|invalid| match said.clone() {
         Some(said) => invalid.borrow_mut().insert(node, said),
         None => invalid.borrow_mut().remove(&node),
     });
+    if was != said {
+        crate::engine::with(|engine| {
+            if node < engine.dom.nodes.len() {
+                engine.dom.touch(node);
+            }
+        });
+    }
 }
 
 pub fn invalid_message(node: NodeId) -> Option<String> {

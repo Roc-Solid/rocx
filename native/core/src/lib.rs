@@ -304,6 +304,9 @@ pub fn event(id: u64, name: &str, value: &str) {
         && let Some(src) = native::shown_views().get(&id).and_then(|view| view.props.get("src").cloned())
     {
         media::video_said(&src, value);
+        if let Some(node) = native::node_of(id) {
+            engine::with(|engine| engine.dom.touch(node));
+        }
     }
     if let Some(node) = native::node_of(id) {
         // What the system's picker gave a file input (D-139): what it holds, then its `input` and

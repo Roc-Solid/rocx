@@ -26,6 +26,8 @@ pub enum Image {
 
 thread_local! {
     static IMAGES: RefCell<HashMap<String, Image>> = RefCell::new(HashMap::new());
+    /// The elements waiting for an image, by its URL.
+    static WAITING: RefCell<HashMap<String, Vec<crate::dom::NodeId>>> = RefCell::new(HashMap::new());
     /// Videos' sizes in pixels, by their source, as their players said (`loadedmetadata`).
     static VIDEOS: RefCell<HashMap<String, (u32, u32)>> = RefCell::new(HashMap::new());
 }
@@ -51,12 +53,23 @@ pub struct Loaded {
     pub image: Image,
 }
 
-/// On the main thread: where the image at `url` (absolute, or `file://`) is; one not asked for yet
-/// starts loading now. The screen is rendered again once it is in (`loaded`).
-pub fn image(url: &str) -> Image {
+/// On the main thread: where the image at `url` (absolute, or `file://`) is, for element `node`;
+/// one not asked for yet starts loading now. The elements that asked for it are marked changed once
+/// it is in (`loaded`), so the screen shows it (D-137 projects again only what changed).
+pub fn image(url: &str, node: crate::dom::NodeId) -> Image {
     if let Some(known) = IMAGES.with(|images| images.borrow().get(url).cloned()) {
+        if known == Image::Loading {
+            WAITING.with(|waiting| {
+                let mut waiting = waiting.borrow_mut();
+                let nodes = waiting.entry(url.to_string()).or_default();
+                if !nodes.contains(&node) {
+                    nodes.push(node);
+                }
+            });
+        }
         return known;
     }
+    WAITING.with(|waiting| waiting.borrow_mut().insert(url.to_string(), vec![node]));
     IMAGES.with(|images| images.borrow_mut().insert(url.to_string(), Image::Loading));
     let made = crate::generation();
     let url = url.to_string();
@@ -73,7 +86,15 @@ pub fn loaded(loaded: Loaded) {
     if let Image::Failed(why) = &loaded.image {
         crate::log(crate::Level::Warn, &format!("rocx native: the image {} isn't shown: {why}", shown(&loaded.url)));
     }
+    let nodes = WAITING.with(|waiting| waiting.borrow_mut().remove(&loaded.url)).unwrap_or_default();
     IMAGES.with(|images| images.borrow_mut().insert(loaded.url, loaded.image));
+    crate::engine::with(|engine| {
+        for node in nodes {
+            if node < engine.dom.nodes.len() {
+                engine.dom.touch(node);
+            }
+        }
+    });
 }
 
 /// A URL for the log: without its query (a signed URL's signature).
@@ -84,6 +105,7 @@ fn shown(url: &str) -> &str {
 /// The images known, forgotten (a dev client's new build starts afresh).
 pub fn forget() {
     IMAGES.with(|images| images.borrow_mut().clear());
+    WAITING.with(|waiting| waiting.borrow_mut().clear());
     VIDEOS.with(|videos| videos.borrow_mut().clear());
 }
 
