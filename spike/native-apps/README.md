@@ -29,7 +29,9 @@ spike/native-apps/phone-hello/routes/+page.rocx
   range, fragments), so it can follow runtime.js step by step. After each flush the document is
   projected onto native views and compared with what was sent last (`src/native.rs`): one batch of
   ops a flush. A CSS subset (`src/css.rs`) resolves the page's stylesheet into the views'
-  properties. An HTTP/1.1 client (`src/http.rs`) asks the server on threads of its own.
+  properties. An HTTP/1.1 client (`src/http.rs`) asks the server on threads of its own, with a
+  cookie jar (`src/cookies.rs`); navigation (`src/nav.rs`) and live updates (`src/live.rs`) are
+  runtime.js's, on a phone (below, Pages, sessions and the server).
 - **`native/android`**: the Android half in Rust (`src/lib.rs`: `JNI_OnLoad`, `Rocx.start` and
   `Rocx.send`, the main looper's wake pipe, logcat), and the Kotlin shell (`app/`): one activity, and
   an applier that walks a batch of ops into Android views (a box is a `LinearLayout`, text a
@@ -95,7 +97,19 @@ node spike/native-apps/evidence/web-check.mjs
 # The app on the native host, on the Mac (no phone)
 ROCX_APP_ARCHIVE=$PWD/native/android/build/phone-hello/libapp-mac.a cargo build --manifest-path native/Cargo.toml -p rocx-native-mac
 native/target/debug/rocx-native-mac --origin http://127.0.0.1:8095 show wait:800 tap:Tap type:hello tap:Send wait:800 show
+# Navigation's steps (D-138): a start path, the cookie jar's directory, links, back, the history
+native/target/debug/rocx-native-mac --origin http://127.0.0.1:8095 --path /login --files /tmp/jar \
+    wait:800 type:ada@acme.example enter wait:800 where cookies link:Settings wait:800 back where
 ```
+
+The runner's steps: `show`, `ops`, `wait:<ms>`, `tap:<text>` (a button), `type:<text>` (the first
+field), `enter`, `textarea:<text>`, `check:<text>` (the checkbox or radio beside that text), `at:<id>`
+and `at:<id>=<text>` (a view by its id: tapped, or typed into), `link:<text>` (a link), `nav:<to>`
+(`Router.navigate!`), `back`, `where` (the location and the history), `cookies`, `css`.
+The emulator reaches a server on the Mac at `10.0.2.2`; with `adb reverse tcp:<port> tcp:<port>` it
+reaches it at `http://localhost:<port>`, the same origin a browser on the Mac has, so cookies, a
+server's cross-site form check and its redirects to its own origin agree (`--origin
+http://localhost:<port>`). `adb shell am start … --es path /login` opens the app at a path.
 
 `build.sh` runs, in order: `rocx build --client`; `roc build --target=arm64musl` (an archive);
 `cargo build --release --target aarch64-linux-android -p rocx-android` (a static library); one link
@@ -242,6 +256,56 @@ The user's choice (2026-11-23): native code for the app's Roc, no over-the-air u
   They bubble up the engine's document as the DOM's do, and a tap on a form's submit button submits
   the form (an endpoint's form a component reads the submission of is sent with the host's client).
 
+## Pages, sessions and the server (D-138, D-140)
+
+The app's pages are all in its library; a navigation goes where the browser's would, the same way:
+
+- **Where the app is** (`Router.location!`) is a source: what reads it in markup or a memo runs again
+  when it changes (the generated `Root`'s route memo, a layout's header), and a level that read it
+  once (a component's body) is made anew, as runtime.js's `readOnce` and `remakeRoot` do.
+- **A navigation fetches the page's document** (`accept: text/html`, `x-rocx-navigate: 1`), so the
+  server runs the page's middleware: a guard's redirect (to `/login`), a sign-in's (home) are followed
+  by the HTTP client, and where it ended is where the app goes. Only what the document seeds is read
+  of it, not its HTML: the answers its reads got (`rocx-answers`) and its flash (`rocx-flash`), so the
+  new page's first frame asks the server for nothing; the layouts the two pages share are kept, and
+  read again what the document answered otherwise (`refreshKept`). The first page at start goes the
+  same way: its document, then the mount at where it ended. On the emulator, against a large app's dev
+  server: 5–10 ms from a tap to the new page applied (the fetch over `adb reverse` included).
+- **The query alone changing** is made in place, as the browser's is: the reads whose URL changed ask
+  their endpoints (1–3 ms on the Mac runner); a page that read the location once is fetched instead.
+- **What navigates**: a tap on an `<a href>` (a text view's link is a run of its own, a
+  `ClickableSpan`; a view that is a link, or has a click handler, is tappable whole), `Router.navigate!`
+  once its handler is done, `<Navigate>`, a GET form, a form the runtime doesn't send (its POST's
+  answer, redirect followed, is the page), a submission's `x-rocx-redirect` or followed redirect
+  (D-117, D-119: what the page kept reads again). A link with a `target` or `download`, another site's
+  (a provider's sign-in, through its redirect), `mailto:` and `tel:` open in the system (an Intent).
+- **History**: an entry a navigation (its target, and where the screen was scrolled as it was left).
+  Android's back (the button, the gesture: `OnBackInvokedCallback`, `onBackPressed` before API 33)
+  goes to the entry before and its scroll; at the first, the activity finishes. `use_before_leave!`'s
+  listeners are asked before each navigation and back (`Leave.prevent!`, `Leave.retry!`).
+  `aria-current` is marked on links as runtime.js marks it.
+- **Forms**: a form nothing on the page reads goes as a plain form (`x-rocx-in-place`, D-118), its
+  redirect followed in place; a form the host sent is emptied once it succeeds (D-122), and a plain
+  form's failure is shown around it (D-121). A checkbox or radio is sent as it was tapped. The
+  keyboard's Enter in a form's field submits it.
+- **Sessions**: a cookie jar (`cookies.rs`, RFC 6265's storage model: domain, path, `Expires` and
+  `Max-Age`, deletion, `Secure` as browsers have it, sent over `http://localhost` too, the `__Secure-`
+  and `__Host-` prefixes), sent with every request (reads, submissions, documents, stylesheets) and
+  kept with every answer, a redirect's too. Those with an expiry are written to the app's files
+  (`Rocx.files`), so a session outlives the app's process.
+- **The HTTP client** (`http.rs`) follows redirects as `fetch` does (a 303, and a 301 or 302 to a
+  POST, as a GET; a 307 or 308 as it was; another site's handed back, as where the answer ended),
+  keeps connections alive (a small pool per host; one the server closed is replaced), times out (10
+  s to connect, 30 s for an answer), and sends `Origin` with what isn't a GET, as a page does (a
+  server's cross-site form check wants it). Plain `http://` only.
+- **Live (D-140)**: `listen!` reads an endpoint's server-sent events as they come, its handler run
+  for each, and stops when what started it goes (the page left). Channels (`subscribe!`, `say!`,
+  `resync!`) share one stream, `GET /rocx/live?tab=…&c=…`, as runtime.js's `Hub`: its `hello`, the set
+  followed by `subscribe`/`unsubscribe` posts naming it, what is said in one `POST /rocx/live/send` a
+  flush, a dropped stream opened again after a doubling wait (0.5–30 s). Checked: a large app's board
+  heard a post made in a browser tab and read itself again; the checkboxes example's channel
+  resynced, heard what others said, and what the phone said reached them.
+
 ## What works (evidence)
 
 All of it in [evidence/](evidence/), made by `evidence/run.sh` and `evidence/web-check.mjs`:
@@ -280,7 +344,7 @@ All 63 are there: 49 when the spike was built, and 14 that master's D-040, D-053
 added when it landed (2026-11-24). 47 do what runtime.js's imports do: `keep!`, `signal_new!`, `signal_get!`,
 `signal_set!`, `memo_new!`, `memo_done!`, `memo_get!`, `refresh!`, `is_pending!`, `fail!`,
 `event_value!`, `boundary!`, `problem!`, `retry!`, `for_new!`, `row_index!`, `row_set!`,
-`row_get!`, `context_value!`, `context_find!`, `context_get!`, `location!` (the start path, `/`),
+`row_get!`, `context_value!`, `context_find!`, `context_get!`, `location!` (tracked, D-138),
 `fetch!`, `timeout!`, `interval!`, `clear_timer!`, `now_millis!`, `now_nanos!`, `effect_new!`,
 `effect_options!`, `cleanup!`, `action!`, `submission!`, `submissions!`, `submission_clear!`,
 `submission_drop!`, `submit!`, `title!` (the activity's title), `untrack!`, `read_at!`; stores and
@@ -292,19 +356,20 @@ a `<Switch>`, a route's level) is made anew when its case's name changes. The sc
 half of them; the others are ported but untested until phase 0's conformance suite runs
 `web/test/app` on both engines.
 
-Navigation's (D-040) answer for the one page a phone shows: `app!` (the route table, let go of),
-`is_routing!` (false), `before_leave!`, `leave_prevent!` and `leave_retry!` (nothing: the page is
-never left), `navigate!` (logged once and ignored); and `head!` (a `<Meta>`, `<Link>` or `<Style>`:
-a phone has no `<head>`).
+Navigation's (D-040, as a phone does it since D-138: below): `app!` (the route table: its pages and
+the endpoints that take a POST), `location!` (tracked), `navigate!`, `is_routing!` (tracked),
+`before_leave!`, `leave_prevent!` and `leave_retry!`; `flash!` (the flash the page's document came
+with); and `head!` (a `<Meta>`, `<Link>` or `<Style>`: a phone has no `<head>`, so nothing).
 
-Three answer what the browser's do: `request!` (none), `status!` (nothing), `flash!` (none).
-
-Stubs, each failing with why (the nearest `<Errored>` shows it, or a handler's failure is logged):
-`listen!`, `subscribe!`, `say!` and `resync!` ("… isn't on phones yet (D-063's spike)"), and
-`live_publish!`, which fails as the browser's does (the server's).
+Two answer what the browser's do: `request!` (none), `status!` (nothing). `live_publish!` fails as
+the browser's does (the server's). Live updates (D-140): `listen!`, `subscribe!`, `say!` and
+`resync!`, as runtime.js's `listenTo` and `Hub` (below).
 
 `browser_call!` is queued as the browser's is, and once the handler is done goes to the phone's
-native handler by its name (`Platform::call`; Android's are Kotlin's, `Calls.kt`): `audio.play`
+native handler by its name (`Platform::call`; Android's are Kotlin's, `Calls.kt`), else to one of
+the page functions apps commonly register, done on the engine's document with the arguments they
+take in a browser (`calls.rs`, D-138): `focus { selector }`, `click { selector }`, `reveal {
+selector }`, `go { url }` and `replace_query { drop }`. Kotlin's: `audio.play`
 (packages/audio's `Audio.play!`: a MediaPlayer, the sound fetched from the app's server when its URL
 is a path) and `vibrate.pattern` (packages/vibrate's `Vibrate.pattern!`: Android's `Vibrator`, the
 pattern as a waveform; the manifest asks for `VIBRATE`). A name with no handler is logged ("the push
@@ -386,12 +451,16 @@ host's GPU.
    is the next step for any second screen.
 4. **CSS at build time.** Parsed on the phone now; the design's build-time table (and `rocx check
    --android`) gives file and line to each warning.
-5. **The server over HTTP.** Plain `http://` only, a connection a request, no cookies (no sessions),
-   no streaming (so no `listen!` or channels). Next: rustls with the platform's roots, keep-alive,
-   a cookie jar in the app's files, server-sent events.
-6. **Pages.** One page at its start path; no navigation, links or back gestures (D-040's shape, §8;
-   `Router.navigate!` is logged and ignored); page guards are ignored (the user's answer to
-   question 4).
+5. **The server over HTTP.** Plain `http://` only (keep-alive, cookies, redirects and streams are
+   there since D-138 and D-140). Next: rustls with the platform's roots; gzip (a rocx server sends
+   nothing compressed, so it waits for one that does). Requests don't say the app's build yet (§9).
+6. **Pages.** Since D-138, as the browser's (above). Not yet: prefetching (a link's page fetched on
+   touch), a hash's element scrolled to (the top instead), the focus moved to a new page and the new
+   page said to a screen reader, deep links (an Android App Link opening the app at a path: the
+   activity takes a `path` extra only), and the leave listeners asked before the app closes. A
+   provider's sign-in (Google's) opens in the system's browser, which has no session of the app's,
+   and its way back lands there: a native app needs an App Link or a custom scheme back (and a
+   download link likewise opens with no session). A form with files isn't sent as one yet.
 7. **`rocx build --android`, and the dev mode's next steps.** `build.sh` is the spike's. The dev mode
    (above) reloads in about a second, on USB and Wi-Fi, each a fresh start; next: the server's
    restart off the reload's path, and the page's APK

@@ -143,6 +143,7 @@ pub fn listen(url: String, runner: crate::abi::RocErasedCallable) {
 fn listen_heard(id: u64, heard: Heard) {
     let found = engine::with(|engine| engine.live.listening.get(&id).map(|listening| (listening.kept, listening.scope.clone(), listening.owner, listening.url.clone())));
     let Some((kept, scope, owner, url)) = found else { return };
+    log(Level::Debug, &format!("rocx: {url} heard {heard:?}"));
     let (said, done) = match heard {
         Heard::Opened { status, events, body } => {
             if events && (200..300).contains(&status) {
@@ -171,6 +172,7 @@ fn listen_heard(id: u64, heard: Heard) {
 fn stop_listening(id: u64) {
     let found = engine::with(|engine| engine.live.listening.remove(&id));
     if let Some(listening) = found {
+        log(Level::Debug, &format!("rocx: {} stopped", listening.url));
         listening.stopper.stop();
         engine::release_later(listening.kept);
     }
