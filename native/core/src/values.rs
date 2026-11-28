@@ -616,6 +616,12 @@ fn colour_mix(inner: &str, current: Argb) -> Option<Argb> {
         for word in words {
             match word.strip_suffix('%').and_then(|p| p.trim().parse::<f32>().ok()) {
                 Some(p) if !word.contains('(') => percent = Some(p),
+                // A worked-out share (`calc(var(--strength) * 100%)`, a heatmap's cells, D-141).
+                _ if word.to_ascii_lowercase().starts_with("calc(") && matches!(length(&word, Ctx::default()), Some(Length::Percent(_))) => {
+                    if let Some(Length::Percent(p)) = length(&word, Ctx::default()) {
+                        percent = Some(p.clamp(0.0, 100.0));
+                    }
+                }
                 _ => colour_text.push(word),
             }
         }
@@ -1029,6 +1035,8 @@ mod tests {
         assert_eq!(colour("transparent", 0), Some(0));
         assert_eq!(colour("color-mix(in srgb, #ff0000 50%, #0000ff)", 0), Some(0xff800080));
         assert_eq!(colour("color-mix(in srgb, currentColor 12%, transparent)", 0xff000000), Some(0x1f000000));
+        assert_eq!(colour("color-mix(in srgb, #ff0000 calc(0.5 * 100%), #0000ff)", 0), Some(0xff800080), "a share worked out by calc()");
+        assert_eq!(colour("color-mix(in oklab, #ff0000 calc(1 * 100%), #0000ff)", 0), Some(0xffff0000));
         let white = colour("oklch(1 0 0)", 0).unwrap();
         assert!(white & 0xffffff >= 0xfefefe, "{white:x}");
         assert_eq!(colour("light-dark(#fff, #000)", 0), Some(0xffffffff));

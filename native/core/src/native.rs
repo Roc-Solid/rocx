@@ -87,6 +87,10 @@ pub struct View {
     pub hoisted_from: Option<u64>,
     /// It is a size container (`container-type`): `@container` queries ask its width.
     pub container: bool,
+    /// A grid whose columns are its parent grid's (`grid-template-columns: subgrid`, D-141), and
+    /// whether its column gap is its own: Taffy has no subgrids, so it takes a copy of the parent's
+    /// tracks (each row sizes them for itself: they line up where the content does).
+    pub subgrid: Option<bool>,
 }
 
 impl View {
@@ -106,6 +110,7 @@ impl View {
             stacking: false,
             hoisted_from: None,
             container: false,
+            subgrid: None,
         }
     }
 }
@@ -362,6 +367,7 @@ pub fn project(engine: &mut Engine) -> (u64, HashMap<u64, View>, bool) {
             None => projection.root(dom.root, &top),
         };
         projection.paint_tree(root);
+        projection.subgrids();
         kept_now = std::mem::take(&mut projection.kept);
         root
     };
@@ -473,6 +479,25 @@ struct Projection<'a> {
 /// What an element's projection made (D-137): its item, the views of it and everything in it, their
 /// layout parents, its computed styles. Taken again as it is when nothing it comes from changed: its
 /// subtree, its parent's styles and the context its selectors see (its siblings, its ancestors).
+impl Projection<'_> {
+    /// Subgrids' columns (D-141): each takes its layout parent's tracks, their names, and its gap
+    /// unless it has its own.
+    fn subgrids(&mut self) {
+        let wanted: Vec<(u64, u64, bool)> = self.views.iter().filter_map(|(id, view)| view.subgrid.and_then(|own_gap| self.parents.get(id).map(|parent| (*id, *parent, own_gap)))).collect();
+        for (id, parent, own_gap) in wanted {
+            let Some(from) = self.views.get(&parent) else { continue };
+            let (columns, names, gap) = (from.style.grid_template_columns.clone(), from.style.grid_template_column_names.clone(), from.style.gap.width);
+            if let Some(view) = self.views.get_mut(&id) {
+                view.style.grid_template_columns = columns;
+                view.style.grid_template_column_names = names;
+                if !own_gap {
+                    view.style.gap.width = gap;
+                }
+            }
+        }
+    }
+}
+
 struct Kept {
     items: bool,
     item: (u64, bool, bool),
@@ -770,6 +795,9 @@ impl<'a> Projection<'a> {
         }
         let _ = block;
         view.style = layout::style(&computed, role, computed.get("text-align"));
+        if computed.get("display") == Some("grid") && computed.get("grid-template-columns").is_some_and(|tracks| tracks.trim() == "subgrid") {
+            view.subgrid = Some(computed.get("column-gap").is_some_and(|gap| gap != "normal"));
+        }
         // Replaced elements: a percentage size of theirs adds nothing to their container's
         // intrinsic size (CSS sizing's compressible rule), as a browser's.
         match view.kind {
@@ -2508,6 +2536,22 @@ mod tests {
         assert!(block.children.iter().any(|child| *child & AFTER != 0), "a decorative ::after is a box of its own");
         let (_, in_flow) = find(&views, "text", "★ in flow");
         assert_eq!(in_flow.kind, "text");
+    }
+
+    #[test]
+    fn a_subgrid_lays_its_items_in_its_parent_grids_columns() {
+        use Make::*;
+        let css = "body { margin: 0; } ul { display: grid; grid-template-columns: 20px minmax(0, 1fr) 60px; gap: 4px 10px; margin: 0; padding: 0; } li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; } span { display: block; }";
+        let row = |label: &'static str, value: &'static str| El("li", &[], vec![El("span", &[], vec![Text("■")]), El("span", &[], vec![Text(label)]), El("span", &[], vec![Text(value)])]);
+        let views = screen(css, vec![El("ul", &[], vec![row("Facebook", "253"), row("LinkedIn", "198")])]);
+        let (label, _) = find(&views, "text", "Facebook");
+        let (value, _) = find(&views, "text", "253");
+        let (other, _) = find(&views, "text", "198");
+        let (label, value, other) = (frame_of(label).unwrap(), frame_of(value).unwrap(), frame_of(other).unwrap());
+        assert_eq!(label[1], value[1], "one row, not stacked");
+        assert_eq!(label[0], 30.0, "the second column, after the first and the parent's gap");
+        assert_eq!(value[0], 340.0, "the last column, at the parent's place for it");
+        assert_eq!(value[0], other[0], "lined up across the rows");
     }
 
     #[test]

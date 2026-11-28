@@ -689,6 +689,10 @@ fn grid_tracks(value: &str, c: &Computed) -> Option<(Vec<GridTemplateComponent<S
     if value.trim() == "none" {
         return Some((Vec::new(), Vec::new()));
     }
+    // The parent grid's, copied once the projection is made (native.rs's `subgrids`, D-141).
+    if value.trim() == "subgrid" {
+        return None;
+    }
     let plain = plain_units(value, c);
     let parsed: taffy::GridTemplateTracks<String, GridTemplateComponent<String>> = match plain.parse() {
         Ok(parsed) => parsed,
