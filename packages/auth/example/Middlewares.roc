@@ -26,8 +26,8 @@ Middlewares := [].{
 	signed_in : Middleware({}, Middlewares.Me)
 	signed_in = Auth.required_with(
 		|{}, session|
-			match Accounts.user!(session.user) {
-				Ok(Found(user)) => {
+			match Auth.user!(session.user) {
+				Ok(user) => {
 					held : Try(List(Accounts.Role), [DbErr(Str), BadRow(Str)])
 					held = Roles.current!(user.id)
 					match held {

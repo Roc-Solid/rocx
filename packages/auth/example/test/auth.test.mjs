@@ -68,6 +68,37 @@ post! = |{ body, .. }|
 	}
 `;
 
+/** The route the users test adds: a user forgotten (`Auth.forget!`), as an app that deletes a person would. */
+const forgetUserRoute = `import pf.Server
+import pf.Endpoint
+import auth.Auth
+
+## POST /test/forget-user: \`user\` forgotten, everything the package keeps for them. Written by
+## packages/auth's tests into the app they build; the example has none.
+post! : { request : Server.Request, params : {}, context : {}, body : { user : Str } } => Try({}, Endpoint.Refusal)
+post! = |{ body, .. }|
+	match Auth.forget!(body.user) {
+		Ok({}) => Ok({})
+		Err(DbErr(why)) => Err(Status(503, why))
+	}
+`;
+
+/** The route the users test adds: the user with an address, made if there is none (`Auth.user_with_address!`), as an app that invites someone would. */
+const addressRoute = `import pf.Server
+import pf.Endpoint
+import auth.Auth
+
+## POST /test/user-with-address: the id of the user with \`email\`, made if there is none. Written
+## by packages/auth's tests into the app they build; the example has none.
+post! : { request : Server.Request, params : {}, context : {}, body : { email : Str } } => Try({ user : Str }, Endpoint.Refusal)
+post! = |{ body, .. }|
+	match Auth.user_with_address!(body.email) {
+		Ok(user) => Ok({ user: user })
+		Err(NotAnAddress) => Err(Status(400, "not an address"))
+		Err(DbErr(why)) | Err(BadRow(why)) => Err(Status(503, why))
+	}
+`;
+
 const base64url = (text) => Buffer.from(text).toString("base64url");
 
 /**
@@ -148,6 +179,10 @@ function app(database, fake) {
 	writeFileSync(join(dir, "routes", "test", "switch", "+server.roc"), switchRoute);
 	mkdirSync(join(dir, "routes", "test", "forget"), { recursive: true });
 	writeFileSync(join(dir, "routes", "test", "forget", "+server.roc"), forgetRoute);
+	mkdirSync(join(dir, "routes", "test", "forget-user"), { recursive: true });
+	writeFileSync(join(dir, "routes", "test", "forget-user", "+server.roc"), forgetUserRoute);
+	mkdirSync(join(dir, "routes", "test", "user-with-address"), { recursive: true });
+	writeFileSync(join(dir, "routes", "test", "user-with-address", "+server.roc"), addressRoute);
 	return dir;
 }
 
@@ -342,7 +377,7 @@ for (const database of databases) {
 			assert.equal((await db.query(`select count(*) as n from auth_sessions where id = '${old}'`))[0].n == 0, true, "the old session ended");
 			// A session whose user is gone ends, and is answered as signed out.
 			await db.query(`delete from auth_identities where user_id = '${beaId}'`);
-			await db.query(`delete from users where id = '${beaId}'`);
+			await db.query(`delete from auth_users where id = '${beaId}'`);
 			const gone = await client.request("/private", { headers: { accept: "application/json" } });
 			assert.equal(gone.status, 401);
 			assert.ok(!client.cookies.has("session"), "its cookie cleared");
@@ -491,9 +526,61 @@ for (const database of databases) {
 			const again = server.client();
 			await atProvider(again, "test", { sub: "subject-1", email: "renamed@example.com" });
 			assert.equal((await again.read("/me")).user, me.user);
+			assert.equal((await again.read("/me")).email, "renamed@example.com", "the user's address is the provider's now");
 			// An address the provider doesn't say is verified isn't taken: admit! has none to go on.
 			const unverified = await atProvider(server.client(), "test", { sub: "subject-2", email: "who@example.com", verified: false });
 			assert.match(unverified.location, /^\/sign-in\?error=refused&reason=test%20didn[^&]*&then=%2Fprivate$/);
+		});
+
+		test("the package's users (Auth.user_for!): a version 7 UUID, one user for an address however they sign in, an address that follows the provider's, Auth.forget!, and Auth.user_with_address!", async () => {
+			const byLink = await signedIn("uma@example.com");
+			const me = await byLink.read("/me");
+			assert.match(me.user, /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/, "a version 7 UUID");
+			const made = parseInt(me.user.replaceAll("-", "").slice(0, 12), 16);
+			assert.ok(Math.abs(made - Date.now()) < 60_000, "led by the time it was made");
+			const [row] = await db.query(`select email from auth_users where id = '${me.user}'`);
+			assert.equal(row.email, "uma@example.com");
+			// A provider giving the same verified address: the same user.
+			const atTest = server.client();
+			await atProvider(atTest, "test", { sub: "subject-uma", email: "Uma@Example.com" });
+			assert.equal((await atTest.read("/me")).user, me.user);
+			assert.deepEqual((await atTest.read("/me")).identities.sort(), ["email:uma@example.com", "test:uma@example.com"]);
+			// Another user's address isn't taken from them.
+			const vicId = (await (await signedIn("vic@example.com")).read("/me")).user;
+			await atProvider(server.client(), "test", { sub: "subject-uma", email: "vic@example.com" });
+			assert.equal((await atTest.read("/me")).email, "uma@example.com", "vic keeps theirs");
+			assert.equal((await db.query(`select id from auth_users where email = 'vic@example.com'`))[0].id, vicId);
+			// The provider's address changes: the user's does, and their mailed links to the old one end.
+			await atProvider(server.client(), "test", { sub: "subject-uma", email: "uma.new@example.com" });
+			assert.equal((await atTest.read("/me")).email, "uma.new@example.com");
+			assert.deepEqual((await atTest.read("/me")).identities, ["test:uma.new@example.com"]);
+			const oldAddress = await signedIn("uma@example.com");
+			assert.notEqual((await oldAddress.read("/me")).user, me.user, "the old address is someone new");
+			// Forgotten: their sessions, an admin acting as them, their identities and grants, their row.
+			assert.equal((await atTest.json("/trial", {})).status, 200);
+			const boss = await signedIn("boss@example.com");
+			const bossId = (await boss.read("/me")).user;
+			assert.equal((await boss.json("/impersonate", { email: "uma.new@example.com" })).status, 200);
+			assert.equal((await boss.read("/me")).user, me.user);
+			const forgotten = await server.client().json("/test/forget-user", { user: me.user });
+			assert.equal(forgotten.status, 200, forgotten.text);
+			assert.equal((await byLink.read("/me")).signed_in, false);
+			assert.equal((await atTest.read("/me")).signed_in, false);
+			assert.deepEqual([(await boss.read("/me")).user, (await boss.read("/me")).impersonating], [bossId, false], "the admin is themselves again");
+			for (const [table, column] of [["auth_users", "id"], ["auth_identities", "user_id"], ["auth_sessions", "user_id"], ["auth_sessions", "acting_as"], ["auth_roles", "user_id"]]) {
+				const [left] = await db.query(`select count(*) as n from ${table} where ${column} = '${me.user}'`);
+				assert.equal(Number(left.n), 0, `${table}.${column}`);
+			}
+			const back = server.client();
+			await atProvider(back, "test", { sub: "subject-uma", email: "uma.new@example.com" });
+			const again = (await back.read("/me")).user;
+			assert.ok(again && again !== me.user, "signing in again makes a new user");
+			// Named before signing in (an invitation, an admin letting them in ahead): the same user then.
+			const ahead = await (await server.client().json("/test/user-with-address", { email: " Wes@Example.com " })).json();
+			assert.match(ahead.user, /^[0-9a-f]{8}-[0-9a-f]{4}-7/);
+			assert.deepEqual(await (await server.client().json("/test/user-with-address", { email: "wes@example.com" })).json(), ahead, "found, not made again");
+			assert.equal((await (await signedIn("wes@example.com")).read("/me")).user, ahead.user, "their first sign-in finds them");
+			assert.equal((await server.client().json("/test/user-with-address", { email: "not an address" })).status, 400);
 		});
 
 		test("a GitHub-like provider: the code traded, then its API asked who signed in", async () => {

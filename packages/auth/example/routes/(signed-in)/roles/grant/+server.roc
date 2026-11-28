@@ -2,6 +2,7 @@ import pf.Server
 import pf.Endpoint
 import pf.Time
 import auth.Roles
+import auth.Auth
 import ../../../../Accounts
 import ../../../../Middlewares
 import ../../../../Policy
@@ -12,8 +13,8 @@ import ../../../../Policy
 post! : { request : Server.Request, params : {}, context : Middlewares.Me, body : { email : Str, days : U64, note : Str } } => Try({ granted : Str }, Endpoint.Refusal)
 post! = |{ context, body, .. }| {
 	Policy.need(context, Grant)?
-	match Accounts.by_email!(body.email) {
-		Ok(Found(user)) => {
+	match Auth.user_by_email!(body.email) {
+		Ok(user) => {
 			ends = if (body.days == 0) Never else At(Time.now_millis!({}).to_i64_wrap() + body.days.to_i64_wrap() * 24 * 60 * 60 * 1000)
 			granted : Accounts.Role
 			granted = Pro
@@ -22,7 +23,7 @@ post! = |{ context, body, .. }| {
 				Err(DbErr(why)) => Err(Status(503, why))
 			}
 		}
-		Ok(Missing) => Err(NotFound)
+		Err(NotFound) => Err(NotFound)
 		Err(DbErr(why)) | Err(BadRow(why)) => Err(Status(503, why))
 	}
 }

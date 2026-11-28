@@ -37,8 +37,8 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
    ```
 
 2. In a module of the app's that main.roc and the routes both import (`Accounts.roc`), write the
-   providers and `admit!`: given who is signing in (`Auth.Identity`), the app's id for its user, or
-   why not.
+   providers and `admit!`: given who is signing in (`Auth.Identity`), the id of their user, or why
+   not. `Auth.user_for!` finds the user, or makes one ([Users](#users)):
 
    ```roc
    providers : List(Auth.Provider)
@@ -46,9 +46,10 @@ that uses all of it, and its tests (`example/test`) run it on SQLite and on Post
 
    admit! : Auth.Identity => Try(Str, Str)
    admit! = |identity|
-       match identity.user {
-           Known(user) => Ok(user)                         # this identity signed in before
-           New => user_for_address!(identity.email)        # find or make the app's user
+       match Auth.user_for!(identity) {
+           Ok(user) => Ok(user)                                                  # their id: a version 7 UUID
+           Err(NoAddress) => Err("${identity.provider} didn't give a verified address.")
+           Err(DbErr(why)) | Err(BadRow(why)) => Err("Signing in failed: ${why}")
        }
    ```
 
@@ -164,8 +165,53 @@ Auth.Identity : { provider : Str, subject : Str, email : Str, name : Str, user :
 | `then` | where the sign-in goes after (a path of this site): an invite's page, say, which `admit!` may act on |
 
 An identity that signed in before is `Known`, even if its address changed since. A new one is the
-app's to place: the user with that address, a new user, or a refusal (`Err("why")`, shown on the
-sign-in page).
+app's to place: the user with that address, a new user (both `Auth.user_for!`), or a refusal
+(`Err("why")`, shown on the sign-in page).
+
+## Users
+
+```roc
+Auth.user_for! : Auth.Identity => Try(Str, [NoAddress, DbErr(Str), BadRow(Str), ..])
+Auth.user! : Str => Try(Auth.User, [NotFound, DbErr(Str), BadRow(Str), ..])            # by id
+Auth.user_by_email! : Str => Try(Auth.User, [NotFound, DbErr(Str), BadRow(Str), ..])   # by address
+Auth.user_with_address! : Str => Try(Str, [NotAnAddress, DbErr(Str), BadRow(Str), ..]) # made if none
+Auth.forget! : Str => Try({}, [DbErr(Str), ..])                                          # the user is gone
+
+Auth.User : { id : Str, email : Str, created_ms : I64 }
+```
+
+The package keeps the app's users (D-134), a row each in `auth_users`: an id, the address as it is
+now, and when they were made. `user_for!`, called from `admit!`, gives the id of the user an
+identity is:
+
+- **An identity that signed in before** (`Known`) is its user. When the provider gives another
+  address, the user's becomes it, unless another user has it; their sign-ins by a mailed link to the
+  old address end then, as an address given up may be someone else's later.
+- **A new identity** is the user with its address (signed in another way before: a mailed link, or
+  another provider with the same verified address), else a new user. A new user's id is a version 7
+  UUID (crypto's `Uuid`): text of 36 characters that sorts by when it was made.
+- **No verified address** (a provider that gave none): `NoAddress`, for `admit!` to refuse.
+
+**Someone named before they sign in** (an invitation to their address, an admin letting them in
+ahead, a test account the app's own link signs in as with `sign_in!`) is `user_with_address!(email)`:
+the user with that address, made if there is none. Their first sign-in with it finds them.
+
+It is part of the sign-in's transaction, so the user it made stays whether `admit!` then lets them
+in or refuses them (call it after a refusal of the app's own, if a refused person should leave no
+user); a database error undoes it. An app whose ids came before the package kept users (its own table, its own ids) keeps them:
+a `Known` identity whose user has no row gets one, with that id.
+
+**What else the app knows of a person** (a profile, their organizations, what they made) is the
+app's, in its own tables, by the id. Its queries may join `auth_users` for an address; only the
+package writes it. With the address in one place, a new one changes nothing else, and deleting a
+person is `forget!` and the app's own rows.
+
+**`forget!(id)`** deletes everything the package keeps for the user, in one transaction: their
+sessions (an admin acting as them is themselves again), mailed links on their way to them, their
+identities, authenticator, recovery codes, sign-ins waiting for a code, grants of roles
+(`Roles.forget!`'s), and their row. What names them in others' rows (who granted a role) stays,
+naming no one now. Signing in again later makes a new user. It is on the log (`auth: user
+forgotten`).
 
 ## Sessions and middleware
 
@@ -269,7 +315,8 @@ Roles.forget! : Str => Try(U64, [DbErr(Str), ..])
   Two grants at once give one grant (one statement takes the open row, on SQLite and on Postgres).
 - **Nothing is deleted but by `forget!`.** A grant that ran out or was revoked stays, for `of!` to
   show (what ended when, and who ended it) and for the app to ask: the example's `/trial` refuses
-  someone whose grants include a trial. `forget!` is for the app's deleting of a user.
+  someone whose grants include a trial. `forget!` is for the app's deleting of a user (`Auth.forget!`
+  calls it, with the rest the package keeps for them).
 - **`by` is who acted**: an admin's id, or what gave it (`"stripe"`, `"trial"`). Who may grant or
   revoke is the app's to decide before it calls, as with `impersonate!`; each is on the log (`auth:
   role granted`, `auth: role revoked`, with the user, the role and reason as JSON, and `by`).
@@ -492,6 +539,10 @@ A wrong code goes back to the code page with `?error=code`.
 | `sessions! : Str => Try(List({ id, created_ms, expires_ms, acting_as }), …)` | a user's sessions, the newest first |
 | `revoke! : Str, Str => Try(U64, [DbErr(Str), ..])` | one of a user's sessions ended |
 | `identities! : Str => Try(List({ provider, subject, email }), …)` | the identities a user signs in with |
+| `user_for! : Identity => Try(Str, [NoAddress, DbErr(Str), BadRow(Str), ..])` | for `admit!`: the id of the identity's user, made if there is none ([Users](#users)) |
+| `user! : Str => Try(User, [NotFound, ..])`, `user_by_email! : Str => Try(User, [NotFound, ..])` | a user, by id or by address |
+| `user_with_address! : Str => Try(Str, [NotAnAddress, DbErr(Str), BadRow(Str), ..])` | the user with an address, made if there is none: someone named before they sign in |
+| `forget! : Str => Try({}, [DbErr(Str), ..])` | everything the package keeps for a user, deleted |
 | `providers! : {} => List({ name, label, path })` | the providers set up, for the sign-in page's buttons |
 | `dev_sign_in! : {} => Bool` | whether `POST /auth/dev` is open (`--dev`) |
 | `two_factor!`, `two_factor_start!`, `two_factor_pending!`, `two_factor_confirm!`, `two_factor_disable!`, `two_factor_regenerate!`, `waiting!` | two-factor sign-in (above) |
@@ -509,7 +560,7 @@ a field of the query (`then`, `email`); the code page uses it too.
 ## The tables
 
 `auth/0001_auth`, `auth/0002_impersonation`, `auth/0003_two_factor`,
-`auth/0004_two_factor_misses` and `auth/0005_roles`, the same on SQLite and on
+`auth/0004_two_factor_misses`, `auth/0005_roles` and `auth/0006_users`, the same on SQLite and on
 Postgres (times are milliseconds, given by the package):
 
 - `auth_sessions`: `id` (the token's hash), `user_id`, `created_at`, `expires_at`, and while
@@ -524,6 +575,8 @@ Postgres (times are milliseconds, given by the package):
 - `auth_roles` (`Roles`): `id`, `user_id`, `role` and `via` (the app's tags, as JSON),
   `granted_by`, `granted_at`, `ends_at` (null: for good), `note`, `closed_at` (null on the one open
   grant for a user, role and reason: a unique index), `revoked_by` (null unless revoked).
+- `auth_users` ([Users](#users)): `id` (a version 7 UUID, or an id the app had before), `email`
+  (lower-cased, unique), `created_at`.
 
 Expired sessions, links and waiting sign-ins are swept as sessions start.
 

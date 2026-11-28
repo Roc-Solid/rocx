@@ -7541,3 +7541,117 @@ one a `match` doesn't cover.
 beside the user's row the middleware reads already). A context type with two more fields.
 
 **Reversible:** yes: `current!` goes, and routes ask `has!` again.
+
+## D-133 UUIDs in packages/crypto: version 7 and version 4, as text
+
+**Status.** Built (2026-11-28).
+
+**Context.** Apps make row ids, and so does a package that keeps rows of its own (packages/auth's
+users, D-134). Each wrote its own: random bytes in base64url, or a hand-made version 4 UUID. A
+random id scatters inserts across an index; one that leads with its time keeps them at its end, and
+sorting by id sorts by when rows were made. Neither the platform nor a package offered one.
+
+**Options.**
+1. `Random.uuid!` in the server platform: one call, but a platform API, and the browser's program
+   wouldn't have it.
+2. A pure module in packages/crypto, given the time and the random bytes.
+3. Leave ids to each app.
+
+**Decision.** 2.
+
+- **`Uuid.v7 : U64, List(U8) -> Str`**: RFC 9562's version 7, milliseconds since 1970 (the low 48
+  bits) then 74 random bits from the first 10 bytes given, with the version and variant set, in
+  lowercase text. Two in the same millisecond are ordered by their random bits (RFC 9562, 6.2,
+  allows it); no counter is kept, as the module keeps no state.
+- **`Uuid.v4 : List(U8) -> Str`**: version 4, from the first 16 bytes. **`Uuid.is_uuid : Str ->
+  Bool`**: 8-4-4-4-12 hex digits, either case.
+- A byte missing from those given counts as 0, so a short list gives an id rather than an error;
+  the README says to give each its full count.
+- Text of 36 characters, not 16 bytes: the same in SQLite (no UUID type) and Postgres (`text`, or
+  `uuid`, which reads it), readable in a query's output and in a URL.
+- **Tested:** RFC 9562's own examples (A.6, version 7; A.4, version 4), the version and variant
+  bits whatever the bytes say, bits above 48 dropped, the time leading, and `is_uuid`'s refusals.
+- **Docs:** packages/crypto's README (the API, UUIDs), the docs site's Crypto page.
+
+**Why.** An id is bytes made into text, which is what the package is for, and plain Roc keeps it
+testable with `expect` and usable in the browser. Version 7 for anything new: index locality and
+time order cost nothing over version 4.
+
+**Costs.** A version 7 id says when it was made to anyone who sees it; where that matters, version
+4. Twenty more bytes a row than binary.
+
+**Reversible:** yes.
+
+## D-134 packages/auth keeps the app's users
+
+**Status.** Built (2026-11-28).
+
+**Context.** `admit!` gives the app's id for a user, and the package hands it `identity.user`
+(`Known(id)` for an identity that signed in before) for that. Every app wrote the rest: a users
+table and "find the user with this address, or make one" (the example's `made!`). One that skipped
+it and gave the address as the id, which is less to write, made the address its key everywhere:
+in every row that names a person, so a new address at the provider made a stranger of them (their
+rows stayed with the old one), and deleting a person meant rewriting each of those columns. And
+deleting a person meant knowing every table the package keeps for them, which only the package
+does.
+
+**Options.**
+1. Leave users to the app, and add only `Auth.forget!`.
+2. The package keeps users: a table, `user_for!` for `admit!`, lookups, and `forget!`.
+
+**Decision.** 2 (the user, 2026-11-28).
+
+- **`auth/0006_users`**: `auth_users (id, email unique, created_at)`. The app may read it in its
+  queries (a join for an address); only the package writes it.
+- **`Auth.user_for!(identity) : Try(Str, [NoAddress, DbErr(Str), BadRow(Str), ..])`**, for
+  `admit!`: `Known(user)` is that user, and their address becomes the provider's if it changed and
+  no other user has it; their `email` identities for other addresses go then (an address given up
+  may be someone else's later, and a link to it would sign in as them). `New` is the user with its
+  address (a mailed link and a provider with the same verified address are one person, as the
+  example did before), else a new user with a version 7 UUID (D-133). No verified address is
+  `NoAddress`. The insert is one statement (`on conflict do nothing`, then read by address), so two
+  sign-ins of a new address at once make one user.
+- **An app with ids of its own** keeps them: a `Known` identity whose user has no row gets one,
+  with that id, so moving onto the package needs no copy of the ids (an app that wants its old rows
+  can insert them in its own migration, which runs after the plugins').
+- **`Auth.user!(id)`, `Auth.user_by_email!(email)`**: `Try(Auth.User, [NotFound, ..])`, `Auth.User :
+  { id, email, created_ms }`.
+- **`Auth.user_with_address!(email) : Try(Str, [NotAnAddress, DbErr(Str), BadRow(Str), ..])`**: the
+  user with an address, made if there is none, for an app that names someone before they sign in
+  (an invitation to their address, an admin letting them in ahead, a test account its own link signs
+  in as with `sign_in!`); their first sign-in with that verified address finds them. `user_for!`'s
+  new identities go the same way.
+- **`Auth.forget!(id) : Try({}, [DbErr(Str), ..])`**, one transaction: their sessions (an admin
+  acting as them is themselves again), links on their way to their addresses, identities,
+  authenticator, recovery codes, sign-ins waiting for a code, grants (`Roles.forget!`'s) and row.
+  Others' rows naming them (who granted a role) stay, naming no one. On the log.
+- No `name` column: the identity's name is the app's to keep (a profile), as is everything else
+  about a person.
+- **Not yet:** `rocx new`'s template (`templates/app`, its `users` table and `made!`) and the notes
+  example (`Store.person_for!`) still keep users of their own; moving them onto `user_for!` is
+  next.
+- **The example** keeps no users table now (`0001_users` gone; an applied migration that is gone is
+  passed over): `admit!` is `user_for!` after its refusal of `refused.example`, and its routes look
+  people up with `user!` and `user_by_email!`.
+- **Tested:** the example's tests, on SQLite and Postgres: a version 7 id led by its time, the same
+  user by a mailed link and a provider with the address, another user's address not taken, the
+  provider's new address becoming the user's and the old address's link making someone new,
+  `forget!` (sessions gone, the admin acting as them back to themselves, no row left in
+  `auth_users`, `auth_identities`, `auth_sessions` or `auth_roles`, a new user on signing in again),
+  `user_with_address!` (made once, found again, the same user at the first sign-in, not an address
+  refused);
+  a session whose user's row is gone answered as signed out, as before.
+- **Docs:** packages/auth's README (installing, Users, the API, the tables), the docs site's Auth
+  page (Users, the tables).
+
+**Why.** Every app needs users and wrote the same table and lookup; the package already maps
+identities to them, so the step that finds or makes the user belongs beside it, and with it the
+one place that knows everything to delete. An opaque id the package makes keeps the address out of
+the app's rows: a new address is one update, and deleting a person is `forget!` and the app's own
+rows.
+
+**Costs.** A table every app with the plugin gets, used or not. An app joins `auth_users` to show
+an address where it used to read a column of its own.
+
+**Reversible:** yes, while apps can read the ids: the table stays, and `admit!` goes back to the
+app's own lookup.

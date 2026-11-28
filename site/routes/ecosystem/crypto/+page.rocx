@@ -11,7 +11,7 @@ import ../../../Ui/TableWrap
 ## which the server's tests run.
 meta = {
 	title: "Crypto",
-	description: "The crypto package for Roc Solid apps: SHA-256, HMAC-SHA256, HKDF-SHA256, Base64 and hex, and SHA-1, HMAC-SHA1 and Base32 for authenticator apps' codes, in plain Roc on no platform, each checked against its RFC's test vectors.",
+	description: "The crypto package for Roc Solid apps: SHA-256, HMAC-SHA256, HKDF-SHA256, Base64 and hex, SHA-1, HMAC-SHA1 and Base32 for authenticator apps' codes, and version 7 and version 4 UUIDs, in plain Roc on no platform, each checked against its RFC's test vectors.",
 	toc: [
 		{ id: "install", label: "Installing it" },
 		{ id: "links", label: "A signed link" },
@@ -29,7 +29,8 @@ view! = |_|
 				title="Hashes, signatures and keys, in Roc"
 			>
 				SHA-256, HMAC, HKDF, Base64 and hex: store a token as its digest, sign a link so nobody can forge it,
-				derive separate keys from one secret. SHA-1 and Base32 are here too, for authenticator apps' codes.
+				derive separate keys from one secret, make a row's id. SHA-1 and Base32 are here too, for
+				authenticator apps' codes.
 				The package is plain Roc on no platform, so the server, a page in the browser and an
 				<code>expect</code> run the same code.
 			</PageHero>
@@ -73,6 +74,7 @@ view! = |_|
 						<tr><td><code>Base64</code></td><td><code>encode</code> and <code>decode</code> (standard alphabet, padded); <code>url_encode</code> (URL alphabet, unpadded) and <code>url_decode</code>; <code>encode_unpadded</code>, <code>url_encode_padded</code>; <code>lines</code> (76-character lines, as MIME wants)</td></tr>
 						<tr><td><code>Base32</code></td><td><code>encode</code> (padded), <code>encode_unpadded</code>, <code>decode</code> (either case, padded or not): how an authenticator app's secret is written</td></tr>
 						<tr><td><code>Hex</code></td><td><code>encode</code> (lowercase), <code>decode</code> (either case)</td></tr>
+						<tr><td><code>Uuid</code></td><td><code>v7(millis, random)</code>, a version 7 UUID that leads with its time; <code>v4(random)</code>, all random; <code>is_uuid</code>, whether text is one</td></tr>
 					</tbody>
 				</table>
 			</TableWrap>
@@ -81,6 +83,14 @@ view! = |_|
 				breaks, padding either left out or exactly right, and the last character's unused bits zero. Anything
 				else is an error (<code>InvalidBase64</code>, <code>InvalidBase32</code>, <code>InvalidHex</code>).
 				The package's <code>README.md</code> (<code>packages/crypto/</code>) lists every function's type.
+			</p>
+			<p>
+				A row's id: <code>{"Uuid.v7(Time.now_millis!({}).to_u64_wrap(), Random.bytes!(10))"}</code>, the time and
+				random bytes from the server platform, as the module is plain Roc. A version 7 id leads with when it
+				was made, so rows added by id go to the end of an index, and sorting by id sorts by time; it also
+				tells whoever sees it when that was, which a version 4 id doesn't. Both are 36 characters of text, the
+				same in SQLite and Postgres. <a href={"${Paths.ecosystem_auth}#users"}>The auth package's users</a>
+				get version 7 ids.
 			</p>
 			<p>
 				SHA-1, HMAC-SHA1 and Base32 serve one job: an authenticator app's six-digit codes (TOTP, RFC 6238),
@@ -93,7 +103,7 @@ view! = |_|
 			<p>
 				Each module's <code>expect</code>s check it against published test vectors: NIST's SHA-256 and SHA-1
 				examples, every test case of RFC 4231 (HMAC-SHA256) and RFC 2202 (HMAC-SHA1), RFC 5869's SHA-256
-				cases (HKDF), and RFC 4648's (Base64, Base32 and hex). <code>Sha256</code> wraps Roc's builtin
+				cases (HKDF), RFC 4648's (Base64, Base32 and hex), and RFC 9562's UUID examples. <code>Sha256</code> wraps Roc's builtin
 				<code>Crypto.SHA256</code>; <code>Sha1</code> is the package's own Roc. The server platform's tests
 				also compare SHA-256, HMAC, HKDF, Base64 and hex with Node's <code>crypto</code> through a running
 				server, and the auth package's tests compare authenticator codes with Node's.

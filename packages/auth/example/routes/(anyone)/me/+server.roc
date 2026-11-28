@@ -1,7 +1,6 @@
 import pf.Server
 import pf.Endpoint
 import auth.Auth
-import ../../../Accounts
 import ../../../Middlewares
 
 ## GET /me: whether the request is signed in, as whom (the user's id and address), with what (the
@@ -11,8 +10,8 @@ get! = |{ context, .. }|
 	match context.signed {
 		SignedIn(session) => {
 			email =
-				match Accounts.user!(session.user) {
-					Ok(Found(user)) => user.email
+				match Auth.user!(session.user) {
+					Ok(user) => user.email
 					_ => ""
 				}
 			identities = (Auth.identities!(session.user) ?? []).map(|identity| "${identity.provider}:${identity.email}")

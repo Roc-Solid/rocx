@@ -1,9 +1,10 @@
 # crypto
 
 Hashes, MACs, key derivation and the encodings their bytes travel in, for Roc Solid apps: SHA-256,
-HMAC-SHA256, HKDF-SHA256, Base64 and hexadecimal; and SHA-1, HMAC-SHA1 and Base32, for
-authenticator apps' codes (TOTP, which packages/auth's two-factor sign-in uses). It is plain Roc on
-no platform, so the server, a page in the browser and an `expect` all run the same code.
+HMAC-SHA256, HKDF-SHA256, Base64 and hexadecimal; SHA-1, HMAC-SHA1 and Base32, for authenticator
+apps' codes (TOTP, which packages/auth's two-factor sign-in uses); and UUIDs, version 7 and version
+4, as text. It is plain Roc on no platform, so the server, a page in the browser and an `expect` all
+run the same code.
 
 The user guide is the docs site's [Crypto page](https://roc-solid.github.io/ecosystem/crypto); the
 server platform's [crypto page](https://roc-solid.github.io/platform/crypto) shows it with the
@@ -62,10 +63,22 @@ Hmac.verify_sha256(key, message, Base64.url_decode(given) ?? [])    # compared i
 | | `decode : Str -> Try(List(U8), [InvalidBase32])` | Either case (a person may type a secret in lowercase), padded or not. |
 | `Hex` | `encode : List(U8) -> Str` | Two lowercase digits per byte. |
 | | `decode : Str -> Try(List(U8), [InvalidHex])` | Either case; nothing else (no `0x`, no spaces). |
+| `Uuid` | `v7 : U64, List(U8) -> Str` | A version 7 UUID (RFC 9562) of a time (milliseconds since 1970, its low 48 bits) and the first 10 of the random bytes, in lowercase: ids made later sort after earlier ones. |
+| | `v4 : List(U8) -> Str` | A version 4 UUID of the first 16 of the random bytes. |
+| | `is_uuid : Str -> Bool` | Whether text is a UUID: hex digits (either case) in groups of 8, 4, 4, 4 and 12, with hyphens between. |
 
 **Constant time.** `Hmac.equal` compares two lists of the same length to the end, whatever their
 first difference, so the time it takes doesn't tell a forger how much of a signature was right.
 Lists of different lengths are unequal at once: a signature's length is no secret.
+
+**UUIDs.** Row ids an app makes: `Uuid.v7(Time.now_millis!({}).to_u64_wrap(), Random.bytes!(10))`.
+The module is given the time and the random bytes rather than reading them, as the rest of the
+package is plain Roc. A version 7 id leads with its time, so rows added by id go to the end of an
+index rather than anywhere in it, and sorting by id sorts by when they were made (to the
+millisecond: two in the same one are ordered by their random bits). It also tells anyone who sees
+the id when it was made; a version 4 id says nothing. Both are text of 36 characters, the same in
+SQLite's `text` and Postgres's `text` or `uuid`. A byte missing from the random ones counts as 0, so
+give each its full count.
 
 **Strict decoding.** Each value has exactly one text: only the alphabet asked for, no spaces or line
 breaks, padding either left out or exactly right, and the unused bits of the last character zero.
@@ -75,7 +88,8 @@ Base32 and hex take either case, as people type them.
 
 Each module's `expect`s check it against published test vectors: NIST's SHA-256 and SHA-1 examples
 (FIPS 180-4), every test case of RFC 4231 (HMAC-SHA256) and RFC 2202 (HMAC-SHA1), RFC 5869's
-SHA-256 cases (HKDF), and RFC 4648's (Base64, Base32, hex). `roc test packages/crypto/main.roc`
+SHA-256 cases (HKDF), RFC 4648's (Base64, Base32, hex), and RFC 9562's version 7 and version 4
+examples (UUIDs). `roc test packages/crypto/main.roc`
 runs them (`just test-rocx` runs every package's). The server platform's tests
 (`server/test/server.test.mjs`) also compare SHA-256, HMAC-SHA256, HKDF, Base64 and hex with Node's
 `crypto`, through a running server, and packages/auth's example compares the authenticator codes
@@ -85,8 +99,8 @@ made of `Sha1`, `Hmac.sha1` and `Base32` with codes Node makes. `Sha256` wraps R
 ## Used by
 
 `packages/storage` (S3's signatures, and the app's signed URLs), `packages/push` (Web Push's HKDF and
-base64url keys), `packages/auth` (tokens' SHA-256, PKCE, and two-factor sign-in's TOTP on
-HMAC-SHA1, Base32 secrets and HKDF's sealing key), `packages/stripe` (webhook signatures checked
+base64url keys), `packages/auth` (tokens' SHA-256, PKCE, two-factor sign-in's TOTP on
+HMAC-SHA1, Base32 secrets and HKDF's sealing key, and its users' version 7 ids), `packages/stripe` (webhook signatures checked
 with HMAC-SHA256, idempotency keys), `packages/email` (Base64 for SMTP sign-in and MIME bodies),
 and `packages/mcp`, `packages/tools` and `packages/ai` (images, audio and blobs as Base64). Each
 names this package in its own header, so an app that uses one of them doesn't have to name this one

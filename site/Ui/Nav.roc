@@ -111,7 +111,7 @@ Nav := [].{
 					{ path: Paths.ecosystem_push, label: "Push", blurb: "Web Push notifications: a button that subscribes, and jobs that send: a plugin" },
 					{ path: Paths.ecosystem_storage, label: "Storage", blurb: "Files in S3, beside the server, or in memory" },
 					{ path: Paths.ecosystem_guard, label: "Guard", blurb: "Rate limits, feature flags and request guards, as middleware" },
-					{ path: Paths.ecosystem_crypto, label: "Crypto", blurb: "SHA-256, SHA-1, HMAC, HKDF, Base64, Base32 and hex, in Roc" },
+					{ path: Paths.ecosystem_crypto, label: "Crypto", blurb: "SHA-256, SHA-1, HMAC, HKDF, Base64, Base32, hex and UUIDs, in Roc" },
 				],
 			},
 			{

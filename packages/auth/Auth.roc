@@ -10,6 +10,7 @@ import pf.Random
 import pf.Server
 import pf.Time
 import crypto.Base64
+import crypto.Uuid
 import AuthStore
 import Rules
 import Totp
@@ -18,6 +19,7 @@ import "migrations/0002_impersonation.sql" as impersonation : Str
 import "migrations/0003_two_factor.sql" as two_factor_tables : Str
 import "migrations/0004_two_factor_misses.sql" as two_factor_misses : Str
 import "migrations/0005_roles.sql" as roles_table : Str
+import "migrations/0006_users.sql" as users_table : Str
 
 ## Sign-in for Roc Solid apps (D-072): by a link mailed to an address, or at a provider (Google,
 ## GitHub, any OpenID Connect one); sessions kept as their token's hash in the app's database;
@@ -157,7 +159,11 @@ Auth := [].{
 	## how many unused recovery codes they have.
 	TwoFactor : [Off, Pending, On({ since_ms : I64, recovery_codes : U64 })]
 
-	## The auth plugin: its tables (`auth/0001_auth` to `auth/0004_two_factor_misses`, the same on
+	## One of the app's users, as the package keeps them (`user_for!`): their id (a version 7 UUID),
+	## their address as it is now (lower-cased), and when they were made (milliseconds since 1970).
+	User : { id : Str, email : Str, created_ms : I64 }
+
+	## The auth plugin: its tables (`auth/0001_auth` to `auth/0006_users`, the same on
 	## SQLite and Postgres) and its settings, kept at start for its handlers and middleware. No
 	## routes (D-116): the app's route files call its handlers (`provider_route!` and the rest). It
 	## needs a database; with `two_factor`, the app's secret too (it won't start without it, but
@@ -167,7 +173,7 @@ Auth := [].{
 		settings = settings_of(options)
 		{
 			name: "auth",
-			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }, { name: "0004_two_factor_misses", sql: two_factor_misses }, { name: "0005_roles", sql: roles_table }],
+			migrations: [{ name: "0001_auth", sql: table }, { name: "0002_impersonation", sql: impersonation }, { name: "0003_two_factor", sql: two_factor_tables }, { name: "0004_two_factor_misses", sql: two_factor_misses }, { name: "0005_roles", sql: roles_table }, { name: "0006_users", sql: users_table }],
 			starts: [
 				|_context| {
 					Plugin.keep!("auth:settings", Json.to_str(settings))
@@ -525,6 +531,91 @@ Auth := [].{
 	identities! : Str => Try(List({ provider : Str, subject : Str, email : Str }), [DbErr(Str), BadRow(Str), ..others])
 	identities! = |user| AuthStore.identities!(user)
 
+	## For `admit!`: the id of the user `identity` is, made if it is no one yet. An identity that
+	## signed in before (`Known`) is its user, whose address becomes the one the provider gives now if
+	## it changed and no other user has it (their mailed links to the old one end: an address given
+	## up may be someone else's later). A new identity is the user with its address (signed in
+	## before another way: a mailed link, another provider), else a new user, a version 7 UUID
+	## (crypto's `Uuid`). `NoAddress` when a new identity has none (a provider that gave no
+	## verified address), for the app to refuse. Inside `admit!`, it is part of the sign-in's
+	## transaction: the user it made stays, whether `admit!` then lets them in or refuses them; a
+	## database error undoes it.
+	user_for! : Auth.Identity => Try(Str, [NoAddress, DbErr(Str), BadRow(Str), ..others])
+	user_for! = |identity| {
+		now = now!({})
+		match identity.user {
+			Known(user) => {
+				if !identity.email.is_empty() {
+					kept =
+						match AuthStore.user!(user)? {
+							Found(row) if row.email != identity.email => AuthStore.readdress!(user, identity.email)
+							Found(_) => Ok(0)
+							Missing => {
+								# A user from before the package kept them (an app's own id): kept now.
+								made = AuthStore.make_user!({ id: user, email: identity.email, now })?
+								if made == 0 {
+									Log.warn!("auth: a user's address is another user's, so the package keeps no row for them", { user, email: identity.email })
+								}
+								Ok(made)
+							}
+						}
+					_ = kept?
+				}
+				Ok(user)
+			}
+			New => {
+				if identity.email.is_empty() {
+					return Err(NoAddress)
+				}
+				addressed!(identity.email, now)
+			}
+		}
+	}
+
+	## The id of the user with address `email` (any case, spaces around it trimmed), made if there is
+	## none: for an app that names someone before they sign in (an invitation to them, an admin
+	## letting them in ahead, a test account the app's own link signs in as). Their first sign-in
+	## with that verified address finds them (`user_for!`). `NotAnAddress` for text that isn't one.
+	user_with_address! : Str => Try(Str, [NotAnAddress, DbErr(Str), BadRow(Str), ..others])
+	user_with_address! = |email| {
+		address = Rules.address(email)?
+		addressed!(address, now!({}))
+	}
+
+	## The user with id `id`; `NotFound` if there is none (never made, or forgotten).
+	user! : Str => Try(Auth.User, [NotFound, DbErr(Str), BadRow(Str), ..others])
+	user! = |id|
+		match AuthStore.user!(id)? {
+			Found(row) => Ok(user_of(row))
+			Missing => Err(NotFound)
+		}
+
+	## The user with address `email` (any case, spaces around it trimmed); `NotFound` if there is
+	## none, or it isn't an address.
+	user_by_email! : Str => Try(Auth.User, [NotFound, DbErr(Str), BadRow(Str), ..others])
+	user_by_email! = |email|
+		match Rules.address(email) {
+			Ok(address) =>
+				match AuthStore.user_by_email!(address)? {
+					Found(row) => Ok(user_of(row))
+					Missing => Err(NotFound)
+				}
+			Err(NotAnAddress) => Err(NotFound)
+		}
+
+	## Forgets user `id`, all at once (a transaction), for the app deleting them: their row, their
+	## sessions (an admin acting as them goes back to being themselves), the mailed links on their
+	## way to them, their identities, authenticator, recovery codes and sign-ins waiting for a code,
+	## and their grants of roles (`Roles.forget!`). What names them in others' rows (who granted a
+	## role) stays, naming no one now; the app's own tables are the app's to clear. Signing in again
+	## later makes a new user.
+	forget! : Str => Try({}, [DbErr(Str), ..others])
+	forget! = |id| {
+		Db.transaction!(|{}| AuthStore.forget_user!(id))?
+		Log.info!("auth: user forgotten", { user: id })
+		Ok({})
+	}
+
 	## The providers the app's sign-in page can offer, for its buttons: those whose client id is
 	## set, each with its label and where its button goes (add `?then=` to come back somewhere).
 	providers! : {} => List({ name : Str, label : Str, path : Str })
@@ -727,6 +818,20 @@ settings! = |{}|
 ## Now, in milliseconds since 1970.
 now! : {} => I64
 now! = |{}| Time.now_millis!({}).to_i64_wrap()
+
+## The id of the user with `address` (as kept), made at `now` if there is none: one statement makes
+## it (two at once make one), then it is read back.
+addressed! : Str, I64 => Try(Str, [DbErr(Str), BadRow(Str), ..others])
+addressed! = |address, now| {
+	_ = AuthStore.make_user!({ id: Uuid.v7(now.to_u64_wrap(), Random.bytes!(10)), email: address, now })?
+	match AuthStore.user_by_email!(address)? {
+		Found(row) => Ok(row.id)
+		Missing => Err(DbErr("auth: the user made for an address isn't there"))
+	}
+}
+
+user_of : AuthStore.UserRow -> Auth.User
+user_of = |row| { id: row.id, email: row.email, created_ms: row.created_at }
 
 ## Whether the app is on HTTPS (its public URL), so its cookies are `Secure` and `__Host-`.
 https! : {} => Bool

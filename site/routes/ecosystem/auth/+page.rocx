@@ -18,6 +18,7 @@ meta = {
 		{ id: "example", label: "A first app" },
 		{ id: "how", label: "How signing in goes" },
 		{ id: "admit", label: "Who gets in" },
+		{ id: "users", label: "Users" },
 		{ id: "sessions", label: "Sessions and middleware" },
 		{ id: "impersonation", label: "Impersonation" },
 		{ id: "roles", label: "Roles" },
@@ -68,8 +69,8 @@ view! = |_|
 			<Code title="routes/auth/" source={"# [provider]/+server.roc: GET /auth/<provider>?then=…, off to a provider\nrespond! = |{ request, params, .. }| Auth.provider_route!(request, Accounts.providers, params.provider)\n# [provider]/callback/+server.roc: back from it (the redirect URI to register)\nrespond! = |{ request, params, .. }| Auth.callback_route!(request, Accounts.providers, params.provider, Accounts.admit!)\n# link/+server.roc: a mailed link\nrespond! = |{ request, .. }| Auth.link_route!(request, Accounts.admit!)\n# code/+server.roc: a sign-in's second factor\nrespond! = |{ request, .. }| Auth.code_route!(request)\n# sign-out/+server.roc\nrespond! = |{ request, .. }| Auth.sign_out_route!(request)\n# dev/+server.roc: any address, under --dev only\nrespond! = |{ request, .. }| Auth.dev_route!(request, Accounts.admit!)"} numbers={Bool.False} />
 			<p>
 				<strong>2. Who gets in</strong> (<a href="#admit"><code>admit!</code></a>). Here anyone gets in but
-				addresses at <code>refused.example</code>, and a new address gets a row in the app's
-				<code>users</code> table:
+				addresses at <code>refused.example</code>, and <a href="#users"><code>Auth.user_for!</code></a> finds
+				their user, or makes one:
 			</p>
 			<Code title={Sources.auth_example_accounts.file} source={Sources.auth_example_accounts.rocx} />
 			<p>
@@ -152,6 +153,33 @@ view! = |_|
 				session (a new user's row, a welcome email queued as a job) or with its refusal (a request to join a
 				waiting list). A database error rolls it all back. Keep slow work, such as a request to another
 				server, out of it.
+			</p>
+
+			<Heading id="users">Users</Heading>
+			<p>
+				The package keeps your users: <code>{"Auth.user_for!(identity)"}</code>, called from
+				<code>admit!</code>, gives the id of the user an identity is, and makes one if it is no one yet. An
+				identity that signed in before is its user, and when the provider gives another address, the user's
+				changes with it (unless another user has that address). A new identity is the user with its
+				address, so a mailed link and Google with the same verified address are one person, or else a new
+				user, whose id is a <a href={"${Paths.ecosystem_crypto}#modules"}>version 7 UUID</a>. A new
+				identity with no verified address is <code>NoAddress</code>, for you to refuse. Each user is a row
+				of <code>auth_users</code>: the id, the address as it is now, and when they were made. Someone
+				you name before they sign in (an invitation to their address, an admin letting them in ahead) is
+				<code>{"Auth.user_with_address!(email)"}</code>, made if there is none; their first sign-in finds them.
+			</p>
+			<Code
+				title="the package's users"
+				source={"Auth.user_for! : Auth.Identity => Try(Str, [NoAddress, DbErr(Str), BadRow(Str), ..])\nAuth.user! : Str => Try(Auth.User, [NotFound, DbErr(Str), BadRow(Str), ..])            # by id\nAuth.user_by_email! : Str => Try(Auth.User, [NotFound, DbErr(Str), BadRow(Str), ..])   # by address\nAuth.user_with_address! : Str => Try(Str, [NotAnAddress, DbErr(Str), BadRow(Str), ..]) # made if none\nAuth.forget! : Str => Try({}, [DbErr(Str), ..])                                          # the user is gone\n\nAuth.User : { id : Str, email : Str, created_ms : I64 }"}
+				numbers={Bool.False}
+			/>
+			<p>
+				Keep what else you know of a person in your own tables, by that id: a profile, their
+				organizations, what they made. Your queries may join <code>auth_users</code> for an address; only
+				the package writes it. Their address stays out of your rows, so it changes in one place, and
+				deleting a person is <code>{"Auth.forget!(id)"}</code> and your own rows: it ends their sessions
+				(an admin acting as them is themselves again) and deletes their identities, links on their way,
+				authenticator, recovery codes, grants and row, all at once. Signing in again later makes a new user.
 			</p>
 
 			<Heading id="sessions">Sessions and middleware</Heading>
@@ -383,9 +411,9 @@ view! = |_|
 				<code>auth_sessions</code>, <code>auth_links</code> (links on their way),
 				<code>auth_identities</code> (which of your users each identity signed in as), and for two-factor
 				<code>auth_two_factor</code> (sealed secrets), <code>auth_recovery_codes</code> (their hashes) and
-				<code>auth_waiting</code> (sign-ins waiting for a code), and <code>auth_roles</code> (every grant,
-				past ones too). Your users stay in your own table; the
-				package knows them only by the id <code>admit!</code> gives.
+				<code>auth_waiting</code> (sign-ins waiting for a code), <code>auth_roles</code> (every grant,
+				past ones too), and <code>auth_users</code> (<a href="#users">your users</a>: an id, an address,
+				when they were made). Everything else about a person is yours, in your tables, by their id.
 			</p>
 
 			<Heading id="safety">Safety</Heading>

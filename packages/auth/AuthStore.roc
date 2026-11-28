@@ -2,7 +2,7 @@ import pf.Db
 
 ## packages/auth's statements, the same on SQLite and on Postgres (its tables keep times as
 ## milliseconds, given here, so no statement needs `now()`): sessions, sign-in links, the
-## identities that signed in before, and two-factor sign-in (authenticators, recovery codes, and
+## identities that signed in before, the app's users, and two-factor sign-in (authenticators, recovery codes, and
 ## sign-ins waiting for a code). Each is a statement, so inside `Db.transaction!` it is part of
 ## the transaction. Errors are open unions, so a body can `?` them beside the app's own.
 AuthStore := [].{
@@ -104,6 +104,54 @@ AuthStore := [].{
 			Ok(row) => Ok(Found(row))
 			Err(_) => Ok(Missing)
 		}
+	}
+
+	## A user as their row has it (`auth_users`).
+	UserRow : { id : Str, email : Str, created_at : I64 }
+
+	## The user with id `id`, if there is one.
+	user! : Str => Try([Found(AuthStore.UserRow), Missing], [DbErr(Str), BadRow(Str), ..others])
+	user! = |id| one_user(Db.all!("select id, email, created_at from auth_users where id = $1", [Text(id)]))
+
+	## The user with address `email` (as kept: lower-cased), if there is one.
+	user_by_email! : Str => Try([Found(AuthStore.UserRow), Missing], [DbErr(Str), BadRow(Str), ..others])
+	user_by_email! = |email| one_user(Db.all!("select id, email, created_at from auth_users where email = $1", [Text(email)]))
+
+	## Keeps a user with id `id` and address `email`, unless one of the two is kept already: how
+	## many were made (0 or 1). One statement, so two sign-ins of a new address at once make one
+	## user, and the second finds it (`user_by_email!`).
+	make_user! : { id : Str, email : Str, now : I64 } => Try(U64, [DbErr(Str), ..others])
+	make_user! = |user| Db.run!("insert into auth_users (id, email, created_at) values ($1, $2, $3) on conflict do nothing", [Text(user.id), Text(user.email), Int(user.now)])
+
+	## Gives user `id` the address `email`, unless another user has it: how many changed (0 or 1).
+	## Their sign-ins by a mailed link to another address end with it (identities `email` whose
+	## address isn't the new one): an address its owner gave up may be someone else's later.
+	readdress! : Str, Str => Try(U64, [DbErr(Str), ..others])
+	readdress! = |id, email| {
+		changed = Db.run!("update auth_users set email = $2 where id = $1 and email <> $2 and not exists (select 1 from auth_users where email = $2)", [Text(id), Text(email)])?
+		if changed > 0 {
+			_ = Db.run!("delete from auth_identities where user_id = $1 and provider = 'email' and subject <> $2", [Text(id), Text(email)])?
+		}
+		Ok(changed)
+	}
+
+	## Forgets user `id` (the app is deleting them): their sessions, and an admin's acting as them;
+	## mailed links on their way to their addresses; their identities, authenticator, recovery
+	## codes, sign-ins waiting for a code and grants of roles; and their row. Rows of others that
+	## name them (who granted a role) stay, naming no one now. Run it in a transaction, so it goes
+	## all at once (`Auth.forget!` does).
+	forget_user! : Str => Try({}, [DbErr(Str), ..others])
+	forget_user! = |id| {
+		_ = Db.run!("delete from auth_links where email in (select email from auth_users where id = $1 union select email from auth_identities where user_id = $1)", [Text(id)])?
+		_ = Db.run!("delete from auth_sessions where user_id = $1", [Text(id)])?
+		_ = Db.run!("update auth_sessions set acting_as = null, acting_until = null where acting_as = $1", [Text(id)])?
+		_ = Db.run!("delete from auth_waiting where user_id = $1", [Text(id)])?
+		_ = Db.run!("delete from auth_identities where user_id = $1", [Text(id)])?
+		_ = Db.run!("delete from auth_recovery_codes where user_id = $1", [Text(id)])?
+		_ = Db.run!("delete from auth_two_factor where user_id = $1", [Text(id)])?
+		_ = Db.run!("delete from auth_roles where user_id = $1", [Text(id)])?
+		_ = Db.run!("delete from auth_users where id = $1", [Text(id)])?
+		Ok({})
 	}
 
 	## The user an identity (`provider`, `subject`) signed in as before, if it has.
@@ -324,3 +372,14 @@ AuthStore := [].{
 	forget_roles! : Str => Try(U64, [DbErr(Str), ..others])
 	forget_roles! = |user| Db.run!("delete from auth_roles where user_id = $1", [Text(user)])
 }
+
+one_user : Try(List(AuthStore.UserRow), [DbErr(Str), BadRow(Str), ..others]) -> Try([Found(AuthStore.UserRow), Missing], [DbErr(Str), BadRow(Str), ..others])
+one_user = |rows|
+	match rows {
+		Ok(found) =>
+			match found.get(0) {
+				Ok(row) => Ok(Found(row))
+				Err(_) => Ok(Missing)
+			}
+		Err(why) => Err(why)
+	}

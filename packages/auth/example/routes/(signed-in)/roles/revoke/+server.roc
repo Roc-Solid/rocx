@@ -1,6 +1,7 @@
 import pf.Server
 import pf.Endpoint
 import auth.Roles
+import auth.Auth
 import ../../../../Accounts
 import ../../../../Middlewares
 import ../../../../Policy
@@ -10,8 +11,8 @@ import ../../../../Policy
 post! : { request : Server.Request, params : {}, context : Middlewares.Me, body : { email : Str } } => Try({ revoked : Bool }, Endpoint.Refusal)
 post! = |{ context, body, .. }| {
 	Policy.need(context, Grant)?
-	match Accounts.by_email!(body.email) {
-		Ok(Found(user)) => {
+	match Auth.user_by_email!(body.email) {
+		Ok(user) => {
 			revoked : Accounts.Role
 			revoked = Pro
 			match Roles.revoke!({ user: user.id, role: revoked, via: Gift, by: context.real_user }) {
@@ -19,7 +20,7 @@ post! = |{ context, body, .. }| {
 				Err(DbErr(why)) => Err(Status(503, why))
 			}
 		}
-		Ok(Missing) => Err(NotFound)
+		Err(NotFound) => Err(NotFound)
 		Err(DbErr(why)) | Err(BadRow(why)) => Err(Status(503, why))
 	}
 }

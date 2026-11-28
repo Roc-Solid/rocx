@@ -1,7 +1,6 @@
 import pf.Server
 import pf.Endpoint
 import auth.Auth
-import ../../../Accounts
 import ../../../Middlewares
 import ../../../Policy
 
@@ -10,14 +9,14 @@ import ../../../Policy
 post! : { request : Server.Request, params : {}, context : Middlewares.Me, body : { email : Str } } => Try({ acting_as : Str }, Endpoint.Refusal)
 post! = |{ request, context, body, .. }| {
 	Policy.need(context, Impersonate)?
-	match Accounts.by_email!(body.email) {
-		Ok(Found(user)) =>
+	match Auth.user_by_email!(body.email) {
+		Ok(user) =>
 			match Auth.impersonate!(request, user.id, 30 * 60 * 1000) {
 				Ok({}) => Ok({ acting_as: user.email })
 				Err(SignedOut) => Err(Unauthorized)
 				Err(DbErr(why)) => Err(Status(503, why))
 			}
-		Ok(Missing) => Err(NotFound)
+		Err(NotFound) => Err(NotFound)
 		Err(DbErr(why)) | Err(BadRow(why)) => Err(Status(503, why))
 	}
 }
