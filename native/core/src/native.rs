@@ -248,7 +248,7 @@ impl<'a> css::Elem<'a> for El<'a> {
                 }
                 false
             }),
-            State::Checked => self.dom.attr(self.node, "checked").is_some(),
+            State::Checked => self.values.get(&self.node).map(|now| now == "true").unwrap_or_else(|| self.dom.attr(self.node, "checked").is_some()),
             State::Blank => self.values.get(&self.node).map(String::as_str).or_else(|| self.dom.attr(self.node, "value")).unwrap_or("").is_empty(),
         }
     }
@@ -425,7 +425,9 @@ impl<'a> Projection<'a> {
                 let kind = attr("type").unwrap_or_default().to_ascii_lowercase();
                 if kind == "checkbox" || kind == "radio" {
                     view.kind = "checkbox";
-                    view.props.insert("checked".into(), flag(attr("checked").is_some()));
+                    // A tap's state until the app sets it (`engine::dispatch`, D-138).
+                    let checked = self.engine.values.get(&node).map(|now| now == "true").unwrap_or_else(|| attr("checked").is_some());
+                    view.props.insert("checked".into(), flag(checked));
                     view.props.insert("type".into(), kind);
                     view.content = Content::Fixed { width: 13.0, height: 13.0 };
                 } else if kind == "hidden" {

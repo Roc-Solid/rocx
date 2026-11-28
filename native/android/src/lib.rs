@@ -11,6 +11,10 @@
 //! - `Browser.call!`'s native half (a plugin's: `audio.play`, `vibrate.pattern`) is Kotlin's
 //!   `Rocx.call(name, arg, origin)`, on the main thread once a handler is done.
 //! - `log` goes to logcat, tagged `rocx`.
+//! - Navigation (D-138): `Rocx.back()` is Android's back (the history's entry before), `Rocx.files`
+//!   says where the cookie jar is kept, and the engine asks Kotlin how far the screen is scrolled
+//!   (`Rocx.scrollX`/`scrollY`), to scroll it (`Rocx.scrollTo`), and to open what is elsewhere in
+//!   the system's browser (`Rocx.open`).
 
 use jni::JNIEnv;
 use jni::JavaVM;
@@ -124,6 +128,48 @@ impl Platform for Android {
                 core::layout::rough_measure(content, width)
             }
         }
+    }
+
+    fn scroll(&self) -> (f32, f32) {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return (0.0, 0.0) };
+        let Ok(mut env) = vm.get_env() else { return (0.0, 0.0) };
+        let at = (|| -> jni::errors::Result<(f32, f32)> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let x = env.call_static_method(&class, "scrollX", "()F", &[])?.f()?;
+            let y = env.call_static_method(&class, "scrollY", "()F", &[])?.f()?;
+            Ok((x, y))
+        })();
+        at.unwrap_or_else(|_| {
+            let _ = env.exception_clear();
+            (0.0, 0.0)
+        })
+    }
+
+    fn scroll_to(&self, x: f32, y: f32) {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return };
+        let Ok(mut env) = vm.get_env() else { return };
+        let done = (|| -> jni::errors::Result<()> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            env.call_static_method(&class, "scrollTo", "(FF)V", &[JValue::Float(x), JValue::Float(y)])?;
+            Ok(())
+        })();
+        if done.is_err() {
+            let _ = env.exception_clear();
+        }
+    }
+
+    fn open(&self, url: &str) -> bool {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return false };
+        let Ok(mut env) = vm.get_env() else { return false };
+        let opened = (|| -> jni::errors::Result<bool> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let url = env.new_string(url)?;
+            env.call_static_method(&class, "open", "(Ljava/lang/String;)Z", &[JValue::Object(&url)])?.z()
+        })();
+        opened.unwrap_or_else(|_| {
+            let _ = env.exception_clear();
+            false
+        })
     }
 
     fn log(&self, level: Level, text: &str) {
@@ -368,6 +414,21 @@ pub extern "system" fn Java_dev_rocx_phone_Rocx_fingerprint<'local>(env: JNIEnv<
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_rocx_phone_Rocx_viewport(_env: JNIEnv, _class: JClass, width: jni::sys::jfloat, height: jni::sys::jfloat) {
     core::viewport(width, height);
+}
+
+/// `Rocx.files(dir)`, on the main thread before the app starts: where what outlives the process is
+/// kept (the app's files dir: the cookie jar, D-138).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_files(mut env: JNIEnv, _class: JClass, dir: JString) {
+    let dir = text(&mut env, &dir);
+    core::files(&dir);
+}
+
+/// `Rocx.back()`, on the main thread: Android's back (the button, the gesture), the app's history's
+/// entry before (D-138). False at the first: the activity finishes.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_back(_env: JNIEnv, _class: JClass) -> jni::sys::jboolean {
+    core::back() as jni::sys::jboolean
 }
 
 /// `Rocx.send(id, name, value)`: an event on a view, on the main thread.

@@ -11,6 +11,7 @@
 #[allow(clippy::all, unsafe_op_in_unsafe_fn)]
 #[path = "roc_platform_abi.rs"]
 pub mod abi;
+pub mod cookies;
 pub mod css;
 mod dom;
 pub mod layout;
@@ -18,11 +19,14 @@ pub mod values;
 pub mod engine;
 mod hosted;
 mod fx;
-mod http;
+pub mod http;
 mod json;
 pub mod native;
+pub mod live;
+pub mod nav;
 pub mod roc;
 pub mod svg;
+pub mod url;
 #[cfg(target_arch = "wasm32")]
 mod web;
 // In a browser (spike/wasm-engine), the browser's host's allocator (rocx-memory's, Zig's for wasm
@@ -53,6 +57,19 @@ pub trait Platform: Send + Sync {
     /// plugin's: `audio.play`, `vibrate.pattern`), `arg` its JSON, `origin` the app's server (a
     /// path in `arg` is the server's). Whether the phone has a handler by that name.
     fn call(&self, _name: &str, _arg: &str, _origin: &str) -> bool {
+        false
+    }
+    /// On the main thread: how far the screen is scrolled now (x, y, in the views' units), kept on
+    /// the history entry a navigation leaves (D-138).
+    fn scroll(&self) -> (f32, f32) {
+        (0.0, 0.0)
+    }
+    /// On the main thread, after a batch is applied: the screen scrolled there (a navigation's top,
+    /// back's kept place).
+    fn scroll_to(&self, _x: f32, _y: f32) {}
+    /// On the main thread: `url` opened by the system (another site's page in its browser, a
+    /// `mailto:` or `tel:` link in its app). Whether it could be.
+    fn open(&self, _url: &str) -> bool {
         false
     }
     /// On the main thread, while a flush is laid out (D-137): the size of text view `id` (whose
@@ -96,8 +113,12 @@ static PLATFORM: OnceLock<Box<dyn Platform>> = OnceLock::new();
 /// What happened on another thread, for the main thread, with the generation of the app it is
 /// for (`generation`): one for a build a dev client replaced is dropped.
 pub enum Message {
-    Answer(u64, u64, Result<(u16, Vec<(String, String)>, String), String>),
+    Answer(u64, u64, Result<http::Answered, String>),
     Fired(u64, u64),
+    /// What a stream heard (`http::stream`, D-140).
+    Heard(u64, u64, http::Heard),
+    /// The wait after the channels' stream dropped is over (D-140).
+    Retry(u64),
 }
 
 /// The platform an app's library must be built for (core/build.rs): a dev client refuses another.
@@ -130,7 +151,8 @@ pub fn post(message: Message) {
 }
 
 /// Starts the app: the engine, pointed at the server (`origin`, `http://10.0.2.2:8080`), the app
-/// at `path` (`/`), its screen mounted and sent.
+/// at `path` (`/`): its document asked for, as a browser's first load (D-138: the page's middleware
+/// runs, a guard's redirect is followed), and the app mounted once it is in, its screen sent.
 pub fn start(platform: Box<dyn Platform>, origin: &str, path: &str) {
     let _ = PLATFORM.set(platform);
     if engine::started() {
@@ -140,8 +162,45 @@ pub fn start(platform: Box<dyn Platform>, origin: &str, path: &str) {
         return;
     }
     engine::init(origin.to_string(), path.to_string());
+    // In a browser (spike/wasm-engine), the page is the document already.
+    #[cfg(target_arch = "wasm32")]
     engine::mount();
+    #[cfg(not(target_arch = "wasm32"))]
+    nav::start(path);
     pump();
+}
+
+/// Where the app keeps what outlives its process (the app's files dir: the cookie jar, D-138).
+/// Called before `start`.
+pub fn files(dir: &str) {
+    cookies::keep_in(dir, now_millis());
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|since| since.as_millis() as u64).unwrap_or(0)
+}
+
+/// Android's back (the button, the gesture), on the main thread: the history's entry before
+/// (D-138), and the screen's changes sent. False at the first entry: the app closes.
+pub fn back() -> bool {
+    if !engine::started() {
+        return false;
+    }
+    let went = nav::back();
+    pump();
+    went
+}
+
+/// How far the screen is scrolled (`Platform::scroll`).
+pub(crate) fn scrolled() -> (f32, f32) {
+    PLATFORM.get().map(|platform| platform.scroll()).unwrap_or((0.0, 0.0))
+}
+
+/// `url` opened by the system (`Platform::open`).
+pub(crate) fn open(url: &str) -> bool {
+    let shown = url.split(['?', '#']).next().unwrap_or(url);
+    log(Level::Info, &format!("rocx: opening {shown} elsewhere"));
+    PLATFORM.get().is_some_and(|platform| platform.open(url))
 }
 
 /// A new build of the app (a dev client's, whose library `roc::set_entries` just named), started
@@ -156,7 +215,7 @@ pub fn restart(platform: Box<dyn Platform>, origin: &str, path: &str) {
     GENERATION.fetch_add(1, Ordering::Relaxed);
     INBOX.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clear();
     engine::init(origin.to_string(), path.to_string());
-    engine::mount();
+    nav::start(path);
     pump();
 }
 
@@ -178,10 +237,13 @@ pub fn pump() {
         match message {
             Message::Answer(made, id, result) if made == now => engine::answered(id, result),
             Message::Fired(made, id) if made == now => engine::fired(id),
+            Message::Heard(made, id, heard) if made == now => live::heard(id, heard),
+            Message::Retry(made) if made == now => live::retry(),
             _ => {}
         }
     }
     engine::flush();
+    engine::with(nav::mark_links);
     engine::send_requests();
     // A page's DOM is changed as the engine's document was (spike/wasm-engine); a phone's views are
     // its projection.
@@ -198,6 +260,13 @@ pub fn pump() {
     {
         platform.apply(&ops);
     }
+    // A navigation's scroll, once its views are there (D-138).
+    if let Some((x, y)) = engine::with(|engine| engine.nav.scroll_to.take())
+        && let Some(platform) = PLATFORM.get()
+    {
+        platform.scroll_to(x, y);
+    }
+    live::reconcile();
 }
 
 /// A timer's thread: posts `Fired(id)` after `ms`, or every `ms`, until `stop`.

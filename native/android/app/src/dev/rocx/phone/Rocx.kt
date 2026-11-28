@@ -1,6 +1,11 @@
 package dev.rocx.phone
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
+import android.view.View
+import android.view.ViewTreeObserver
 
 /**
  * The native host (libapp.so: the app's Roc, native/core and native/android), as Kotlin sees it.
@@ -50,6 +55,46 @@ object Rocx {
     @JvmStatic fun measure(id: Long, mode: Int, width: Float): Long {
         val (w, h) = applier?.measure(id, mode, width) ?: Pair(0f, 0f)
         return (java.lang.Float.floatToRawIntBits(w).toLong() shl 32) or (java.lang.Float.floatToRawIntBits(h).toLong() and 0xffffffffL)
+    }
+
+    /** Where what outlives the process is kept (the app's files: the cookie jar), before `start`. */
+    @JvmStatic external fun files(dir: String)
+
+    /** Android's back: the app's history's entry before (D-138); false at the first. */
+    @JvmStatic external fun back(): Boolean
+
+    /** The scrolling screen (the activity's): kept on the history entry a navigation leaves, and
+     * scrolled to the top, or back to where an entry was, after one. */
+    var screen: View? = null
+
+    @JvmStatic fun scrollX(): Float = screen?.scrollX?.toFloat() ?: 0f
+
+    @JvmStatic fun scrollY(): Float = screen?.scrollY?.toFloat() ?: 0f
+
+    /** After the batch that made the page: once it is laid out (its height known), so the scroll
+     * isn't cut short. */
+    @JvmStatic fun scrollTo(x: Float, y: Float) {
+        val view = screen ?: return
+        view.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                view.viewTreeObserver.removeOnPreDrawListener(this)
+                view.scrollTo(x.toInt(), y.toInt())
+                return true
+            }
+        })
+        view.invalidate()
+    }
+
+    /** What is elsewhere (another site's page, `mailto:`, `tel:`), opened by the system. */
+    @JvmStatic fun open(url: String): Boolean {
+        val activity = applier?.activity ?: return false
+        return try {
+            activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+            true
+        } catch (_: ActivityNotFoundException) {
+            say(Log.WARN, "nothing on this phone opens $url")
+            false
+        }
     }
 
     /**

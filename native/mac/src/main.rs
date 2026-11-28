@@ -6,11 +6,17 @@
 //! rocx-native-mac --origin http://127.0.0.1:8095 show wait:1500 show tap:Tap show type:hello tap:Send wait:1500 show
 //! ```
 //!
-//! Steps: `show` (the screen, as an outline, each view's frame in it), `ops` (print each batch of
-//! ops as it is applied, from here on), `wait:<ms>` (let answers and timers come), `tap:<text>` (a
-//! tap on the button, link or other tappable view that says it), `type:<text>` (typing into the
-//! first field), `css` (the CSS the phone ignores), `width:<dp>` (the screen's width, 412 at
-//! first; a rotation), `time` (how long the last layout took).
+//! Steps: `show` (the screen, as an outline), `ops` (print each batch of ops as it is applied, from
+//! here on), `wait:<ms>` (let answers and timers come), `tap:<text>` (a tap on the button that
+//! says it), `type:<text>` (typing into the first field), `enter` (the keyboard's Enter in it),
+//! `css` (the CSS the phone ignores); navigation's (D-138): `link:<text>` (a tap on the link that
+//! says it), `nav:<to>` (`Router.navigate!`), `back` (Android's back), `where` (the location and
+//! the history), `cookies` (the jar), `at:<id>` (a tap on the view with that id) and `at:<id>=<text>`
+//! (typing into it); layout's (D-137): `boxes` (each element's box on the page), `width:<dp>` (the
+//! screen's width, 412 at first: a rotation), `time` (how long the last layout took).
+//!
+//! Options: `--origin <url>`, `--path <start path>`, `--files <dir>` (where the cookie jar is kept,
+//! as an app's files dir).
 
 use rocx_native_core::{self as core, Level, Platform};
 use std::sync::Mutex;
@@ -98,16 +104,19 @@ fn main() {
         origin = args.get(at + 1).cloned().unwrap_or(origin);
         args.drain(at..(at + 2).min(args.len()));
     }
+    let mut path = "/".to_string();
+    if let Some(at) = args.iter().position(|arg| arg == "--path") {
+        path = args.get(at + 1).cloned().unwrap_or(path);
+        args.drain(at..(at + 2).min(args.len()));
+    }
+    if let Some(at) = args.iter().position(|arg| arg == "--files") {
+        if let Some(dir) = args.get(at + 1) {
+            core::files(dir);
+        }
+        args.drain(at..(at + 2).min(args.len()));
+    }
     let (sender, woken) = channel();
     let started = Instant::now();
-    let path = match args.iter().position(|arg| arg == "--path") {
-        Some(at) => {
-            let path = args.get(at + 1).cloned().unwrap_or_else(|| "/".into());
-            args.drain(at..(at + 2).min(args.len()));
-            path
-        }
-        None => "/".to_string(),
-    };
     core::start(Box::new(Mac { wake: Mutex::new(sender) }), &origin, &path);
     println!("mounted in {:.1} ms", started.elapsed().as_secs_f64() * 1000.0);
     for step in args {
@@ -136,6 +145,58 @@ fn main() {
             }
             "boxes" => print!("{}", core::native::boxes()),
             "time" => println!("laid out in {:.2} ms", core::native::last_layout_ms()),
+            // A view by its id (`show` prints them): `at:<id>` taps it, `at:<id>=<text>` types into it.
+            "at" => {
+                let (id, text) = value.split_once('=').map(|(id, text)| (id, Some(text))).unwrap_or((value, None));
+                let id: u64 = id.trim_start_matches('#').parse().unwrap_or(0);
+                match text {
+                    Some(text) => {
+                        println!("type {text:?} (#{id})");
+                        core::event(id, "input", text);
+                    }
+                    None => {
+                        // A checkbox's view says whether it is checked now, as Android's does.
+                        let checkbox = core::native::shown_views().get(&id).filter(|view| view.kind == "checkbox").map(|view| view.props.get("checked").map(String::as_str) != Some("true"));
+                        match checkbox {
+                            Some(now) => {
+                                println!("check #{id}: {now}");
+                                core::event(id, "click", &now.to_string());
+                                core::event(id, "change", &now.to_string());
+                            }
+                            None => {
+                                println!("tap #{id}");
+                                core::event(id, "click", "");
+                            }
+                        }
+                    }
+                }
+            }
+            "enter" => match find("input", None) {
+                Some(id) => {
+                    println!("enter (#{id})");
+                    core::event(id, "keydown", "Enter");
+                }
+                None => println!("no field"),
+            },
+            "link" => match core::nav::link_with_text(value) {
+                Some(id) => {
+                    println!("link {value:?} (#{id})");
+                    core::event(id, "click", "");
+                }
+                None => println!("no link says {value:?}"),
+            },
+            "nav" => {
+                println!("navigate {value:?}");
+                core::nav::navigate(value, core::nav::Options { scroll: true, ..Default::default() });
+                core::pump();
+            }
+            "back" => println!("back: {}", if core::back() { "went back" } else { "at the first entry: the app closes" }),
+            "where" => println!("{}", core::nav::describe()),
+            "cookies" => {
+                for cookie in core::cookies::JAR.lock().unwrap().as_ref().map(|jar| jar.cookies().to_vec()).unwrap_or_default() {
+                    println!("cookie {}={} (domain {}, path {}, expires {:?})", cookie.name, cookie.value.chars().take(12).collect::<String>(), cookie.domain, cookie.path, cookie.expires);
+                }
+            }
             "css" => {
                 for warning in WARNINGS.lock().unwrap().iter().filter(|warning| warning.contains("CSS")) {
                     println!("{warning}");

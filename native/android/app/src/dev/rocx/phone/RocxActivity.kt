@@ -2,12 +2,14 @@ package dev.rocx.phone
 
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
 import android.view.ViewTreeObserver
 import android.view.WindowInsets
 import android.widget.ScrollView
+import android.window.OnBackInvokedDispatcher
 
 /**
  * The app's one activity: a scrolling screen whose content is the app's root view, made by the
@@ -33,7 +35,16 @@ class RocxActivity : Activity() {
         val loading = SystemClock.uptimeMillis()
         // The first use of Rocx loads libapp.so (an app's) or libhost.so (the dev client's).
         Rocx.applier = Applier(this, screen)
+        Rocx.screen = screen
         val loaded = SystemClock.uptimeMillis()
+        // Navigation (D-138): the cookie jar in the app's files, and back through the app's history
+        // before the app closes (Android 13's back callback; onBackPressed before it).
+        Rocx.files(filesDir.path)
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
+                if (!Rocx.back()) finish()
+            }
+        }
         if (Rocx.dev) {
             val client = DevClient(this, screen)
             dev = client
@@ -50,6 +61,7 @@ class RocxActivity : Activity() {
         }
         setContentView(screen)
         val origin = intent.getStringExtra("origin") ?: meta?.getString("rocx.origin") ?: "http://10.0.2.2:8080"
+        // Where it opens: `/`, or the intent's `path` extra (`adb shell am start … --es path /login`).
         Rocx.start(origin, intent.getStringExtra("path") ?: "/")
         val started = SystemClock.uptimeMillis()
         screen.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
@@ -60,6 +72,11 @@ class RocxActivity : Activity() {
                 return true
             }
         })
+    }
+
+    @Deprecated("Android 13's OnBackInvokedCallback takes it from there")
+    override fun onBackPressed() {
+        if (!Rocx.back()) super.onBackPressed()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -74,7 +91,10 @@ class RocxActivity : Activity() {
 
     override fun onDestroy() {
         dev?.stop()
-        if (Rocx.applier?.activity === this) Rocx.applier = null
+        if (Rocx.applier?.activity === this) {
+            Rocx.applier = null
+            Rocx.screen = null
+        }
         super.onDestroy()
     }
 }
