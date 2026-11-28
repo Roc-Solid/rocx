@@ -130,6 +130,87 @@ impl Platform for Android {
         }
     }
 
+    fn density(&self) -> f32 {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return 1.0 };
+        let Ok(mut env) = vm.get_env() else { return 1.0 };
+        let asked = (|| -> jni::errors::Result<f32> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            env.call_static_method(&class, "density", "()F", &[])?.f()
+        })();
+        asked.unwrap_or_else(|_| {
+            let _ = env.exception_clear();
+            1.0
+        })
+    }
+
+    fn cache_dir(&self) -> Option<String> {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return None };
+        let Ok(mut env) = vm.get_env() else { return None };
+        let asked = (|| -> jni::errors::Result<String> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let dir = env.call_static_method(&class, "cacheDir", "()Ljava/lang/String;", &[])?.l()?;
+            let dir = JString::from(dir);
+            Ok(env.get_string(&dir).map(String::from).unwrap_or_default())
+        })();
+        match asked {
+            Ok(dir) if !dir.is_empty() => Some(dir),
+            Ok(_) => None,
+            Err(_) => {
+                let _ = env.exception_clear();
+                None
+            }
+        }
+    }
+
+    /// Kotlin's `Rocx.pick(view, accept, multiple)`: the system's picker (D-139).
+    fn pick(&self, view: u64, accept: &str, multiple: bool) -> bool {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return false };
+        let Ok(mut env) = vm.get_env() else { return false };
+        let picked = (|| -> jni::errors::Result<bool> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let accept = env.new_string(accept)?;
+            env.call_static_method(&class, "pick", "(JLjava/lang/String;Z)Z", &[JValue::Long(view as i64), JValue::Object(&accept), JValue::Bool(multiple as u8)])?.z()
+        })();
+        picked.unwrap_or_else(|_| {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+            false
+        })
+    }
+
+    /// Kotlin's `Rocx.element(view, tag, event, target, value)`: an app's phone half (D-139).
+    fn element(&self, view: u64, tag: &str, event: &str, target: u64, value: &str) {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return };
+        let Ok(mut env) = vm.get_env() else { return };
+        let told = (|| -> jni::errors::Result<()> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let (tag, event, value) = (env.new_string(tag)?, env.new_string(event)?, env.new_string(value)?);
+            env.call_static_method(&class, "element", "(JLjava/lang/String;Ljava/lang/String;JLjava/lang/String;)V", &[JValue::Long(view as i64), JValue::Object(&tag), JValue::Object(&event), JValue::Long(target as i64), JValue::Object(&value)])?;
+            Ok(())
+        })();
+        if told.is_err() {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
+    }
+
+    /// Kotlin's `Rocx.fetched(token, status, headers, body)`: a request of the shell's answered.
+    fn fetched(&self, token: u64, status: u16, headers: &str, body: &[u8]) {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return };
+        let Ok(mut env) = vm.get_env() else { return };
+        let told = (|| -> jni::errors::Result<()> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let headers = env.new_string(headers)?;
+            let body = env.byte_array_from_slice(body)?;
+            env.call_static_method(&class, "fetched", "(JILjava/lang/String;[B)V", &[JValue::Long(token as i64), JValue::Int(status as i32), JValue::Object(&headers), JValue::Object(&JObject::from(body))])?;
+            Ok(())
+        })();
+        if told.is_err() {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
+        }
+    }
+
     fn scroll(&self) -> (f32, f32) {
         let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return (0.0, 0.0) };
         let Ok(mut env) = vm.get_env() else { return (0.0, 0.0) };
@@ -463,4 +544,21 @@ pub extern "system" fn Java_dev_rocx_phone_Rocx_back(_env: JNIEnv, _class: JClas
 pub extern "system" fn Java_dev_rocx_phone_Rocx_send(mut env: JNIEnv, _class: JClass, id: jlong, name: JString, value: JString) {
     let (name, value) = (text(&mut env, &name), text(&mut env, &value));
     core::event(id as u64, &name, &value);
+}
+
+/// `Rocx.ask(what, arg)`: what the shell asks the host (D-139), on the main thread: a URL's
+/// cookies, an element's attribute, a file input's files (`core::ask`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_ask<'local>(mut env: JNIEnv<'local>, _class: JClass, what: JString, arg: JString) -> JString<'local> {
+    let (what, arg) = (text(&mut env, &what), text(&mut env, &arg));
+    env.new_string(core::ask(&what, &arg)).unwrap_or_default()
+}
+
+/// `Rocx.fetch(token, method, url, headers, body)`: a request of the shell's (D-139: an element's
+/// phone half sending a file), with the app's cookies; answered by `Rocx.fetched(token, …)`.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_fetch(mut env: JNIEnv, _class: JClass, token: jlong, method: JString, url: JString, headers: JString, body: jni::objects::JByteArray) {
+    let (method, url, headers) = (text(&mut env, &method), text(&mut env, &url), text(&mut env, &headers));
+    let body = if body.is_null() { Vec::new() } else { env.convert_byte_array(&body).unwrap_or_default() };
+    core::fetch(token as u64, &method, &url, &headers, body);
 }

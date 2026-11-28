@@ -32,14 +32,17 @@ spike/native-apps/phone-hello/routes/+page.rocx
   `src/values.rs`) is resolved as a browser resolves it, for the subset a phone does (below, CSS and
   layout). An HTTP/1.1 client (`src/http.rs`) asks the server on threads of its own, with a
   cookie jar (`src/cookies.rs`); navigation (`src/nav.rs`) and live updates (`src/live.rs`) are
-  runtime.js's, on a phone (below, Pages, sessions and the server).
+  runtime.js's, on a phone (below, Pages, sessions and the server). Images' files (`src/media.rs`)
+  and what a browser does with a page's controls (`src/controls.rs`: a tap's default action, a form's
+  validation and files) are D-139's (below, Controls, media and custom elements' phone halves).
 - **`native/android`**: the Android half in Rust (`src/lib.rs`: `JNI_OnLoad`, `Rocx.start` and
   `Rocx.send`, the main looper's wake pipe, logcat), and the Kotlin shell (`app/`): one activity, and
   an applier that walks a batch of ops into Android views (a box is a `Box`, a ViewGroup that puts
   each child at the frame the host's layout gave it; a block's text a `TextBox`, its styled runs
-  drawn by a `StaticLayout`; every view's CSS paint a `CssPaint`; fields and checkboxes the
-  platform's own). `build.sh` builds an app's
-  APK, or the dev client.
+  drawn by a `StaticLayout`; every view's CSS paint a `CssPaint`; fields, checkboxes and radios the
+  platform's own; an image an `ImageBox`, a video a `VideoBox`, a select a `SelectBox`; the system's
+  pickers for dates and files; an app's phone halves of its custom elements, `Elements.kt`).
+  `build.sh` builds an app's APK (with the Kotlin in the app's `android/` folder), or the dev client.
 - **`native/android-dev`** and **`rocx dev --android`**: the dev mode (below). The dev client is the
   same shell with the host as `libhost.so` and no app in it; it loads each build `rocx dev` makes.
 - **`native/mac`**: the same engine and ops on the Mac, with a recording renderer: it mounts an app
@@ -84,6 +87,8 @@ bin/rocx dev spike/native-apps/phone-hello --port 8095
 
 # The APK: native/android/build/phone-hello/phone-hello.apk
 native/android/build.sh spike/native-apps/phone-hello --origin http://10.0.2.2:8095 --label "Phone hello"
+# (against a server an app built with `rocx build --dev` or `rocx generate --dev`: add --stories,
+# so the phone asks for the same stylesheet, whose name is a hash of the stories' styles too)
 
 # The emulator (headless, its AVD left as it is), the APK installed and opened
 ~/Library/Android/sdk/emulator/emulator -avd Medium_Phone_API_37.0 -no-window -no-audio \
@@ -257,10 +262,14 @@ The user's choice (2026-11-23): native code for the app's Roc, no over-the-air u
   content is one text view of styled runs; text beside blocks gets an anonymous one (below, CSS and
   layout). A render with nothing changed since the last is skipped, and one with changes takes
   again the views of what didn't change.
-- **Events** come back as `(id, name, value)`: a tap is `click`, typing is `input` with the field's
-  text, the keyboard's done key `keydown Enter`, focus and blur, a checkbox's `click` and `change`.
-  They bubble up the engine's document as the DOM's do, and a tap on a form's submit button submits
-  the form (an endpoint's form a component reads the submission of is sent with the host's client).
+- **Events** come back as `(id, name, value)`: a tap is `click` (two soon after each other a
+  `dblclick` too, where it is listened for), typing is `input` with the field's text, `change` when
+  it loses the focus changed, the keyboard's done key `keydown Enter`, `focus` and `blur`, a
+  checkbox's or radio's `click`, `input` and `change`, a select's or a date field's choice its `input`
+  and `change`, a file input's picked files `files` (or `cancel`), a video's `play`, `pause`, `ended`
+  and `loadedmetadata`. They bubble up the engine's document as the DOM's do, past a custom element's
+  phone half (D-139), and a tap's default action follows (a form's submit button submits it, a link
+  navigates, a summary toggles, a label passes it on).
 
 ## Pages, sessions and the server (D-138, D-140)
 
@@ -311,6 +320,88 @@ The app's pages are all in its library; a navigation goes where the browser's wo
   flush, a dropped stream opened again after a doubling wait (0.5–30 s). Checked: a large app's board
   heard a post made in a browser tab and read itself again; the checkboxes example's channel
   resynced, heard what others said, and what the phone said reached them.
+
+## Controls, media and custom elements' phone halves (D-139)
+
+What the page's controls do is the browser's, done natively; what an app's page scripts do for its
+custom elements is the app's own Kotlin, its "phone halves".
+
+- **Images** (`media.rs`, `ImageBox.kt`): an `<img>`'s source is the one a browser picks (`srcset`'s
+  `2x`, or its `640w` widths against the width `sizes` says on this screen, at the screen's density,
+  `Rocx.density`), its file fetched off the main thread with the app's cookies (`http.rs`'s
+  `fetch_bytes`) into the app's cache, kept on disk while its `cache-control` says (`max-age`,
+  `immutable`), and its size in pixels read from the header (PNG, GIF, WebP, JPEG with its EXIF
+  orientation) as its natural size, over its source's density. `width` and `height` give the box its
+  size and ratio before the file is in. The view decodes the file off the main thread at about the
+  size it is drawn (an LRU of bitmaps), turns it upright, and draws it as `object-fit` and
+  `object-position` say, clipped to its corners (round avatars). A failure draws nothing, a broken
+  image without its icon. `file://` URLs (a picked file, below) are read as they are. Not yet: SVG
+  images (an `<img>` of an `.svg` warns), `background-image: url()`, `loading="lazy"` (every image
+  loads at once), and `enhanced:src`'s `srcset` (the server writes it into the page's HTML, which a
+  phone doesn't read: its `src` is shown).
+- **Video** (`VideoBox.kt`): a MediaPlayer on a TextureView (it scrolls and clips with the page),
+  asked with the app's cookies (`Rocx.ask("cookie", url)`, so a members' video plays), under its
+  `poster` (an image, loaded as an `<img>`'s) or else its frame at its `#t=` moment (`preload=metadata`
+  previews: MediaMetadataRetriever, with the cookies), which goes once the video draws. `controls`: a
+  tap plays and pauses it, a play button over it while paused; `autoplay`, `muted`, `loop`,
+  `object-fit`. It tells the page `play`, `pause`, `ended` and `loadedmetadata` (the video's size,
+  its element's natural size from then). Not yet: a seek bar and the other controls, fullscreen.
+- **A tap's default action** (`controls.rs`), found from the element tapped up as the HTML spec
+  finds it: a `<summary>` opens and closes its `<details>` (and fires `toggle`; a closed one's other
+  children aren't shown), a `<label>` passes the tap to its control (a checkbox or radio toggled, a
+  field focused, a file input's picker), interactive content inside them (a link, a button) its own.
+- **Fields**: text, email, url, search, tel, number and password are EditTexts with their keyboards
+  (`inputmode` too), `placeholder`, `maxlength`, `readonly`, `disabled`, `autofocus`,
+  `enterkeyhint`, autofill hints from `autocomplete`; a value the app sets keeps the cursor where it
+  was; `input` as typed, `change` when the focus leaves it changed, `focus` and `blur` (`:focus` in
+  CSS); the focused field is scrolled above the keyboard. A `<textarea>` is its `rows` tall unless CSS
+  says. `date`, `time`, `datetime-local` and `month` open the system's date and time pickers, write
+  HTML's formats (`2026-11-28T17:45`) and show the phone's locale's. A `<select>` shows its chosen
+  option's label as its CSS draws it, and a tap opens the phone's list of its options (`<optgroup>`
+  headings, disabled options shown but not chosen); a choice is its `input` then `change`.
+  Checkboxes and radios are the platform's (`appearance: none` leaves them to the CSS); a radio's
+  group mates in its form are unticked. The system's dialogs are dark on a dark page.
+- **Forms** are sent as `requestSubmit` sends them: not while a field keeps them back (`required` and
+  empty, a radio group with none chosen, an `email` field that isn't an address; `novalidate`,
+  `formnovalidate`), that field focused with its message beside it (`setError`). A field's value is
+  what was typed or chosen, else its markup's (a select's chosen option, a textarea's text). A form
+  with files (`enctype="multipart/form-data"`) is sent as `multipart/form-data`, each file read on
+  the request's thread; so is an action whose arg names a picked file (D-054's `fileOf`).
+- **Files** (`Picker.kt`): a file input opens the system's photo picker when it takes only images or
+  videos (Android 13's `ACTION_PICK_IMAGES`, no permission asked), else its documents
+  (`ACTION_OPEN_DOCUMENT`), filtered by `accept`, several with `multiple`. Each file picked is copied
+  into the app's cache and given to the page as a browser gives it (`input` and `change`,
+  `Html.File`s whose `url` is a `file://` one), or `cancel`. The photo picker names a file by its id
+  (`22.mp4`), where a browser has its own name.
+- **Double taps** are `dblclick` after their two clicks, on an element that listens for it;
+  long-press is nothing of its own, as on the web. Drags (D-029, D-055) wait.
+- **Custom elements' phone halves** (`Elements.kt`): an app whose page scripts give its custom
+  elements their behaviour (`customElements.define` in a static script: an upload that reads a file,
+  a copy button) gives a phone the same as Kotlin in its own `android/` folder, one `object` a tag:
+
+  ```kotlin
+  object CopyField : ElementHalf("copy-field") {
+      override fun event(element: Element, name: String, target: Element, value: String) {
+          if (name == "click" && target.tag == "button") Phone.copy(element.activity, element.attr("value") ?: "")
+      }
+  }
+  ```
+
+  `build.sh` builds the folder into the app's APK with the shell, and lists its halves
+  (`AppHalves.kt`: each `object <Name> : ElementHalf("<tag>")`); the dev client has none. A half is
+  told of every event on its element and inside it, as its script's listeners on the element are
+  (the engine's dispatch, `Platform::element`: the event, the element it happened on, its value: a
+  file input's files, a field's text), and does what the script does with the `Element` it is given:
+  reads attributes and tags (`Rocx.ask`), tells the page events with values (`tell`, which the
+  page's `on:<event>.value` handlers read, as the script's `this.value` and `dispatchEvent`), asks the
+  app's server (`fetch`: the host's HTTP client, the app's cookies and origin, answered on the main
+  thread), loads the page again (`reload`), and uses the phone (`Phone.copy`, the clipboard;
+  `Phone.say`; `Phone.files`, a change's files as files). `Browser.call!("clipboard.write", { text })`
+  is the shell's own. Tried with a large app's halves of its upload and copy elements: images and a
+  video chosen in the photo picker went to its endpoints (their sizes in pixels and lengths read with
+  `BitmapFactory` and `MediaMetadataRetriever`) and showed in its compose form, its profile picture
+  was changed, and its copy buttons put a link on the clipboard. Its menus' page script (closing an
+  open `<details>` on a tap outside) has no half: D-139 recommends the `popover` attribute for menus.
 
 ## What works (evidence)
 
@@ -376,15 +467,15 @@ the browser's does (the server's). Live updates (D-140): `listen!`, `subscribe!`
 native handler by its name (`Platform::call`; Android's are Kotlin's, `Calls.kt`), else to one of
 the page functions apps commonly register, done on the engine's document with the arguments they
 take in a browser (`calls.rs`, D-138): `focus { selector }`, `click { selector }`, `reveal {
-selector }`, `go { url }` and `replace_query { drop }`. Kotlin's: `audio.play`
+selector }`, `go { url }` and `replace_query { drop }`. Kotlin's: `clipboard.write` (`{ text }` on
+the clipboard, D-139), `audio.play`
 (packages/audio's `Audio.play!`: a MediaPlayer, the sound fetched from the app's server when its URL
 is a path) and `vibrate.pattern` (packages/vibrate's `Vibrate.pattern!`: Android's `Vibrator`, the
 pattern as a waveform; the manifest asks for `VIBRATE`). A name with no handler is logged ("the push
 plugin has no native half on this platform"), as the browser logs an effect no script registered.
 The Mac runner prints each call (`call audio.play {…}`).
 
-In the markup, what isn't on phones yet is warned of once and ignored: `on:frame`,
-`on:viewport`, transitions, keys (`key=`), `<Document>`/`<Window>` handlers, `<NoHydration>` (empty:
+In the markup, what isn't on phones yet is warned of once and ignored: `on:frame`, transitions, keys (`key=`), `<Document>`/`<Window>` handlers, `<NoHydration>` (empty:
 it is the server's, so a layout's `{=Styles.style}` belongs outside one: examples/pomodoro's).
 
 An `<svg>` is one view (kind `svg`), drawn by the applier's `SvgView` on a canvas from the shapes the
@@ -555,14 +646,18 @@ dev server:
    activity takes a `path` extra only), and the leave listeners asked before the app closes. A
    provider's sign-in (Google's) opens in the system's browser, which has no session of the app's,
    and its way back lands there: a native app needs an App Link or a custom scheme back (and a
-   download link likewise opens with no session). A form with files isn't sent as one yet.
+   download link likewise opens with no session).
 7. **`rocx build --android`, and the dev mode's next steps.** `build.sh` is the spike's. The dev mode
    (above) reloads in about a second, on USB and Wi-Fi, each a fresh start; next: the server's
    restart off the reload's path, and the page's APK
    copied again when the dev client is rebuilt while rocx dev runs (it is copied at start).
-8. **Controls.** Images, `select`, `textarea` sizes, checkboxes and radios drawn as their CSS says,
-   accessibility roles, the keyboard's other keys (only Enter), `on:submit` from the keyboard
-   (D-139's).
+8. **Controls** (D-139's left): SVG and lazy images, `background-image: url()`, `enhanced:src`'s
+   copies (the document's `srcset`, as runtime.js's `enhancedFrom` reads it), a video's seek bar and
+   fullscreen, `<input type="range">`, `color`, `week`, a `multiple` select (one choice), `<datalist>`,
+   `popover` (D-139's recommendation for menus: light dismiss done natively), drags, accessibility
+   roles beyond the platform's own views, the keyboard's other keys (only Enter), picked files' own
+   names from the photo picker, phone halves for the dev client (loading an app's Kotlin at run time)
+   and for page scripts that aren't an element's.
 9. **Typing.** Once, `adb shell input text` typed while the keyboard was still starting gave a
    doubled first letter ("hhello"); with the keyboard up it never did. Whether that is adb and
    Gboard or the applier isn't settled (a plain `EditText` app would tell).

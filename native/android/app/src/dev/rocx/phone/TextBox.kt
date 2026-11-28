@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
  * says, so what is drawn is what was measured. A run that is a link (or a tappable element's) is
  * tapped on its own: the tap goes to that element (`k`), as a click on it in a browser.
  */
-class TextBox(context: Context, private val density: Float) : View(context) {
+open class TextBox(context: Context, private val density: Float) : View(context) {
     /** Each property the host set (`text`, `runs`, `style.fontSize`…). */
     val props = HashMap<String, String>()
     private var spanned: CharSequence? = null

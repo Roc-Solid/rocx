@@ -69,6 +69,7 @@ fieldset { margin: 0 2px; padding: 0.35em 0.75em 0.625em; border: 2px groove #c0
 legend { padding: 0 2px; }
 summary { display: block; }
 details:not([open]) > :not(summary:first-of-type) { display: none; }
+option, optgroup, datalist { display: none; }
 dialog { position: absolute; left: 0; right: 0; margin: auto; border: solid; padding: 1em; background: white; color: black; }
 ";
 
@@ -464,7 +465,7 @@ const KNOWN: &[&str] = &[
     "overflow", "overflow-x", "overflow-y", "overflow-wrap", "word-wrap", "word-break", "text-overflow", "line-clamp", "-webkit-line-clamp", "-webkit-box-orient",
     "color", "background", "background-color", "background-image", "opacity", "visibility", "box-shadow", "transform", "translate", "scale", "rotate", "transform-origin",
     "font", "font-family", "font-size", "font-weight", "font-style", "font-variant-numeric", "line-height", "letter-spacing", "word-spacing", "text-align", "text-transform", "text-decoration", "text-decoration-line", "text-decoration-color", "text-decoration-style", "text-decoration-thickness", "text-underline-offset",
-    "white-space", "white-space-collapse", "text-wrap", "text-wrap-mode", "text-indent", "vertical-align", "list-style", "list-style-type", "list-style-position", "content", "pointer-events", "object-fit", "hyphens",
+    "white-space", "white-space-collapse", "text-wrap", "text-wrap-mode", "text-indent", "vertical-align", "list-style", "list-style-type", "list-style-position", "content", "pointer-events", "object-fit", "object-position", "hyphens",
     "clip", "clip-path",
     "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "fill-opacity", "stroke-opacity", "text-anchor", "rx", "ry", "r",
 ];

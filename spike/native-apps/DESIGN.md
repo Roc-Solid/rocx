@@ -203,6 +203,17 @@ Events come back as `(id, event, value)` and run their handlers the way `runtime
 Plate's `.rocx` files use 45 tag names (counted 2026-11-23). Besides `<style>` and `<story>`, which
 the build handles, every one is in the table.
 
+> **Status (2026-11-28, D-139):** on Android, `img` (its `srcset` source by the screen's density,
+> loaded with the app's cookies, cached, `object-fit`), the text fields with their keyboards,
+> `textarea` by its rows, `select`/`option`/`optgroup` as the phone's list, checkboxes and radios
+> (the platform's, or the CSS's with `appearance: none`), `date`, `time`, `datetime-local` and `month`
+> as the system's pickers, `details`/`summary` toggling, `label` passing a tap to its control, and
+> `input type="file"` as the system's photo or document picker. `video` moved out of the last row: a
+> native player (a MediaPlayer on a TextureView, its poster or first frame, `controls`, with the
+> app's cookies). `range` and `color` inputs, `canvas`, `iframe`, `audio` (an element; `Audio.play!`
+> is there), `object`, `embed` and `contenteditable` still aren't. README.md, "Controls, media and
+> custom elements' phone halves".
+
 ### 6.2 Styles
 
 The build, not the phone, parses the CSS. `rocx build --ios` reads every `<style>` the app has
@@ -283,6 +294,12 @@ the phone build instead.
   IntersectionObserver.
 - Drag and drop (D-029) waits for a later phase.
 
+> **Status (2026-11-28, D-139):** built so, and a tap's default actions as the HTML spec has them (a
+> summary, a label, a file input); `change` when a field loses the focus changed; constraint
+> validation before a form is sent (`required`, `email`), its field focused with its message; forms
+> with files as `multipart/form-data`; a double tap a `dblclick`. The keyboard keeps the focused field
+> in view (the screen scrolled above it). `on:viewport` is D-137's.
+
 ## 8. Pages and navigation
 
 > **Status (2026-11-28, D-138):** built as below, with Question 4 answered otherwise than proposed:
@@ -331,6 +348,16 @@ JS. A plugin can ship a native half (Rust, Swift or Kotlin) beside its browser s
 (`AVAudioPlayer`, `SoundPool`), push (APNs, FCM), and for Plate the camera's barcode scanner
 (AVFoundation, ML Kit), which is a V2 wish that Firefox can't do in the browser. An unregistered
 name fails as the web's does, saying which plugin's native half it needs.
+
+> **Status (2026-11-28, D-139):** the registry is Kotlin's (`Calls.kt`: `audio.play`,
+> `vibrate.pattern`, `clipboard.write`), with D-138's page functions done on the engine's document
+> (`calls.rs`). Extended to elements: an app's custom element whose page script does its work in a
+> browser (`customElements.define`) gets a phone half, Kotlin in the app's `android/` folder (`object
+> ImageUpload : ElementHalf("image-upload")`), built into its APK and told of every event on the
+> element and inside it; it reads the element's attributes, tells the page events with values (which
+> `on:<event>.value` reads), asks the app's server with its cookies, and uses the phone (the
+> clipboard, a file's size in pixels). The dev client has none (it would load an app's Kotlin at run
+> time). README.md, "Controls, media and custom elements' phone halves"; DECISIONS.md, D-139.
 
 ## 11. Building and the dev loop
 

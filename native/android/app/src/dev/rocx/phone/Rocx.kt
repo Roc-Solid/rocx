@@ -57,6 +57,37 @@ object Rocx {
         return (java.lang.Float.floatToRawIntBits(w).toLong() shl 32) or (java.lang.Float.floatToRawIntBits(h).toLong() and 0xffffffffL)
     }
 
+    /**
+     * What the shell asks the host (D-139), on the main thread: `cookie` (the `cookie` header the
+     * app's jar sends to a URL: a video's player), `attr` (`<id>\n<name>`: an element's attribute as
+     * `=<value>`, "" when it has none), `reload` (the page again, where it is). "" for nothing.
+     */
+    @JvmStatic external fun ask(what: String, arg: String): String
+
+    /** A request of the shell's (an element's phone half's), answered by [fetched]. */
+    @JvmStatic external fun fetch(token: Long, method: String, url: String, headers: String, body: ByteArray?)
+
+    /** The host's answer to [fetch] (status 0: none came, the body saying why), on the main thread. */
+    @JvmStatic fun fetched(token: Long, status: Int, headers: String, body: ByteArray) = Host.answered(token, status, headers, body)
+
+    /** A file input's picker (D-139, [Picker]). */
+    @JvmStatic fun pick(view: Long, accept: String, multiple: Boolean): Boolean {
+        val activity = applier?.activity ?: return false
+        return Picker.open(activity, view, accept, multiple)
+    }
+
+    /** An event on a custom element or inside it, for the app's phone half of it ([Elements]). */
+    @JvmStatic fun element(view: Long, tag: String, event: String, target: Long, value: String) {
+        val activity = applier?.activity ?: return
+        Elements.event(activity, view, tag, event, target, value)
+    }
+
+    /** The screen's density, pixels a CSS px (D-139: `srcset`). */
+    @JvmStatic fun density(): Float = applier?.activity?.resources?.displayMetrics?.density ?: 1f
+
+    /** Where files the app may lose are kept (D-139: images, picked files). */
+    @JvmStatic fun cacheDir(): String = applier?.activity?.cacheDir?.path ?: ""
+
     /** Where what outlives the process is kept (the app's files: the cookie jar), before `start`. */
     @JvmStatic external fun files(dir: String)
 

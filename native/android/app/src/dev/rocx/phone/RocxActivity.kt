@@ -29,6 +29,8 @@ class RocxActivity : Activity() {
         screen.setOnApplyWindowInsetsListener { view, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            // The keyboard up (D-139): the focused field kept in view above it.
+            if (insets.isVisible(WindowInsets.Type.ime())) view.post { Focus.keepInView(screen) }
             WindowInsets.CONSUMED
         }
         val meta = packageManager.getActivityInfo(componentName, PackageManager.GET_META_DATA).metaData
@@ -77,6 +79,11 @@ class RocxActivity : Activity() {
     @Deprecated("Android 13's OnBackInvokedCallback takes it from there")
     override fun onBackPressed() {
         if (!Rocx.back()) super.onBackPressed()
+    }
+
+    @Deprecated("the picker's result (D-139), as startActivityForResult gives it")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        if (!Picker.result(this, requestCode, resultCode, data)) super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

@@ -7908,6 +7908,105 @@ prefetching, focus handling or announcing of the new page yet; plain HTTP.
 
 **Reversible:** yes: nav.rs, cookies.rs and calls.rs go, and the phone shows its one page again.
 
+## D-139 A phone's controls and media as the browser's, and an app's phone halves of its custom elements
+
+**Status.** Built (2026-11-28).
+
+**Context.** The Android host (D-063) had a text field, a checkbox and an `<img>` that drew nothing.
+A real app's pages hold avatars and post previews (`<img>`, `<video>` with a poster), a compose
+form (text fields, textareas, selects, checkboxes and radios behind their labels, a
+`datetime-local` field), menus that are `<details>`, and file inputs; and it gives some of its
+custom elements their behaviour with page scripts (`customElements.define`): an upload that reads a
+picked file's size in pixels and posts it, a button that copies a link. A phone has no page scripts
+(no JS, D-063), and its views have no native image, video, select, date picker or file picker.
+
+**Options.**
+1. Controls: the browser's semantics, done natively and in the engine's dispatch (a tap's default
+   action, a form's validation, its encoding), each control a platform view the CSS still paints;
+   or a WebView for them (out: D-063's rule).
+2. Custom elements' scripts on a phone: (a) the app gives a phone half in the platform's language,
+   registered by tag, told of the element's events and able to tell it events back; (b) the same in
+   Rust, in native/core (no Android APIs: decoding an image for its size, cropping one, reading a
+   video's length would mean image and video crates); (c) rewrite such elements in Roc on hosted
+   functions for files and the clipboard (new hosted functions on both hosts, for what a page script
+   does today); (d) nothing: those elements do nothing on a phone.
+3. Menus that a page script closes on a tap outside: a half for the script (but it isn't an
+   element's: it acts on `details[data-menu]` across the page), or HTML's `popover`, whose light
+   dismiss is the browser's own.
+
+**Decision.** 1, and 2(a) in Kotlin for Android (Swift for iOS later), 3 by recommendation:
+
+- **Images** (`media.rs`, `ImageBox.kt`): the source a browser picks (`srcset` densities, or widths
+  against `sizes` on this screen, at its density), fetched off the main thread with the app's
+  cookies (`http.rs`'s new `fetch_bytes`) into the app's cache, kept there while `cache-control`
+  allows, its size from the file's header (PNG, GIF, WebP, JPEG with EXIF) the natural size over its
+  density; decoded by the phone at about its drawn size, upright, drawn as `object-fit` and
+  `object-position` say, clipped to its corners. A failure shows nothing (a broken image without its
+  icon). Pixels never cross JNI: the host gives the view a file.
+- **Video** (`VideoBox.kt`): a MediaPlayer on a TextureView, with the app's cookies, its poster or
+  else its `#t=` frame first; `controls` play and pause on a tap; its events told to the page, its
+  size its element's natural size once known.
+- **A tap's default action** (`controls.rs`), as the HTML spec finds it from the element up: a
+  `<summary>` toggles its `<details>` (`toggle` fired; the UA sheet hides a closed one's content), a
+  `<label>` passes the tap to its control, a file input opens the picker; interactive content inside
+  is its own.
+- **Fields**: EditTexts with the keyboards `type` and `inputmode` ask for, `maxlength`, `readonly`,
+  `autofocus`, `enterkeyhint`, autofill hints; `change` on blur; the cursor kept when the app sets
+  the value; kept above the keyboard. `date`, `time`, `datetime-local`, `month`: the system's pickers,
+  HTML's formats. `<select>`: its chosen label drawn by its CSS, the phone's list on a tap (groups,
+  disabled options), `input` then `change`. Radios are RadioButtons; `appearance: none` leaves a box
+  to its CSS. Fields measure as fields (`layout.rs`'s `Content::Field`), a textarea its rows tall.
+- **Forms**: `requestSubmit`'s constraint validation first (`required`, a radio group, `email`; the
+  field focused, its message beside it); a field's value as a browser's form reads it (a select's
+  chosen option, a textarea's text, which went empty before); `multipart/form-data` with the files'
+  bytes (read on the request's thread: the submission's body stays text, a file a token in it, so
+  `retry!` sends it again as it was), and an action naming a picked file as a form with files (D-054).
+- **Files** (`Picker.kt`): the system's photo picker for images and videos (no permission), else its
+  documents, by `accept` and `multiple`; each file copied into the app's cache and given to the page
+  as a browser gives it (`Html.File`, its `url` a `file://` one that images, forms and actions read).
+- **Phone halves** (`Elements.kt`): an app's Kotlin in its own `android/` folder, `object <Name> :
+  ElementHalf("<tag>")`, built into its APK by `build.sh` (which lists them, `AppHalves.kt`), told of
+  each event on its element and inside it with the event's value (the engine's dispatch,
+  `Platform::element`), and given an `Element`: its attributes and tag (`Rocx.ask`), `tell` (an event
+  with a value, which `on:<event>.value` reads, as a script's `this.value` and `dispatchEvent`),
+  `fetch` (the host's client: the app's cookies, its origin; `Rocx.fetch`, `Rocx.fetched`),
+  `reload`, and the phone's (`Phone.copy` for the clipboard, `Phone.files`). The halves live with
+  the app, beside the scripts they stand in for, as a plugin's native half sits beside its browser
+  script (DESIGN §10). `Browser.call!("clipboard.write", { text })` is the shell's own.
+- **Menus**: `popover` recommended (its light dismiss, a tap outside or back, done natively on a
+  phone, and in browsers without a script); not built yet: until an app moves to it, a
+  `<details>` menu stays open until its summary is tapped again.
+- **Small ones**: a double tap is `dblclick` after its two clicks; dark system dialogs on a dark page.
+- **Tested:** cargo tests (srcset parsing and picking, image headers and EXIF orientation,
+  cache-control, `object-position`, picked files; a summary's, a label's and a file input's
+  activation; a select's and a textarea's values; constraint validation; multipart bodies); the Mac
+  runner's `choose:` and `pick:`; the emulator against a large app's dev server: its avatars and
+  previews at their sizes and round, a video preview's frame and playing it, its header menus closed
+  until tapped, its compose form filled (a title, a caption, a select, an account ticked, a time from
+  the pickers, a radio by its label) and saved, images and a video chosen in the photo picker uploaded
+  through its halves and shown in the form, its profile picture changed, a link copied.
+- **Docs:** spike/native-apps/README.md (Controls, media and custom elements' phone halves; events;
+  gaps), DESIGN.md (§6.1, §7, §10's status), DECISIONS.md.
+
+**Why.** The browser's semantics are what the app's markup was written against: a label's tap, a
+form's validation and encoding, a select's events, `srcset`'s choice; done natively, the same
+`.rocx` works with nothing of its own for the phone. Halves in Kotlin, not Rust or Roc: what upload
+scripts do (decode an image for its size, cut a square, read a video's length, the clipboard, the
+pickers) is the platform's API, and an app's half sits with the app, beside its script, where each
+of its elements' behaviour is written twice either way (once for each platform). An element is the
+unit because a page script's work is an element's in a well-made app (a custom element), and its
+events are what the page already reads.
+
+**Costs.** An app with such elements writes their behaviour again, in Kotlin (and Swift later), and
+keeps the two in step; the dev client can't load an app's Kotlin (no halves in `rocx dev
+--android`). Images are files in the cache (on disk, no memory cap beyond the decoded LRU); within a
+run an image's URL is fetched once. The photo picker hides files' own names. Not yet: SVG and lazy
+images, `background-image: url()`, `enhanced:src`'s copies, a video's seek bar, range and colour
+inputs, multiple selects, `popover`, page scripts that aren't an element's.
+
+**Reversible:** yes: media.rs, controls.rs and the views go; the host shows text fields and
+checkboxes as before.
+
 ## D-140 Live updates on a phone: `listen!` and channels over the HTTP client's streams
 
 **Status.** Built (2026-11-28).

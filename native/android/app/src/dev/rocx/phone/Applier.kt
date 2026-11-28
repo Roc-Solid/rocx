@@ -15,10 +15,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.CheckBox
+import android.widget.CompoundButton
+import android.widget.RadioButton
+import android.text.InputFilter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
-import android.widget.ImageView
 import android.widget.ScrollView
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -177,26 +179,34 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                     override fun beforeTextChanged(text: CharSequence?, start: Int, count: Int, after: Int) {}
                     override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) {}
                     override fun afterTextChanged(text: Editable?) {
-                        if (!applying) Rocx.event(id, "input", text?.toString() ?: "")
+                        if (!applying && fieldTypes[id] !in DateFields.types) Rocx.event(id, "input", text?.toString() ?: "")
                     }
                 })
                 setOnEditorActionListener { _, _, _ ->
                     Rocx.event(id, "keydown", "Enter")
                     false
                 }
+                // D-139: `change` when it loses the focus with other text than it had, as a browser's.
                 setOnFocusChangeListener { _, focused ->
-                    if (!applying) Rocx.event(id, if (focused) "focus" else "blur", text?.toString() ?: "")
+                    if (applying) return@setOnFocusChangeListener
+                    val now = text?.toString() ?: ""
+                    if (focused) focusedWith[id] = now else if (focusedWith.remove(id).let { it != null && it != now }) Rocx.event(id, "change", now)
+                    if (focused) postDelayed({ Focus.keepInView(Rocx.screen as? ScrollView) }, 250)
+                    Rocx.event(id, if (focused) "focus" else "blur", now)
                 }
             }
-            "checkbox" -> CheckBox(context).apply {
+            "checkbox", "radio" -> (if (kind == "radio") RadioButton(context) else CheckBox(context)).apply {
                 setOnCheckedChangeListener { _, checked ->
                     if (!applying) {
                         Rocx.event(id, "click", checked.toString())
+                        Rocx.event(id, "input", checked.toString())
                         Rocx.event(id, "change", checked.toString())
                     }
                 }
             }
-            "image" -> ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_XY }
+            "select" -> SelectBox(context, density, id)
+            "image" -> ImageBox(context, density)
+            "video" -> VideoBox(context, density, id)
             "svg" -> SvgView(context)
             "layer" -> Box(context).also { layer ->
                 layer.tag = "rocx:layer"
@@ -242,18 +252,45 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         }
         when (key) {
             "text", "runs" -> if (view is TextBox) view.set(key, value)
-            "value" -> if (view is EditText && view.text.toString() != value) {
-                view.setText(value)
-                view.setSelection(value.length)
+            "value" -> when {
+                view is SelectBox -> view.option(key, value)
+                view is EditText && fieldTypes[id] in DateFields.types -> {
+                    dateValues[id] = value
+                    view.setText(if (value.isEmpty()) "" else DateFields.shown(activity, fieldTypes[id] ?: "date", value))
+                }
+                // What the app set, unless it is what is typed already: the cursor stays where it was.
+                view is EditText && view.text.toString() != value -> {
+                    val at = view.selectionEnd
+                    view.setText(value)
+                    view.setSelection(if (view.hasFocus() && at <= value.length) at else value.length)
+                }
             }
+            "options" -> if (view is SelectBox) view.option(key, value)
+            "dblclick" -> if (value == "true") doubles.add(id) else doubles.remove(id)
+            "maxlength", "readonly", "required", "autofocus", "inputmode", "enterkeyhint", "min", "max", "autocomplete", "invalid", "multiple", "appearance" -> field(id, view, key, value)
             "svg" -> if (view is SvgView) view.drawing(value)
             "placeholder" -> if (view is EditText) view.hint = value
             "disabled" -> view.isEnabled = value != "true"
-            "checked" -> if (view is CheckBox) view.isChecked = value == "true"
+            "checked" -> if (view is CompoundButton) view.isChecked = value == "true"
             "alt" -> view.contentDescription = value
-            "click" -> if (view !is EditText && view !is CheckBox) {
+            "src", "fit", "position", "natural", "poster", "controls", "muted", "loop", "autoplay" -> when (view) {
+                is ImageBox -> view.set(key, value)
+                is VideoBox -> view.set(key, value)
+            }
+            "click" -> if (view !is EditText && view !is CompoundButton && view !is SelectBox) {
                 if (value == "true") {
-                    view.setOnClickListener { if (!applying) Rocx.event(id, "click", "") }
+                    view.setOnClickListener {
+                        if (applying) return@setOnClickListener
+                        Rocx.event(id, "click", "")
+                        // A second tap soon after on a view that listens for it: `dblclick` (D-139).
+                        val now = SystemClock.uptimeMillis()
+                        if (doubles.contains(id) && now - (lastTap[id] ?: 0L) < 350L) {
+                            lastTap.remove(id)
+                            Rocx.event(id, "dblclick", "")
+                        } else {
+                            lastTap[id] = now
+                        }
+                    }
                 } else {
                     view.setOnClickListener(null)
                     view.isClickable = false
@@ -276,6 +313,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 }
             } else view.setOnScrollChangeListener(null)
             "canvas" -> CssPaint.colour(value)?.let { colour ->
+                Dialogs.dark = Color.red(colour) * 0.299 + Color.green(colour) * 0.587 + Color.blue(colour) * 0.114 < 128
                 screen.setBackgroundColor(colour)
                 activity.window.decorView.setBackgroundColor(colour)
                 // The system bars' icons dark on a light page, light on a dark one.
@@ -283,14 +321,19 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 val bars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
                 activity.window.insetsController?.setSystemBarsAppearance(if (light) bars else 0, bars)
             }
-            "type" -> if (view is EditText) view.inputType = when (value) {
-                "password" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                "email" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-                "number" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
-                "tel" -> InputType.TYPE_CLASS_PHONE
-                "url" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-                "search" -> InputType.TYPE_CLASS_TEXT
-                else -> InputType.TYPE_CLASS_TEXT
+            "type" -> if (view is EditText) {
+                val was = fieldTypes[id]
+                fieldTypes[id] = value
+                if (value in DateFields.types) {
+                    // Opened by a tap (DateFields), never typed in.
+                    view.isFocusable = false
+                    view.isClickable = true
+                    view.setOnClickListener { if (view.isEnabled) DateFields.open(activity, id, value, dateValues[id] ?: "", Pair(fieldProps[id]?.get("min"), fieldProps[id]?.get("max"))) }
+                    if (was != value) view.setText(dateValues[id]?.let { DateFields.shown(activity, value, it) } ?: "")
+                } else {
+                    view.inputType = inputType(value, fieldProps[id]?.get("inputmode"))
+                    if (value == "search") view.imeOptions = EditorInfo.IME_ACTION_SEARCH
+                }
             }
         }
     }
@@ -300,7 +343,8 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             "background", "gradient", "border", "borderStyle", "radius", "shadow", "ring", "outline" -> {
                 val paint = paintOf(view)
                 paint.set(name, value)
-                if (paint.empty && view !is EditText) view.background = null
+                // Corners alone draw nothing, but clip what is inside (an image, a box that clips).
+                if (paint.empty && !paint.hasCorners() && view !is EditText) view.background = null
             }
             "clip" -> if (view is Box) view.clip = value == "true" else (contents[id]?.let { view.clipToOutline = value == "true" })
             "opacity" -> {
@@ -365,6 +409,81 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 "right", "end" -> Gravity.END
                 else -> Gravity.START
             }
+        }
+    }
+
+    /** Each field's type, the HTML value of a date field (it shows the locale's), the text it had
+     * when it took the focus (`change` on blur), and the attributes the host set (D-139). */
+    private val fieldTypes = HashMap<Long, String>()
+    private val dateValues = HashMap<Long, String>()
+    private val focusedWith = HashMap<Long, String>()
+    private val fieldProps = HashMap<Long, HashMap<String, String>>()
+    /** Views with a `dblclick` handler, and when each was last tapped. */
+    private val doubles = HashSet<Long>()
+    private val lastTap = HashMap<Long, Long>()
+
+    /** The keyboard a field's `type` (and `inputmode`) asks for. */
+    private fun inputType(type: String, mode: String?): Int = when (mode) {
+        "numeric" -> InputType.TYPE_CLASS_NUMBER
+        "decimal" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+        "tel" -> InputType.TYPE_CLASS_PHONE
+        "email" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        "url" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        "none" -> InputType.TYPE_NULL
+        else -> when (type) {
+            "password" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            "email" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            "number" -> InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+            "tel" -> InputType.TYPE_CLASS_PHONE
+            "url" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            else -> InputType.TYPE_CLASS_TEXT
+        }
+    }
+
+    /** A field's attribute (D-139): its length, read-only, the keyboard's Enter key, autofill, its
+     * focus on arrival, the message a form that wasn't sent left beside it. */
+    private fun field(id: Long, view: View, key: String, value: String) {
+        val props = fieldProps.getOrPut(id) { HashMap() }
+        if (value.isEmpty()) props.remove(key) else props[key] = value
+        if (view is CompoundButton && key == "appearance") {
+            // `appearance: none`: the CSS paints it.
+            if (value == "none") view.buttonDrawable = null
+            return
+        }
+        if (view !is EditText) return
+        when (key) {
+            "maxlength" -> view.filters = value.toIntOrNull()?.takeIf { it >= 0 }?.let { arrayOf<InputFilter>(InputFilter.LengthFilter(it)) } ?: arrayOf()
+            "readonly" -> if (fieldTypes[id] !in DateFields.types) {
+                val readonly = value == "true"
+                view.showSoftInputOnFocus = !readonly
+                view.isCursorVisible = !readonly
+                if (readonly) view.keyListener = null else if (view.keyListener == null) view.inputType = inputType(fieldTypes[id] ?: "text", props["inputmode"])
+            }
+            "inputmode" -> if (fieldTypes[id] !in DateFields.types && kinds[id] == "input") view.inputType = inputType(fieldTypes[id] ?: "text", value.ifEmpty { null })
+            "enterkeyhint" -> view.imeOptions = when (value) {
+                "go" -> EditorInfo.IME_ACTION_GO
+                "search" -> EditorInfo.IME_ACTION_SEARCH
+                "send" -> EditorInfo.IME_ACTION_SEND
+                "next" -> EditorInfo.IME_ACTION_NEXT
+                "previous" -> EditorInfo.IME_ACTION_PREVIOUS
+                else -> EditorInfo.IME_ACTION_DONE
+            }
+            "autocomplete" -> when (value) {
+                "email" -> View.AUTOFILL_HINT_EMAIL_ADDRESS
+                "username" -> View.AUTOFILL_HINT_USERNAME
+                "current-password", "new-password" -> View.AUTOFILL_HINT_PASSWORD
+                "name" -> View.AUTOFILL_HINT_NAME
+                "tel" -> View.AUTOFILL_HINT_PHONE
+                "postal-code" -> View.AUTOFILL_HINT_POSTAL_CODE
+                else -> null
+            }?.let { view.setAutofillHints(it) }
+            "autofocus" -> if (value == "true") view.post {
+                if (view.isAttachedToWindow && view.requestFocus()) {
+                    val keyboard = activity.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    keyboard.showSoftInput(view, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                }
+            }
+            "invalid" -> view.error = value.ifEmpty { null }
         }
     }
 
@@ -497,6 +616,10 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
     private fun destroy(id: Long) {
         val view = views.remove(id) ?: return
         kinds.remove(id)
+        fieldTypes.remove(id)
+        dateValues.remove(id)
+        focusedWith.remove(id)
+        fieldProps.remove(id)
         contents.remove(id)
         (view.parent as? ViewGroup)?.removeView(view)
     }
