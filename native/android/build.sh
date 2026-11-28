@@ -14,7 +14,8 @@
 #    Android target; its static Linux objects for arm64 are Android's ELF too).
 # 3. The native host for Android (native/android with native/core), a Rust static library.
 # 4. One library, lib/arm64-v8a/libapp.so: the two linked by the NDK's clang, exporting only JNI.
-# 5. The Kotlin shell (native/android/app): kotlinc, then R8 (Kotlin's library shrunk to what is used).
+# 5. The Kotlin shell (native/android/app), with the app's phone halves of its custom elements (the
+#    Kotlin in its android/ folder, D-139): kotlinc, then R8 (Kotlin's library shrunk to what is used).
 # 6. The APK: aapt2 (the manifest), the dex and the library, zipalign, apksigner (a key of the spike's
 #    own, made once in native/android/build/).
 # 7. The app mounted once on the Mac (native/mac), which says what a phone ignores (CSS, tags).
