@@ -39,6 +39,19 @@ object Rocx {
 
     @JvmStatic external fun send(id: Long, name: String, value: String)
 
+    /** The screen's size in dp, less its system bars (D-137: media queries, viewport units, layout). */
+    @JvmStatic external fun viewport(width: Float, height: Float)
+
+    /**
+     * The host's layout measuring a text view (D-137), on the main thread while it lays a flush out:
+     * its size at a width (`mode` 0: at most `width` dp; 1: max-content; 2: min-content), in dp, as
+     * two floats' bits in a long (width high).
+     */
+    @JvmStatic fun measure(id: Long, mode: Int, width: Float): Long {
+        val (w, h) = applier?.measure(id, mode, width) ?: Pair(0f, 0f)
+        return (java.lang.Float.floatToRawIntBits(w).toLong() shl 32) or (java.lang.Float.floatToRawIntBits(h).toLong() and 0xffffffffL)
+    }
+
     /**
      * An event on a view: the handlers run, the flush, and the screen's ops applied, all before
      * this returns. A tap's time is logged (logcat, tag `rocx`).

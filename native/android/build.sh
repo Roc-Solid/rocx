@@ -3,6 +3,7 @@
 #
 #   native/android/build.sh spike/native-apps/phone-hello [--origin http://10.0.2.2:8095] [--label "Phone hello"] [--opt dev]
 #   native/android/build.sh --dev-client
+#   native/android/build.sh <app dir> --host-only   (the host and shell again, the app's last Roc kept)
 #
 # The dev client (`--dev-client`, for `rocx dev --android`): no app in it, but the host as
 # libhost.so (native/android-dev), which loads each build of an app rocx dev serves; steps 3, 5 and
@@ -31,12 +32,14 @@ origin="http://10.0.2.2:8080"
 label=""
 opt="speed"
 dev_client=""
+host_only=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --origin) origin="$2"; shift 2 ;;
         --label) label="$2"; shift 2 ;;
         --opt) opt="$2"; shift 2 ;;
         --dev-client) dev_client=1; shift ;;
+        --host-only) host_only=1; shift ;;
         -*) echo "build.sh: unknown option $1" >&2; exit 2 ;;
         *) app="$1"; shift ;;
     esac
@@ -83,7 +86,9 @@ if ! [ -d "$(rustc --print sysroot 2>/dev/null)/lib/rustlib/aarch64-linux-androi
 fi
 mkdir -p "$out"
 
-if [ -z "$dev_client" ]; then
+if [ -n "$host_only" ] && [ -f "$out/libapp-roc.a" ]; then
+    step "the app's Roc as last built (--host-only)"
+elif [ -z "$dev_client" ]; then
     # ---- 1. The app's browser copy ----
     step "rocx generate --client ($name)"
     "$repo/bin/rocx" generate --client "$out/client" "$app" >&2
@@ -121,7 +126,7 @@ cat > "$out/exports.map" <<'EOF'
 { global: JNI_OnLoad; Java_dev_rocx_phone_*; local: *; };
 EOF
 "$clang" -shared -o "$stage/lib/arm64-v8a/libapp.so" \
-    -Wl,--undefined=JNI_OnLoad -Wl,--undefined=Java_dev_rocx_phone_Rocx_start -Wl,--undefined=Java_dev_rocx_phone_Rocx_send \
+    -Wl,--undefined=JNI_OnLoad -Wl,--undefined=Java_dev_rocx_phone_Rocx_start -Wl,--undefined=Java_dev_rocx_phone_Rocx_send -Wl,--undefined=Java_dev_rocx_phone_Rocx_viewport \
     "$host" "$out/libapp-roc.a" \
     -llog -landroid -ldl -lm \
     -Wl,--gc-sections -Wl,--version-script="$out/exports.map" -Wl,-z,max-page-size=16384 -Wl,--no-undefined -Wl,--build-id=none -s
@@ -175,7 +180,7 @@ step "the app on the native host, on the Mac (what a phone ignores)"
 # Built as the APK's is (`--opt`, speed by default): the dev backend's arm64mac code can put a long
 # string literal at an address that isn't a multiple of 8, where Roc's refcounting looks for its
 # count in the wrong word and writes to read-only memory (seen on rebasing onto D-040's routes).
-"$roc" build --target=arm64mac --opt="$opt" --output="$out/libapp-mac.a" "$out/client/main.roc" >/dev/null 2>&1 || [ $? -eq 2 ]
+[ -n "$host_only" ] && [ -f "$out/libapp-mac.a" ] || "$roc" build --target=arm64mac --opt="$opt" --output="$out/libapp-mac.a" "$out/client/main.roc" >/dev/null 2>&1 || [ $? -eq 2 ]
 (cd "$repo/native" && ROCX_APP_ARCHIVE="$out/libapp-mac.a" cargo build -q -p rocx-native-mac 2>/dev/null)
 "$repo/native/target/debug/rocx-native-mac" --origin http://127.0.0.1:9 2>&1 | grep '\[Warn\]' | sed 's/^\[Warn\] /build.sh: phone: /' >&2 || true
 

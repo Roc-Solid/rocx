@@ -13,6 +13,8 @@
 pub mod abi;
 pub mod css;
 mod dom;
+pub mod layout;
+pub mod values;
 pub mod engine;
 mod hosted;
 mod fx;
@@ -52,6 +54,40 @@ pub trait Platform: Send + Sync {
     /// path in `arg` is the server's). Whether the phone has a handler by that name.
     fn call(&self, _name: &str, _arg: &str, _origin: &str) -> bool {
         false
+    }
+    /// On the main thread, while a flush is laid out (D-137): the size of text view `id` (whose
+    /// text and look the batch just applied set) at a width, in dp. The Mac's is rough
+    /// (`layout::rough_measure`); a phone's is its text engine's.
+    fn measure(&self, _id: u64, content: &layout::Content, width: layout::Width) -> (f32, f32) {
+        layout::rough_measure(content, width)
+    }
+}
+
+/// A batch of ops applied now, in the middle of a render (its views' changes, before their layout
+/// measures them).
+pub(crate) fn apply_now(ops: &[u8]) {
+    if let Some(platform) = PLATFORM.get() {
+        platform.apply(ops);
+    }
+}
+
+/// Text measured by the platform (rough without one: the tests').
+pub(crate) struct PlatformMeasurer;
+
+impl layout::Measurer for PlatformMeasurer {
+    fn measure(&mut self, id: u64, content: &layout::Content, width: layout::Width) -> (f32, f32) {
+        match PLATFORM.get() {
+            Some(platform) => platform.measure(id, content, width),
+            None => layout::rough_measure(content, width),
+        }
+    }
+}
+
+/// The screen's size in dp (the phone's, less its system bars), at start and whenever it changes
+/// (a rotation): media queries and viewport units follow, and the screen is laid out again.
+pub fn viewport(width: f32, height: f32) {
+    if native::set_viewport(width, height) && engine::started() {
+        pump();
     }
 }
 
@@ -127,6 +163,7 @@ pub fn restart(platform: Box<dyn Platform>, origin: &str, path: &str) {
 /// An event on a native view (its id, the event's name, its value), as the DOM's.
 pub fn event(id: u64, name: &str, value: &str) {
     if let Some(node) = native::node_of(id) {
+        native::note(node, name);
         engine::dispatch(node, name, value);
     }
     pump();

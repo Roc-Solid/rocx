@@ -1,63 +1,85 @@
 package dev.rocx.phone
 
 import android.content.Context
-import android.widget.LinearLayout
+import android.graphics.Canvas
+import android.graphics.Path
+import android.graphics.RectF
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 
 /**
- * A box (a `div`, a `section`…): a LinearLayout whose children's sizes can be CSS's percentages
- * and have a minimum and maximum (`width: 50%`, `max-width: 30rem`). A percentage is of the box's
- * content (its size less its padding), as CSS's is of the containing block's, and is made a
- * size once the box is measured (`onMeasure`), as androidx's percent layouts did; with no size to be
- * a percentage of (a height in a scrolling column), it is the child's own size, as CSS's `auto`.
+ * Where a view is in its parent and how big it is, in px, as the native host's layout (Taffy, in
+ * native/core) put it: the FRAME op's. A FrameLayout's params, so scroll views (FrameLayouts) take
+ * them too.
  */
-class Box(context: Context) : LinearLayout(context) {
-    /** A size as CSS gives it: dp, a percentage, or none (`auto`: filling a column, or as it is). */
-    sealed class Size {
-        data class Dp(val px: Int) : Size()
-        data class Percent(val percent: Float) : Size()
-        data class Auto(val fill: Boolean) : Size()
-    }
+class Frame(var x: Int, var y: Int, w: Int, h: Int) : FrameLayout.LayoutParams(w, h)
 
-    class Params(
-        val cssWidth: Size,
-        val cssHeight: Size,
-        val minWidth: Size?,
-        val maxWidth: Size?,
-        val minHeight: Size?,
-        val maxHeight: Size?,
-    ) : LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+/** A view's frame, if the host gave it one. */
+val View.frame: Frame? get() = layoutParams as? Frame
+
+/**
+ * A box (a `div`, a `section`…, D-137): it puts each child at the frame the host's layout gave it,
+ * and is as big as its own frame. Its paint (background, borders, corners, shadow) is a [CssPaint];
+ * with `overflow` other than visible it clips what it holds to its corners, otherwise what it holds
+ * may draw outside it, as CSS's does.
+ */
+open class Box(context: Context) : ViewGroup(context) {
+    /** The corners its children are clipped to, when it clips (`style.clip`). */
+    var clip = false
+        set(value) {
+            field = value
+            clipChildren = value
+            invalidate()
+        }
+
+    init {
+        clipChildren = false
+        clipToPadding = false
+        setWillNotDraw(false)
+    }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-        val width = if (MeasureSpec.getMode(widthSpec) == MeasureSpec.UNSPECIFIED) -1 else MeasureSpec.getSize(widthSpec) - paddingLeft - paddingRight
-        val height = if (MeasureSpec.getMode(heightSpec) == MeasureSpec.EXACTLY) MeasureSpec.getSize(heightSpec) - paddingTop - paddingBottom else -1
         for (at in 0 until childCount) {
-            val params = getChildAt(at).layoutParams as? Params ?: continue
-            params.width = resolve(params.cssWidth, width, params.leftMargin + params.rightMargin, params.minWidth, params.maxWidth)
-            params.height = resolve(params.cssHeight, height, params.topMargin + params.bottomMargin, params.minHeight, params.maxHeight)
+            val child = getChildAt(at)
+            val frame = child.frame
+            if (frame == null) {
+                child.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            } else {
+                child.measure(MeasureSpec.makeMeasureSpec(frame.width.coerceAtLeast(0), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(frame.height.coerceAtLeast(0), MeasureSpec.EXACTLY))
+            }
         }
-        super.onMeasure(widthSpec, heightSpec)
+        val own = frame
+        if (own != null) {
+            setMeasuredDimension(own.width.coerceAtLeast(0), own.height.coerceAtLeast(0))
+        } else {
+            setMeasuredDimension(MeasureSpec.getSize(widthSpec), MeasureSpec.getSize(heightSpec))
+        }
     }
 
-    private fun px(size: Size?, of: Int): Int? = when (size) {
-        is Size.Dp -> size.px
-        is Size.Percent -> if (of >= 0) (of * size.percent / 100f).toInt() else null
-        else -> null
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        for (at in 0 until childCount) {
+            val child = getChildAt(at)
+            val frame = child.frame ?: continue
+            val x = paddingLeft + frame.x
+            val y = paddingTop + frame.y
+            child.layout(x, y, x + child.measuredWidth, y + child.measuredHeight)
+        }
     }
 
-    /** A child's size in px, or MATCH_PARENT/WRAP_CONTENT; its minimum winning over its maximum, as CSS's. */
-    private fun resolve(size: Size, of: Int, margins: Int, min: Size?, max: Size?): Int {
-        val most = px(max, of)
-        val least = px(min, of)
-        val given = when (size) {
-            is Size.Auto -> if (size.fill && most != null && of >= 0) (of - margins).coerceAtLeast(0) else null
-            else -> px(size, of)
+    override fun dispatchDraw(canvas: Canvas) {
+        if (!clip) {
+            super.dispatchDraw(canvas)
+            return
         }
-        if (given == null) {
-            return if (size is Size.Auto && size.fill) LayoutParams.MATCH_PARENT else LayoutParams.WRAP_CONTENT
-        }
-        var px = given
-        if (most != null) px = px.coerceAtMost(most)
-        if (least != null) px = px.coerceAtLeast(least)
-        return px
+        val paint = background as? CssPaint
+        canvas.save()
+        canvas.clipPath(paint?.clipPath(width, height) ?: Path().apply { addRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), Path.Direction.CW) })
+        super.dispatchDraw(canvas)
+        canvas.restore()
     }
+
+    override fun shouldDelayChildPressedState(): Boolean = false
+
+    override fun generateDefaultLayoutParams(): LayoutParams = Frame(0, 0, 0, 0)
 }

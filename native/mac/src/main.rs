@@ -6,9 +6,11 @@
 //! rocx-native-mac --origin http://127.0.0.1:8095 show wait:1500 show tap:Tap show type:hello tap:Send wait:1500 show
 //! ```
 //!
-//! Steps: `show` (the screen, as an outline), `ops` (print each batch of ops as it is applied, from
-//! here on), `wait:<ms>` (let answers and timers come), `tap:<text>` (a tap on the button that
-//! says it), `type:<text>` (typing into the first field), `css` (the CSS the phone ignores).
+//! Steps: `show` (the screen, as an outline, each view's frame in it), `ops` (print each batch of
+//! ops as it is applied, from here on), `wait:<ms>` (let answers and timers come), `tap:<text>` (a
+//! tap on the button, link or other tappable view that says it), `type:<text>` (typing into the
+//! first field), `css` (the CSS the phone ignores), `width:<dp>` (the screen's width, 412 at
+//! first; a rotation), `time` (how long the last layout took).
 
 use rocx_native_core::{self as core, Level, Platform};
 use std::sync::Mutex;
@@ -65,6 +67,30 @@ fn find(kind: &str, text: Option<&str>) -> Option<u64> {
     views.into_iter().find(|(_, view)| view.kind == kind && text.is_none_or(|text| view.props.get("text").map(String::as_str) == Some(text))).map(|(id, _)| id)
 }
 
+/// The text a view shows, its children's too.
+fn said(views: &std::collections::HashMap<u64, core::native::View>, id: u64) -> String {
+    let Some(view) = views.get(&id) else { return String::new() };
+    let mut out = view.props.get("text").cloned().unwrap_or_default();
+    for child in &view.children {
+        let more = said(views, *child);
+        if !more.is_empty() {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(&more);
+        }
+    }
+    out
+}
+
+/// The tappable view (a button, a link, one with a click handler) that says `text`.
+fn tappable(text: &str) -> Option<u64> {
+    let views = core::native::shown_views();
+    let mut ids: Vec<&u64> = views.keys().collect();
+    ids.sort();
+    ids.into_iter().copied().find(|id| views[id].props.get("click").is_some_and(|click| click == "true") && said(&views, *id).trim() == text)
+}
+
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut origin = "http://127.0.0.1:8080".to_string();
@@ -74,7 +100,15 @@ fn main() {
     }
     let (sender, woken) = channel();
     let started = Instant::now();
-    core::start(Box::new(Mac { wake: Mutex::new(sender) }), &origin, "/");
+    let path = match args.iter().position(|arg| arg == "--path") {
+        Some(at) => {
+            let path = args.get(at + 1).cloned().unwrap_or_else(|| "/".into());
+            args.drain(at..(at + 2).min(args.len()));
+            path
+        }
+        None => "/".to_string(),
+    };
+    core::start(Box::new(Mac { wake: Mutex::new(sender) }), &origin, &path);
     println!("mounted in {:.1} ms", started.elapsed().as_secs_f64() * 1000.0);
     for step in args {
         let (name, value) = step.split_once(':').unwrap_or((step.as_str(), ""));
@@ -82,7 +116,7 @@ fn main() {
             "show" => print!("{}", core::native::outline()),
             "ops" => SHOW_OPS.store(true, Ordering::Relaxed),
             "wait" => settle(&woken, value.parse().unwrap_or(1000)),
-            "tap" => match find("button", Some(value)) {
+            "tap" => match tappable(value) {
                 Some(id) => {
                     println!("tap {value:?} (#{id})");
                     core::event(id, "click", "");
@@ -96,6 +130,12 @@ fn main() {
                 }
                 None => println!("no field"),
             },
+            "width" => {
+                let width: f32 = value.parse().unwrap_or(412.0);
+                core::viewport(width, 915.0);
+            }
+            "boxes" => print!("{}", core::native::boxes()),
+            "time" => println!("laid out in {:.2} ms", core::native::last_layout_ms()),
             "css" => {
                 for warning in WARNINGS.lock().unwrap().iter().filter(|warning| warning.contains("CSS")) {
                     println!("{warning}");

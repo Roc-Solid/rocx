@@ -18,6 +18,9 @@ dynamic = []
 # Roc that made it, so what a call that ends early held is freed; and, in a browser, Zig's
 # allocator for wasm.
 rocx-memory = { path = "../../web/memory" }
+# Layout (D-137): block, flex and grid, absolute and fixed boxes, as CSS has them; its parser reads a
+# grid's tracks.
+taffy = { version = "0.16", default-features = false, features = ["std", "flexbox", "grid", "block_layout", "calc", "content_size", "detailed_layout_info", "parse"] }
 
 [build-dependencies]
 cc = "1"

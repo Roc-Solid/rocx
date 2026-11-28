@@ -652,6 +652,11 @@ impl Engine {
         Sheet::Loading
     }
 
+    /// Whether an element has a handler for `event` (a tap on its view goes to it: D-137).
+    pub fn listens(&self, node: NodeId, event: &str) -> bool {
+        self.listeners.get(&node).is_some_and(|listeners| listeners.iter().any(|listener| listener.event == event))
+    }
+
     pub fn warn_once(&mut self, key: &str, message: &str) {
         if self.warned.insert(key.to_string()) {
             log(Level::Warn, message);

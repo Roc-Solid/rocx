@@ -98,6 +98,34 @@ impl Platform for Android {
         }
     }
 
+    /// Kotlin's `Rocx.measure(id, mode, width)`: the text view's size, StaticLayout's (D-137).
+    fn measure(&self, id: u64, content: &core::layout::Content, width: core::layout::Width) -> (f32, f32) {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return core::layout::rough_measure(content, width) };
+        let Ok(mut env) = vm.get_env() else { return core::layout::rough_measure(content, width) };
+        let (mode, at_most) = match width {
+            core::layout::Width::AtMost(w) => (0, w),
+            core::layout::Width::MaxContent => (1, 0.0),
+            core::layout::Width::MinContent => (2, 0.0),
+        };
+        let measured = (|| -> jni::errors::Result<i64> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let size = env.call_static_method(&class, "measure", "(JIF)J", &[JValue::Long(id as i64), JValue::Int(mode), JValue::Float(at_most)])?;
+            env.delete_local_ref(class)?;
+            size.j()
+        })();
+        match measured {
+            Ok(bits) => (f32::from_bits((bits >> 32) as u32), f32::from_bits(bits as u32)),
+            Err(why) => {
+                if env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_describe();
+                    let _ = env.exception_clear();
+                }
+                self.log(Level::Error, &format!("rocx native: measuring text failed: {why}"));
+                core::layout::rough_measure(content, width)
+            }
+        }
+    }
+
     fn log(&self, level: Level, text: &str) {
         let priority = match level {
             Level::Debug => 3,
@@ -333,6 +361,13 @@ mod ship {
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_rocx_phone_Rocx_fingerprint<'local>(env: JNIEnv<'local>, _class: JClass) -> JString<'local> {
     env.new_string(format!("{} {}", core::FINGERPRINT, core::ROC_VERSION)).unwrap_or_default()
+}
+
+/// `Rocx.viewport(width, height)`: the screen's size in dp, less its system bars (D-137), at start
+/// and whenever it changes.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_viewport(_env: JNIEnv, _class: JClass, width: jni::sys::jfloat, height: jni::sys::jfloat) {
+    core::viewport(width, height);
 }
 
 /// `Rocx.send(id, name, value)`: an event on a view, on the main thread.
