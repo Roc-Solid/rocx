@@ -275,6 +275,10 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             "canvas" -> CssPaint.colour(value)?.let { colour ->
                 screen.setBackgroundColor(colour)
                 activity.window.decorView.setBackgroundColor(colour)
+                // The system bars' icons dark on a light page, light on a dark one.
+                val light = (0.299 * Color.red(colour) + 0.587 * Color.green(colour) + 0.114 * Color.blue(colour)) > 150
+                val bars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                activity.window.insetsController?.setSystemBarsAppearance(if (light) bars else 0, bars)
             }
             "type" -> if (view is EditText) view.inputType = when (value) {
                 "password" -> InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -393,6 +397,13 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 val parent = at.parent as? View ?: break
                 if (parent is ScrollView) {
                     scroller = parent
+                    break
+                }
+                // Places are in the scroll view's content: its own place in the scroll view (the
+                // screen's padding for its system bars) isn't counted.
+                val above = parent.parent
+                if (above is ScrollView) {
+                    scroller = above
                     break
                 }
                 y += parent.top
