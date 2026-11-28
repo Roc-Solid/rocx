@@ -1413,7 +1413,11 @@ impl<'a> Projection<'a> {
                 }
                 "path" => svg::path_data(&attr("d").unwrap_or_default()),
                 "rect" => svg::rect(at("x"), at("y"), at("width"), at("height"), number("rx").or_else(|| computed.get("rx").and_then(|rx| css::length(rx, 16.0, 16.0))), number("ry")),
-                "circle" => svg::ellipse(at("cx"), at("cy"), at("r"), at("r")),
+                "circle" => {
+                    // CSS's geometry (`r: 6px`, a chart's dots) over the attribute.
+                    let r = computed.get("r").and_then(|r| css::length(r, 16.0, 16.0)).unwrap_or(at("r"));
+                    svg::ellipse(at("cx"), at("cy"), r, r)
+                }
                 "ellipse" => svg::ellipse(at("cx"), at("cy"), at("rx"), at("ry")),
                 "line" => svg::line(at("x1"), at("y1"), at("x2"), at("y2")),
                 "polyline" => svg::poly(&attr("points").unwrap_or_default(), false),
@@ -2200,6 +2204,22 @@ mod tests {
         assert_eq!(views[&three].props.get("style.color").map(String::as_str), Some("#ffff0000"), "projected again, its sibling's rule kept");
         let (two, _) = find(&views, "text", "two");
         assert_eq!(views[&two].props.get("style.background").map(String::as_str), Some("#ff00ff00"), "taken again as it was");
+    }
+
+    #[test]
+    fn scrolling_rows_and_fixed_views() {
+        use Make::*;
+        let css = "body { margin: 0; } .row { display: flex; gap: 10px; overflow-x: auto; } .card { flex: none; width: 150px; height: 40px; } .bar { position: fixed; left: 0; right: 0; bottom: 0; height: 50px; } .page { height: 2000px; }";
+        let cards: Vec<Make> = (0..5).map(|_| El("div", &[("class", "card")], vec![])).collect();
+        let views = screen(css, vec![El("div", &[("class", "row")], cards), El("div", &[("class", "page")], vec![]), El("nav", &[("class", "bar")], vec![Text("tabs")])]);
+        let (row, view) = views.iter().find(|(_, view)| view.kind == "scrollx").map(|(id, view)| (*id, view)).expect("a row that scrolls across");
+        assert_eq!(view.children.len(), 5);
+        let (frame, extent) = TREE.with(|tree| tree.borrow().frame(row)).unwrap();
+        assert_eq!(frame[2], 400.0, "as wide as the screen");
+        assert_eq!(extent[0], 5.0 * 150.0 + 4.0 * 10.0, "what it holds, wider");
+        let (bar, _) = find(&views, "text", "tabs");
+        assert!(views[&LAYER].children.contains(&bar), "a fixed view is on the screen's layer");
+        assert_eq!(frame_of(bar), Some([0.0, 750.0, 400.0, 50.0]), "at the screen's bottom, not the page's");
     }
 
     /// A page of about a thousand views: how long a render (the projection and its layout) takes.

@@ -464,7 +464,7 @@ const KNOWN: &[&str] = &[
     "font", "font-family", "font-size", "font-weight", "font-style", "font-variant-numeric", "line-height", "letter-spacing", "word-spacing", "text-align", "text-transform", "text-decoration", "text-decoration-line", "text-decoration-color", "text-decoration-style", "text-decoration-thickness", "text-underline-offset",
     "white-space", "white-space-collapse", "text-wrap", "text-wrap-mode", "text-indent", "vertical-align", "list-style", "list-style-type", "list-style-position", "content", "pointer-events", "object-fit", "hyphens",
     "clip", "clip-path",
-    "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "fill-opacity", "stroke-opacity", "text-anchor", "rx", "ry",
+    "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-dasharray", "stroke-dashoffset", "fill-opacity", "stroke-opacity", "text-anchor", "rx", "ry", "r",
 ];
 
 /// Properties a phone has no use for, or does its own way: not warned of.
@@ -473,7 +473,7 @@ const QUIET: &[&str] = &[
     "scrollbar-width", "scrollbar-color", "scrollbar-gutter", "scroll-behavior", "scroll-snap-type", "scroll-snap-align", "scroll-margin", "scroll-padding", "scroll-margin-top", "scroll-padding-top", "overscroll-behavior", "overscroll-behavior-x", "overscroll-behavior-y",
     "caret-color", "accent-color", "color-scheme", "tab-size", "text-rendering", "font-smoothing", "font-synthesis", "font-kerning", "font-optical-sizing", "font-feature-settings", "font-variation-settings", "text-size-adjust", "forced-color-adjust", "print-color-adjust",
     "contain", "content-visibility", "contain-intrinsic-size", "isolation", "container", "container-type", "container-name", "view-transition-name", "view-transition-class", "speak", "quotes", "counter-reset", "counter-increment",
-    "transform-box", "backface-visibility", "perspective", "image-rendering", "text-underline-position", "text-decoration-skip-ink", "interpolate-size", "field-sizing", "anchor-name", "position-anchor",
+    "transform-box", "backface-visibility", "vector-effect", "paint-order", "overflow-clip-margin", "box-decoration-break", "perspective", "image-rendering", "text-underline-position", "text-decoration-skip-ink", "interpolate-size", "field-sizing", "anchor-name", "position-anchor",
 ];
 
 fn one_line(text: &str) -> String {
