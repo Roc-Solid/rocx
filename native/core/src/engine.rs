@@ -8,9 +8,10 @@
 //! again once it is in. Each function here says which of runtime.js's it follows: where the two
 //! differ, the browser is right.
 //!
-//! Not here yet (spike/native-apps/README.md): hydration (a phone mounts from nothing),
-//! transitions and glides, drag and drop, `on:frame`, `on:viewport`, `<Document>`/`<Window>`
-//! handlers, `listen!` and channels, `Browser.call!`'s native handlers, keyed elements.
+//! Navigation is nav.rs's (D-138) and live updates live.rs's (D-140), each reaching in through the
+//! `pub(crate)` functions here. Not here yet (spike/native-apps/README.md): hydration (a phone mounts
+//! from nothing), transitions and glides, drag and drop, `on:frame`, `on:viewport`,
+//! `<Document>`/`<Window>` handlers, keyed elements.
 
 use crate::abi::RocErasedCallable as Callable;
 use crate::dom::{Dom, NodeId, Range};

@@ -85,6 +85,8 @@ struct Navigation {
     options: Options,
     after: Option<After>,
     first: bool,
+    /// A form's post (its answer, if not a page of the app's, isn't for the system's browser).
+    posted: bool,
     started: std::time::Instant,
 }
 
@@ -278,7 +280,7 @@ pub fn start(path: &str) {
     let url = Url::parse(&format!("{}{}", origin(), target(path))).unwrap_or_else(|| here());
     let id = engine::with(|engine| engine.next_id());
     engine::with(|engine| {
-        engine.nav.navigation = Some(Navigation { id, url: url.clone(), options: Options::default(), after: None, first: true, started: std::time::Instant::now() });
+        engine.nav.navigation = Some(Navigation { id, url: url.clone(), options: Options::default(), after: None, first: true, posted: false, started: std::time::Instant::now() });
         engine.ask(Asked::Navigation(id), "GET", url.without_hash(), document_headers(), String::new());
     });
 }
@@ -368,7 +370,7 @@ fn go(to: &str, options: Options, form: Option<Form>, after: Option<After>) {
     let id = engine::with(|engine| engine.next_id());
     let overtaken = engine::with(|engine| {
         let overtaken = engine.nav.navigation.take().and_then(|navigation| navigation.after);
-        engine.nav.navigation = Some(Navigation { id, url: url.clone(), options, after, first: false, started: std::time::Instant::now() });
+        engine.nav.navigation = Some(Navigation { id, url: url.clone(), options, after, first: false, posted: form.is_some(), started: std::time::Instant::now() });
         let mut headers = document_headers();
         let (method, body) = match form {
             Some(form) => {
@@ -453,7 +455,7 @@ pub fn answered(id: u64, result: Result<Answered, String>) {
         log(Level::Info, &format!("rocx: the first page's document in and mounted in {:.1} ms", navigation.started.elapsed().as_secs_f64() * 1000.0));
         return;
     }
-    let Navigation { url, options, after, started, .. } = navigation;
+    let Navigation { url, options, after, started, posted, .. } = navigation;
     let answer = match result {
         Ok(answer) => answer,
         Err(why) => {
@@ -484,7 +486,7 @@ pub fn answered(id: u64, result: Result<Answered, String>) {
         set_routing(false);
         // Not one of the app's pages (another site's, a file, a page of a plugin's): the system's
         // browser has it, as the browser would load it.
-        if at.origin != url.origin || answer.status < 400 {
+        if at.origin != url.origin || (answer.status < 400 && !(posted && !answer.redirected)) {
             open(&at.href());
         } else {
             log(Level::Warn, &format!("rocx: {} answered {} with what isn't one of the app's pages", at.target(), answer.status));

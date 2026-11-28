@@ -7753,3 +7753,119 @@ the colours from the data let an app's parts look as they do elsewhere in it.
 to a screen reader, as the line chart is; the legend's words are what it reads of the values.
 
 **Reversible:** yes: the component goes, and an app draws its own again.
+
+## D-138 A phone app navigates as the browser does: the page's document, its own history, a cookie jar
+
+**Status.** Built (2026-11-28).
+
+**Context.** The Android host (D-063) showed one page at its start path: `Router.navigate!` was
+logged and ignored, links did nothing, there was no back, no cookies (so no sessions), a connection
+a request, and a redirect was an answer, not a place to go. A real app starts at `/` (a landing page
+signed out, its board signed in), signs in (a form that sets a session cookie and redirects), keeps
+its members' pages behind folder middleware that redirects to `/login`, navigates by links,
+`navigate!` and query changes, and posts forms whose answers redirect. DESIGN.md's question 4
+proposed a light route check (the page's middleware, no render) for a phone's guards.
+
+**Options.**
+1. A light route check: the server runs a page's middleware for the phone and answers its status and
+   redirect; the phone renders the page and asks its reads.
+2. D-040's own way: the phone fetches the page's document, as the browser's navigation does
+   (`x-rocx-navigate: 1`), follows its redirects, and reads only what it seeds.
+3. Guards left to the reads: a page shows what its endpoints refuse (a 401), never redirected.
+
+**Decision.** 2. A navigation is runtime.js's (`navigate`, `pageFor`, `commit`, `inPlace`,
+`remakeRoot`, `refreshKept`), ported to native/core (`nav.rs`):
+
+- **Where the app is** (`Router.location!`) is a source; a level that read it once is made anew
+  (`readOnce`, D-070's branch-picking parts excepted). The query alone changing is made in place.
+- **A navigation fetches the page's document** (`accept: text/html`, `x-rocx-navigate: 1`): the server
+  runs the page's middleware, the client follows its redirect, and where it ended is the page. The
+  phone reads the document's seeds alone (`rocx-answers`, `rocx-flash`: two `<script>`s found in the
+  text, no HTML parsed), so the page's first frame asks nothing; what the navigation keeps reads
+  again what the document answered otherwise. The app's first page goes the same way (its document,
+  then the mount). A document that isn't one of the app's pages (another site's, a file), a link with
+  a `target` or `download`, `mailto:` and `tel:` open in the system.
+- **History**: the app's own (each entry its target and its scroll); Android's back goes to the entry
+  before, and at the first the activity finishes. Leave listeners (`use_before_leave!`) are asked
+  before each navigation and back.
+- **Links**: a tap on an `<a href>`, or on what has a click handler, sends `click` to that element
+  (a text view's link is a run of its own, a `ClickableSpan`: `links`, `start:end:id` runs), and the
+  engine's dispatch navigates unless a handler took the default (`.prevent`). `aria-current` as
+  runtime.js marks it.
+- **Forms**: as runtime.js sends them: a component's submissions, plain forms (D-118, D-121, D-122),
+  their redirects navigated to (D-117, D-119); a form the runtime wouldn't send (to a path no
+  endpoint has) is the browser's, so a phone posts it as a navigation, its answer the page. A
+  checkbox or radio is sent as it was tapped; Enter in a field submits its form.
+- **Sessions**: a cookie jar in native/core (`cookies.rs`: RFC 6265's storage model; `Secure` as
+  browsers have it, sent over `http://localhost`), every request's, written to the app's files.
+- **HTTP** (`http.rs`): `fetch`'s redirects (another site's handed back, not followed), keep-alive (a
+  small pool per host), timeouts, `Origin` on what isn't a GET (a server's cross-site form check),
+  and streams (D-140). Plain `http://`: the emulator reaches a dev server so; rustls waits.
+- **`Browser.call!`**: the page functions apps commonly register, done on the engine's document with
+  their browser arguments (`calls.rs`: `focus`, `click`, `reveal`, `go`, `replace_query`); a
+  platform's own handler by the name first.
+- **Tested:** cargo tests (the jar: sending, replacing, deleting, domains, `Secure`, dates, its file;
+  the URL resolver; the client: redirects, a 307's body, a closed kept connection, a stream; SSE
+  parsing; a document's seeds; the route table's pages; link marks; selectors); the Mac runner's new
+  steps (`--path`, `--files`, `link:`, `nav:`, `back`, `where`, `cookies`, `check:`, `at:`) and the
+  emulator against a large app's dev server: its landing, the dev sign-in (a form post, its 303, the
+  session cookie), the header's links to every members page and back, a query's pages in place and by
+  document, a text post composed and published (its endpoint's redirect to the new post), accounts
+  connected through the server's redirects, signing out, the app reopened still signed in, a
+  provider's sign-in opened in the system's browser, back to a long page at its scroll; phone-hello
+  and pomodoro as before.
+- **Docs:** spike/native-apps/README.md (Pages, sessions and the server; the hosted functions; the
+  runner's steps; gaps), DESIGN.md (§3, §8, §9, §13), DECISIONS.md.
+
+**Why.** The browser's way is the app's semantics: its guards, redirects and seeds are what its pages
+were written against, and the server needs nothing new (a route check would have been a second
+answer to keep in step with the page's). The document costs a render on the server, as a browser's
+navigation does; the phone parses only two scripts of it.
+
+**Costs.** A navigation's document is HTML the phone mostly doesn't read. Two engines keep the same
+navigation (runtime.js's and nav.rs), which the conformance suite (DESIGN §12) is to keep one. A
+provider's sign-in leaves for the system's browser and doesn't come back (an App Link would). No
+prefetching, focus handling or announcing of the new page yet; plain HTTP.
+
+**Reversible:** yes: nav.rs, cookies.rs and calls.rs go, and the phone shows its one page again.
+
+## D-140 Live updates on a phone: `listen!` and channels over the HTTP client's streams
+
+**Status.** Built (2026-11-28).
+
+**Context.** `listen!` (an endpoint's server-sent events), `subscribe!`, `say!` and `resync!` (the
+channels, D-020, over `/rocx/live`) were stubs on the phone that failed with why. An app's board
+listens to its org's stream to read itself again when a post's state changes; channels carry
+presence and shared state.
+
+**Options.**
+1. Polling: read the endpoints again every few seconds.
+2. The browser's own: server-sent events read by the HTTP client as they come, and runtime.js's
+   `listenTo` and `Hub` ported.
+
+**Decision.** 2 (`live.rs`, on `http::stream`):
+
+- **`listen!`**: a GET with `accept: text/event-stream`, its cookies sent, its redirects followed; each
+  event's data to the handler (`{"Event":…}`), then `"Ended"` (an `end` event), `{"Failed":…}` (cut
+  off) or `{"Refused":[status, body]}` (an answer that isn't a stream). Started in a component or a
+  computation, it stops when that goes: its socket shut from the main thread.
+- **Channels**: one stream for the app, `GET /rocx/live?tab=…&c=<url>…`; its `hello`; the set followed
+  by `subscribe` and `unsubscribe` posts naming the stream (D-057), and what is said and the resyncs in
+  one `POST /rocx/live/send` a flush; a 5xx or a drop opened again after a wait that doubles from 0.5
+  s to 30 s (a quarter added at random), starting over once a stream stayed up 10 s; no server for
+  channels, every subscriber refused. The app is one tab: its id made once a process, a new one when
+  the server says another has it (`replaced`).
+- **Tested:** SSE parsing (events across reads, a character cut between them, comments) and a stream
+  read as it comes (cargo); a large app's board on the Mac runner and the emulator heard a post made
+  and published in a browser tab (Chromium) and read itself again; the checkboxes example's channel
+  resynced, heard what curl and another runner said, and what the phone said reached the other.
+- **Docs:** spike/native-apps/README.md, DESIGN.md (§9, §13), DECISIONS.md.
+
+**Why.** The same wire as the browser's keeps the server unchanged and the semantics one; a stream
+costs a thread on the phone, idle between events.
+
+**Costs.** A thread a stream. A subscriber's next event isn't held until a handler that waited for
+the server is done (the browser's is). The streams stay open while the app is in the background, as a
+browser tab's do; Android may cut them, and they open again.
+
+**Reversible:** yes: live.rs goes, and the hosted functions are stubs again.
