@@ -2897,6 +2897,11 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
             }
         });
     }
+    // The app's page halves (D-141) see it first, as a script's capturing listener on `window`
+    // does, and may stop it or hold it (a question asked first).
+    if crate::pages::before(event, node, value) != crate::pages::Said::Go {
+        return true;
+    }
     let path = with(|engine| {
         let mut path = Vec::new();
         let mut at = Some(node);
@@ -2932,6 +2937,8 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
             crate::element_event(*at as u64 + 1, &tag, event, node as u64 + 1, value);
         }
     }
+    // Then a script's listener on `window` would have it (D-141), before what the browser does.
+    crate::pages::after(event, node, value);
     if event == "click" && !prevented {
         let (form, link) = with(|engine| {
             let submits = engine.dom.tag(node) == Some("button") && !engine.dom.attr(node, "type").is_some_and(|kind| kind.eq_ignore_ascii_case("button") || kind.eq_ignore_ascii_case("reset"));
@@ -2990,7 +2997,16 @@ fn submit_form(form: NodeId, submitter: Option<NodeId>) {
         crate::focus(&views_up(field));
         return;
     }
-    if !dispatch(form, "submit", "") {
+    if !crate::pages::with_submitter(submitter, || dispatch(form, "submit", "")) {
+        submitted(form, submitter);
+    }
+}
+
+/// A submit a page half held (D-141: a question asked first), sent on: its `submit` event (the
+/// halves pass it, `pages::work`), then, unless a handler took it, sent. Its fields were checked
+/// before it was held.
+pub(crate) fn submit_held(form: NodeId, submitter: Option<NodeId>) {
+    if !crate::pages::with_submitter(submitter, || dispatch(form, "submit", "")) {
         submitted(form, submitter);
     }
 }

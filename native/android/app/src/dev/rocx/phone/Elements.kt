@@ -51,6 +51,28 @@ class Element(val id: Long, val activity: Activity) {
     fun reload() {
         Rocx.ask("reload", "")
     }
+
+    /** It, or the nearest element above it, that a selector matches (`closest`); null for none (D-141). */
+    fun closest(selector: String): Element? = Rocx.ask("closest", "$id\n$selector").toLongOrNull()?.let { Element(it, activity) }
+
+    /** Whether a selector matches it (`matches`). */
+    fun matches(selector: String): Boolean = Rocx.ask("matches", "$id\n$selector") == "1"
+
+    /** Whether `other` is it or inside it (`contains`). */
+    fun contains(other: Element): Boolean = Rocx.ask("contains", "$id\n${other.id}") == "1"
+
+    /**
+     * An attribute set (`setAttribute`), or taken away with null (`removeAttribute`), for what the
+     * browser owns and a script changes (a `<details>`' `open`, whose `toggle` follows), not what the
+     * page renders, which renders it again (D-141).
+     */
+    fun set(name: String, value: String?) {
+        Rocx.ask("set", if (value == null) "$id\n$name" else "$id\n$name\n=$value")
+    }
+
+    override fun equals(other: Any?): Boolean = other is Element && other.id == id
+
+    override fun hashCode(): Int = id.hashCode()
 }
 
 /** What the phone has for a half beyond the page: the clipboard, a short message. */
@@ -63,6 +85,26 @@ object Phone {
     }
 
     fun say(context: Context, text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+
+    /**
+     * A question with OK and Cancel, as `confirm()` asks it (D-141): `answered(true)` for OK; Cancel,
+     * back or a tap beside it is false. Asynchronous: hold the event it is about ([PageEvent.hold]).
+     */
+    fun confirm(activity: Activity, question: String, answered: (Boolean) -> Unit) {
+        var done = false
+        val answer = { ok: Boolean ->
+            if (!done) {
+                done = true
+                answered(ok)
+            }
+        }
+        android.app.AlertDialog.Builder(activity, Dialogs.theme())
+            .setMessage(question)
+            .setPositiveButton(android.R.string.ok) { _, _ -> answer(true) }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> answer(false) }
+            .setOnDismissListener { answer(false) }
+            .show()
+    }
 
     /** The files a file input's `change` gave (`Html.File`s' JSON): each one's name, type, size and file. */
     fun files(value: String): List<Picked> = try {

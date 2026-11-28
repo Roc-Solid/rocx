@@ -194,6 +194,26 @@ impl Platform for Android {
         }
     }
 
+    /// Kotlin's `Rocx.page(hook, event, target, value, submitter, token)`: the app's page halves
+    /// (D-141); what they did with an event on its way (0 on, 1 stopped, 2 held).
+    fn page(&self, hook: &str, event: &str, target: u64, value: &str, submitter: u64, token: u64) -> u8 {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return 0 };
+        let Ok(mut env) = vm.get_env() else { return 0 };
+        let said = (|| -> jni::errors::Result<i32> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            let (hook, event, value) = (env.new_string(hook)?, env.new_string(event)?, env.new_string(value)?);
+            env.call_static_method(&class, "page", "(Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;JJ)I", &[JValue::Object(&hook), JValue::Object(&event), JValue::Long(target as i64), JValue::Object(&value), JValue::Long(submitter as i64), JValue::Long(token as i64)])?.i()
+        })();
+        match said {
+            Ok(said) => said.clamp(0, 2) as u8,
+            Err(_) => {
+                let _ = env.exception_describe();
+                let _ = env.exception_clear();
+                0
+            }
+        }
+    }
+
     /// Kotlin's `Rocx.fetched(token, status, headers, body)`: a request of the shell's answered.
     fn fetched(&self, token: u64, status: u16, headers: &str, body: &[u8]) {
         let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return };

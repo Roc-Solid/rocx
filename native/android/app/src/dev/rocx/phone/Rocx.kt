@@ -82,6 +82,9 @@ object Rocx {
         Elements.event(activity, view, tag, event, target, value)
     }
 
+    /** The app's page halves (D-141, [Pages]): 0 lets an event on, 1 stops it, 2 holds it. */
+    @JvmStatic fun page(hook: String, event: String, target: Long, value: String, submitter: Long, token: Long): Int = Pages.hook(hook, event, target, value, submitter, token)
+
     /** The screen's density, pixels a CSS px (D-139: `srcset`). */
     @JvmStatic fun density(): Float = applier?.activity?.resources?.displayMetrics?.density ?: 1f
 

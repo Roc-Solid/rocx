@@ -44,7 +44,8 @@ class RocxActivity : Activity() {
         Rocx.files(filesDir.path)
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
-                if (!Rocx.back()) finish()
+                // An app's page half first (D-141: an open menu closed, as Escape closes it).
+                if (!Pages.back() && !Rocx.back()) finish()
             }
         }
         if (Rocx.dev) {
@@ -64,7 +65,10 @@ class RocxActivity : Activity() {
         setContentView(screen)
         val origin = intent.getStringExtra("origin") ?: meta?.getString("rocx.origin") ?: "http://10.0.2.2:8080"
         // Where it opens: `/`, or the intent's `path` extra (`adb shell am start … --es path /login`).
-        Rocx.start(origin, intent.getStringExtra("path") ?: "/")
+        val path = intent.getStringExtra("path") ?: "/"
+        // The app's page halves (D-141) start before its first page is asked for.
+        Pages.start(this, origin, path)
+        Rocx.start(origin, path)
         val started = SystemClock.uptimeMillis()
         screen.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
@@ -78,7 +82,13 @@ class RocxActivity : Activity() {
 
     @Deprecated("Android 13's OnBackInvokedCallback takes it from there")
     override fun onBackPressed() {
-        if (!Rocx.back()) super.onBackPressed()
+        if (!Pages.back() && !Rocx.back()) super.onBackPressed()
+    }
+
+    /** A touch goes to what is drawn where it lands, even hanging out of its box; the app's page halves hear `pointerdown` (D-141). */
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (Touches.dispatch(this, event)) return true
+        return super.dispatchTouchEvent(event)
     }
 
     @Deprecated("the picker's result (D-139), as startActivityForResult gives it")

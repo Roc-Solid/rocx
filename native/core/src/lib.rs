@@ -27,6 +27,7 @@ pub mod native;
 pub mod live;
 pub mod media;
 pub mod nav;
+mod pages;
 pub mod roc;
 pub mod svg;
 pub mod url;
@@ -98,6 +99,15 @@ pub trait Platform: Send + Sync {
     /// On the main thread: the answer to the shell's request `token` (`fetch`), or why there is
     /// none (status 0, the reason as the body).
     fn fetched(&self, _token: u64, _status: u16, _headers: &str, _body: &[u8]) {}
+    /// On the main thread (D-141): the app's page halves (`pages.rs`; Android's: Kotlin
+    /// `PageHalf`s, `Pages.kt`), at `hook`: `before` (`event` on its way to `target`, before the
+    /// page's handlers: 0 lets it go on, 1 stops it, 2 holds it until `token` is sent on), `after`
+    /// (once the page's handlers had it), `navigated` (`value` the path the app is at now).
+    /// `submitter` is the button a `submit` was sent by (0: none). Asked only about the events the
+    /// halves named (`ask("page-events")`).
+    fn page(&self, _hook: &str, _event: &str, _target: u64, _value: &str, _submitter: u64, _token: u64) -> u8 {
+        0
+    }
     /// On the main thread, while a flush is laid out (D-137): the size of text view `id` (whose
     /// text and look the batch just applied set) at a width, in dp. The Mac's is rough
     /// (`layout::rough_measure`); a phone's is its text engine's.
@@ -159,6 +169,8 @@ pub enum Message {
     Media(u64, media::Loaded),
     /// The answer to a request of the shell's (D-139, `fetch`).
     Fetched(u64, u64, Result<http::Bytes, String>),
+    /// What a page half asked to be done next (D-141): a held event sent on, a `toggle`.
+    Page(u64, pages::Work),
 }
 
 /// The platform an app's library must be built for (core/build.rs): a dev client refuses another.
@@ -180,6 +192,18 @@ pub fn log(level: Level, text: &str) {
         Some(platform) => platform.log(level, text),
         None => eprintln!("{level:?}: {text}"),
     }
+}
+
+/// From any thread: the main thread woken, to `pump` (a page half changed the document, D-141).
+pub(crate) fn wake() {
+    if let Some(platform) = PLATFORM.get() {
+        platform.wake();
+    }
+}
+
+/// The app's page halves asked (`Platform::page`, D-141).
+pub(crate) fn page_hook(hook: &str, event: &str, target: u64, value: &str, submitter: u64, token: u64) -> u8 {
+    PLATFORM.get().map(|platform| platform.page(hook, event, target, value, submitter, token)).unwrap_or(0)
 }
 
 /// From any thread: something for the main thread, which is woken.
@@ -320,9 +344,14 @@ pub fn restart(platform: Box<dyn Platform>, origin: &str, path: &str) {
 /// What the phone's shell asks the host (D-139), on the main thread: `cookie` (the jar's `cookie`
 /// header for a URL: a video's player sends it), `attr` (`<view id>\n<name>`: an element's attribute
 /// as `=<value>`, "" when it has none, for an element's phone half), `tag` (`<view id>`: its tag),
-/// `reload` (the page asked for
-/// again where it is, a half's `location.reload()`). "" for nothing.
+/// `reload` (the page asked for again where it is, a half's `location.reload()`); a page half's
+/// (D-141, `pages::ask`): `page-events`, `path`, `cookie.read`, `cookie.write`, `query`, `closest`,
+/// `matches`, `contains`, `set`, `resume`, `drop`. "" for nothing.
 pub fn ask(what: &str, arg: &str) -> String {
+    // A page half's (D-141): where the page is, its cookies, its elements.
+    if let Some(answer) = pages::ask(what, arg) {
+        return answer;
+    }
     match what {
         "cookie" => cookies::for_request(arg, now_millis()).unwrap_or_default(),
         "attr" => {
@@ -389,6 +418,7 @@ pub fn pump() {
             Message::Heard(made, id, heard) if made == now => live::heard(id, heard),
             Message::Retry(made) if made == now => live::retry(),
             Message::Media(made, loaded) if made == now => media::loaded(loaded),
+            Message::Page(made, work) if made == now => pages::work(work),
             Message::Fetched(made, token, answer) if made == now => {
                 if let Some(platform) = PLATFORM.get() {
                     match answer {
@@ -428,6 +458,10 @@ pub fn pump() {
         platform.scroll_to(x, y);
     }
     live::reconcile();
+    // The page halves told of a navigation (D-141).
+    if engine::started() {
+        pages::after_flush();
+    }
     // `on:viewport` (D-137): what the layout found changed, told, and the screen made again (a
     // few rounds at most, as a browser's ResizeObserver loop stops).
     let told = native::viewports();

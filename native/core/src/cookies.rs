@@ -85,8 +85,22 @@ impl Jar {
     /// A `set-cookie` the server sent in answer to a request to `place`: kept, replacing one of the
     /// same name, domain and path, or deleting it when it has expired. Whether the jar changed.
     pub fn store(&mut self, place: &Place, line: &str, now_ms: u64) -> bool {
+        self.store_as(place, line, now_ms, false)
+    }
+
+    /// `document.cookie = line`, a page script's (D-141: an app's page half's): as a `set-cookie`,
+    /// but one that says `HttpOnly`, or would replace an `HttpOnly` cookie, is ignored (RFC 6265
+    /// §5.3, steps 10 and 11.2).
+    pub fn store_from_script(&mut self, place: &Place, line: &str, now_ms: u64) -> bool {
+        self.store_as(place, line, now_ms, true)
+    }
+
+    fn store_as(&mut self, place: &Place, line: &str, now_ms: u64, script: bool) -> bool {
         let Some(cookie) = Cookie::parse(place, line, now_ms) else { return false };
         let same = |each: &Cookie| each.name == cookie.name && each.domain == cookie.domain && each.path == cookie.path;
+        if script && (cookie.http_only || self.cookies.iter().any(|each| same(each) && each.http_only)) {
+            return false;
+        }
         // A cookie that isn't `Secure` can't take the place of one that is, from an insecure place.
         if !place.secure && self.cookies.iter().any(|each| each.secure && each.name == cookie.name && domain_match(&each.domain, &cookie.domain) && path_match(&cookie.path, &each.path)) {
             return false;
@@ -114,10 +128,21 @@ impl Jar {
     /// The `cookie` header for a request to `place`, if any cookie goes with it: the longest paths
     /// first, then the oldest.
     pub fn header(&mut self, place: &Place, now_ms: u64) -> Option<String> {
+        self.header_as(place, now_ms, false)
+    }
+
+    /// `document.cookie`'s value for a page at `place` (D-141): the header's cookies but the
+    /// `HttpOnly` ones, which a page's script never sees.
+    pub fn script_header(&mut self, place: &Place, now_ms: u64) -> Option<String> {
+        self.header_as(place, now_ms, true)
+    }
+
+    fn header_as(&mut self, place: &Place, now_ms: u64, script: bool) -> Option<String> {
         self.cookies.retain(|cookie| !cookie.expired(now_ms));
         let mut sent: Vec<&Cookie> = self
             .cookies
             .iter()
+            .filter(|cookie| !(script && cookie.http_only))
             .filter(|cookie| (if cookie.host_only { cookie.domain == place.host } else { domain_match(&place.host, &cookie.domain) }) && path_match(&place.path, &cookie.path) && (!cookie.secure || place.secure))
             .collect();
         if sent.is_empty() {
@@ -321,6 +346,22 @@ pub fn for_request(url: &str, now_ms: u64) -> Option<String> {
     JAR.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_or_insert_with(Jar::default).header(&place, now_ms)
 }
 
+/// `document.cookie` for a page at `url` (D-141): its cookies a script may read.
+pub fn for_script(url: &str, now_ms: u64) -> String {
+    let Some(place) = Place::of(url) else { return String::new() };
+    JAR.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_or_insert_with(Jar::default).script_header(&place, now_ms).unwrap_or_default()
+}
+
+/// `document.cookie = line` for a page at `url` (D-141), kept (and written to the jar's file).
+pub fn from_script(url: &str, line: &str, now_ms: u64) {
+    let Some(place) = Place::of(url) else { return };
+    let mut jar = JAR.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let jar = jar.get_or_insert_with(Jar::default);
+    if jar.store_from_script(&place, line, now_ms) {
+        jar.save();
+    }
+}
+
 /// The `set-cookie`s of an answer to a request to `url`, kept (and written to the jar's file).
 pub fn from_answer(url: &str, headers: &[(String, String)], now_ms: u64) {
     let Some(place) = Place::of(url) else { return };
@@ -404,6 +445,20 @@ mod tests {
         assert_eq!(http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
         assert_eq!(http_date("Sat, 29 Feb 2028 23:59:59 GMT"), Some(1_835_481_599));
         assert_eq!(http_date("tomorrow"), None);
+    }
+
+    #[test]
+    fn a_script_sees_and_sets_all_but_http_only_cookies() {
+        let at = place("http://localhost:8100/posts");
+        let mut jar = Jar::default();
+        jar.store(&at, "session=abc; Path=/; HttpOnly", NOW);
+        assert!(jar.store_from_script(&at, "zone-offset=60; Path=/; Max-Age=31536000; SameSite=Lax", NOW));
+        assert_eq!(jar.script_header(&at, NOW).as_deref(), Some("zone-offset=60"), "document.cookie hides HttpOnly ones");
+        assert_eq!(jar.header(&at, NOW).as_deref(), Some("session=abc; zone-offset=60"), "requests carry both");
+        assert!(!jar.store_from_script(&at, "session=forged; Path=/", NOW), "an HttpOnly cookie isn't replaced by a script");
+        assert!(!jar.store_from_script(&at, "other=1; Path=/; HttpOnly", NOW), "a script can't set an HttpOnly cookie");
+        assert!(jar.store_from_script(&at, "zone-offset=120; Path=/", NOW));
+        assert_eq!(jar.script_header(&at, NOW).as_deref(), Some("zone-offset=120"));
     }
 
     #[test]

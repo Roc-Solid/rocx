@@ -1844,6 +1844,23 @@ fn logical(name: &str) -> Option<String> {
     })
 }
 
+// ---- Selectors for scripts' halves (D-141) ----
+
+/// A selector list as a script reads one (`matches`, `closest`, `querySelectorAll`): an app's page
+/// halves find the page's elements with the selectors its scripts use. No pseudo-elements.
+pub struct Query(Vec<Complex>);
+
+impl Query {
+    /// None for a selector the phone can't read (or a pseudo-element's).
+    pub fn parse(text: &str) -> Option<Query> {
+        parse_list(text, &mut (0, 0, 0), false).ok().filter(|list| !list.is_empty()).map(Query)
+    }
+
+    pub fn matches<'a, E: Elem<'a>>(&self, element: E) -> bool {
+        self.0.iter().any(|complex| Matcher.complex(complex, element))
+    }
+}
+
 // ---- Compatibility for svg.rs and the projection ----
 
 /// A length in dp (CSS px): px, rem, em (of `em`), pt, and 0.

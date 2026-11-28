@@ -84,6 +84,12 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             applying = false
         }
         if (stickies.isNotEmpty()) screen.post { stick() }
+        // The field the keyboard was up for is gone (a navigation made the page anew): the keyboard
+        // goes with it, as a browser's does when the focused field is removed (D-141).
+        if (activity.currentFocus !is EditText && screen.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true) {
+            val keyboard = activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+            keyboard?.hideSoftInputFromWindow(screen.windowToken, 0)
+        }
         batches++
         // A picture of the whole page, for comparing with a browser's (`--es snapshot <ms>`: that
         // long after the second batch, to the app's external files, page.png, at twice CSS px).
@@ -95,6 +101,9 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
 
     /** The view the host's id names, if there is one (`Rocx.focus`, `Rocx.reveal`). */
     fun view(id: Long): View? = views[id]
+
+    /** Each view with its id (D-141: the element under a finger, [Pages.touched]). */
+    fun each(action: (Long, View) -> Unit) = views.forEach(action)
 
     private fun text(buffer: ByteBuffer): String {
         val bytes = ByteArray(buffer.int)

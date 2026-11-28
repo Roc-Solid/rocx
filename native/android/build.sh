@@ -14,8 +14,9 @@
 #    Android target; its static Linux objects for arm64 are Android's ELF too).
 # 3. The native host for Android (native/android with native/core), a Rust static library.
 # 4. One library, lib/arm64-v8a/libapp.so: the two linked by the NDK's clang, exporting only JNI.
-# 5. The Kotlin shell (native/android/app), with the app's phone halves of its custom elements (the
-#    Kotlin in its android/ folder, D-139): kotlinc, then R8 (Kotlin's library shrunk to what is used).
+# 5. The Kotlin shell (native/android/app), with the app's phone halves of its custom elements and
+#    of its page scripts (the Kotlin in its android/ folder, D-139, D-141): kotlinc, then R8
+#    (Kotlin's library shrunk to what is used).
 # 6. The APK: aapt2 (the manifest), the dex and the library, zipalign, apksigner (a key of the spike's
 #    own, made once in native/android/build/).
 # 7. The app mounted once on the Mac (native/mac), which says what a phone ignores (CSS, tags).
@@ -149,16 +150,23 @@ app_kt=()
 if [ -z "$dev_client" ] && [ -d "$app/android" ]; then
     while IFS= read -r file; do app_kt+=("$file"); done < <(find "$app/android" -name '*.kt' | sort)
 fi
+# Its page-wide halves (D-141: `object <Name> : PageHalf()`, for page scripts that aren't an
+# element's) are listed beside them, as appPageHalves.
 halves=""
+page_halves=""
 for file in ${app_kt[@]+"${app_kt[@]}"}; do
     pkg="$(sed -n 's/^package[[:space:]]\{1,\}\([A-Za-z0-9_.]*\).*/\1/p' "$file" | head -1)"
     for half in $(sed -n 's/^[[:space:]]*object[[:space:]]\{1,\}\([A-Za-z0-9_]*\)[[:space:]]*:[[:space:]]*ElementHalf(.*/\1/p' "$file"); do
         halves="$halves${halves:+, }${pkg:+$pkg.}$half"
     done
+    for half in $(sed -n 's/^[[:space:]]*object[[:space:]]\{1,\}\([A-Za-z0-9_]*\)[[:space:]]*:[[:space:]]*PageHalf(.*/\1/p' "$file"); do
+        page_halves="$page_halves${page_halves:+, }${pkg:+$pkg.}$half"
+    done
 done
-printf 'package dev.rocx.phone\n\n// Written by native/android/build.sh: the app'"'"'s phone halves (D-139), from its android/ folder.\ninternal val appHalves: List<ElementHalf> = listOf(%s)\n' "$halves" > "$gen/AppHalves.kt.new"
+printf 'package dev.rocx.phone\n\n// Written by native/android/build.sh: the app'"'"'s phone halves (D-139, D-141), from its android/ folder.\ninternal val appHalves: List<ElementHalf> = listOf(%s)\ninternal val appPageHalves: List<PageHalf> = listOf(%s)\n' "$halves" "$page_halves" > "$gen/AppHalves.kt.new"
 if cmp -s "$gen/AppHalves.kt.new" "$gen/AppHalves.kt"; then rm "$gen/AppHalves.kt.new"; else mv "$gen/AppHalves.kt.new" "$gen/AppHalves.kt"; fi
 [ -z "$halves" ] || step "the app's phone halves: $halves"
+[ -z "$page_halves" ] || step "the app's page halves: $page_halves"
 # Built again only when its sources, the app's halves or R8's rules changed (kotlinc's start is most
 # of a rebuild).
 if [ ! -f "$out/dex/classes.dex" ] || [ -n "$(find "$here/app/src" "$here/app/rules.pro" "$gen/AppHalves.kt" ${app_kt[@]+"${app_kt[@]}"} -newer "$out/dex/classes.dex" -print -quit)" ]; then
