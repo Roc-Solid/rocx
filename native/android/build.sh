@@ -172,6 +172,7 @@ EOF
 "$clang" -shared -o "$stage/lib/arm64-v8a/libapp.so" \
     -Wl,--undefined=JNI_OnLoad -Wl,--undefined=Java_dev_rocx_phone_Rocx_start -Wl,--undefined=Java_dev_rocx_phone_Rocx_send -Wl,--undefined=Java_dev_rocx_phone_Rocx_viewport \
     -Wl,--undefined=Java_dev_rocx_phone_Rocx_back -Wl,--undefined=Java_dev_rocx_phone_Rocx_files -Wl,--undefined=Java_dev_rocx_phone_Rocx_ask -Wl,--undefined=Java_dev_rocx_phone_Rocx_fetch \
+    -Wl,--undefined=Java_dev_rocx_phone_Rocx_tick -Wl,--undefined=Java_dev_rocx_phone_Rocx_key \
     "$host" "$out/libapp-roc.a" \
     -llog -landroid -ldl -lm \
     -Wl,--gc-sections -Wl,--version-script="$out/exports.map" -Wl,-z,max-page-size=16384 -Wl,--no-undefined -Wl,--build-id=none -s

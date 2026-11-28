@@ -44,6 +44,15 @@ object Rocx {
 
     @JvmStatic external fun send(id: Long, name: String, value: String)
 
+    /** A frame of the display (D-142, [Frames]): whether more are wanted. */
+    @JvmStatic external fun tick(frameTimeNanos: Long): Boolean
+
+    /** A hardware keyboard's key (D-142, [Keys]): whether a handler took it. */
+    @JvmStatic external fun key(id: Long, name: String, value: String): Boolean
+
+    /** The host wants the display's frames (D-142): something moves. */
+    @JvmStatic fun frames() = Frames.want()
+
     /** The screen's size in dp, less its system bars (D-137: media queries, viewport units, layout). */
     @JvmStatic external fun viewport(width: Float, height: Float)
 

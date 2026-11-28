@@ -91,6 +91,12 @@ class RocxActivity : Activity() {
         return super.dispatchTouchEvent(event)
     }
 
+    /** A hardware keyboard's keys go to the page as a browser's do (D-142). */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (Keys.dispatch(this, event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     @Deprecated("the picker's result (D-139), as startActivityForResult gives it")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
         if (!Picker.result(this, requestCode, resultCode, data)) super.onActivityResult(requestCode, resultCode, data)

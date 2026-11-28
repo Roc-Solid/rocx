@@ -32,6 +32,11 @@ import kotlin.math.roundToInt
  * tapped on its own: the tap goes to that element (`k`), as a click on it in a browser.
  */
 open class TextBox(context: Context, private val density: Float) : View(context) {
+    companion object {
+        /** The host's keys that are the view's paint, not its text's (the applier's `style`). */
+        private val PAINT_ONLY = setOf("style.background", "style.gradient", "style.border", "style.borderStyle", "style.radius", "style.shadow", "style.ring", "style.outline", "style.opacity", "style.transform", "style.visibility", "style.clip", "style.sticky", "style.untouchable")
+    }
+
     /** Each property the host set (`text`, `runs`, `style.fontSize`…). */
     val props = HashMap<String, String>()
     private var spanned: CharSequence? = null
@@ -43,6 +48,17 @@ open class TextBox(context: Context, private val density: Float) : View(context)
     /** The host changed a property: the text is styled again on its next use. */
     fun set(key: String, value: String) {
         if (value.isEmpty()) props.remove(key) else props[key] = value
+        // What doesn't change the text's layout (D-142: a colour or a paint that moves each frame)
+        // keeps it: the paint is set again, or nothing is.
+        if (key in PAINT_ONLY) {
+            invalidate()
+            return
+        }
+        if (key == "style.color" && laid != null) {
+            paint.color = CssPaint.colour(value) ?: Color.BLACK
+            invalidate()
+            return
+        }
         spanned = null
         laid = null
         if (key == "text") contentDescription = value.replace("\uFFFC", "")

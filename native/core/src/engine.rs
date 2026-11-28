@@ -9,9 +9,9 @@
 //! differ, the browser is right.
 //!
 //! Navigation is nav.rs's (D-138) and live updates live.rs's (D-140), each reaching in through the
-//! `pub(crate)` functions here. Not here yet (spike/native-apps/README.md): hydration (a phone mounts
-//! from nothing), transitions and glides, drag and drop, `on:frame`, `on:viewport`,
-//! `<Document>`/`<Window>` handlers, keyed elements.
+//! `pub(crate)` functions here. Roc's transition directives, glides' keys, `on:frame` and the
+//! keyboard's keys (D-142) are here as runtime.js has them; what moves on the screen is motion.rs's.
+//! Not here yet (spike/native-apps/README.md): hydration (a phone mounts from nothing), drag and drop.
 
 use crate::abi::RocErasedCallable as Callable;
 use crate::dom::{Dom, NodeId, Range};
@@ -41,6 +41,10 @@ pub enum CompKind {
     Reaction,
     Component,
     Boundary,
+    /// `transition:…={…}` computed (`tro`, D-142): its run answers the transition.
+    Motion,
+    /// `key={…}` computed (`ko`): its run answers the element's name on the page.
+    Key,
 }
 
 /// What a computation reads: a signal, a memo, a memo's pending state (`is_pending!`), a row's
@@ -333,6 +337,145 @@ struct Listener {
     owner: Option<u64>,
 }
 
+/// Roc's transition directives on an element (D-142, runtime.js's `transitions`): what it plays as
+/// it comes (`transition:in`), as it goes (`transition:out`; `transition={…}` both), and how it
+/// moves (`transition:move`).
+#[derive(Clone, Default, Debug)]
+pub struct Own {
+    pub enter: Option<Spec>,
+    pub leave: Option<Spec>,
+    pub glide: Option<Spec>,
+}
+
+/// A `Transition` as `Transition.json` writes it: the element's style while hidden, its pace.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spec {
+    pub hidden: Vec<(String, String)>,
+    pub ms: f64,
+    pub delay: f64,
+    pub easing: String,
+    pub origin: String,
+}
+
+impl Spec {
+    fn of(value: &Value) -> Spec {
+        let hidden = value
+            .get("h")
+            .and_then(Value::as_array)
+            .map(|pairs| pairs.iter().filter_map(|pair| Some((pair.as_array()?.first()?.as_str()?.to_string(), pair.as_array()?.get(1)?.as_str()?.to_string()))).collect())
+            .unwrap_or_default();
+        let number = |name: &str| value.get(name).and_then(Value::as_u64).map(|n| n as f64);
+        let text = |name: &str| value.get(name).and_then(Value::as_str).unwrap_or("").to_string();
+        Spec { hidden, ms: number("ms").unwrap_or(200.0), delay: number("delay").unwrap_or(0.0), easing: text("easing"), origin: text("origin") }
+    }
+
+    /// Its hidden style as declarations over the element's own: its origin too.
+    pub fn declarations(&self) -> Vec<(String, String)> {
+        let mut out = self.hidden.clone();
+        if !self.origin.is_empty() {
+            out.push(("transform-origin".into(), self.origin.clone()));
+        }
+        out
+    }
+}
+
+/// A part on its way out (`leave`): its range, kept where it was until the transitions out of the
+/// elements in it are over (`left`), and those elements.
+pub struct Leaving {
+    pub range: Range,
+    pub outs: Vec<NodeId>,
+    /// Whether the render has started its animations.
+    pub started: bool,
+}
+
+/// A key's event as the phone sends it (D-142): runtime.js's `keysOf` (`<shift><ctrl><alt><meta>
+/// <mod>`, each `1` or `0`, then the key, as `KeyboardEvent.key` names it), a tab and the key's
+/// `code` (`KeyK`); or the key alone (the soft keyboard's Enter in a field).
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeyPress {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub meta: bool,
+    pub key: String,
+    pub code: String,
+}
+
+impl KeyPress {
+    pub fn of(value: &str) -> KeyPress {
+        let (head, code) = value.split_once('\t').unwrap_or((value, ""));
+        let flags: Vec<char> = head.chars().take(5).collect();
+        if head.len() > 5 && flags.len() == 5 && flags.iter().all(|flag| matches!(flag, '0' | '1')) {
+            let on = |at: usize| flags[at] == '1';
+            return KeyPress { shift: on(0), ctrl: on(1), alt: on(2), meta: on(3), key: head[5..].to_string(), code: code.to_string() };
+        }
+        KeyPress { shift: false, ctrl: false, alt: false, meta: false, key: head.to_string(), code: code.to_string() }
+    }
+
+    /// As `.keys` gives it to Roc (`keysOf`): the flags, Mod (Ctrl on a phone, as on Linux and
+    /// Windows) last, then the key.
+    pub fn keys(&self) -> String {
+        let flag = |on: bool| if on { '1' } else { '0' };
+        format!("{}{}{}{}{}{}", flag(self.shift), flag(self.ctrl), flag(self.alt), flag(self.meta), flag(self.ctrl), self.key)
+    }
+
+    /// Whether it is the key a handler is for (`Enter`, `Shift+Enter`, `Mod+K`), with exactly those
+    /// modifier keys held (runtime.js's `keyCombo`): a letter or digit in either case, or the key in
+    /// its place (`code`) where the layout types something else.
+    pub fn matches(&self, wanted: &str) -> bool {
+        let mut parts: Vec<&str> = wanted.split('+').collect();
+        let key = if wanted.ends_with("++") || wanted == "+" {
+            parts.retain(|part| !part.is_empty());
+            "+"
+        } else {
+            parts.pop().unwrap_or("")
+        };
+        let held: Vec<&str> = parts.iter().map(|name| if *name == "Mod" { "Ctrl" } else { *name }).collect();
+        let single = key.len() == 1 && key.chars().all(|c| c.is_ascii_alphanumeric());
+        let same_key = if single {
+            if self.key.len() == 1 && self.key.chars().all(|c| c.is_ascii_alphanumeric()) {
+                self.key.eq_ignore_ascii_case(key)
+            } else {
+                let code = if key.chars().all(|c| c.is_ascii_digit()) { format!("Digit{key}") } else { format!("Key{}", key.to_ascii_uppercase()) };
+                self.code == code
+            }
+        } else {
+            self.key == key
+        };
+        if !same_key {
+            return false;
+        }
+        [("Shift", self.shift), ("Ctrl", self.ctrl), ("Alt", self.alt), ("Meta", self.meta)].iter().all(|(name, on)| {
+            let own = match *name {
+                "Ctrl" => "Control",
+                other => other,
+            };
+            key == own || *on == held.contains(name)
+        })
+    }
+}
+
+/// `on:frame`'s handler (D-142): run each frame of the display while its element is on the page.
+struct FrameListener {
+    element: NodeId,
+    runner: u64,
+    scope: Scope,
+    owner: Option<u64>,
+    shown: bool,
+    last: Option<f64>,
+}
+
+/// A `<Document>`'s or `<Window>`'s handler (D-142, runtime.js's `listenOn`): the events no element
+/// stopped, after the page's own.
+struct DocumentListener {
+    event: String,
+    kind: String,
+    runner: u64,
+    wanted: Option<String>,
+    scope: Scope,
+    owner: Option<u64>,
+}
+
 struct Timer {
     repeat: bool,
     scope: Scope,
@@ -505,6 +648,25 @@ pub struct Engine {
     templates: Vec<Option<Rc<Template>>>,
     /// A request to send: made in a run, sent once the engine is let go of (`send_requests`).
     outbox: Vec<(u64, String, String, Vec<(String, String)>, String)>,
+    /// Roc's transition directives by element (D-142), and whether any comes or goes with one.
+    pub motions: HashMap<NodeId, Own>,
+    animates: bool,
+    /// Each element's name on the page (`key={…}`), for a glide between two lists.
+    pub keys: HashMap<NodeId, String>,
+    /// Elements whose transition in plays once this flush is on the screen.
+    pub entering: Vec<NodeId>,
+    /// Parts on their way out, by token.
+    pub leaving: HashMap<u64, Leaving>,
+    /// The ranges of the parts a walk for transitions passes over (a <Show>'s, a <For>'s, one
+    /// leaving), by their start: their end.
+    parts: HashMap<NodeId, NodeId>,
+    /// While a leaving part is disposed: what is in it stays on the page, to go with it.
+    keeping: bool,
+    /// Whether this flush changed the page's structure (a row came, went or moved; a part switched;
+    /// markup made anew): what glides is measured against the last render (D-031).
+    pub moved: bool,
+    frames: Vec<FrameListener>,
+    documents: Vec<DocumentListener>,
 }
 
 thread_local! {
@@ -584,6 +746,16 @@ pub fn init(origin: String, path: String) {
             template_ids: HashMap::default(),
             templates: vec![None],
             outbox: Vec::new(),
+            motions: HashMap::default(),
+            animates: false,
+            keys: HashMap::default(),
+            entering: Vec::new(),
+            leaving: HashMap::default(),
+            parts: HashMap::default(),
+            keeping: false,
+            moved: false,
+            frames: Vec::new(),
+            documents: Vec::new(),
         })
     });
 }
@@ -1106,6 +1278,17 @@ fn settle(id: u64, out: String) {
             let entries = json::parse(&out).and_then(Value::into_array).unwrap_or_default();
             settle_for(id, entries)
         }
+        // D-142: a computed transition, or key.
+        CompKind::Motion | CompKind::Key => {
+            let Target::Node(node) = target else { return };
+            let value = json::parse(&out).unwrap_or(Value::Null);
+            if kind == CompKind::Key {
+                with(|engine| engine.keys.insert(node, value.as_str().unwrap_or("").to_string()));
+            } else {
+                let spec = value.as_str().and_then(json::parse).unwrap_or(value);
+                set_transition(node, &name, &spec);
+            }
+        }
         CompKind::Text | CompKind::Attr | CompKind::Optional | CompKind::Style | CompKind::Flag | CompKind::Class => {
             let Target::Node(node) = target else { return };
             let value = json::parse(&out).unwrap_or(Value::Null);
@@ -1154,6 +1337,8 @@ fn settle(id: u64, out: String) {
                 other => other,
             };
             let Target::Range(range) = target else { return };
+            // Markup made anew moves what is around it: what glides, measured (D-031).
+            with(|engine| engine.moved = true);
             let scope = with(|engine| engine.comps.get(&id).map(|comp| comp.scope.clone()).unwrap_or_default());
             let fragment = with(|engine| engine.dom.fragment());
             for node in &nodes {
@@ -1791,12 +1976,43 @@ fn settle_show(id: u64, answer: String) {
         if comp.holds.as_deref() == Some(answer.as_str()) {
             return None;
         }
+        let first = comp.holds.is_none();
         comp.holds = Some(answer);
         let Target::Range(range) = comp.target else { return None };
-        Some((comp.part.take(), comp.node.clone()?, range, comp.scope.clone()))
+        Some((comp.part.take(), comp.node.clone()?, range, comp.scope.clone(), first))
     });
-    let Some((old, node, range, scope)) = found else { return };
-    if let Some(old) = old {
+    let Some((old, node, mut range, scope, first)) = found else { return };
+    with(|engine| {
+        engine.parts.insert(range.start, range.end);
+        // What it showed switching moves what is around it (D-031); its first time, nothing.
+        if !first {
+            engine.moved = true;
+        }
+    });
+    // What it showed goes at once, or, with transitions out in it, stays (a range of its own before
+    // the <Show>'s) until they are over (D-142, runtime.js's `settleShow`).
+    let outs = if first { Vec::new() } else { transitioned(range, true) };
+    if !outs.is_empty() {
+        let going = with(|engine| {
+            let (end, start) = (engine.dom.comment(), engine.dom.comment());
+            if let Some(parent) = engine.dom.nodes[range.end].parent {
+                engine.dom.insert_before(parent, end, Some(range.end));
+                engine.dom.insert_before(parent, start, Some(range.end));
+            }
+            let going = Range { start: range.start, end };
+            range = Range { start, end: range.end };
+            engine.parts.remove(&going.start);
+            engine.parts.insert(range.start, range.end);
+            if let Some(comp) = engine.comp(id) {
+                comp.target = Target::Range(range);
+            }
+            going
+        });
+        if let Some(old) = old {
+            keeping_inside(|| dispose(old));
+        }
+        leave(going, outs);
+    } else if let Some(old) = old {
         dispose(old);
     }
     // What it makes is a level (D-040): a read of the location once, in it, makes it anew. An `if`'s
@@ -1827,19 +2043,42 @@ fn settle_show(id: u64, answer: String) {
             comp.part = Some(made);
         }
     });
+    // What it shows now plays its transitions in, once on the screen.
+    if !first {
+        entered(range);
+    }
 }
 
 /// A <For>'s rows, from what its list says now (`settleFor`): a row whose key is still there is
 /// kept and moved, a new key gets a new row, a key that is gone takes its row and item with it.
 fn settle_for(id: u64, entries: Vec<Value>) {
-    let Some((list, range, scope, node)) = with(|engine| {
+    let Some((list, range, scope, node, later)) = with(|engine| {
         let comp = engine.comp(id)?;
+        // Rows made its first time come with the page, the row or the part it is in: no transition.
+        let later = comp.settled;
         comp.settled = true;
         let Target::Range(range) = comp.target else { return None };
-        Some((comp.list?, range, comp.scope.clone(), comp.node.clone()?))
+        let found = (comp.list?, range, comp.scope.clone(), comp.node.clone()?, later);
+        engine.parts.insert(range.start, range.end);
+        Some(found)
     }) else {
         return;
     };
+    // Rows that go, come or move change the page: what glides is measured (D-031).
+    if later {
+        with(|engine| {
+            let Some(rows) = engine.lists.get(&list) else { return };
+            let changed = entries.len() != rows.rows.len()
+                || entries.iter().enumerate().any(|(index, entry)| {
+                    let key = entry.get("k").and_then(Value::as_str).unwrap_or("");
+                    rows.indexes.get(key) != Some(&(index as u64))
+                });
+            if changed {
+                engine.moved = true;
+            }
+        });
+    }
+    let mut made = Vec::new();
     let mut order = Vec::new();
     let mut seen: HashSet<String> = HashSet::with_capacity_and_hasher(entries.len(), Default::default());
     for (index, entry) in entries.iter().enumerate() {
@@ -1879,6 +2118,9 @@ fn settle_for(id: u64, entries: Vec<Value>) {
         });
         if let Some(comp) = fresh {
             run(comp);
+            if later {
+                made.push(key.clone());
+            }
         }
         if seen.insert(key.clone()) {
             order.push(key);
@@ -1897,21 +2139,21 @@ fn settle_for(id: u64, entries: Vec<Value>) {
         Some(gone)
     });
     let gone = gone.unwrap_or_default();
-    if order.is_empty() && !gone.is_empty() {
+    // Every row going at once, none leaving with a transition: the list emptied in one go.
+    let quietly = !with(|engine| engine.keeping) && gone.len() > 1 && !gone.iter().any(|key| with(|engine| engine.lists.get(&list).and_then(|list| list.rows.get(key)).map(|row| row.range)).is_some_and(|range| !transitioned(range, true).is_empty()));
+    if order.is_empty() && !gone.is_empty() && quietly {
         // Every row went: their computations disposed, then their nodes taken off at once.
         for key in &gone {
             drop_row_quietly(list, key);
         }
         with(|engine| {
             for node in engine.dom.free_inside(range) {
-                engine.listeners.remove(&node);
-                engine.values.remove(&node);
-                engine.classes.remove(&node);
+                forget_node(engine, node);
             }
         });
     } else {
         for key in gone {
-            drop_row(list, &key);
+            drop_row(list, &key, true);
         }
     }
     // The order the rows were in, for the moves below.
@@ -1976,6 +2218,12 @@ fn settle_for(id: u64, entries: Vec<Value>) {
             before = row_range.start;
         }
     });
+    // The rows that came play their transitions in (D-142).
+    for key in made {
+        if let Some(range) = with(|engine| engine.lists.get(&list).and_then(|list| list.rows.get(&key)).map(|row| row.range)) {
+            entered(range);
+        }
+    }
 }
 
 /// Which of the rows, by where each was (`None`: new), stay where they are: a longest run of them
@@ -2006,23 +2254,236 @@ fn steady(places: &[Option<usize>]) -> Vec<bool> {
     stays
 }
 
-fn drop_row(list: u64, key: &str) {
+/// A row goes (`dropRow`): at once, or (`animated`, its key gone from the list) once the transitions
+/// out of what is in it are over (D-142). Inside a part that is leaving, it stays, to go with it.
+fn drop_row(list: u64, key: &str, animated: bool) {
     let row = with(|engine| {
         let list = engine.lists.get_mut(&list)?;
         list.indexes.remove(key);
         list.rows.remove(key)
     });
     let Some(row) = row else { return };
-    dispose(row.comp);
+    let keeping = with(|engine| engine.keeping);
+    let outs = if animated && !keeping { transitioned(row.range, true) } else { Vec::new() };
+    if outs.is_empty() {
+        dispose(row.comp);
+    } else {
+        keeping_inside(|| dispose(row.comp));
+    }
+    with(|engine| engine.release_kept(row.runner));
+    if !outs.is_empty() {
+        leave(row.range, outs);
+    } else if !keeping {
+        with(|engine| free_nodes(engine, row.range));
+    }
+}
+
+/// A range's nodes let go of for good, and what named them (handlers, typed values, classes, Roc's
+/// transitions, keys).
+fn free_nodes(engine: &mut Engine, range: Range) {
+    engine.parts.remove(&range.start);
+    // Its computations disposed, nothing names its nodes but their handlers and typed values.
+    for node in engine.dom.free_range(range) {
+        forget_node(engine, node);
+    }
+}
+
+fn forget_node(engine: &mut Engine, node: NodeId) {
+    engine.listeners.remove(&node);
+    engine.values.remove(&node);
+    engine.classes.remove(&node);
+    engine.motions.remove(&node);
+    engine.keys.remove(&node);
+    engine.parts.remove(&node);
+}
+
+/// Runs `release` (disposing a part that is leaving) with what is inside it kept on the page
+/// (runtime.js's `keep`).
+fn keeping_inside(release: impl FnOnce()) {
+    let was = with(|engine| std::mem::replace(&mut engine.keeping, true));
+    release();
+    with(|engine| engine.keeping = was);
+}
+
+/// An element's transition (`way`: in, out, both or move), from the markup or a computation
+/// (runtime.js's `setTransition`).
+fn set_transition(element: NodeId, way: &str, spec: &Value) {
+    let spec = Spec::of(spec);
     with(|engine| {
-        engine.release_kept(row.runner);
-        // Its computations disposed, nothing names its nodes but their handlers and typed values.
-        for node in engine.dom.free_range(row.range) {
-            engine.listeners.remove(&node);
-            engine.values.remove(&node);
-            engine.classes.remove(&node);
+        let own = engine.motions.entry(element).or_default();
+        match way {
+            "move" => own.glide = Some(spec),
+            "in" => own.enter = Some(spec),
+            "out" => own.leave = Some(spec),
+            _ => {
+                own.enter = Some(spec.clone());
+                own.leave = Some(spec);
+            }
+        }
+        if way != "move" {
+            engine.animates = true;
         }
     });
+}
+
+/// The elements in a range with a transition in (`outs` false) or out, the <Show>s and <For>s in it
+/// passed over, as is a part already leaving: theirs play when they come or go themselves, as
+/// Svelte's transitions are local (runtime.js's `transitioned`).
+fn transitioned(range: Range, outs: bool) -> Vec<NodeId> {
+    with(|engine| {
+        let mut found = Vec::new();
+        if !engine.animates {
+            return found;
+        }
+        fn visit(engine: &Engine, first: Option<NodeId>, end: Option<NodeId>, outs: bool, found: &mut Vec<NodeId>) {
+            let mut at = first;
+            while let Some(node) = at {
+                if Some(node) == end {
+                    break;
+                }
+                if let Some(&part_end) = engine.parts.get(&node) {
+                    at = engine.dom.next_sibling(part_end);
+                    continue;
+                }
+                if engine.dom.tag(node).is_some() {
+                    let own = engine.motions.get(&node);
+                    if own.is_some_and(|own| if outs { own.leave.is_some() } else { own.enter.is_some() }) {
+                        found.push(node);
+                    }
+                    visit(engine, engine.dom.first_child(node), None, outs, found);
+                }
+                at = engine.dom.next_sibling(node);
+            }
+        }
+        visit(engine, engine.dom.next_sibling(range.start), Some(range.end), outs, &mut found);
+        found
+    })
+}
+
+/// A row or part that came: its transitions in play once this flush is on the screen.
+fn entered(range: Range) {
+    let entering = transitioned(range, false);
+    with(|engine| engine.entering.extend(entering));
+}
+
+/// A row or part going with transitions out (`outs`): it stays where it is, inert and untouchable,
+/// its holes no longer running, until they are over (`left`); then it is taken away
+/// (runtime.js's `leave`).
+fn leave(range: Range, outs: Vec<NodeId>) {
+    with(|engine| {
+        engine.parts.insert(range.start, range.end);
+        for node in engine.dom.inside(range) {
+            if engine.dom.tag(node).is_some() {
+                engine.dom.set_attr(node, "inert", "");
+                engine.dom.set_style(node, "pointer-events", "none");
+            }
+        }
+        let token = engine.id();
+        engine.leaving.insert(token, Leaving { range, outs, started: false });
+    });
+}
+
+/// A leaving part's transitions are over (or it has none to play): it is taken away.
+pub fn left(token: u64) {
+    with(|engine| {
+        if let Some(leaving) = engine.leaving.remove(&token) {
+            free_nodes(engine, leaving.range);
+        }
+    });
+}
+
+/// The parts on their way out whose animations are to start (each once): their tokens and the
+/// elements in them with a transition out.
+pub fn leaving_now() -> Vec<(u64, Vec<NodeId>)> {
+    with(|engine| {
+        let mut out = Vec::new();
+        for (token, leaving) in engine.leaving.iter_mut() {
+            if !leaving.started {
+                leaving.started = true;
+                out.push((*token, leaving.outs.clone()));
+            }
+        }
+        out.sort_by_key(|(token, _)| *token);
+        out
+    })
+}
+
+/// The part on its way out a node is in, by its token.
+pub fn leaving_token_of(node: NodeId) -> Option<u64> {
+    with(|engine| {
+        for (token, leaving) in engine.leaving.iter() {
+            let inside: HashSet<NodeId> = engine.dom.inside(leaving.range).into_iter().collect();
+            let mut at = Some(node);
+            while let Some(up) = at {
+                if inside.contains(&up) {
+                    return Some(*token);
+                }
+                at = engine.dom.nodes.get(up).and_then(|each| each.parent);
+            }
+        }
+        None
+    })
+}
+
+/// Whether a node is in a part on its way out (it plays no glide, and takes no events).
+pub fn is_leaving(engine: &Engine, node: NodeId) -> bool {
+    let mut at = Some(node);
+    while let Some(node) = at {
+        if engine.dom.attr(node, "inert").is_some() {
+            return true;
+        }
+        at = engine.dom.nodes.get(node).and_then(|node| node.parent);
+    }
+    false
+}
+
+/// `on:frame`'s handlers, each frame of the display (D-142, runtime.js's `tick`): each given the
+/// time since its last frame in whole microseconds (at most 100 ms: an app that comes back resumes,
+/// not jumps), while its element is on the page; one whose box was let go of (its owner ran again
+/// or went), or whose element left the page, stops. Whether any ran, and whether any is left.
+pub fn frame(now: f64) -> (bool, bool) {
+    let due: Vec<(u64, String, Scope, Option<u64>)> = with(|engine| {
+        let mut due = Vec::new();
+        let kept = &engine.kept;
+        let dom = &engine.dom;
+        engine.frames.retain_mut(|listener| {
+            if !kept.contains_key(&listener.runner) {
+                return false;
+            }
+            let connected = dom.connected(listener.element);
+            if listener.shown && !connected {
+                return false;
+            }
+            let ms = listener.last.map(|last| (now - last).clamp(0.0, 100.0)).unwrap_or(1000.0 / 60.0);
+            listener.last = Some(now);
+            if connected {
+                listener.shown = true;
+                due.push((listener.runner, format!("{}", (ms * 1000.0).round() as u64), listener.scope.clone(), listener.owner));
+            }
+            true
+        });
+        due
+    });
+    let ran = !due.is_empty();
+    for (runner, micros, scope, owner) in due {
+        handle(runner, micros, scope, owner, None, None);
+    }
+    (ran, with(|engine| !engine.frames.is_empty()))
+}
+
+/// The page's `<body>` (a key with no element focused goes to it, D-142), or its root.
+pub fn body() -> Option<NodeId> {
+    with(|engine| {
+        let dom = &engine.dom;
+        let html = dom.children(dom.root).find(|&child| dom.tag(child) == Some("html"));
+        let body = html.and_then(|html| dom.children(html).find(|&child| dom.tag(child) == Some("body")));
+        Some(body.unwrap_or(dom.root))
+    })
+}
+
+/// Whether anything wants the display's frames (`on:frame`).
+pub fn wants_frames() -> bool {
+    started() && with(|engine| !engine.frames.is_empty())
 }
 
 /// A row's computations disposed and its box let go of, its nodes left for its caller to take off
@@ -2041,7 +2502,7 @@ fn drop_row_quietly(list: u64, key: &str) {
 fn drop_list(list: u64) {
     let keys = with(|engine| engine.lists.get(&list).map(|list| list.rows.keys().cloned().collect::<Vec<_>>()).unwrap_or_default());
     for key in keys {
-        drop_row(list, &key);
+        drop_row(list, &key, false);
     }
     with(|engine| {
         if let Some(list) = engine.lists.get_mut(&list) {
@@ -2315,8 +2776,18 @@ pub fn build(node: &Value, owner: Option<u64>, scope: &Scope) -> NodeId {
             engine.warn_once("nh", "rocx native: a <NoHydration> is the server's, and a phone has no server render: it is empty here");
             engine.dom.fragment()
         }),
+        // `<Document on:keydown.Mod+K={…} />`, `<Window …>` (D-142, runtime.js's `listenOn`): handlers
+        // for the events that reach the page, after its elements' own, while their owner lasts.
         "listen" => with(|engine| {
-            engine.warn_once("listen", "rocx native: <Document>'s and <Window>'s handlers aren't on phones yet: ignored");
+            for attr in node.get("a").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_array) {
+                let kind = text_at(attr, 0);
+                if !matches!(kind, "on" | "onp" | "onk") {
+                    continue;
+                }
+                let runner = attr.get(2).and_then(Value::as_u64).unwrap_or(0);
+                let wanted = attr.get(3).and_then(Value::as_str).map(str::to_string);
+                engine.documents.push(DocumentListener { event: text_at(attr, 1).to_string(), kind: kind.to_string(), runner, wanted, scope: scope.clone(), owner });
+            }
             engine.dom.fragment()
         }),
         other => with(|engine| {
@@ -2612,9 +3083,26 @@ fn fill(element: NodeId, all: &[&Vec<Value>], own: &[&Vec<Value>], owner: Option
                 let runner = attr.get(2).and_then(Value::as_u64).unwrap_or(0);
                 with(|engine| engine.listeners.entry(element).or_default().push(Listener { event: "viewport".to_string(), kind: kind.to_string(), runner, wanted: None, scope: scope.clone(), owner }));
             }
-            "frame" | "tr" | "tro" | "k" | "ko" => with(|engine| {
-                engine.warn_once(&format!("attr {kind}"), &format!("rocx native: `{kind}` ({}) isn't on phones yet: ignored", attr_name(kind)));
+            // Roc's transition directives (D-142): kept by element, played as it comes, goes or moves.
+            "tr" => set_transition(element, name, attr.get(2).unwrap_or(&Value::Null)),
+            "k" => with(|engine| {
+                engine.keys.insert(element, name.to_string());
             }),
+            "tro" | "ko" => {
+                let runner = kept_box(attr.get(if kind == "ko" { 1 } else { 2 }).and_then(Value::as_u64));
+                let computed = if kind == "ko" { CompKind::Key } else { CompKind::Motion };
+                let comp = with(|engine| engine.new_comp(computed, runner, owner, scope.clone(), Target::Node(element), name));
+                let outcome = run(comp);
+                if is_static(comp, outcome) {
+                    forget(comp, owner);
+                }
+            }
+            // `on:frame` (D-142): its handler run each frame of the display while the element is on
+            // the page (`frame`).
+            "frame" => {
+                let runner = attr.get(2).and_then(Value::as_u64).unwrap_or(0);
+                with(|engine| engine.frames.push(FrameListener { element, runner, scope: scope.clone(), owner, shown: false, last: None }));
+            }
             _ => {}
         }
     }
@@ -2625,14 +3113,6 @@ fn text_at(attr: &[Value], at: usize) -> &str {
     attr.get(at).and_then(Value::as_str).unwrap_or("")
 }
 
-fn attr_name(kind: &str) -> &'static str {
-    match kind {
-        "frame" => "on:frame",
-        "view" => "on:viewport",
-        "tr" | "tro" => "transition",
-        _ => "key",
-    }
-}
 
 /// A component, run where it is rendered, once, its reads untracked (`component`).
 fn component(reference: Option<u64>, owner: Option<u64>, scope: &Scope) -> (Option<u64>, Vec<Value>) {
@@ -2859,6 +3339,10 @@ pub fn fire(node: NodeId, event: &str, value: &str) {
 }
 
 pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
+    // A part on its way out takes nothing (runtime.js makes it inert).
+    if with(|engine| engine.animates && is_leaving(engine, node)) {
+        return false;
+    }
     if event == "input" {
         with(|engine| {
             engine.values.insert(node, value.to_string());
@@ -2914,29 +3398,59 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
     // Whether a handler took what the browser would do (`.prevent`, a submit's, a key's): the
     // runtime's listener (a link's navigation, a form's sending) leaves it then.
     let mut prevented = false;
+    // A key's event (D-142): its key, its code and the modifier keys held.
+    let press = matches!(event, "keydown" | "keyup").then(|| KeyPress::of(value));
+    let heard = |listeners: Vec<(u64, Scope, Option<u64>, Option<String>, String)>, prevented: &mut bool| {
+        for (runner, scope, owner, wanted, kind) in listeners {
+            // A key's handler (`on:keydown.Enter`, `Mod+K`) runs for that key with exactly those
+            // modifier keys; `.checked`, `.data`, `.files` say what a handler is given, not which
+            // event it takes.
+            let named = wanted.as_deref().filter(|wanted| !wanted.starts_with('.'));
+            if kind != "onk"
+                && let Some(named) = named
+            {
+                let matches = match &press {
+                    Some(press) => press.matches(named),
+                    None => named == value,
+                };
+                if !matches {
+                    continue;
+                }
+            }
+            if kind == "onp" || event == "submit" || (kind != "onk" && named.is_some()) {
+                *prevented = true;
+            }
+            // What it is given: a key handler the key (`.keys`: and the modifier keys held, as
+            // runtime.js's `keysOf`); another of a key's event the field's text, as `target.value`.
+            let given = match &press {
+                Some(press) if kind == "onk" => if wanted.as_deref() == Some("keys") { press.keys() } else { press.key.clone() },
+                Some(_) => with(|engine| engine.values.get(&node).cloned().or_else(|| engine.dom.attr(node, "value").map(str::to_string)).unwrap_or_default()),
+                None => value.to_string(),
+            };
+            if with(|engine| engine.kept.contains_key(&runner)) {
+                handle(runner, given, scope, owner, None, None);
+            }
+        }
+    };
     for at in &path {
         let listeners: Vec<(u64, Scope, Option<u64>, Option<String>, String)> = with(|engine| {
             engine.listeners.get(at).map(|listeners| listeners.iter().filter(|listener| listener.event == event).map(|listener| (listener.runner, listener.scope.clone(), listener.owner, listener.wanted.clone(), listener.kind.clone())).collect()).unwrap_or_default()
         });
-        for (runner, scope, owner, wanted, kind) in listeners {
-            // A key's handler (`on:keydown.Enter`) runs for that key; `.checked`, `.data`, `.files`
-            // say what a handler is given, not which event it takes.
-            if kind != "onk" && wanted.as_deref().is_some_and(|wanted| !wanted.starts_with('.')) && wanted.as_deref() != Some(value) {
-                continue;
-            }
-            if kind == "onp" || event == "submit" || (kind != "onk" && wanted.as_deref().is_some_and(|wanted| !wanted.starts_with('.'))) {
-                prevented = true;
-            }
-            if with(|engine| engine.kept.contains_key(&runner)) {
-                handle(runner, value.to_string(), scope, owner, None, None);
-            }
-        }
+        heard(listeners, &mut prevented);
         // A custom element's phone half (D-139): told of what happens on it and inside it, as its
         // script's listeners on it are in a browser.
         if let Some(tag) = with(|engine| engine.dom.tag(*at).filter(|tag| tag.contains('-')).map(str::to_string)) {
             crate::element_event(*at as u64 + 1, &tag, event, node as u64 + 1, value);
         }
     }
+    // The document's and the window's handlers (`<Document>`, `<Window>`, D-142), after the page's
+    // elements', those whose box was let go of (their owner ran again or went) dropped.
+    let documents: Vec<(u64, Scope, Option<u64>, Option<String>, String)> = with(|engine| {
+        let kept = &engine.kept;
+        engine.documents.retain(|listener| kept.contains_key(&listener.runner));
+        engine.documents.iter().filter(|listener| listener.event == event).map(|listener| (listener.runner, listener.scope.clone(), listener.owner, listener.wanted.clone(), listener.kind.clone())).collect()
+    });
+    heard(documents, &mut prevented);
     // Then a script's listener on `window` would have it (D-141), before what the browser does.
     crate::pages::after(event, node, value);
     if event == "click" && !prevented {
@@ -2961,7 +3475,7 @@ pub fn dispatch(node: NodeId, event: &str, value: &str) -> bool {
     }
     // The keyboard's Enter in a form's field submits it, as a browser's implicit submission does
     // (the form has a submit button, or this is its one field).
-    if event == "keydown" && value == "Enter" && !prevented {
+    if event == "keydown" && press.as_ref().is_some_and(|press| press.key == "Enter") && !prevented {
         let form = with(|engine| {
             if engine.dom.tag(node) != Some("input") {
                 return None;
@@ -4482,6 +4996,23 @@ pub fn warn(key: &str, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keys_match_as_runtime_js_matches_them() {
+        let k = KeyPress::of("01000k\tKeyK");
+        assert!(k.matches("Mod+K") && k.matches("Ctrl+k") && !k.matches("K") && !k.matches("Meta+K"));
+        assert_eq!(k.keys(), "01001k");
+        let meta = KeyPress::of("00010k\tKeyK");
+        assert!(meta.matches("Meta+K") && !meta.matches("Mod+K"));
+        let enter = KeyPress::of("Enter");
+        assert!(enter.matches("Enter") && !enter.matches("Shift+Enter"));
+        assert!(KeyPress::of("10000Enter\tEnter").matches("Shift+Enter"));
+        // A layout that types something else there: the key in its place.
+        assert!(KeyPress::of("01000л\tKeyK").matches("Mod+K"));
+        assert!(KeyPress::of("00000/\tSlash").matches("/"));
+        assert!(KeyPress::of("10000Shift\tShiftLeft").matches("Shift"), "a modifier's own key");
+        assert!(KeyPress::of("00000ArrowDown\tArrowDown").matches("ArrowDown"));
+    }
 
     #[test]
     fn a_computed_class_keeps_the_class_names_on_beside_it() {

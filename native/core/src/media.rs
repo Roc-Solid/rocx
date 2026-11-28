@@ -442,7 +442,7 @@ mod tests {
     use super::*;
     use crate::css::Media;
 
-    const PHONE: Media = Media { width: 412.0, height: 915.0, dark: false };
+    const PHONE: Media = Media { width: 412.0, height: 915.0, dark: false, reduced: false };
 
     #[test]
     fn sizes_from_headers() {

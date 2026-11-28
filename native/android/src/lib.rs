@@ -11,6 +11,9 @@
 //! - `Browser.call!`'s native half (a plugin's: `audio.play`, `vibrate.pattern`) is Kotlin's
 //!   `Rocx.call(name, arg, origin)`, on the main thread once a handler is done.
 //! - `log` goes to logcat, tagged `rocx`.
+//! - Motion (D-142): the engine asks for the display's frames (`Rocx.frames()`), and Kotlin's
+//!   Choreographer calls `Rocx.tick(frameTimeNanos)` each one until it answers false; a hardware
+//!   keyboard's keys come as `Rocx.key(id, name, value)`, answered with whether a handler took it.
 //! - Navigation (D-138): `Rocx.back()` is Android's back (the history's entry before), `Rocx.files`
 //!   says where the cookie jar is kept, and the engine asks Kotlin how far the screen is scrolled
 //!   (`Rocx.scrollX`/`scrollY`), to scroll it (`Rocx.scrollTo`), and to open what is elsewhere in
@@ -77,6 +80,21 @@ impl Platform for Android {
                 let _ = env.exception_clear();
             }
             self.log(Level::Error, &format!("rocx native: the applier failed: {why}"));
+        }
+    }
+
+    fn frames(&self) {
+        let (Some(vm), Some(rocx)) = (VM.get(), ROCX.get()) else { return };
+        let Ok(mut env) = vm.get_env() else { return };
+        let asked = (|| -> jni::errors::Result<()> {
+            let class = JClass::from(env.new_local_ref(rocx.as_obj())?);
+            env.call_static_method(&class, "frames", "()V", &[])?;
+            env.delete_local_ref(class)?;
+            Ok(())
+        })();
+        if asked.is_err() && env.exception_check().unwrap_or(false) {
+            let _ = env.exception_describe();
+            let _ = env.exception_clear();
         }
     }
 
@@ -564,6 +582,21 @@ pub extern "system" fn Java_dev_rocx_phone_Rocx_back(_env: JNIEnv, _class: JClas
 pub extern "system" fn Java_dev_rocx_phone_Rocx_send(mut env: JNIEnv, _class: JClass, id: jlong, name: JString, value: JString) {
     let (name, value) = (text(&mut env, &name), text(&mut env, &value));
     core::event(id as u64, &name, &value);
+}
+
+/// `Rocx.tick(frameTimeNanos)`: a frame of the display (D-142, Choreographer's clock); whether more
+/// are wanted.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_tick(_env: JNIEnv, _class: JClass, nanos: jlong) -> jni::sys::jboolean {
+    core::tick(nanos as f64 / 1_000_000.0) as jni::sys::jboolean
+}
+
+/// `Rocx.key(id, name, value)`: a hardware keyboard's key (D-142), `keydown` or `keyup`, on view `id`'s
+/// element (0: the focused one, else the body); whether a handler took it.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_rocx_phone_Rocx_key(mut env: JNIEnv, _class: JClass, id: jlong, name: JString, value: JString) -> jni::sys::jboolean {
+    let (name, value) = (text(&mut env, &name), text(&mut env, &value));
+    core::key(id as u64, &name, &value) as jni::sys::jboolean
 }
 
 /// `Rocx.ask(what, arg)`: what the shell asks the host (D-139), on the main thread: a URL's

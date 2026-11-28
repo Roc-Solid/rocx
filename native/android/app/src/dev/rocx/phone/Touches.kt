@@ -20,6 +20,32 @@ object Touches {
     private var forwarding: View? = null
     private val at = IntArray(2)
 
+    /**
+     * `:active` (D-142): the view a finger is down on, told to the host as pressed (`active`) once
+     * Android would show it pressed (its tap timeout, so a finger that scrolls never presses), or at
+     * once for a quick tap, and let go when the finger lifts (a moment later, so a quick tap's press
+     * is seen), cancels or moves away. The host renders it only when the page's CSS has `:active`.
+     */
+    private var pressing = 0L
+    private var pressed = false
+    private var downX = 0f
+    private var downY = 0f
+    private val press = Runnable {
+        if (pressing != 0L && !pressed) {
+            pressed = true
+            Rocx.send(pressing, "active", "1")
+        }
+    }
+
+    private fun release(view: View, later: Long) {
+        val id = pressing
+        view.removeCallbacks(press)
+        pressing = 0L
+        if (!pressed || id == 0L) return
+        pressed = false
+        if (later > 0) view.postDelayed({ Rocx.send(id, "active", "0") }, later) else Rocx.send(id, "active", "0")
+    }
+
     /** True when the activity's own dispatch is to be passed over: the gesture went where it is drawn. */
     fun dispatch(activity: Activity, event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -32,6 +58,11 @@ object Touches {
                 val y = event.y.toInt()
                 val found = hit(activity.window.decorView, x, y, ids)
                 if (Pages.hearsTouches) Pages.touched(activity, found?.let { ids[it] } ?: 0L)
+                release(activity.window.decorView, 0)
+                pressing = found?.let { ids[it] } ?: 0L
+                downX = event.x
+                downY = event.y
+                if (pressing != 0L) activity.window.decorView.postDelayed(press, android.view.ViewConfiguration.getTapTimeout().toLong())
                 if (found != null) forwarding = outside(found, x, y)
                 // A finger down off the focused field blurs it and the keyboard goes, as in a phone's
                 // browser (a tap on another field moves the focus there instead).
@@ -46,6 +77,18 @@ object Touches {
                 }
                 Rocx.say(android.util.Log.DEBUG, "touch at $x,$y: #${found?.let { ids[it] }} ${found?.javaClass?.simpleName}, forwarded to ${forwarding?.let { ids[it] ?: it.javaClass.simpleName }}")
             }
+        }
+        val decor = activity.window.decorView
+        when (event.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                val slop = android.view.ViewConfiguration.get(activity).scaledTouchSlop
+                if (pressing != 0L && (kotlin.math.abs(event.x - downX) > slop || kotlin.math.abs(event.y - downY) > slop)) release(decor, 0)
+            }
+            MotionEvent.ACTION_UP -> if (pressing != 0L) {
+                press.run()
+                release(decor, android.view.ViewConfiguration.getPressedStateDuration().toLong())
+            }
+            MotionEvent.ACTION_CANCEL -> release(decor, 0)
         }
         val view = forwarding ?: return false
         view.getLocationInWindow(at)

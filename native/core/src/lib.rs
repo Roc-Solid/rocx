@@ -26,6 +26,7 @@ mod json;
 pub mod native;
 pub mod live;
 pub mod media;
+pub mod motion;
 pub mod nav;
 mod pages;
 pub mod roc;
@@ -124,6 +125,9 @@ pub trait Platform: Send + Sync {
     fn cache_dir(&self) -> Option<String> {
         None
     }
+    /// On the main thread (D-142): something moves (an animation, `on:frame`), so the display's
+    /// frames are wanted: `tick` each one until it answers false. Called again while they are.
+    fn frames(&self) {}
 }
 
 /// A batch of ops applied now, in the middle of a render (its views' changes, before their layout
@@ -277,7 +281,28 @@ pub(crate) fn scrolled() -> (f32, f32) {
 
 /// A view focused (`Platform::focus`).
 pub(crate) fn focus(views: &[u64]) -> bool {
-    PLATFORM.get().is_some_and(|platform| platform.focus(views))
+    // Once what the flush changed is on the screen (D-142): a field the same handler showed (a
+    // palette's) has no view before the render, as a browser's `focus()` comes after the DOM change.
+    LATER.with(|later| later.borrow_mut().push((true, views.to_vec())));
+    PLATFORM.get().is_some()
+}
+
+thread_local! {
+    /// `focus` and `reveal` asked during a flush, done once its render is applied.
+    static LATER: std::cell::RefCell<Vec<(bool, Vec<u64>)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// What `focus` and `reveal` asked, done now that the render is applied.
+fn focus_later() {
+    let asked = LATER.with(|later| std::mem::take(&mut *later.borrow_mut()));
+    let Some(platform) = PLATFORM.get() else { return };
+    for (focus, views) in asked {
+        if focus {
+            platform.focus(&views);
+        } else {
+            platform.reveal(&views);
+        }
+    }
 }
 
 /// An element's phone half told of an event (`Platform::element`).
@@ -314,7 +339,8 @@ pub(crate) fn pick(view: u64, accept: &str, multiple: bool) -> bool {
 
 /// A view scrolled into view (`Platform::reveal`).
 pub(crate) fn reveal(views: &[u64]) -> bool {
-    PLATFORM.get().is_some_and(|platform| platform.reveal(views))
+    LATER.with(|later| later.borrow_mut().push((false, views.to_vec())));
+    PLATFORM.get().is_some()
 }
 
 /// `url` opened by the system (`Platform::open`).
@@ -354,6 +380,14 @@ pub fn ask(what: &str, arg: &str) -> String {
         return answer;
     }
     match what {
+        // The phone's "remove animations" (D-142): `prefers-reduced-motion: reduce`.
+        "reduced-motion" => {
+            native::set_reduced_motion(arg == "1");
+            if engine::started() {
+                pump();
+            }
+            String::new()
+        }
         "cookie" => cookies::for_request(arg, now_millis()).unwrap_or_default(),
         "attr" => {
             let Some((id, name)) = arg.split_once('\n') else { return String::new() };
@@ -377,8 +411,68 @@ pub fn ask(what: &str, arg: &str) -> String {
     }
 }
 
+/// A key of the phone's keyboard (D-142), on the main thread: `keydown` or `keyup` on view `id`'s
+/// element (0: the focused one, else the body, as a browser's `document.activeElement`), its value
+/// `<shift><ctrl><alt><meta><mod><key>\t<code>` (engine.rs's `KeyPress`). Whether a handler took it
+/// (`preventDefault`: a field doesn't type it then).
+pub fn key(id: u64, name: &str, value: &str) -> bool {
+    if !engine::started() {
+        return false;
+    }
+    let node = native::node_of(id).or_else(native::focused).or_else(engine::body);
+    let Some(node) = node else { return false };
+    let prevented = engine::dispatch(node, name, value);
+    pump();
+    prevented
+}
+
+/// A frame of the phone's display (D-142: Android's Choreographer), at `now` ms on its clock:
+/// `on:frame`'s handlers run (and what they changed is sent), then every moving view's look is.
+/// Whether more frames are wanted.
+pub fn tick(now: f64) -> bool {
+    if !engine::started() {
+        return false;
+    }
+    let (ran, _) = engine::frame(now);
+    if ran {
+        pump();
+    }
+    let (ops, events) = native::tick(now);
+    if !ops.is_empty()
+        && let Some(platform) = PLATFORM.get()
+    {
+        platform.apply(&ops);
+    }
+    let mut changed = false;
+    for (node, name, value) in events {
+        if engine::with(|engine| engine.listens(node, name)) {
+            engine::fire(node, name, &value);
+            changed = true;
+        }
+    }
+    let done = native::take_done();
+    for token in &done {
+        engine::left(*token);
+    }
+    if changed || !done.is_empty() {
+        pump();
+    }
+    native::moving() || engine::wants_frames()
+}
+
 /// An event on a native view (its id, the event's name, its value), as the DOM's.
 pub fn event(id: u64, name: &str, value: &str) {
+    // A view pressed (`active` 1) or let go (0), D-142: `:active` follows, when the page's CSS has it.
+    if name == "active" {
+        if let Some(node) = native::node_of(id)
+            && engine::started()
+            && native::styles_active()
+        {
+            native::note(node, if value == "1" { "active:1" } else { "active:0" });
+            pump();
+        }
+        return;
+    }
     // A video's player knows its size (D-139): the element's natural size from now on.
     if name == "loadedmetadata"
         && let Some(src) = native::shown_views().get(&id).and_then(|view| view.props.get("src").cloned())
@@ -452,11 +546,30 @@ pub fn pump() {
     {
         platform.apply(&ops);
     }
+    focus_later();
     // A navigation's scroll, once its views are there (D-138).
     if let Some((x, y)) = engine::with(|engine| engine.nav.scroll_to.take())
         && let Some(platform) = PLATFORM.get()
     {
         platform.scroll_to(x, y);
+    }
+    // Parts whose transitions out are over (or had none to play) are taken away (D-142).
+    let done = native::take_done();
+    if !done.is_empty() {
+        for token in done {
+            engine::left(token);
+        }
+        let depth = VIEWPORT_ROUNDS.fetch_add(1, Ordering::Relaxed);
+        if depth < 4 {
+            pump();
+        }
+        VIEWPORT_ROUNDS.fetch_sub(1, Ordering::Relaxed);
+    }
+    // Something moves: the display's frames.
+    if (native::moving() || engine::wants_frames())
+        && let Some(platform) = PLATFORM.get()
+    {
+        platform.frames();
     }
     live::reconcile();
     // The page halves told of a navigation (D-141).

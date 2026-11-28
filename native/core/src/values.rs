@@ -867,6 +867,35 @@ pub fn shadow(value: &str, current: Argb, ctx: Ctx) -> Option<String> {
     None
 }
 
+/// The first outer shadow of a `box-shadow` as `shadow` writes it, a transparent one too (an
+/// animation's keyframe, `0 0 0 8px transparent`, which moves as much as a visible one, D-142).
+pub fn shadow_any(value: &str, current: Argb, ctx: Ctx) -> Option<String> {
+    for layer in split(value, Some(',')) {
+        let words = split(&layer, None);
+        if words.iter().any(|word| word.eq_ignore_ascii_case("inset")) {
+            continue;
+        }
+        let mut lengths = Vec::new();
+        let mut color = current;
+        for word in &words {
+            match px(word, ctx) {
+                Some(px) => lengths.push(px),
+                None => {
+                    if let Some(found) = colour(word, current) {
+                        color = found;
+                    }
+                }
+            }
+        }
+        if lengths.len() < 2 {
+            continue;
+        }
+        let at = |i: usize| lengths.get(i).copied().unwrap_or(0.0);
+        return Some(format!("{:.1} {:.1} {:.1} {:.1} {}", at(0), at(1), at(2), at(3), argb(color)));
+    }
+    None
+}
+
 /// The first inset shadow of a `box-shadow`, as a ring inside the box (a border drawn with a
 /// shadow, `inset 0 0 0 2px`): `width #AARRGGBB`, its width the spread (or half its blur).
 pub fn inset_shadow(value: &str, current: Argb, ctx: Ctx) -> Option<String> {

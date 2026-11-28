@@ -63,6 +63,8 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         }
         // Sticky views keep to their edge as the page (or their scroll view) scrolls.
         screen.viewTreeObserver.addOnScrollChangedListener { stick() }
+        // Someone asked their phone for no animations (D-142): `prefers-reduced-motion: reduce`.
+        Rocx.ask("reduced-motion", if (android.animation.ValueAnimator.areAnimatorsEnabled()) "0" else "1")
         // A new applier (the dev client's next build): the last one's layer goes.
         (screen.parent as? ViewGroup)?.let { parent ->
             for (at in parent.childCount - 1 downTo 0) if (parent.getChildAt(at).tag == "rocx:layer") parent.removeViewAt(at)
@@ -102,6 +104,13 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
     /** The view the host's id names, if there is one (`Rocx.focus`, `Rocx.reveal`). */
     fun view(id: Long): View? = views[id]
 
+    /** The host's id of a view (0: none of the page's: D-142, the focused one a key goes to). */
+    fun idOf(view: View?): Long {
+        if (view == null) return 0L
+        for ((id, each) in views) if (each === view) return id
+        return 0L
+    }
+
     /** Each view with its id (D-141: the element under a finger, [Pages.touched]). */
     fun each(action: (Long, View) -> Unit) = views.forEach(action)
 
@@ -140,6 +149,10 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 8 -> {
                     val id = buffer.long
                     extent(id, buffer.float, buffer.float)
+                }
+                9 -> {
+                    val id = buffer.long
+                    moved(id, buffer.float, buffer.float, buffer.float, buffer.float)
                 }
                 else -> throw IllegalStateException("rocx: unknown op $op")
             }
@@ -279,6 +292,13 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
             }
             "options" -> if (view is SelectBox) view.option(key, value)
             "dblclick" -> if (value == "true") doubles.add(id) else doubles.remove(id)
+            // D-142: a link or a button a keyboard's Tab reaches (not a tap: Android's touch mode),
+            // its `focus` and `blur` told to the page (`:focus-visible`), Enter on it a click.
+            "focusable" -> if (view !is EditText) {
+                val on = value == "true"
+                view.isFocusable = on
+                view.onFocusChangeListener = if (on) View.OnFocusChangeListener { _, focused -> if (!applying) Rocx.event(id, if (focused) "focus" else "blur", "") } else null
+            }
             "maxlength", "readonly", "required", "autofocus", "inputmode", "enterkeyhint", "min", "max", "autocomplete", "invalid", "multiple", "appearance" -> field(id, view, key, value)
             "svg" -> if (view is SvgView) view.drawing(value)
             "placeholder" -> if (view is EditText) view.hint = value
@@ -289,6 +309,7 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 drawable.invalidateSelf()
             }
             "alt" -> view.contentDescription = value
+            "press" -> Press.on(view, value)
             "src", "fit", "position", "natural", "poster", "controls", "muted", "loop", "autoplay" -> when (view) {
                 is ImageBox -> view.set(key, value)
                 is VideoBox -> view.set(key, value)
@@ -363,12 +384,9 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 if (paint.empty && !paint.hasCorners() && view !is EditText) view.background = null
             }
             "clip" -> if (view is Box) view.clip = value == "true" else (contents[id]?.let { view.clipToOutline = value == "true" })
-            "opacity" -> {
-                val alpha = value.toFloatOrNull() ?: 1f
-                val (duration, delay) = transition(id, "opacity")
-                if (duration > 0 && view.isLaidOut) view.animate().alpha(alpha).setDuration(duration).setStartDelay(delay).start() else view.alpha = alpha
-            }
-            "transition" -> if (value.isEmpty()) transitions.remove(id) else transitions[id] = value
+            // D-142: what moves is the host's (motion.rs): each frame of an animation sets these
+            // as any change does, at once.
+            "opacity" -> view.alpha = value.toFloatOrNull() ?: 1f
             "visibility" -> view.visibility = if (value == "hidden") View.INVISIBLE else View.VISIBLE
             "transform" -> {
                 val parts = value.split(" ").mapNotNull { it.toFloatOrNull() }
@@ -376,16 +394,12 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
                 if (parts.size == 7) cssTranslationY[id] = to[1] * density else cssTranslationY.remove(id)
                 view.pivotX = to[5] * density
                 view.pivotY = to[6] * density
-                val (duration, delay) = transition(id, "transform")
-                if (duration > 0 && view.isLaidOut) {
-                    view.animate().translationX(to[0] * density).translationY(to[1] * density).scaleX(to[2]).scaleY(to[3]).rotation(to[4]).setDuration(duration).setStartDelay(delay).start()
-                } else {
-                    view.translationX = to[0] * density
-                    view.translationY = to[1] * density
-                    view.scaleX = to[2]
-                    view.scaleY = to[3]
-                    view.rotation = to[4]
-                }
+                view.translationX = to[0] * density
+                view.translationY = to[1] * density
+                view.scaleX = to[2]
+                view.scaleY = to[3]
+                view.rotation = to[4]
+                if (stickies.containsKey(id)) stick()
             }
             "inset" -> {
                 val parts = value.split(" ").mapNotNull { it.toFloatOrNull() }
@@ -516,19 +530,6 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         Rocx.say(Log.INFO, "snapshot: ${file.path} (${bitmap.width}x${bitmap.height})")
     }
 
-    /** Each view's transitions (`style.transition`: `opacity 150 0,transform 120 0`). */
-    private val transitions = HashMap<Long, String>()
-
-    /** How long a change to a view's `property` takes and waits (ms), as its transitions say. */
-    private fun transition(id: Long, property: String): Pair<Long, Long> {
-        val spec = transitions[id] ?: return Pair(0L, 0L)
-        for (item in spec.split(",")) {
-            val parts = item.split(" ")
-            if (parts.size == 3 && parts[0] == property) return Pair(parts[1].toFloat().toLong(), parts[2].toFloat().toLong())
-        }
-        return Pair(0L, 0L)
-    }
-
     /** `position: sticky` views: their edge (top or not) and its offset in dp. */
     private val stickies = HashMap<Long, Pair<Boolean, Float>>()
     /** A view's CSS translation, which a sticky one's shift adds to. */
@@ -625,6 +626,30 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
     private fun extentOf(view: View, frame: Frame) {
         frame.width = maxOf(rootFrame.first, rootExtent.first)
         frame.height = maxOf(rootFrame.second, rootExtent.second)
+    }
+
+    /**
+     * A frame mid-transition (D-142, MOVE): the view put there and laid out at once, its parent not
+     * laid out again (what the change moves around it went to its place already, at its FRAME).
+     */
+    private fun moved(id: Long, x: Float, y: Float, w: Float, h: Float) {
+        val view = views[id] ?: return
+        val frame = view.frame
+        if (frame == null) {
+            frame(id, x, y, w, h)
+            return
+        }
+        val left = px(x)
+        val top = px(y)
+        frame.x = left
+        frame.y = top
+        frame.width = (px(x + w) - left).coerceAtLeast(0)
+        frame.height = (px(y + h) - top).coerceAtLeast(0)
+        val parent = view.parent as? ViewGroup ?: return
+        view.measure(View.MeasureSpec.makeMeasureSpec(frame.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(frame.height, View.MeasureSpec.EXACTLY))
+        val at = parent.paddingLeft + left
+        val down = parent.paddingTop + top
+        view.layout(at, down, at + frame.width, down + frame.height)
     }
 
     private fun extent(id: Long, w: Float, h: Float) {
