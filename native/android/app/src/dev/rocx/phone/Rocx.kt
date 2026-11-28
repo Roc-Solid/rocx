@@ -72,6 +72,26 @@ object Rocx {
         view.invalidate()
     }
 
+    /** `Browser.call!("focus", …)`'s phone half: the first of these views there is takes the focus,
+     * a field's keyboard up. */
+    @JvmStatic fun focus(ids: LongArray): Boolean {
+        val view = ids.asList().mapNotNull { applier?.view(it) }.firstOrNull() ?: return false
+        view.isFocusableInTouchMode = true
+        view.requestFocus()
+        if (view is android.widget.EditText) {
+            val keyboard = view.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            keyboard.showSoftInput(view, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        }
+        return true
+    }
+
+    /** `Browser.call!("reveal", …)`'s: the first of these views there is scrolled into view. */
+    @JvmStatic fun reveal(ids: LongArray): Boolean {
+        val view = ids.asList().mapNotNull { applier?.view(it) }.firstOrNull() ?: return false
+        view.post { view.requestRectangleOnScreen(android.graphics.Rect(0, 0, view.width, view.height), false) }
+        return true
+    }
+
     /** What is elsewhere (another site's page, `mailto:`, `tel:`), opened by the system. */
     @JvmStatic fun open(url: String): Boolean {
         val activity = applier?.activity ?: return false

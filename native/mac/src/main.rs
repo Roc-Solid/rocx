@@ -46,6 +46,14 @@ impl Platform for Mac {
         println!("  call {name} {arg}");
         true
     }
+    fn focus(&self, views: &[u64]) -> bool {
+        println!("  focus #{}", views.first().copied().unwrap_or(0));
+        true
+    }
+    fn reveal(&self, views: &[u64]) -> bool {
+        println!("  reveal #{}", views.first().copied().unwrap_or(0));
+        true
+    }
     fn log(&self, level: Level, text: &str) {
         if level == Level::Warn {
             WARNINGS.lock().unwrap().push(text.to_string());

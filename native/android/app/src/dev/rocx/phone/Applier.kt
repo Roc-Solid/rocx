@@ -55,6 +55,9 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         }
     }
 
+    /** The view the host's id names, if there is one (`Rocx.focus`, `Rocx.reveal`). */
+    fun view(id: Long): View? = views[id]
+
     /** Each text view's link runs (`links`), applied again whenever its text changes. */
     private val links = HashMap<Long, String>()
 
