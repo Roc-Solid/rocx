@@ -601,16 +601,24 @@ class Applier(val activity: Activity, private val screen: ViewGroup) {
         frame.y = top
         frame.width = (px(x + w) - left).coerceAtLeast(0)
         frame.height = (px(y + h) - top).coerceAtLeast(0)
-        if (id == rootId) extentOf(view, frame)
+        if (id == rootId) {
+            rootFrame = Pair(frame.width, frame.height)
+            extentOf(view, frame)
+        }
         view.layoutParams = frame
         if (kinds[id] == "layer") view.layoutParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     }
 
     private var rootExtent = Pair(0, 0)
 
+    /** The root's own frame's size, as the host's layout last gave it (its extent may be bigger). */
+    private var rootFrame = Pair(0, 0)
+
+    /** The root is as big as its frame or what it holds, whichever is bigger: from its own frame each
+     * time, so a page that got shorter (a calendar's quiet days hidden) doesn't keep its old length. */
     private fun extentOf(view: View, frame: Frame) {
-        frame.width = maxOf(frame.width, rootExtent.first)
-        frame.height = maxOf(frame.height, rootExtent.second)
+        frame.width = maxOf(rootFrame.first, rootExtent.first)
+        frame.height = maxOf(rootFrame.second, rootExtent.second)
     }
 
     private fun extent(id: Long, w: Float, h: Float) {

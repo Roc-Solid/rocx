@@ -167,7 +167,8 @@ object Rocx {
      */
     @JvmStatic fun call(name: String, arg: String, origin: String): Boolean {
         val activity = applier?.activity ?: return false
-        return Calls.call(activity, name, arg, origin)
+        // The app's page halves first (D-141: its scripts' `window.rocxEffects`), then the shell's.
+        return Pages.call(name, arg) || Calls.call(activity, name, arg, origin)
     }
 
     /** The applier the screen's ops go to (the activity's, while there is one). */

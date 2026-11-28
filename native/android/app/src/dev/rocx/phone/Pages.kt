@@ -20,7 +20,9 @@ import android.util.Log
  * - [after]: one of [events] once the page's handlers had it, before what the browser does with it
  *   (a bubbling listener on `window`);
  * - [back]: Android's back, before the app's history goes back: true when the half took it (a menu
- *   closed, as Escape closes it in a browser).
+ *   closed, as Escape closes it in a browser);
+ * - [call]: `Browser.call!(name, arg)`, the page functions the app's scripts register
+ *   (`window.rocxEffects`).
  *
  * The events are the page's (`click`, `submit`, `input`, `change`, `toggle`…), and `pointerdown`: a
  * finger down anywhere on the screen, on the element under it.
@@ -38,6 +40,14 @@ abstract class PageHalf {
     open fun after(page: Page, event: PageEvent) {}
 
     open fun back(page: Page): Boolean = false
+
+    /**
+     * `Browser.call!(name, arg)`, for the page functions the app's scripts register
+     * (`window.rocxEffects`): true when the half did it. Asked before the shell's own (`Calls`) and
+     * the engine's (focus, click, reveal, go, replace_query), so an app's own comes first, as its
+     * script's does in a browser. `arg` is the call's JSON.
+     */
+    open fun call(page: Page, name: String, arg: org.json.JSONObject): Boolean = false
 }
 
 /** The page, as a page half sees it: where it is, its cookies and its elements. */
@@ -124,6 +134,18 @@ object Pages {
             }
         }
         return 0
+    }
+
+    /** `Browser.call!`'s page functions: whether a half did it. */
+    fun call(name: String, arg: String): Boolean {
+        val page = page ?: return false
+        if (halves.isEmpty()) return false
+        val json = try {
+            org.json.JSONObject(arg)
+        } catch (_: Exception) {
+            org.json.JSONObject()
+        }
+        return halves.any { half -> call(half, name) { half.call(page, name, json) } == true }
     }
 
     /** Android's back: whether a half took it. */

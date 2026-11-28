@@ -192,6 +192,12 @@ pub(crate) fn ask(what: &str, arg: &str) -> Option<String> {
             }
             engine::with(|engine| all(&engine.dom, &engine.values, &query).iter().map(|node| (node + 1).to_string()).collect::<Vec<_>>().join("\n"))
         }
+        // `element.querySelectorAll(selector)` (`<id>\n<selector>`): what is inside it that the
+        // selector finds, a line each, in the document's order.
+        "within" => node_and(arg, |dom, values, node, selector| {
+            let query = css::Query::parse(selector)?;
+            Some(all_in(dom, values, node, &query).iter().map(|found| (found + 1).to_string()).collect::<Vec<_>>().join("\n"))
+        }),
         // `element.closest(selector)` (`<id>\n<selector>`): its id, or "".
         "closest" => node_and(arg, |dom, values, node, selector| {
             let query = css::Query::parse(selector)?;
@@ -342,10 +348,15 @@ impl<'a> Elem<'a> for Page<'a> {
 
 /// Every element in the document the query matches, in the document's order.
 fn all(dom: &Dom, values: &HashMap<NodeId, String>, query: &css::Query) -> Vec<NodeId> {
+    all_in(dom, values, dom.root, query)
+}
+
+/// Every element inside `root` (not itself) the query matches, in the document's order.
+fn all_in(dom: &Dom, values: &HashMap<NodeId, String>, root: NodeId, query: &css::Query) -> Vec<NodeId> {
     let mut found = Vec::new();
-    let mut stack = vec![dom.root];
+    let mut stack = vec![root];
     while let Some(node) = stack.pop() {
-        if node != dom.root && dom.tag(node).is_some() && query.matches(Page { dom, values, node }) {
+        if node != root && dom.tag(node).is_some() && query.matches(Page { dom, values, node }) {
             found.push(node);
         }
         let end = stack.len();
@@ -430,6 +441,9 @@ mod tests {
         assert_eq!(closest(&dom, &values, sign_out, &menu), Some(account));
         assert_eq!(closest(&dom, &values, main, &menu), None);
         assert!(contains(&dom, account, picture) && contains(&dom, account, account));
+        let links = css::Query::parse("a, button").unwrap();
+        assert_eq!(all_in(&dom, &values, account, &links), vec![profile, sign_out], "querySelectorAll inside the menu");
+        assert!(all_in(&dom, &values, orgs, &links).is_empty());
         assert!(!contains(&dom, account, main) && !contains(&dom, account, orgs));
     }
 

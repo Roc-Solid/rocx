@@ -55,6 +55,18 @@ class Element(val id: Long, val activity: Activity) {
     /** It, or the nearest element above it, that a selector matches (`closest`); null for none (D-141). */
     fun closest(selector: String): Element? = Rocx.ask("closest", "$id\n$selector").toLongOrNull()?.let { Element(it, activity) }
 
+    /** What is inside it that a selector finds, in the document's order (`querySelectorAll`). */
+    fun all(selector: String): List<Element> = Rocx.ask("within", "$id\n$selector").lines().mapNotNull { it.toLongOrNull() }.map { Element(it, activity) }
+
+    /** The first thing inside it a selector finds (`querySelector`). */
+    fun first(selector: String): Element? = all(selector).firstOrNull()
+
+    /**
+     * Its view on the screen, if it has one now (a box, a text, a scroll view: a scrolling element's
+     * is the scroll view), for what a script does with an element's box: its size, its scroll.
+     */
+    val view: android.view.View? get() = Rocx.applier?.view(id)
+
     /** Whether a selector matches it (`matches`). */
     fun matches(selector: String): Boolean = Rocx.ask("matches", "$id\n$selector") == "1"
 

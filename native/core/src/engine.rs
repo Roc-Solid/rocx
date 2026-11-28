@@ -3176,12 +3176,24 @@ pub fn fetch_for(method: &str, url: &str, headers: &str, body: &str) -> Result<S
 
 /// Sends the requests made since the last time (`fetch_for` notes them while it holds the engine).
 pub fn send_requests() {
-    let (outbox, origin) = with(|engine| {
+    let (outbox, origin, page) = with(|engine| {
         let outbox = std::mem::take(&mut engine.outbox);
         let origin = crate::url::Url::parse(&engine.origin).map(|url| url.origin);
-        (outbox.into_iter().map(|request| (matches!(engine.asked.get(&request.0), Some(Asked::Sheet(_))), request)).collect::<Vec<_>>(), origin)
+        // The page the app is on, once it is on one (D-141): a request's `referer`.
+        let page = origin.as_ref().filter(|_| engine.nav.started).map(|origin| format!("{origin}{}", engine.path));
+        (outbox.into_iter().map(|request| (matches!(engine.asked.get(&request.0), Some(Asked::Sheet(_))), request)).collect::<Vec<_>>(), origin, page)
     });
     for (sheet, (id, method, url, mut headers, body)) in outbox {
+        // As a browser's request says the page it was made on (`Referer`, by the default policy,
+        // strict-origin-when-cross-origin: the whole address to the app's server, the origin alone
+        // elsewhere): a plain form's answer goes back to the page it was posted from (D-118), `/`
+        // without it (D-141).
+        if let (Some(page), Some(origin)) = (&page, &origin)
+            && !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("referer"))
+        {
+            let same = url.strip_prefix(origin.as_str()).is_some_and(|rest| rest.is_empty() || rest.starts_with(['/', '?', '#']));
+            headers.push(("referer".into(), if same { page.clone() } else { format!("{origin}/") }));
+        }
         // As a page's request carries its site (D-138): a form's post without it is a cross-site one
         // to a server that checks (SvelteKit's check, the app's own).
         if !matches!(method.as_str(), "GET" | "HEAD")
